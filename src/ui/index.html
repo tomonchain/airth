@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airth</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div id="app" class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="brand-name">airth</span>
+      <span class="version" id="version"></span>
+    </div>
+    <button class="btn primary new-run" id="new-run-btn" type="button">
+      <span aria-hidden="true">+</span> New run
+    </button>
+    <div class="section-label">Runs</div>
+    <nav class="run-list" id="run-list" aria-label="Runs"></nav>
+    <div class="sidebar-foot" id="sidebar-foot"></div>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

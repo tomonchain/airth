@@ -91,7 +91,7 @@ pub struct ModelResponse {
     pub output_tokens: u64,
 }
 
-pub trait Model {
+pub trait Model: Send + Sync {
     fn name(&self) -> String;
     fn complete(&self, request: &ModelRequest) -> Result<ModelResponse>;
 }

@@ -28,6 +28,8 @@ pub struct Anthropic {
     client: reqwest::blocking::Client,
     base_url: String,
     auth: Auth,
+    /// For API keys not scoped to a workspace.
+    workspace_id: Option<String>,
     model: String,
     max_tokens: u32,
     effort: String,
@@ -56,6 +58,7 @@ impl Anthropic {
             base_url: non_empty_env("ANTHROPIC_BASE_URL")
                 .unwrap_or_else(|| "https://api.anthropic.com".into()),
             auth,
+            workspace_id: non_empty_env("ANTHROPIC_WORKSPACE_ID"),
             model: non_empty_env("AIRTH_MODEL").unwrap_or_else(|| DEFAULT_MODEL.into()),
             max_tokens,
             effort: non_empty_env("AIRTH_EFFORT").unwrap_or_else(|| "high".into()),
@@ -109,6 +112,9 @@ impl Anthropic {
                     req.bearer_auth(token)
                 }
             };
+            if let Some(id) = &self.workspace_id {
+                req = req.header("anthropic-workspace-id", id);
+            }
             if !req_betas.is_empty() {
                 req = req.header("anthropic-beta", req_betas.join(","));
             }

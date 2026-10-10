@@ -2,9 +2,11 @@
 //!
 //! Reasoning, planning and evaluation happen in the model; this loop feeds it
 //! observations, routes its tool calls through the runtime, and decides when
-//! the run is over.
+//! the run is over. Clients watch a run through an `Observer` and stop it
+//! through a `CancelToken`.
 
-use crate::models::{ContentBlock, Message, Model, ModelRequest, Role, StopReason};
+use crate::cancel::CancelToken;
+use crate::models::{ContentBlock, Message, Model, ModelRequest, ModelResponse, Role, StopReason};
 use crate::runtime::Runtime;
 use crate::state::{Event, EventStatus, State, Status};
 use anyhow::Result;
@@ -12,22 +14,53 @@ use serde_json::Value;
 
 pub struct AgentConfig {
     pub max_iterations: u32,
-    pub verbose: bool,
 }
+
+/// Receives progress from a running agent. All methods default to no-ops.
+pub trait Observer: Send {
+    fn response(&mut self, _iteration: u32, _response: &ModelResponse) {}
+    fn tool_started(&mut self, _name: &str, _input: &Value) {}
+    fn tool_finished(&mut self, _event: &Event) {}
+    /// The state changed and was saved.
+    fn changed(&mut self, _state: &State) {}
+}
+
+#[cfg(test)]
+pub struct NoObserver;
+#[cfg(test)]
+impl Observer for NoObserver {}
+
+pub const STOPPED_TOOL_RESULT: &str = "Not run: the run was stopped by the user.";
 
 pub struct Agent<'a> {
     model: &'a dyn Model,
     runtime: Runtime,
     config: AgentConfig,
+    observer: &'a mut dyn Observer,
+    cancel: CancelToken,
 }
 
 impl<'a> Agent<'a> {
-    pub fn new(model: &'a dyn Model, runtime: Runtime, config: AgentConfig) -> Self {
+    pub fn new(
+        model: &'a dyn Model,
+        runtime: Runtime,
+        config: AgentConfig,
+        observer: &'a mut dyn Observer,
+        cancel: CancelToken,
+    ) -> Self {
         Self {
             model,
             runtime,
             config,
+            observer,
+            cancel,
         }
+    }
+
+    fn checkpoint(&mut self, state: &mut State) -> Result<()> {
+        state.save()?;
+        self.observer.changed(state);
+        Ok(())
     }
 
     pub fn run(&mut self, state: &mut State) -> Result<()> {
@@ -36,10 +69,16 @@ impl<'a> Agent<'a> {
         if state.messages.is_empty() {
             state.messages.push(Message::user_text(&state.objective));
         }
+        self.checkpoint(state)?;
 
         // The limit applies per call, so a continued run gets a fresh budget.
         let start = state.iterations;
         while state.status == Status::Running {
+            if self.cancel.is_cancelled() {
+                state.status = Status::Stopped;
+                state.report = Some("Stopped by the user.".into());
+                break;
+            }
             if state.iterations - start >= self.config.max_iterations {
                 state.status = Status::Stopped;
                 state.report = Some(format!(
@@ -60,23 +99,13 @@ impl<'a> Agent<'a> {
                 Err(e) => {
                     state.status = Status::Failed;
                     state.report = Some(format!("model error: {e:#}"));
-                    state.save()?;
+                    self.checkpoint(state)?;
                     return Err(e);
                 }
             };
-            eprintln!(
-                "\x1b[2m── iteration {} · {} · {} in / {} out tokens\x1b[0m",
-                state.iterations, response.model, response.input_tokens, response.output_tokens
-            );
-            for block in &response.content {
-                match block {
-                    ContentBlock::Reasoning { summary, .. } if !summary.trim().is_empty() => {
-                        eprintln!("\x1b[2;3m{}\x1b[0m", summary.trim());
-                    }
-                    ContentBlock::Text { text } => println!("{}", text.trim()),
-                    _ => {}
-                }
-            }
+            self.observer.response(state.iterations, &response);
+            state.input_tokens += response.input_tokens;
+            state.output_tokens += response.output_tokens;
 
             let tool_calls: Vec<(String, String, Value)> = response
                 .content
@@ -93,6 +122,7 @@ impl<'a> Agent<'a> {
                 role: Role::Assistant,
                 content: response.content,
             });
+            self.checkpoint(state)?;
 
             match response.stop_reason {
                 StopReason::Refusal => {
@@ -122,15 +152,24 @@ impl<'a> Agent<'a> {
                 _ if !tool_calls.is_empty() => {
                     let mut results = Vec::new();
                     for (id, name, input) in tool_calls {
-                        eprintln!("\x1b[36m→ {name}\x1b[0m {}", summarize_args(&name, &input));
-                        let event = self.runtime.invoke(&name, &input);
-                        self.print_event(&event);
+                        if self.cancel.is_cancelled() {
+                            results.push(ContentBlock::ToolResult {
+                                tool_use_id: id,
+                                content: STOPPED_TOOL_RESULT.into(),
+                                is_error: true,
+                            });
+                            continue;
+                        }
+                        self.observer.tool_started(&name, &input);
+                        let event = self.runtime.invoke(&id, &name, &input);
+                        self.observer.tool_finished(&event);
                         results.push(ContentBlock::ToolResult {
                             tool_use_id: id,
                             content: event.result.clone(),
                             is_error: event.status != EventStatus::Ok,
                         });
                         state.events.push(event);
+                        self.checkpoint(state)?;
                     }
                     state.messages.push(Message {
                         role: Role::User,
@@ -142,29 +181,10 @@ impl<'a> Agent<'a> {
                     state.report = Some(final_text);
                 }
             }
-            state.save()?;
+            self.checkpoint(state)?;
         }
-        state.save()?;
+        self.checkpoint(state)?;
         Ok(())
-    }
-
-    fn print_event(&self, event: &Event) {
-        let (mark, color) = match event.status {
-            EventStatus::Ok => ("✓ ok", "32"),
-            EventStatus::Error => ("✗ error", "31"),
-            EventStatus::Denied => ("⊘ denied", "33"),
-        };
-        let first_line = event.result.lines().next().unwrap_or("");
-        eprintln!(
-            "  \x1b[{color}m{mark}\x1b[0m \x1b[2m{} · {} bytes\x1b[0m",
-            first_line.chars().take(100).collect::<String>(),
-            event.result.len()
-        );
-        if self.config.verbose {
-            for line in event.result.lines() {
-                eprintln!("  \x1b[2m│ {line}\x1b[0m");
-            }
-        }
     }
 }
 
@@ -180,7 +200,7 @@ fn last_text(content: &[ContentBlock]) -> String {
 }
 
 /// Compact argument display; file contents are shown in the approval diff instead.
-fn summarize_args(name: &str, input: &Value) -> String {
+pub fn summarize_args(name: &str, input: &Value) -> String {
     match name {
         "write_file" => format!(
             "{} ({} bytes)",
@@ -205,6 +225,7 @@ Tools:
 - execute_command: runs a shell command in the workspace (use it for `cargo check`, `cargo test`, `cargo build`, `git status`, `git diff`); the human approves each command.
 
 How to work:
+- Change files only with write_file, never through shell commands (sed, python, heredocs, redirection), so the human reviews every change as a diff.
 - Prefer small, reversible, well-scoped changes. One coherent improvement per run is better than many half-finished ones.
 - Before your first write, state the change you propose and why, in a few sentences, so the human can judge the approval.
 - After changing code, run `cargo check` and `cargo test`, read failures, and fix them. Do not report success unless they pass.
@@ -217,11 +238,12 @@ How to work:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cancel::CancelToken;
     use crate::models::{ModelResponse, ToolSpec};
     use crate::permissions::{Answer, Approver, PermissionGate, PermissionRequest, Policy};
     use crate::tools::{Workspace, default_tools};
     use serde_json::json;
-    use std::cell::RefCell;
+    use std::sync::Mutex as RefCell;
 
     /// Replays scripted responses and records what it was sent.
     struct Scripted {
@@ -235,8 +257,8 @@ mod tests {
         }
         fn complete(&self, req: &ModelRequest) -> Result<ModelResponse> {
             assert!(req.tools.iter().any(|t: &ToolSpec| t.name == "write_file"));
-            self.seen.borrow_mut().push(req.messages.len());
-            Ok(self.responses.borrow_mut().remove(0))
+            self.seen.lock().unwrap().push(req.messages.len());
+            Ok(self.responses.lock().unwrap().remove(0))
         }
     }
 
@@ -291,14 +313,15 @@ mod tests {
             default_tools(),
             PermissionGate::new(Policy::default(), Box::new(Approve)),
             Workspace::new(dir.path()).unwrap(),
+            CancelToken::default(),
         );
+        let mut observer = NoObserver;
         let mut agent = Agent::new(
             &model,
             runtime,
-            AgentConfig {
-                max_iterations: 10,
-                verbose: false,
-            },
+            AgentConfig { max_iterations: 10 },
+            &mut observer,
+            CancelToken::default(),
         );
         let mut state = State::new("write notes", None);
         agent.run(&mut state).unwrap();
@@ -306,7 +329,7 @@ mod tests {
         assert_eq!(state.status, Status::Completed);
         assert_eq!(state.report.as_deref(), Some("Done."));
         assert_eq!(state.iterations, 3);
-        assert_eq!(*model.seen.borrow(), vec![1, 3, 5]);
+        assert_eq!(*model.seen.lock().unwrap(), vec![1, 3, 5]);
         assert_eq!(state.events.len(), 2);
         assert_eq!(state.events[1].result, "hi");
     }
@@ -332,18 +355,48 @@ mod tests {
             default_tools(),
             PermissionGate::new(Policy::default(), Box::new(Approve)),
             Workspace::new(dir.path()).unwrap(),
+            CancelToken::default(),
         );
+        let mut observer = NoObserver;
         let mut agent = Agent::new(
             &model,
             runtime,
-            AgentConfig {
-                max_iterations: 2,
-                verbose: false,
-            },
+            AgentConfig { max_iterations: 2 },
+            &mut observer,
+            CancelToken::default(),
         );
         let mut state = State::new("loop", None);
         agent.run(&mut state).unwrap();
         assert_eq!(state.status, Status::Stopped);
         assert_eq!(state.iterations, 2);
+    }
+
+    #[test]
+    fn cancel_stops_before_next_model_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = Scripted {
+            responses: RefCell::new(vec![]),
+            seen: RefCell::new(vec![]),
+        };
+        let cancel = CancelToken::default();
+        cancel.cancel();
+        let runtime = Runtime::new(
+            default_tools(),
+            PermissionGate::new(Policy::default(), Box::new(Approve)),
+            Workspace::new(dir.path()).unwrap(),
+            cancel.clone(),
+        );
+        let mut observer = NoObserver;
+        let mut agent = Agent::new(
+            &model,
+            runtime,
+            AgentConfig { max_iterations: 5 },
+            &mut observer,
+            cancel,
+        );
+        let mut state = State::new("x", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.status, Status::Stopped);
+        assert_eq!(state.iterations, 0);
     }
 }

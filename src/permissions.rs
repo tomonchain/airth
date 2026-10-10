@@ -82,7 +82,7 @@ pub enum Answer {
     No(String),
 }
 
-pub trait Approver {
+pub trait Approver: Send {
     fn ask(&mut self, request: &PermissionRequest) -> Result<Answer>;
 }
 

@@ -1,4 +1,5 @@
 use super::{Tool, Workspace, str_arg, truncate};
+use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::Capability;
 use anyhow::{Context, Result};
@@ -41,7 +42,7 @@ impl Tool for ExecuteCommand {
         ))
     }
 
-    fn execute(&self, input: &Value, ws: &Workspace) -> Result<String> {
+    fn execute(&self, input: &Value, ws: &Workspace, cancel: &CancelToken) -> Result<String> {
         let command = str_arg(input, "command")?;
         let timeout = Duration::from_secs(
             input["timeout_secs"]
@@ -87,7 +88,7 @@ impl Tool for ExecuteCommand {
                 kill_process_group(&mut child);
                 break Some(status);
             }
-            if start.elapsed() > timeout {
+            if start.elapsed() > timeout || cancel.is_cancelled() {
                 // Kill before reaping, so the group id is still ours.
                 kill_process_group(&mut child);
                 let _ = child.wait();
@@ -98,6 +99,13 @@ impl Tool for ExecuteCommand {
         let out = out_t.join().unwrap_or_default();
         let err = err_t.join().unwrap_or_default();
 
+        if status.is_none() && cancel.is_cancelled() {
+            anyhow::bail!(
+                "stopped by user\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                truncate(out, MAX_OUTPUT),
+                truncate(err, MAX_OUTPUT)
+            );
+        }
         let code = match status {
             Some(s) => s
                 .code()
@@ -142,7 +150,11 @@ mod tests {
         let ws = Workspace::new(dir.path()).unwrap();
         std::fs::write(dir.path().join("marker"), "").unwrap();
         let out = ExecuteCommand
-            .execute(&json!({"command": "ls; echo oops >&2; exit 3"}), &ws)
+            .execute(
+                &json!({"command": "ls; echo oops >&2; exit 3"}),
+                &ws,
+                &CancelToken::default(),
+            )
             .unwrap();
         assert!(out.starts_with("exit code: 3"));
         assert!(out.contains("marker"));
@@ -154,7 +166,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ws = Workspace::new(dir.path()).unwrap();
         let out = ExecuteCommand
-            .execute(&json!({"command": "sleep 5", "timeout_secs": 0}), &ws)
+            .execute(
+                &json!({"command": "sleep 5", "timeout_secs": 0}),
+                &ws,
+                &CancelToken::default(),
+            )
             .unwrap();
         assert!(out.contains("timed out"));
     }
@@ -169,6 +185,7 @@ mod tests {
             .execute(
                 &json!({"command": "sleep 10; echo finished", "timeout_secs": 1}),
                 &ws,
+                &CancelToken::default(),
             )
             .unwrap();
         assert!(out.contains("timed out"), "{out}");
@@ -181,12 +198,35 @@ mod tests {
     }
 
     #[test]
+    fn cancel_stops_a_running_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path()).unwrap();
+        let cancel = CancelToken::default();
+        let c = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            c.cancel();
+        });
+        let start = Instant::now();
+        let out = ExecuteCommand
+            .execute(&json!({"command": "sleep 10"}), &ws, &cancel)
+            .unwrap_err()
+            .to_string();
+        assert!(out.contains("stopped by user"), "{out}");
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
     fn background_processes_do_not_block_the_result() {
         let dir = tempfile::tempdir().unwrap();
         let ws = Workspace::new(dir.path()).unwrap();
         let start = Instant::now();
         let out = ExecuteCommand
-            .execute(&json!({"command": "sleep 10 & echo started"}), &ws)
+            .execute(
+                &json!({"command": "sleep 10 & echo started"}),
+                &ws,
+                &CancelToken::default(),
+            )
             .unwrap();
         assert!(out.starts_with("exit code: 0"), "{out}");
         assert!(out.contains("started"), "{out}");

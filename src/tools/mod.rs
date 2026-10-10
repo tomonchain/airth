@@ -4,6 +4,7 @@
 mod fs;
 mod shell;
 
+use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::Capability;
 use anyhow::{Result, bail};
@@ -18,7 +19,8 @@ pub trait Tool {
     fn warnings(&self, _input: &Value) -> Vec<String> {
         Vec::new()
     }
-    fn execute(&self, input: &Value, ws: &Workspace) -> Result<String>;
+    /// Long-running tools should poll `cancel` and stop early when it is set.
+    fn execute(&self, input: &Value, ws: &Workspace, cancel: &CancelToken) -> Result<String>;
 }
 
 pub fn default_tools() -> Vec<Box<dyn Tool>> {

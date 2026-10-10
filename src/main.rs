@@ -1,15 +1,19 @@
 mod agent;
+mod cancel;
 mod hub;
 mod models;
 mod permissions;
 mod runtime;
 mod state;
+mod term;
 mod tools;
+mod ui;
 
 use agent::AgentConfig;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use cancel::CancelToken;
 use clap::{Parser, Subcommand};
-use hub::Hub;
+use hub::{Hub, RunHooks};
 use permissions::TerminalApprover;
 use state::{State, Status};
 use std::io::{BufRead, Write};
@@ -48,6 +52,20 @@ enum Cmd {
         #[arg(long, default_value = ".")]
         workspace: PathBuf,
     },
+    /// Open the Airth app in your browser (served locally)
+    Ui {
+        #[arg(long, default_value = ".")]
+        workspace: PathBuf,
+        /// Port on 127.0.0.1 (falls back to a free port if taken)
+        #[arg(long, default_value_t = 7457)]
+        port: u16,
+        /// Don't open a browser, just print the link
+        #[arg(long)]
+        no_open: bool,
+        /// Maximum number of model calls per run or follow-up
+        #[arg(long, default_value_t = 50)]
+        max_iterations: u32,
+    },
     /// List previous runs
     Runs {
         #[arg(long, default_value = ".")]
@@ -81,9 +99,24 @@ impl RunOpts {
     fn config(&self) -> AgentConfig {
         AgentConfig {
             max_iterations: self.max_iterations,
-            verbose: self.verbose,
         }
     }
+}
+
+/// First Ctrl-C stops the run cleanly (the current command is killed and the
+/// state saved); a second one quits immediately.
+fn cancel_on_ctrl_c() -> Result<CancelToken> {
+    let cancel = CancelToken::default();
+    let c = cancel.clone();
+    ctrlc::set_handler(move || {
+        if c.is_cancelled() {
+            std::process::exit(130);
+        }
+        c.cancel();
+        eprintln!("\n\x1b[33mstopping after the current step… (Ctrl-C again to quit now)\x1b[0m");
+    })
+    .context("cannot install Ctrl-C handler")?;
+    Ok(cancel)
 }
 
 fn main() -> ExitCode {
@@ -93,6 +126,12 @@ fn main() -> ExitCode {
         Some(Cmd::Send { run, message, opts }) => send(&run, &message, opts),
         Some(Cmd::Skills { workspace }) => skills(&workspace),
         Some(Cmd::Runs { workspace }) => runs(&workspace),
+        Some(Cmd::Ui {
+            workspace,
+            port,
+            no_open,
+            max_iterations,
+        }) => ui(&workspace, port, !no_open, max_iterations),
         Some(Cmd::Doctor { workspace }) => doctor(&workspace),
         None => prompt_objective().and_then(|objective| {
             run(
@@ -131,7 +170,15 @@ fn run(objective: &str, opts: RunOpts) -> Result<bool> {
     let hub = opts.hub()?;
     banner(&hub);
     eprintln!("objective: {objective}");
-    let state = hub.dispatch(objective, opts.config(), Box::new(TerminalApprover))?;
+    let mut observer = term::TerminalObserver {
+        verbose: opts.verbose,
+    };
+    let hooks = RunHooks {
+        approver: Box::new(TerminalApprover),
+        observer: &mut observer,
+        cancel: cancel_on_ctrl_c()?,
+    };
+    let state = hub.dispatch(objective, opts.config(), hooks)?;
     Ok(finish(&state))
 }
 
@@ -139,7 +186,15 @@ fn send(run: &str, message: &str, opts: RunOpts) -> Result<bool> {
     let hub = opts.hub()?;
     banner(&hub);
     eprintln!("message → {run}: {message}");
-    let state = hub.send(run, message, opts.config(), Box::new(TerminalApprover))?;
+    let mut observer = term::TerminalObserver {
+        verbose: opts.verbose,
+    };
+    let hooks = RunHooks {
+        approver: Box::new(TerminalApprover),
+        observer: &mut observer,
+        cancel: cancel_on_ctrl_c()?,
+    };
+    let state = hub.send(run, message, opts.config(), hooks)?;
     Ok(finish(&state))
 }
 
@@ -188,6 +243,30 @@ fn skills(workspace: &Path) -> Result<bool> {
     Ok(true)
 }
 
+fn ui(workspace: &Path, port: u16, open_browser: bool, max_iterations: u32) -> Result<bool> {
+    let mut hub = Hub::new(Workspace::new(workspace)?);
+    let model_error = match models::from_env() {
+        Ok(model) => {
+            hub = hub.with_model(model);
+            None
+        }
+        Err(e) => {
+            eprintln!("\x1b[33mwarning:\x1b[0m {e:#} (you can browse runs but not start them)");
+            Some(format!("{e:#}"))
+        }
+    };
+    ui::serve(
+        hub,
+        ui::UiOptions {
+            port,
+            open_browser,
+            max_iterations,
+            model_error,
+        },
+    )?;
+    Ok(true)
+}
+
 fn runs(workspace: &Path) -> Result<bool> {
     let hub = Hub::new(Workspace::new(workspace)?);
     let runs = hub.runs()?;
@@ -197,9 +276,9 @@ fn runs(workspace: &Path) -> Result<bool> {
     for run in runs {
         let objective = run.objective.lines().next().unwrap_or("");
         println!(
-            "{:<24} {:<9} {:>3} it  {}",
+            "{:<24} {:<11} {:>3} it  {}",
             run.id,
-            run.status.as_str(),
+            run.display_status(),
             run.iterations,
             objective.chars().take(80).collect::<String>()
         );

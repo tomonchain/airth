@@ -1,6 +1,7 @@
 //! The runtime owns the tools and the permission gate. `invoke` is the only
 //! path from a model's tool call to a tool's `execute`.
 
+use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::{PermissionGate, PermissionRequest, Verdict};
 use crate::state::{Event, EventStatus};
@@ -12,14 +13,21 @@ pub struct Runtime {
     tools: Vec<Box<dyn Tool>>,
     gate: PermissionGate,
     workspace: Workspace,
+    cancel: CancelToken,
 }
 
 impl Runtime {
-    pub fn new(tools: Vec<Box<dyn Tool>>, gate: PermissionGate, workspace: Workspace) -> Self {
+    pub fn new(
+        tools: Vec<Box<dyn Tool>>,
+        gate: PermissionGate,
+        workspace: Workspace,
+        cancel: CancelToken,
+    ) -> Self {
         Self {
             tools,
             gate,
             workspace,
+            cancel,
         }
     }
 
@@ -32,7 +40,7 @@ impl Runtime {
     }
 
     /// Check permission, execute, and record the outcome as an event.
-    pub fn invoke(&mut self, name: &str, arguments: &Value) -> Event {
+    pub fn invoke(&mut self, tool_use_id: &str, name: &str, arguments: &Value) -> Event {
         let (result, status) = self.run(name, arguments);
         Event {
             timestamp: Utc::now(),
@@ -40,6 +48,7 @@ impl Runtime {
             arguments: arguments.clone(),
             result,
             status,
+            tool_use_id: Some(tool_use_id.to_string()),
         }
     }
 
@@ -69,7 +78,11 @@ impl Runtime {
             }
             Ok(_) => {}
         }
-        match tool.execute(arguments, &self.workspace) {
+        // The run may have been stopped while approval was pending.
+        if self.cancel.is_cancelled() {
+            return ("not run: the run was stopped".into(), EventStatus::Denied);
+        }
+        match tool.execute(arguments, &self.workspace, &self.cancel) {
             Ok(out) => (out, EventStatus::Ok),
             Err(e) => (format!("{e:#}"), EventStatus::Error),
         }
@@ -98,19 +111,27 @@ mod tests {
             default_tools(),
             PermissionGate::new(Policy::default(), Box::new(Deny)),
             ws,
+            CancelToken::default(),
         );
 
-        let ev = rt.invoke("write_file", &json!({"path": "x.txt", "content": "hi"}));
+        let ev = rt.invoke(
+            "id",
+            "write_file",
+            &json!({"path": "x.txt", "content": "hi"}),
+        );
         assert_eq!(ev.status, EventStatus::Denied);
         assert!(!dir.path().join("x.txt").exists());
 
-        let ev = rt.invoke("execute_command", &json!({"command": "touch y"}));
+        let ev = rt.invoke("id", "execute_command", &json!({"command": "touch y"}));
         assert_eq!(ev.status, EventStatus::Denied);
         assert!(!dir.path().join("y").exists());
 
-        let ev = rt.invoke("list_directory", &json!({}));
+        let ev = rt.invoke("id", "list_directory", &json!({}));
         assert_eq!(ev.status, EventStatus::Ok);
 
-        assert_eq!(rt.invoke("nope", &json!({})).status, EventStatus::Error);
+        assert_eq!(
+            rt.invoke("id", "nope", &json!({})).status,
+            EventStatus::Error
+        );
     }
 }

@@ -1,4 +1,5 @@
 use super::{Tool, Workspace, str_arg, truncate};
+use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::{Capability, is_permission_critical};
 use anyhow::{Context, Result};
@@ -33,7 +34,7 @@ impl Tool for ReadFile {
         Ok(format!("read {}", str_arg(input, "path")?))
     }
 
-    fn execute(&self, input: &Value, ws: &Workspace) -> Result<String> {
+    fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
         let path = ws.resolve(str_arg(input, "path")?)?;
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read {}", path.display()))?;
@@ -66,7 +67,7 @@ impl Tool for ListDirectory {
         Ok(format!("list {}", input["path"].as_str().unwrap_or(".")))
     }
 
-    fn execute(&self, input: &Value, ws: &Workspace) -> Result<String> {
+    fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
         let dir = ws.resolve(input["path"].as_str().unwrap_or("."))?;
         let recursive = input["recursive"].as_bool().unwrap_or(false);
         let mut entries = Vec::new();
@@ -158,7 +159,7 @@ impl Tool for WriteFile {
         }
     }
 
-    fn execute(&self, input: &Value, ws: &Workspace) -> Result<String> {
+    fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
         let path = ws.resolve(str_arg(input, "path")?)?;
         let content = str_arg(input, "content")?;
         if let Some(parent) = path.parent() {
@@ -184,13 +185,17 @@ mod tests {
         let ws = Workspace::new(dir.path()).unwrap();
         let input = json!({"path": "a/b.txt", "content": "hello\n"});
         assert!(WriteFile.preview(&input, &ws).unwrap().contains("+hello"));
-        WriteFile.execute(&input, &ws).unwrap();
+        WriteFile
+            .execute(&input, &ws, &CancelToken::default())
+            .unwrap();
         assert_eq!(
-            ReadFile.execute(&json!({"path": "a/b.txt"}), &ws).unwrap(),
+            ReadFile
+                .execute(&json!({"path": "a/b.txt"}), &ws, &CancelToken::default())
+                .unwrap(),
             "hello\n"
         );
         let listing = ListDirectory
-            .execute(&json!({"recursive": true}), &ws)
+            .execute(&json!({"recursive": true}), &ws, &CancelToken::default())
             .unwrap();
         assert_eq!(listing, "a/\na/b.txt");
     }
