@@ -96,11 +96,18 @@ pub trait Model: Send + Sync {
     fn complete(&self, request: &ModelRequest) -> Result<ModelResponse>;
 }
 
-/// Build the configured provider. Only Anthropic exists in v0.1.
+/// Build the configured provider from the environment.
 pub fn from_env() -> Result<Box<dyn Model>> {
-    let provider = std::env::var("AIRTH_PROVIDER").unwrap_or_else(|_| "anthropic".into());
+    from_settings(&|key| std::env::var(key).ok())
+}
+
+/// Build the provider from settings looked up by name. Only Anthropic exists so far.
+pub fn from_settings(get: &dyn Fn(&str) -> Option<String>) -> Result<Box<dyn Model>> {
+    let provider = get("AIRTH_PROVIDER")
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| "anthropic".into());
     match provider.as_str() {
-        "anthropic" => Ok(Box::new(anthropic::Anthropic::from_env()?)),
+        "anthropic" => Ok(Box::new(anthropic::Anthropic::from_settings(get)?)),
         other => anyhow::bail!("unknown provider '{other}' (supported: anthropic)"),
     }
 }

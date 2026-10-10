@@ -2,11 +2,23 @@
 
 use crate::agent::{Observer, summarize_args};
 use crate::models::{ContentBlock, ModelResponse};
-use crate::state::{Event, EventStatus};
+use crate::state::{Event, EventStatus, State};
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 pub struct TerminalObserver {
     pub verbose: bool,
+    /// The check run being printed, and how many of its results are printed.
+    checks: Option<(DateTime<Utc>, usize)>,
+}
+
+impl TerminalObserver {
+    pub fn new(verbose: bool) -> Self {
+        Self {
+            verbose,
+            checks: None,
+        }
+    }
 }
 
 impl Observer for TerminalObserver {
@@ -47,5 +59,43 @@ impl Observer for TerminalObserver {
                 eprintln!("  \x1b[2m│ {line}\x1b[0m");
             }
         }
+    }
+
+    fn changed(&mut self, state: &State) {
+        let Some(run) = state.change.as_ref().and_then(|c| c.checks.as_ref()) else {
+            return;
+        };
+        let printed = match self.checks {
+            Some((started, n)) if started == run.started_at => n,
+            // Checks we see only once finished are from before this command.
+            _ if run.finished => {
+                self.checks = Some((run.started_at, run.results.len()));
+                return;
+            }
+            _ => {
+                eprintln!("\x1b[2m── checks\x1b[0m");
+                0
+            }
+        };
+        for r in run.results.iter().skip(printed) {
+            if r.ok {
+                eprintln!(
+                    "  \x1b[32m✓\x1b[0m {} \x1b[2m({:.1}s)\x1b[0m",
+                    r.command,
+                    r.duration_ms as f64 / 1000.0
+                );
+            } else {
+                eprintln!(
+                    "  \x1b[31m✗\x1b[0m {} \x1b[2m({:.1}s)\x1b[0m",
+                    r.command,
+                    r.duration_ms as f64 / 1000.0
+                );
+                let lines: Vec<&str> = r.output.lines().collect();
+                for line in &lines[lines.len().saturating_sub(30)..] {
+                    eprintln!("  \x1b[2m│ {line}\x1b[0m");
+                }
+            }
+        }
+        self.checks = Some((run.started_at, run.results.len()));
     }
 }

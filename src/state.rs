@@ -1,5 +1,6 @@
-//! Minimal persistent execution state, saved as JSON under `.airth/runs/`.
+//! Persistent execution state of a run, saved as JSON in its realm's `runs/`.
 
+use crate::isolation::Change;
 use crate::models::{ContentBlock, Message, Role};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -64,6 +65,12 @@ pub struct State {
     pub output_tokens: u64,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
+    /// The realm the run belongs to.
+    #[serde(default)]
+    pub realm: String,
+    /// The run's isolated change, when its realm uses worktrees.
+    #[serde(default)]
+    pub change: Option<Change>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -84,6 +91,8 @@ impl State {
             input_tokens: 0,
             output_tokens: 0,
             updated_at: Utc::now(),
+            realm: String::new(),
+            change: None,
             path,
         }
     }

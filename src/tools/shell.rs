@@ -2,6 +2,7 @@ use super::{Tool, Workspace, str_arg, truncate};
 use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::Capability;
+use crate::sandbox;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::io::Read;
@@ -43,81 +44,149 @@ impl Tool for ExecuteCommand {
     }
 
     fn execute(&self, input: &Value, ws: &Workspace, cancel: &CancelToken) -> Result<String> {
-        let command = str_arg(input, "command")?;
         let timeout = Duration::from_secs(
             input["timeout_secs"]
                 .as_u64()
                 .unwrap_or(DEFAULT_TIMEOUT_SECS)
                 .min(MAX_TIMEOUT_SECS),
         );
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(command)
-            .current_dir(ws.root())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(unix)]
-        {
-            // Own process group, so the command and everything it spawns can be
-            // killed together (see `kill_process_group`).
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
+        let out = run_shell(str_arg(input, "command")?, ws, cancel, timeout)?;
+        if out.stopped {
+            anyhow::bail!("stopped by user\n{}", out.streams());
         }
-        let mut child = cmd.spawn().context("failed to spawn sh")?;
-
-        // Drain pipes on threads so a chatty command cannot deadlock on a full pipe.
-        let mut stdout = child.stdout.take().expect("piped stdout");
-        let mut stderr = child.stderr.take().expect("piped stderr");
-        let out_t = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = stdout.read_to_string(&mut s);
-            s
-        });
-        let err_t = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = stderr.read_to_string(&mut s);
-            s
-        });
-
-        let start = Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                // Leftover background processes would hold the pipes open and
-                // block the readers indefinitely.
-                kill_process_group(&mut child);
-                break Some(status);
-            }
-            if start.elapsed() > timeout || cancel.is_cancelled() {
-                // Kill before reaping, so the group id is still ours.
-                kill_process_group(&mut child);
-                let _ = child.wait();
-                break None;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        };
-        let out = out_t.join().unwrap_or_default();
-        let err = err_t.join().unwrap_or_default();
-
-        if status.is_none() && cancel.is_cancelled() {
-            anyhow::bail!(
-                "stopped by user\n--- stdout ---\n{}\n--- stderr ---\n{}",
-                truncate(out, MAX_OUTPUT),
-                truncate(err, MAX_OUTPUT)
-            );
-        }
-        let code = match status {
-            Some(s) => s
-                .code()
-                .map_or("killed by signal".into(), |c| c.to_string()),
-            None => format!("timed out after {}s", timeout.as_secs()),
-        };
         Ok(format!(
-            "exit code: {code}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-            truncate(out, MAX_OUTPUT),
-            truncate(err, MAX_OUTPUT)
+            "exit code: {}\n{}",
+            out.code_text(timeout),
+            out.streams()
         ))
     }
+}
+
+/// Variables passed through from Airth's own environment. Everything else
+/// (API keys, tokens the owner exported for other purposes) is withheld;
+/// a realm's credentials are added explicitly from its secrets.
+const PASSED_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "TZ",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+];
+
+pub struct ShellOutput {
+    /// None if the command was killed (timeout or stop).
+    pub code: Option<i32>,
+    pub signaled: bool,
+    pub stopped: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl ShellOutput {
+    pub fn success(&self) -> bool {
+        self.code == Some(0)
+    }
+
+    fn code_text(&self, timeout: Duration) -> String {
+        match (self.code, self.signaled) {
+            (Some(c), _) => c.to_string(),
+            (None, true) => "killed by signal".into(),
+            (None, false) => format!("timed out after {}s", timeout.as_secs()),
+        }
+    }
+
+    pub fn streams(&self) -> String {
+        format!(
+            "--- stdout ---\n{}\n--- stderr ---\n{}",
+            truncate(self.stdout.clone(), MAX_OUTPUT),
+            truncate(self.stderr.clone(), MAX_OUTPUT)
+        )
+    }
+}
+
+/// Run `sh -c command` in the workspace root, with the workspace's environment
+/// and sandbox. Used by `execute_command` and by the runtime's own checks.
+pub fn run_shell(
+    command: &str,
+    ws: &Workspace,
+    cancel: &CancelToken,
+    timeout: Duration,
+) -> Result<ShellOutput> {
+    let mut cmd = if ws.sandboxed() && sandbox::available() {
+        let mut c = Command::new(sandbox::program());
+        c.arg("-p").arg(sandbox::profile(ws.rules())).arg("sh");
+        c
+    } else {
+        Command::new("sh")
+    };
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(ws.root())
+        .env_clear()
+        .envs(
+            PASSED_ENV
+                .iter()
+                .filter_map(|k| Some((k, std::env::var_os(k)?))),
+        )
+        .envs(ws.env().iter().map(|(k, v)| (k, v)))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        // Own process group, so the command and everything it spawns can be
+        // killed together (see `kill_process_group`).
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let mut child = cmd.spawn().context("failed to spawn sh")?;
+
+    // Drain pipes on threads so a chatty command cannot deadlock on a full pipe.
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
+    let out_t = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = stdout.read_to_string(&mut s);
+        s
+    });
+    let err_t = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = stderr.read_to_string(&mut s);
+        s
+    });
+
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            // Leftover background processes would hold the pipes open and
+            // block the readers indefinitely.
+            kill_process_group(&mut child);
+            break Some(status);
+        }
+        if start.elapsed() > timeout || cancel.is_cancelled() {
+            // Kill before reaping, so the group id is still ours.
+            kill_process_group(&mut child);
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    Ok(ShellOutput {
+        code: status.and_then(|s| s.code()),
+        signaled: status.is_some_and(|s| s.code().is_none()),
+        stopped: status.is_none() && cancel.is_cancelled(),
+        stdout: out_t.join().unwrap_or_default(),
+        stderr: err_t.join().unwrap_or_default(),
+    })
 }
 
 /// Kill the command and every process it spawned. Killing only `sh` would leave
@@ -143,6 +212,7 @@ fn kill_process_group(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::Access;
 
     #[test]
     fn runs_in_workspace_and_reports_exit_code() {
@@ -214,6 +284,49 @@ mod tests {
             .to_string();
         assert!(out.contains("stopped by user"), "{out}");
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn commands_do_not_inherit_secrets_but_get_the_realm_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: tests in this module do not read this variable concurrently.
+        unsafe { std::env::set_var("AIRTH_TEST_LEAK", "leaked") };
+        let ws = Workspace::new(dir.path())
+            .unwrap()
+            .with_secrets(vec![("REALM_TOKEN".into(), "mine".into())], vec![]);
+        let out = ExecuteCommand
+            .execute(
+                &json!({"command": "echo \"[$AIRTH_TEST_LEAK] [$REALM_TOKEN]\""}),
+                &ws,
+                &CancelToken::default(),
+            )
+            .unwrap();
+        assert!(out.contains("[] [mine]"), "{out}");
+    }
+
+    #[test]
+    fn sandbox_blocks_denied_paths() {
+        if !sandbox::available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("private"), "other realm").unwrap();
+        let ws = Workspace::new(dir.path())
+            .unwrap()
+            .with_rule(other.path(), Access::None)
+            .with_sandbox(true);
+        let target = other.path().canonicalize().unwrap();
+        let cmd = format!(
+            "echo ok > mine; cat mine; cat {0}/private; echo x > {0}/new",
+            target.display()
+        );
+        let out = ExecuteCommand
+            .execute(&json!({ "command": cmd }), &ws, &CancelToken::default())
+            .unwrap();
+        assert!(out.contains("ok"), "{out}");
+        assert!(!out.contains("other realm"), "{out}");
+        assert!(!other.path().join("new").exists());
     }
 
     #[test]

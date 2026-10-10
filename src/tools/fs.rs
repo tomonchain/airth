@@ -1,4 +1,4 @@
-use super::{Tool, Workspace, str_arg, truncate};
+use super::{Access, Tool, Workspace, str_arg, truncate};
 use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::{Capability, is_permission_critical};
@@ -93,6 +93,9 @@ fn walk(
     for entry in read {
         let entry = entry?;
         let path = entry.path();
+        if ws.access(&path) == Access::None {
+            continue; // Airth's own data or another realm
+        }
         let rel = path
             .strip_prefix(ws.root())
             .unwrap_or(&path)
@@ -139,7 +142,7 @@ impl Tool for WriteFile {
     fn preview(&self, input: &Value, ws: &Workspace) -> Result<String> {
         let rel = str_arg(input, "path")?;
         let new = str_arg(input, "content")?;
-        let path = ws.resolve(rel)?;
+        let path = ws.resolve_writable(rel)?;
         let old = std::fs::read_to_string(&path).unwrap_or_default();
         let header = if path.exists() { "modify" } else { "create" };
         let diff = TextDiff::from_lines(&old, new)
@@ -153,14 +156,14 @@ impl Tool for WriteFile {
     fn warnings(&self, input: &Value) -> Vec<String> {
         match input["path"].as_str() {
             Some(p) if is_permission_critical(p) => {
-                vec!["this change modifies Airth's permission layer".into()]
+                vec!["this change modifies Airth's security boundaries (permissions, isolation or sandbox)".into()]
             }
             _ => Vec::new(),
         }
     }
 
     fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
-        let path = ws.resolve(str_arg(input, "path")?)?;
+        let path = ws.resolve_writable(str_arg(input, "path")?)?;
         let content = str_arg(input, "content")?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -194,6 +197,12 @@ mod tests {
                 .unwrap(),
             "hello\n"
         );
+        let ws = ws.with_rule(dir.path().join("a"), Access::None);
+        let listing = ListDirectory
+            .execute(&json!({"recursive": true}), &ws, &CancelToken::default())
+            .unwrap();
+        assert_eq!(listing, "");
+        let ws = Workspace::new(dir.path()).unwrap();
         let listing = ListDirectory
             .execute(&json!({"recursive": true}), &ws, &CancelToken::default())
             .unwrap();

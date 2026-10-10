@@ -1,10 +1,12 @@
 //! Permission layer. Every tool invocation passes through `PermissionGate::check`.
 //!
-//! The policy is fixed when the process starts and is not reachable from any
-//! tool, so the agent cannot relax it at runtime. Edits to this file (or the
-//! runtime that enforces it) are flagged loudly at approval time.
+//! Each realm has its own policy, stored in its `realm.json` inside the Airth
+//! home. The policy is loaded when a run starts and is not reachable from any
+//! tool (the home is outside every workspace), so the agent cannot relax it.
+//! Edits to the files that enforce it are flagged loudly at approval time.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 
 /// What a tool is capable of doing. More granular capabilities can be added later.
@@ -13,31 +15,69 @@ pub enum Capability {
     Read,
     Write,
     Execute,
+    /// Saving something to the realm's long-term memory.
+    Memory,
 }
 
 impl Capability {
+    pub const ALL: [Capability; 4] = [
+        Capability::Read,
+        Capability::Write,
+        Capability::Execute,
+        Capability::Memory,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Capability::Read => "read",
             Capability::Write => "write",
             Capability::Execute => "execute",
+            Capability::Memory => "memory",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        match Self::ALL.into_iter().find(|c| c.as_str() == s) {
+            Some(c) => Ok(c),
+            None => bail!("unknown capability '{s}' (read, write, execute, memory)"),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Rule {
     Allow,
     Ask,
-    #[allow(dead_code)] // not used by the default v0.1 policy
     Deny,
 }
 
-#[derive(Debug, Clone)]
+impl Rule {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Rule::Allow => "allow",
+            Rule::Ask => "ask",
+            Rule::Deny => "deny",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "allow" => Ok(Rule::Allow),
+            "ask" => Ok(Rule::Ask),
+            "deny" => Ok(Rule::Deny),
+            _ => bail!("unknown rule '{s}' (allow, ask, deny)"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Policy {
     pub read: Rule,
     pub write: Rule,
     pub execute: Rule,
+    pub memory: Rule,
 }
 
 impl Default for Policy {
@@ -46,17 +86,28 @@ impl Default for Policy {
             read: Rule::Allow,
             write: Rule::Ask,
             execute: Rule::Ask,
+            memory: Rule::Ask,
         }
     }
 }
 
 impl Policy {
-    fn rule(&self, capability: Capability) -> Rule {
+    pub fn rule(&self, capability: Capability) -> Rule {
         match capability {
             Capability::Read => self.read,
             Capability::Write => self.write,
             Capability::Execute => self.execute,
+            Capability::Memory => self.memory,
         }
+    }
+
+    pub fn set(&mut self, capability: Capability, rule: Rule) {
+        *match capability {
+            Capability::Read => &mut self.read,
+            Capability::Write => &mut self.write,
+            Capability::Execute => &mut self.execute,
+            Capability::Memory => &mut self.memory,
+        } = rule;
     }
 }
 
@@ -111,10 +162,23 @@ impl PermissionGate {
     }
 }
 
+/// Files that enforce Airth's security boundaries: permissions, realm
+/// isolation, the command sandbox and secret handling.
+const SECURITY_CRITICAL: &[&str] = &[
+    "src/permissions.rs",
+    "src/runtime.rs",
+    "src/sandbox.rs",
+    "src/tools/mod.rs",
+    "src/tools/shell.rs",
+    "src/hub.rs",
+    "src/realm.rs",
+    "src/home.rs",
+    "src/isolation.rs",
+];
+
 /// Paths whose modification would change how permissions are enforced.
 pub fn is_permission_critical(path: &str) -> bool {
-    let p = path.trim_start_matches("./");
-    p == "src/permissions.rs" || p == "src/runtime.rs"
+    SECURITY_CRITICAL.contains(&path.trim_start_matches("./"))
 }
 
 /// Asks on the terminal. Reads answers from stdin.

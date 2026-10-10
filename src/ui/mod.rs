@@ -2,7 +2,7 @@
 //!
 //! Each run started from the UI is driven on its own thread. The UI watches it
 //! through a shared snapshot and answers permission requests through a channel;
-//! the permission policy itself is still the hub's default.
+//! the permission policy itself is the realm's, applied by the hub.
 //!
 //! The server only listens on loopback and every API call must carry a random
 //! per-launch token in the `X-Airth-Token` header. Since a custom header cannot
@@ -12,8 +12,13 @@
 
 use crate::agent::{AgentConfig, Observer};
 use crate::cancel::CancelToken;
+use crate::home::NewRealm;
 use crate::hub::{Hub, RunHooks};
-use crate::permissions::{Answer, Approver, PermissionRequest};
+use crate::isolation::Isolation;
+use crate::owner::Owner;
+use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
+use crate::realm::{PROVIDER_KEYS, Realm};
+use crate::sandbox;
 use crate::state::{State, Status};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -33,8 +38,8 @@ pub struct UiOptions {
     pub port: u16,
     pub open_browser: bool,
     pub max_iterations: u32,
-    /// Why the model is unavailable, if it is (the UI can still browse runs).
-    pub model_error: Option<String>,
+    /// The realm to open first.
+    pub realm: Option<String>,
 }
 
 /// A run driven by this process.
@@ -57,7 +62,12 @@ struct Pending {
     reply: mpsc::Sender<Answer>,
 }
 
+/// Live runs by "<realm>/<run id>".
 type Registry = Arc<Mutex<HashMap<String, Arc<Live>>>>;
+
+fn key(realm: &str, id: &str) -> String {
+    format!("{realm}/{id}")
+}
 
 struct UiObserver(Arc<Live>);
 
@@ -97,6 +107,14 @@ impl Approver for UiApprover {
     }
 }
 
+/// What a background thread does with a run.
+enum Job {
+    /// Drive the agent (a new run or a follow-up).
+    Drive,
+    /// Run the realm's checks on the run's change.
+    Check,
+}
+
 struct App {
     hub: Arc<Hub>,
     registry: Registry,
@@ -104,6 +122,8 @@ struct App {
     port: u16,
     options: UiOptions,
 }
+
+type HttpResponse = Response<std::io::Cursor<Vec<u8>>>;
 
 pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
     let server = Server::http(("127.0.0.1", options.port))
@@ -177,7 +197,7 @@ impl App {
         let _ = request.respond(response);
     }
 
-    fn route(&self, request: &mut Request) -> Result<Response<std::io::Cursor<Vec<u8>>>> {
+    fn route(&self, request: &mut Request) -> Result<HttpResponse> {
         if !self.host_allowed(request) {
             return Ok(json_response(403, json!({"error": "bad host"})));
         }
@@ -207,42 +227,118 @@ impl App {
                 json!({"error": "missing or invalid token"}),
             ));
         }
-        let segments: Vec<&str> = api.split('/').collect();
+        let segments: Vec<String> = api.split('/').map(percent_decode).collect();
+        let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+        let ok = || json_response(200, json!({"ok": true}));
         Ok(match (&method, segments.as_slice()) {
             (Method::Get, ["info"]) => json_response(200, self.info()),
-            (Method::Get, ["runs"]) => json_response(200, self.runs()?),
-            (Method::Get, ["runs", id]) => json_response(200, self.run(id, query)?),
-            (Method::Post, ["runs"]) => {
-                let body = read_json(request)?;
-                let objective = body["objective"].as_str().unwrap_or_default();
-                self.require_model()?;
-                let state = self.hub.create_run(objective)?;
-                let id = state.id.clone();
-                self.spawn(state);
-                json_response(200, json!({"id": id}))
+            (Method::Get, ["owner"]) => json_response(200, json!(self.hub.home().owner()?)),
+            (Method::Put, ["owner"]) => {
+                let owner: Owner =
+                    serde_json::from_value(read_json(request)?).context("invalid profile")?;
+                self.hub.home().save_owner(&owner)?;
+                json_response(200, json!(self.hub.home().owner()?))
             }
-            (Method::Post, ["runs", id, "messages"]) => {
+            (Method::Get, ["realms"]) => json_response(200, self.realms()?),
+            (Method::Post, ["realms"]) => {
                 let body = read_json(request)?;
-                self.require_model()?;
-                if self.registry.lock().unwrap().contains_key(*id) {
-                    return Err(anyhow!("this run is still in progress"));
+                let realm = self.create_realm(&body)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Get, ["realms", r]) => json_response(200, self.realm_detail(&self.realm(r)?)?),
+            (Method::Patch, ["realms", r]) => {
+                let body = read_json(request)?;
+                let realm = self.update_realm(r, &body)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Post, ["realms", r, "memory"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                realm
+                    .memory()
+                    .add(body["text"].as_str().unwrap_or_default(), "owner")?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "memory", id]) => {
+                let realm = self.realm(r)?;
+                if !realm.memory().remove(id)? {
+                    return Err(anyhow!("no such memory"));
                 }
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Post, ["realms", r, "secrets"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                realm.set_secret(
+                    body["key"].as_str().unwrap_or_default().trim(),
+                    body["value"].as_str().unwrap_or_default(),
+                )?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "secrets", k]) => {
+                let realm = self.realm(r)?;
+                if !realm.remove_secret(k)? {
+                    return Err(anyhow!("no such credential"));
+                }
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Get, ["realms", r, "runs"]) => json_response(200, self.runs(&self.realm(r)?)?),
+            (Method::Post, ["realms", r, "runs"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
                 let state = self
                     .hub
-                    .follow_up(id, body["message"].as_str().unwrap_or_default())?;
-                self.spawn(state);
+                    .create_run(&realm, body["objective"].as_str().unwrap_or_default())?;
+                let id = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
                 json_response(200, json!({"id": id}))
             }
-            (Method::Post, ["runs", id, "approval"]) => {
-                let body = read_json(request)?;
-                self.answer(id, &body)?;
-                json_response(200, json!({"ok": true}))
+            (Method::Get, ["realms", r, "runs", id]) => {
+                json_response(200, self.run(&self.realm(r)?, id, query)?)
             }
-            (Method::Post, ["runs", id, "stop"]) => {
-                let live = self.live(id).context("this run is not in progress")?;
+            (Method::Get, ["realms", r, "runs", id, "diff"]) => {
+                let diff = self.hub.diff(&self.realm(r)?, id)?;
+                json_response(200, json!({"diff": truncate_diff(diff)}))
+            }
+            (Method::Post, ["realms", r, "runs", id, "messages"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                self.ensure_idle(r, id)?;
+                let state =
+                    self.hub
+                        .follow_up(&realm, id, body["message"].as_str().unwrap_or_default())?;
+                self.spawn(realm, state, Job::Drive);
+                ok()
+            }
+            (Method::Post, ["realms", r, "runs", id, "approval"]) => {
+                let body = read_json(request)?;
+                self.answer(r, id, &body)?;
+                ok()
+            }
+            (Method::Post, ["realms", r, "runs", id, "stop"]) => {
+                let live = self.live(r, id).context("this run is not in progress")?;
                 live.cancel.cancel();
                 live.bump();
-                json_response(200, json!({"ok": true}))
+                ok()
+            }
+            (Method::Post, ["realms", r, "runs", id, "checks"]) => {
+                let realm = self.realm(r)?;
+                self.ensure_idle(r, id)?;
+                let state = self.hub.load_run(&realm, id)?;
+                self.spawn(realm, state, Job::Check);
+                ok()
+            }
+            (Method::Post, ["realms", r, "runs", id, "adopt"]) => {
+                self.ensure_idle(r, id)?;
+                self.hub.adopt(&self.realm(r)?, id)?;
+                ok()
+            }
+            (Method::Post, ["realms", r, "runs", id, "discard"]) => {
+                self.ensure_idle(r, id)?;
+                self.hub.discard(&self.realm(r)?, id)?;
+                ok()
             }
             _ => json_response(404, json!({"error": "not found"})),
         })
@@ -257,15 +353,19 @@ impl App {
         header(request, "X-Airth-Token").is_some_and(|t| constant_time_eq(&t, &self.token))
     }
 
-    fn require_model(&self) -> Result<()> {
-        match &self.options.model_error {
-            Some(e) => Err(anyhow!("no model available: {e}")),
-            None => Ok(()),
-        }
+    fn realm(&self, name: &str) -> Result<Realm> {
+        self.hub.home().realm(name)
     }
 
-    fn live(&self, id: &str) -> Option<Arc<Live>> {
-        self.registry.lock().unwrap().get(id).cloned()
+    fn live(&self, realm: &str, id: &str) -> Option<Arc<Live>> {
+        self.registry.lock().unwrap().get(&key(realm, id)).cloned()
+    }
+
+    fn ensure_idle(&self, realm: &str, id: &str) -> Result<()> {
+        if self.live(realm, id).is_some() {
+            return Err(anyhow!("this run is still in progress"));
+        }
+        Ok(())
     }
 
     fn info(&self) -> Value {
@@ -283,23 +383,137 @@ impl App {
             .collect();
         json!({
             "version": env!("CARGO_PKG_VERSION"),
-            "model": self.hub.model_name(),
-            "model_error": self.options.model_error,
-            "workspace": self.hub.workspace().root().display().to_string(),
+            "home": self.hub.home().dir().display().to_string(),
+            "sandbox": sandbox::available(),
+            "realm": self.options.realm,
+            "default_realm": self.hub.home().default_realm(),
             "max_iterations": self.options.max_iterations,
             "tools": tools,
         })
     }
 
-    fn runs(&self) -> Result<Value> {
+    fn realms(&self) -> Result<Value> {
+        let registry = self.registry.lock().unwrap();
+        let default = self.hub.home().default_realm();
+        let realms: Vec<Value> = self
+            .hub
+            .home()
+            .realms()?
+            .into_iter()
+            .map(|r| {
+                let prefix = key(r.name(), "");
+                let lives: Vec<&Arc<Live>> = registry
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(&prefix))
+                    .map(|(_, v)| v)
+                    .collect();
+                json!({
+                    "name": r.name(),
+                    "description": r.config.description,
+                    "archived": r.config.archived,
+                    "default": default.as_deref() == Some(r.name()),
+                    "live": lives.len(),
+                    "needs_approval": lives.iter().filter(|l| l.pending.lock().unwrap().is_some()).count(),
+                })
+            })
+            .collect();
+        Ok(json!(realms))
+    }
+
+    fn realm_detail(&self, realm: &Realm) -> Result<Value> {
+        let c = &realm.config;
+        let model = self.hub.model_for(realm);
+        let secrets: Vec<Value> = realm
+            .secrets()?
+            .into_iter()
+            .map(|(k, _)| json!({"key": k, "provider": PROVIDER_KEYS.contains(&k.as_str())}))
+            .collect();
+        Ok(json!({
+            "name": c.name,
+            "description": c.description,
+            "root": realm.root().map(|p| p.display().to_string()).unwrap_or_default(),
+            "own_root": c.root.is_some(),
+            "isolation": c.isolation.as_str(),
+            "policy": c.policy,
+            "checks": c.checks,
+            "share_owner_profile": c.share_owner_profile,
+            "archived": c.archived,
+            "default": self.hub.home().default_realm().as_deref() == Some(realm.name()),
+            "model": model.as_ref().ok().map(|m| m.name()),
+            "model_error": model.err().map(|e| format!("{e:#}")),
+            "memory": realm.memory().list()?,
+            "secrets": secrets,
+        }))
+    }
+
+    fn create_realm(&self, body: &Value) -> Result<Realm> {
+        let root = body["root"]
+            .as_str()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+            .map(expand_home);
+        let isolation = match body["isolation"].as_str() {
+            Some("none") => Some(Isolation::None),
+            Some("worktree") => Some(Isolation::Worktree),
+            _ => None,
+        };
+        let realm = self.hub.home().create_realm(NewRealm {
+            name: body["name"].as_str().unwrap_or_default().trim().to_string(),
+            description: body["description"].as_str().unwrap_or_default().to_string(),
+            root,
+            isolation,
+        })?;
+        if let Some(root) = &realm.config.root {
+            self.hub.import_runs(&realm, root)?;
+        }
+        Ok(realm)
+    }
+
+    fn update_realm(&self, name: &str, body: &Value) -> Result<Realm> {
+        let mut realm = self.realm(name)?;
+        let c = &mut realm.config;
+        if let Some(d) = body["description"].as_str() {
+            c.description = d.trim().to_string();
+        }
+        if let Some(policy) = body["policy"].as_object() {
+            for (cap, rule) in policy {
+                c.policy.set(
+                    Capability::parse(cap)?,
+                    Rule::parse(rule.as_str().unwrap_or_default())?,
+                );
+            }
+        }
+        if let Some(checks) = body["checks"].as_array() {
+            c.checks = checks
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+        }
+        if let Some(share) = body["share_owner_profile"].as_bool() {
+            c.share_owner_profile = share;
+        }
+        if let Some(archived) = body["archived"].as_bool() {
+            c.archived = archived;
+        }
+        realm.save()?;
+        if body["default"].as_bool() == Some(true) {
+            self.hub.home().set_default_realm(name)?;
+        }
+        Ok(realm)
+    }
+
+    fn runs(&self, realm: &Realm) -> Result<Value> {
         let registry = self.registry.lock().unwrap();
         let runs: Vec<Value> = self
             .hub
-            .runs()?
+            .runs(realm)?
             .into_iter()
             .rev()
             .map(|r| {
-                let live = registry.get(&r.id);
+                let live = registry.get(&key(realm.name(), &r.id));
                 let needs_approval = live.is_some_and(|l| l.pending.lock().unwrap().is_some());
                 json!({
                     "id": r.id,
@@ -309,18 +523,21 @@ impl App {
                     "iterations": r.iterations,
                     "updated_at": r.updated_at,
                     "needs_approval": needs_approval,
+                    "change": r.change.map(|c| c.as_str()),
+                    "checks_passed": r.checks_passed,
                 })
             })
             .collect();
         Ok(json!(runs))
     }
 
-    fn run(&self, id: &str, query: &str) -> Result<Value> {
+    fn run(&self, realm: &Realm, id: &str, query: &str) -> Result<Value> {
         let since: Option<u64> = query
             .split('&')
             .find_map(|kv| kv.strip_prefix("since="))
             .and_then(|v| v.parse().ok());
-        if let Some(live) = self.live(id) {
+        let checks_required = !realm.config.checks.is_empty();
+        if let Some(live) = self.live(realm.name(), id) {
             let version = live.version.load(Ordering::SeqCst);
             if since == Some(version) {
                 return Ok(json!({"unchanged": true, "version": version}));
@@ -341,10 +558,11 @@ impl App {
                 "stopping": live.cancel.is_cancelled(),
                 "state": state,
                 "pending": pending,
+                "checks_required": checks_required,
             }));
         }
-        let state = self.hub.load_run(id)?;
-        let live_elsewhere = self.hub.is_live(id);
+        let state = self.hub.load_run(realm, id)?;
+        let live_elsewhere = self.hub.is_live(realm, id);
         Ok(json!({
             "version": 0,
             "live": live_elsewhere,
@@ -352,11 +570,14 @@ impl App {
             "interrupted": state.status == Status::Running && !live_elsewhere,
             "state": state,
             "pending": null,
+            "checks_required": checks_required,
         }))
     }
 
-    fn answer(&self, id: &str, body: &Value) -> Result<()> {
-        let live = self.live(id).context("this run is not in progress")?;
+    fn answer(&self, realm: &str, id: &str, body: &Value) -> Result<()> {
+        let live = self
+            .live(realm, id)
+            .context("this run is not in progress")?;
         let mut pending = live.pending.lock().unwrap();
         let p = pending
             .take_if(|p| Some(p.id) == body["approval_id"].as_u64())
@@ -376,8 +597,8 @@ impl App {
         Ok(())
     }
 
-    fn spawn(&self, state: State) {
-        let id = state.id.clone();
+    fn spawn(&self, realm: Realm, state: State, job: Job) {
+        let k = key(realm.name(), &state.id);
         let live = Arc::new(Live {
             snapshot: Mutex::new(state.clone()),
             pending: Mutex::new(None),
@@ -387,7 +608,7 @@ impl App {
         self.registry
             .lock()
             .unwrap()
-            .insert(id.clone(), live.clone());
+            .insert(k.clone(), live.clone());
         let hub = self.hub.clone();
         let registry = self.registry.clone();
         let max_iterations = self.options.max_iterations;
@@ -395,26 +616,80 @@ impl App {
         std::thread::spawn(move || {
             let mut state = state;
             let mut observer = UiObserver(live.clone());
-            let hooks = RunHooks {
-                approver: Box::new(UiApprover {
-                    live: live.clone(),
-                    next_id: 0,
-                }),
-                observer: &mut observer,
-                cancel: live.cancel.clone(),
-            };
-            if let Err(e) = hub.drive(&mut state, AgentConfig { max_iterations }, hooks)
-                && state.status == Status::Running
-            {
-                state.status = Status::Failed;
-                state.report = Some(format!("{e:#}"));
-                let _ = state.save();
+            match job {
+                Job::Drive => {
+                    let hooks = RunHooks {
+                        approver: Box::new(UiApprover {
+                            live: live.clone(),
+                            next_id: 0,
+                        }),
+                        observer: &mut observer,
+                        cancel: live.cancel.clone(),
+                    };
+                    if let Err(e) =
+                        hub.drive(&realm, &mut state, AgentConfig { max_iterations }, hooks)
+                        && state.status == Status::Running
+                    {
+                        state.status = Status::Failed;
+                        state.report = Some(format!("{e:#}"));
+                        let _ = state.save();
+                    }
+                }
+                Job::Check => match hub.check(&realm, &state.id, &mut observer, &live.cancel) {
+                    Ok(checked) => state = checked,
+                    Err(e) => eprintln!("checks of run {} failed to start: {e:#}", state.id),
+                },
             }
             *live.snapshot.lock().unwrap() = state;
             live.bump();
-            registry.lock().unwrap().remove(&id);
+            registry.lock().unwrap().remove(&k);
         });
     }
+}
+
+/// Keep huge diffs (lockfiles, generated code) from freezing the page.
+fn truncate_diff(diff: String) -> String {
+    const MAX: usize = 400_000;
+    if diff.len() <= MAX {
+        return diff;
+    }
+    let mut cut = MAX;
+    while !diff.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!(
+        "{}\n… diff truncated ({} bytes total); see `airth review`",
+        &diff[..cut],
+        diff.len()
+    )
+}
+
+fn expand_home(path: &str) -> std::path::PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
+        _ => std::path::PathBuf::from(path),
+    }
+}
+
+/// Decode %XX escapes in a path segment.
+fn percent_decode(s: &str) -> String {
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2]))
+        {
+            out.push(hi << 4 | lo);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn header(request: &Request, name: &str) -> Option<String> {
@@ -434,14 +709,14 @@ fn read_json(request: &mut Request) -> Result<Value> {
     serde_json::from_str(&body).context("request body must be JSON")
 }
 
-fn json_response(status: u16, value: Value) -> Response<std::io::Cursor<Vec<u8>>> {
+fn json_response(status: u16, value: Value) -> HttpResponse {
     Response::from_string(value.to_string())
         .with_status_code(status)
         .with_header(content_type("application/json"))
         .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
 }
 
-fn static_response(body: &str, kind: &str) -> Response<std::io::Cursor<Vec<u8>>> {
+fn static_response(body: &str, kind: &str) -> HttpResponse {
     Response::from_string(body)
         .with_header(content_type(kind))
         .with_header(Header::from_bytes("X-Frame-Options", "DENY").unwrap())
@@ -501,5 +776,13 @@ mod tests {
         assert!(constant_time_eq(&a, &a.clone()));
         assert!(!constant_time_eq(&a, &b));
         assert!(!constant_time_eq(&a, ""));
+    }
+
+    #[test]
+    fn decodes_path_segments() {
+        assert_eq!(percent_decode("a%20b"), "a b");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
+        assert_eq!(percent_decode("%é"), "%é");
     }
 }

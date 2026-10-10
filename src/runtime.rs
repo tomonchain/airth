@@ -42,6 +42,8 @@ impl Runtime {
     /// Check permission, execute, and record the outcome as an event.
     pub fn invoke(&mut self, tool_use_id: &str, name: &str, arguments: &Value) -> Event {
         let (result, status) = self.run(name, arguments);
+        // Whatever a tool returned, the model never sees the realm's secrets.
+        let result = self.workspace.redact(&result);
         Event {
             timestamp: Utc::now(),
             action: name.to_string(),

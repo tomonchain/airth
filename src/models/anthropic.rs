@@ -36,7 +36,10 @@ pub struct Anthropic {
 }
 
 impl Anthropic {
-    pub fn from_env() -> Result<Self> {
+    /// Configure from settings looked up by name (environment variables, or a
+    /// realm's secrets falling back to them).
+    pub fn from_settings(get: &dyn Fn(&str) -> Option<String>) -> Result<Self> {
+        let non_empty_env = |key: &str| get(key).filter(|v| !v.trim().is_empty());
         let auth = match (
             non_empty_env("ANTHROPIC_API_KEY"),
             non_empty_env("ANTHROPIC_AUTH_TOKEN"),
@@ -152,10 +155,6 @@ impl Model for Anthropic {
         let resp = self.send(&self.body(request))?;
         decode_response(&resp)
     }
-}
-
-fn non_empty_env(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|v| !v.is_empty())
 }
 
 fn encode_message(msg: &Message) -> Value {
