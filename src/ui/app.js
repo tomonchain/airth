@@ -157,6 +157,7 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/run\/([^/?#]+)/))) return { view: "run", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/settings/))) return { view: "settings", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/objectives/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if (h.startsWith("#/owner")) return { view: "owner" };
   if (h.startsWith("#/inbox")) return { view: "inbox" };
@@ -241,6 +242,7 @@ function renderSidebar() {
   foot.append(
     navLink("#/inbox", h("span", null, "Inbox", unread > 0 && h("span", { class: "count" }, String(unread))), app.route.view === "inbox"),
     app.realm && navLink(`#/r/${enc(app.realm)}/objectives`, "Objectives", app.route.view === "objectives"),
+    app.realm && navLink(`#/r/${enc(app.realm)}/skills`, "Skills", app.route.view === "skills"),
     navLink("#/owner", "Your profile", app.route.view === "owner"),
     app.realm && navLink(`#/r/${enc(app.realm)}/settings`, "Realm settings", app.route.view === "settings"),
     d && h("div", { class: "row", title: d.model_error || d.model || "" }, h("span", { class: "k" }, "model"),
@@ -319,6 +321,7 @@ function renderMain() {
     case "settings": return renderSettings(main);
     case "owner": return renderOwner(main);
     case "objectives": return renderObjectives(main);
+    case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
     case "new-realm": return renderNewRealm(main);
   }
@@ -466,6 +469,7 @@ function renderRun() {
       h("div", { class: "run-meta" },
         h("span", { class: "chip " + (status === "stopping" ? "stopped" : status === "checking" ? "running" : status) }, STATUS_LABEL[status] || status),
         s.origin && h("span", { class: "chip origin", title: s.origin.trigger }, "◷ " + s.origin.objective),
+        s.skill && h("a", { class: "chip origin", href: `#/r/${enc(app.realm)}/skills` }, "⚙ developing " + s.skill),
         h("span", null, `${s.iterations} iteration${s.iterations === 1 ? "" : "s"}`),
         h("span", null, `${s.events.length} tool call${s.events.length === 1 ? "" : "s"}`),
         (s.input_tokens || s.output_tokens) && h("span", { title: `${s.input_tokens} in / ${s.output_tokens} out` }, `${kfmt(s.input_tokens)} in · ${kfmt(s.output_tokens)} out tokens`),
@@ -824,6 +828,7 @@ const CAP_HELP = {
   execute: "Run shell commands",
   memory: "Save facts to this realm's memory",
   network: "Call integrations and websites",
+  skill: "Use skills you installed",
 };
 
 function renderSettings(main) {
@@ -1121,6 +1126,101 @@ async function renderObjectives(main) {
       field("Otherwise", h("div", { class: "inline" }, "wait ", f.wait, " minutes for me, then deny")),
       field("Budget per run", h("div", { class: "inline" }, f.minutes, f.tokens, f.iterations), "Leave empty for the defaults."),
       h("div", { class: "row-end" }, h("button", { class: "btn primary", type: "button", onclick: save }, "Save objective"))));
+}
+
+// ---------- skills ----------
+
+const SKILL_HELP = {
+  proposed: "Proposed by a run. Nothing is built yet.",
+  developing: "Airth is building it in its own folder, with no access to the rest of the realm.",
+  ready: "Built, and every test passed. Review it, then install it to enable it.",
+  failed: "Built, but the evaluation failed.",
+  installed: "Enabled: runs in this realm can use it.",
+  rejected: "You declined it.",
+};
+
+const skillUi = { open: new Set(), files: {}, feedback: {} };
+
+async function renderSkills(main) {
+  const realm = app.realm;
+  page(main, "Skills", "Capabilities Airth builds for itself: small programs with tests that become tools. Runs propose them when they hit a limit; Airth develops each one in isolation and tests it; nothing is enabled until you install it.");
+  const inner = $(".page-inner", main);
+  const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
+  inner.append(listEl);
+  let list;
+  try { list = await api(`${realmPath(realm)}/skills`); } catch (e) { return flash(e.message, true); }
+  if (app.route.view !== "skills" || app.realm !== realm) return;
+  const d = app.realmDetail;
+  const noModel = !!(d && d.model_error);
+
+  const act = async (name, action) => {
+    try { list = await api(`${realmPath(realm)}/skills/${enc(name)}/${action}`, {}); draw(); flash({ install: "Installed", uninstall: "Uninstalled", evaluate: "Evaluated", reject: "Rejected" }[action]); }
+    catch (e) { flash(e.message, true); }
+  };
+  const develop = async (name, feedback) => {
+    try {
+      const r = await api(`${realmPath(realm)}/skills/${enc(name)}/develop`, feedback ? { feedback } : {});
+      go(`#/r/${enc(realm)}/run/${enc(r.id)}`);
+    } catch (e) { flash(e.message, true); }
+  };
+  const toggleFiles = async (name) => {
+    if (skillUi.open.has(name)) { skillUi.open.delete(name); return draw(); }
+    skillUi.open.add(name);
+    try { skillUi.files[name] = await api(`${realmPath(realm)}/skills/${enc(name)}/files`); } catch (e) { flash(e.message, true); }
+    draw();
+  };
+
+  const card = (sk) => {
+    const ev = sk.evaluation;
+    const fb = h("input", { type: "text", placeholder: "What to change (optional)…", value: skillUi.feedback[sk.name] || "", oninput: (e) => (skillUi.feedback[sk.name] = e.target.value) });
+    const failedReport = ev ? [...ev.problems.map((p) => "problem: " + p), ...ev.results.filter((r) => !r.ok).map((r) => `${r.name}: ${r.detail}`)].join("\n") : "";
+    return h("div", { class: "card objective" },
+      h("div", { class: "objective-head" },
+        h("div", { class: "grow" },
+          h("div", null, h("span", { class: "strong mono" }, sk.name), " ", h("span", { class: "chip skill-" + sk.status }, sk.developing_now ? "developing…" : sk.status)),
+          h("div", null, sk.description))),
+      h("div", { class: "muted small" }, SKILL_HELP[sk.status]),
+      sk.reason && h("div", { class: "objective-meta" }, "Why: ", sk.reason),
+      h("div", { class: "objective-meta" },
+        h("span", null, sk.proposed_by === "owner" ? "asked for by you" : "proposed by ", sk.proposed_by !== "owner" && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.proposed_by.replace("run:", ""))}` }, "a run")),
+        sk.dev_run && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.dev_run)}` }, "development run"),
+        sk.installed && h("span", null, "installed " + ago(sk.installed.at))),
+      ev && h("div", { class: "eval" },
+        h("div", { class: ev.problems.length || ev.results.some((r) => !r.ok) ? "warn small strong" : "ok small strong" }, "Evaluation: " + sk.summary + " · " + ago(ev.at)),
+        ev.problems.map((p) => h("div", { class: "eval-row bad" }, "✗ " + p)),
+        ev.results.map((r) => h("div", { class: "eval-row " + (r.ok ? "good" : "bad") }, (r.ok ? "✓ " : "✗ ") + r.name + ` (${(r.duration_ms / 1000).toFixed(1)}s)`,
+          !r.ok && h("pre", { class: "out" }, r.detail)))),
+      skillUi.open.has(sk.name) && h("div", { class: "files" }, (skillUi.files[sk.name] || []).map((f) =>
+        h("details", { class: "tool", open: true }, h("summary", null, h("span", { class: "label" }, f.path)),
+          h("div", { class: "body" }, h("pre", { class: "out" }, f.content == null ? "(binary file)" : f.content))))),
+      ["ready", "failed", "installed"].includes(sk.status) && !sk.developing_now && h("div", { class: "inline-form" }, fb,
+        h("button", { class: "btn", type: "button", disabled: noModel, onclick: () => develop(sk.name, fb.value.trim() || (sk.status === "failed" ? "The evaluation failed:\n" + failedReport + "\nFix it and make every test pass." : "")) }, sk.status === "failed" ? "Ask Airth to fix" : "Ask for changes")),
+      h("div", { class: "row-end" },
+        sk.dev_run || sk.evaluation ? h("button", { class: "btn", type: "button", onclick: () => toggleFiles(sk.name) }, skillUi.open.has(sk.name) ? "Hide files" : "Review files") : null,
+        sk.status === "proposed" && h("button", { class: "btn primary", type: "button", disabled: noModel, onclick: () => develop(sk.name) }, "Develop it"),
+        ["ready", "failed", "installed"].includes(sk.status) && !sk.developing_now && h("button", { class: "btn", type: "button", onclick: () => act(sk.name, "evaluate") }, "Re-run tests"),
+        sk.status === "ready" && h("button", { class: "btn primary", type: "button", onclick: () => act(sk.name, "install") }, "Install"),
+        sk.installed && h("button", { class: "btn", type: "button", onclick: () => act(sk.name, "uninstall") }, "Uninstall"),
+        ["proposed", "ready", "failed"].includes(sk.status) && h("button", { class: "btn", type: "button", onclick: () => act(sk.name, "reject") }, "Reject"),
+        h("button", { class: "btn danger", type: "button", onclick: async () => {
+          if (confirmDelete !== "skill:" + sk.name) { confirmDelete = "skill:" + sk.name; return draw(); }
+          confirmDelete = null;
+          try { list = await api(`${realmPath(realm)}/skills/${enc(sk.name)}`, undefined, "DELETE"); draw(); } catch (e) { flash(e.message, true); }
+        } }, confirmDelete === "skill:" + sk.name ? "Really delete?" : "Delete")));
+  };
+  const draw = () => listEl.replaceChildren(list.length ? h("div", { class: "objectives" }, list.map(card)) : h("div", { class: "card muted small pad" }, "No skills yet. Runs propose them when they need a capability; you can also ask for one below."));
+  draw();
+
+  const name = h("input", { type: "text", placeholder: "name, e.g. ical_events", autocomplete: "off", spellcheck: "false" });
+  const desc = h("textarea", { rows: 3, placeholder: "What it should do: inputs, outputs, edge cases" });
+  inner.append(h("h2", null, "Ask for a skill"),
+    h("div", { class: "card" }, field("Name", name), field("What it does", desc),
+      h("div", { class: "row-end" }, h("button", { class: "btn primary", type: "button", disabled: noModel, onclick: async () => {
+        try {
+          const r = await api(`${realmPath(realm)}/skills`, { name: name.value.trim(), description: desc.value.trim() });
+          go(`#/r/${enc(realm)}/run/${enc(r.id)}`);
+        } catch (e) { flash(e.message, true); }
+      } }, "Develop it"))));
 }
 
 // ---------- inbox ----------

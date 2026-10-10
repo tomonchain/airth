@@ -156,8 +156,8 @@ pub enum ObjectiveCmd {
         /// Run when something on this machine POSTs to its webhook URL
         #[arg(long, group = "trigger")]
         webhook: bool,
-        /// Approve in advance: write, execute, memory, network, or
-        /// network:<integration or host>. Repeatable
+        /// Approve in advance: write, execute, memory, network,
+        /// network:<integration or host>, skill:<name>. Repeatable
         #[arg(long = "allow")]
         allow: Vec<String>,
         /// Minutes a run waits for you on anything else, before it is denied
@@ -372,8 +372,9 @@ fn parse_grant(realm: &crate::realm::Realm, text: &str) -> Result<crate::permiss
     let capability = Capability::parse(cap.trim())?;
     let scope = match scope {
         None => None,
+        Some(s) if capability == Capability::Skill => Some(s.to_string()),
         Some(s) if capability != Capability::Network => {
-            bail!("only network approvals take a scope ('{s}')")
+            bail!("only network and skill approvals take a scope ('{s}')")
         }
         Some(s) if realm.config.integrations.iter().any(|i| i.name == s) => {
             Some(format!("integration {s}"))
@@ -469,6 +470,179 @@ pub fn summary(ctx: &Ctx, hours: i64) -> Result<bool> {
         }
     }
     Ok(true)
+}
+
+#[derive(Subcommand)]
+pub enum SkillCmd {
+    /// The realm's skills: proposed, in development, ready, installed
+    List,
+    /// A skill's details, evaluation and files (--source prints them)
+    Show {
+        name: String,
+        #[arg(long)]
+        source: bool,
+    },
+    /// Have Airth develop (or rework) a skill, in this terminal
+    Develop {
+        name: String,
+        /// What it should do, for a skill nobody proposed yet
+        #[arg(long)]
+        description: Option<String>,
+        /// What to change, for a skill already developed (e.g. a failing test)
+        #[arg(long)]
+        feedback: Option<String>,
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Run a skill's evaluation again
+    Evaluate { name: String },
+    /// Enable a skill for the realm's runs (after reviewing it)
+    Install {
+        name: String,
+        /// Don't ask for confirmation
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Disable an installed skill (its draft is kept)
+    Uninstall { name: String },
+    /// Decline a proposed or developed skill
+    Reject { name: String },
+    /// Delete a skill: record, draft and installed copy
+    Rm { name: String },
+}
+
+pub fn skill(ctx: &Ctx, command: SkillCmd) -> Result<bool> {
+    use crate::skill::SkillStatus;
+    let realm = ctx.realm()?;
+    let store = realm.skills();
+    match command {
+        SkillCmd::List => {
+            let list = store.list()?;
+            if list.is_empty() {
+                eprintln!(
+                    "realm {} has no skills yet (runs propose them; or: airth skill develop <name> --description ...)",
+                    realm.name()
+                );
+            }
+            for r in list {
+                let eval = r
+                    .evaluation
+                    .as_ref()
+                    .map(|e| e.describe())
+                    .unwrap_or_default();
+                println!(
+                    "{:<20} {:<10} {:<22} {}",
+                    r.name,
+                    r.status.as_str(),
+                    eval,
+                    r.description.lines().next().unwrap_or("")
+                );
+            }
+        }
+        SkillCmd::Show { name, source } => show_skill(&realm, &name, source)?,
+        SkillCmd::Develop {
+            name,
+            description,
+            feedback,
+            verbose,
+        } => {
+            return crate::develop_skill(
+                ctx,
+                &realm,
+                &name,
+                description.as_deref(),
+                feedback.as_deref(),
+                verbose,
+            );
+        }
+        SkillCmd::Evaluate { name } => {
+            let r = ctx.hub().evaluate_skill(&realm, &name)?;
+            print!("{}", r.evaluation.map(|e| e.report()).unwrap_or_default());
+        }
+        SkillCmd::Install { name, yes } => {
+            store.get(&name)?;
+            if !yes {
+                show_skill(&realm, &name, false)?;
+                eprint!(
+                    "\nInstall {name}? Runs in realm {} will be able to use it (under the realm's skill rule: {}). Review its files first with --source. [y/N] ",
+                    realm.name(),
+                    realm.config.policy.skill.as_str()
+                );
+                std::io::stderr().flush()?;
+                let mut line = String::new();
+                std::io::stdin().lock().read_line(&mut line)?;
+                if !matches!(line.trim(), "y" | "yes") {
+                    eprintln!("not installed");
+                    return Ok(false);
+                }
+            }
+            store.install(&name)?;
+            eprintln!(
+                "\x1b[32m✓\x1b[0m installed {name}: runs in realm {} can use it",
+                realm.name()
+            );
+        }
+        SkillCmd::Uninstall { name } => {
+            store.uninstall(&name)?;
+            eprintln!("uninstalled {name} (its draft is kept)");
+        }
+        SkillCmd::Reject { name } => {
+            store.update(&name, |r| r.status = SkillStatus::Rejected)?;
+            eprintln!("rejected {name}");
+        }
+        SkillCmd::Rm { name } => {
+            if !store.remove(&name)? {
+                bail!("no skill '{name}'");
+            }
+            eprintln!("removed {name}");
+        }
+    }
+    Ok(true)
+}
+
+fn show_skill(realm: &crate::realm::Realm, name: &str, source: bool) -> Result<()> {
+    let store = realm.skills();
+    let r = store.get(name)?;
+    println!("skill        {}", r.name);
+    println!("status       {}", r.status.as_str());
+    println!("does         {}", r.description);
+    if !r.reason.is_empty() {
+        println!("why          {}", r.reason);
+    }
+    println!("proposed by  {}", r.proposed_by.replace("run:", "run "));
+    if let Some(run) = &r.dev_run {
+        println!("developed in run {run}");
+    }
+    if let Some(i) = &r.installed {
+        println!(
+            "installed    {}",
+            i.at.with_timezone(&chrono::Local).format("%a %d %b %H:%M")
+        );
+    }
+    if let Some(e) = &r.evaluation {
+        print!("{}", e.report());
+    }
+    let draft = store.draft_dir(name);
+    if let Ok(files) = crate::skill::list_files(&draft) {
+        println!(
+            "files        {}",
+            files
+                .iter()
+                .map(|f| f.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        if source {
+            for f in files {
+                println!("\n\x1b[1m── {} ──\x1b[0m", f.display());
+                match std::fs::read_to_string(draft.join(&f)) {
+                    Ok(text) => println!("{text}"),
+                    Err(_) => println!("(binary)"),
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {

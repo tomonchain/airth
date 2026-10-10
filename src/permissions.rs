@@ -20,6 +20,8 @@ pub enum Capability {
     Memory,
     /// Sending requests to other machines (integrations, web APIs).
     Network,
+    /// Using a skill the owner installed (scoped to that skill).
+    Skill,
     /// Bookkeeping inside the run itself (its plan). Touches nothing outside
     /// the run, so it is always allowed and not part of a policy.
     Internal,
@@ -27,12 +29,13 @@ pub enum Capability {
 
 impl Capability {
     /// The capabilities a realm's policy governs.
-    pub const ALL: [Capability; 5] = [
+    pub const ALL: [Capability; 6] = [
         Capability::Read,
         Capability::Write,
         Capability::Execute,
         Capability::Memory,
         Capability::Network,
+        Capability::Skill,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -42,6 +45,7 @@ impl Capability {
             Capability::Execute => "execute",
             Capability::Memory => "memory",
             Capability::Network => "network",
+            Capability::Skill => "skill",
             Capability::Internal => "internal",
         }
     }
@@ -49,7 +53,9 @@ impl Capability {
     pub fn parse(s: &str) -> Result<Self> {
         match Self::ALL.into_iter().find(|c| c.as_str() == s) {
             Some(c) => Ok(c),
-            None => bail!("unknown capability '{s}' (read, write, execute, memory, network)"),
+            None => {
+                bail!("unknown capability '{s}' (read, write, execute, memory, network, skill)")
+            }
         }
     }
 }
@@ -89,6 +95,7 @@ pub struct Policy {
     pub execute: Rule,
     pub memory: Rule,
     pub network: Rule,
+    pub skill: Rule,
 }
 
 impl Default for Policy {
@@ -99,6 +106,7 @@ impl Default for Policy {
             execute: Rule::Ask,
             memory: Rule::Ask,
             network: Rule::Ask,
+            skill: Rule::Ask,
         }
     }
 }
@@ -111,6 +119,7 @@ impl Policy {
             Capability::Execute => self.execute,
             Capability::Memory => self.memory,
             Capability::Network => self.network,
+            Capability::Skill => self.skill,
             Capability::Internal => Rule::Allow,
         }
     }
@@ -122,6 +131,7 @@ impl Policy {
             Capability::Execute => &mut self.execute,
             Capability::Memory => &mut self.memory,
             Capability::Network => &mut self.network,
+            Capability::Skill => &mut self.skill,
             Capability::Internal => return,
         } = rule;
     }
@@ -259,6 +269,8 @@ const SECURITY_CRITICAL: &[&str] = &[
     "src/isolation.rs",
     "src/integration.rs",
     "src/tools/http.rs",
+    "src/skill.rs",
+    "src/tools/skill.rs",
 ];
 
 /// Paths whose modification would change how permissions are enforced.

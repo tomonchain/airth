@@ -15,7 +15,7 @@ cargo run -- run "Identify and implement one small improvement to Airth."
 A realm is an isolated area of your life: personal, a job, a company, a side project. Each realm has its own:
 
 - **folder**: a directory you choose (`--root`), or a private one in Airth's home;
-- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`), each `allow`, `ask` or `deny`;
+- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`), each `allow`, `ask` or `deny`;
 - **memory**: facts Airth keeps between runs, each with where it came from;
 - **credentials**: given to that realm's commands as environment variables, never shown to the model;
 - **integrations**: services its runs may call, with credentials bound to them (see below);
@@ -85,6 +85,24 @@ airth inbox        # new notifications
 airth summary      # the last 24 h across realms: what ran, what waits for review, what's next
 ```
 
+## Skills: Airth extends itself
+
+When a run needs a capability Airth lacks, it can **propose a skill**: a small program with tests that would become a new tool. You decide what happens next:
+
+1. **Develop:** Airth builds it in the skill's own folder, which cannot reach the rest of the realm or its credentials.
+2. **Evaluate:** the runtime runs the skill's tests in the sandbox, and you get a notification with the result.
+3. **Install:** you review the files and the test results, then install it. Only exactly the files that passed can be installed, and from then on runs in that realm can use it as a tool, under the realm's `skill` rule.
+
+```bash
+airth skill list
+airth skill develop word_count               # a proposed skill (or --description "..." for a new one)
+airth skill show word_count --source         # review it
+airth skill install word_count
+airth skill develop word_count --feedback "Also count lines"   # rework it, then install again
+```
+
+The app's **Skills** page does the same: develop, review files and test results, ask for changes, install, uninstall. `airth tools` lists every tool a run has, installed skills included.
+
 ## Integrations
 
 An integration is a service a realm's runs may call over HTTP, with the credentials you bind to it:
@@ -127,6 +145,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - approve or deny each step that needs it, with an optional reason the agent sees;
 - follow each run's plan, and resume runs that did not finish;
 - set up objectives, and read your inbox and the daily summary;
+- develop, review and install skills;
 - review, adopt or discard changes;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
@@ -140,7 +159,7 @@ airth send last "Now add docs"    # continue a run (by id or `last`)
 airth resume last                 # resume a run that was interrupted, stopped or failed
 airth runs                        # the realm's runs: status, plan progress, checks, objective
 airth serve                       # the app and the scheduler, without opening a browser
-airth skills                      # the tools, and this realm's rule for each
+airth tools                       # the tools (installed skills included), and this realm's rule for each
 ```
 
 Approvals happen in the terminal: answer `y`, `a` to allow it for the rest of the run, or type a reason to deny, and the agent sees that reason. Ctrl-C stops a run cleanly; press it twice to quit at once. A run whose process was killed shows as `interrupted` and can still be continued.
@@ -176,6 +195,7 @@ Desktop notifications are on by default on macOS; `airth inbox --desktop off` tu
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     objectives.json            objectives: triggers, approvals, budgets, last run
+    skills/                    skills.json, drafts/<skill>/, installed/<skill>/
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
     worktrees/<id>/            isolated working copies
@@ -187,7 +207,7 @@ Desktop notifications are on by default on macOS; `airth inbox --desktop off` tu
 ```text
 src/
   main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary
+  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary, skill
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
@@ -197,6 +217,7 @@ src/
   scheduler.rs    which objectives are due; cross-realm summaries
   notify.rs       the owner's inbox and desktop notifications
   service.rs      the login service (launchd)
+  skill.rs        skills: manifests, evaluation, installation
   integration.rs  integrations: base URLs with credentials bound to them
   isolation.rs    git worktrees per run: create, commit, diff, adopt, discard
   sandbox.rs      the command sandbox (macOS sandbox-exec)
@@ -208,7 +229,7 @@ src/
   runtime.rs      the single path from a tool call to execution (permission check, redaction, event)
   permissions.rs  capabilities, rules, policy, run grants, terminal approval
   tools/          read_file, list_directory, write_file, edit_file, execute_command, http_request,
-                  update_plan, remember; workspace access rules
+                  update_plan, remember, propose_skill, test_skill, installed skills; workspace access rules
   models/         provider-neutral Model trait + Anthropic provider
   state.rs        persisted run state, plans
 ```

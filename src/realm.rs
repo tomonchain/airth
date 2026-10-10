@@ -6,6 +6,7 @@
 //!   realm.json    settings: root, policy, isolation, checks
 //!   memory.json   long-term memory (see memory.rs)
 //!   objectives.json  persistent objectives and their triggers (see objective.rs)
+//!   skills/       skills: proposals, drafts, installed copies (see skill.rs)
 //!   secrets.env   credentials, KEY=VALUE, readable only by the owner
 //!   runs/         run states and locks
 //!   worktrees/    isolated working copies of runs
@@ -141,6 +142,10 @@ impl Realm {
 
     pub fn memory(&self) -> MemoryStore {
         MemoryStore::new(self.dir.join("memory.json"))
+    }
+
+    pub fn skills(&self) -> crate::skill::SkillStore {
+        crate::skill::SkillStore::new(self.dir.join("skills"))
     }
 
     pub fn objectives(&self) -> ObjectiveStore {

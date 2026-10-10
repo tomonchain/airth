@@ -121,6 +121,18 @@ pub fn run_shell(
     cancel: &CancelToken,
     timeout: Duration,
 ) -> Result<ShellOutput> {
+    run_shell_with_input(command, ws, cancel, timeout, None)
+}
+
+/// `run_shell`, with `input` written to the command's stdin (installed skills
+/// read their arguments there).
+pub fn run_shell_with_input(
+    command: &str,
+    ws: &Workspace,
+    cancel: &CancelToken,
+    timeout: Duration,
+    input: Option<&str>,
+) -> Result<ShellOutput> {
     let mut cmd = if ws.sandboxed() && sandbox::available() {
         let mut c = Command::new(sandbox::program());
         c.arg("-p").arg(sandbox::profile(ws.rules())).arg("sh");
@@ -138,7 +150,11 @@ pub fn run_shell(
                 .filter_map(|k| Some((k, std::env::var_os(k)?))),
         )
         .envs(ws.env().iter().map(|(k, v)| (k, v)))
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(unix)]
@@ -149,6 +165,14 @@ pub fn run_shell(
         cmd.process_group(0);
     }
     let mut child = cmd.spawn().context("failed to spawn sh")?;
+    if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
+        let text = text.to_string();
+        // On a thread: a command that does not read its input must not block us.
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = stdin.write_all(text.as_bytes());
+        });
+    }
 
     // Drain pipes on threads so a chatty command cannot deadlock on a full pipe.
     let mut stdout = child.stdout.take().expect("piped stdout");

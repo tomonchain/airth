@@ -23,6 +23,7 @@ use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
 use crate::realm::{PROVIDER_KEYS, Realm};
 use crate::sandbox;
 use crate::scheduler;
+use crate::skill::SkillStatus;
 use crate::state::{State, Status};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -509,6 +510,93 @@ impl App {
                 let since = chrono::Utc::now() - chrono::Duration::hours(hours.clamp(1, 24 * 90));
                 json_response(200, json!(scheduler::summary(&self.hub, since)?))
             }
+            (Method::Get, ["realms", r, "skills"]) => {
+                json_response(200, self.skills(&self.realm(r)?)?)
+            }
+            (Method::Post, ["realms", r, "skills"]) => {
+                // The owner asks for a new skill: develop it right away.
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let name = body["name"].as_str().unwrap_or_default().trim();
+                if realm.skills().get(name).is_ok() {
+                    return Err(anyhow!("a skill named {name} already exists"));
+                }
+                let description = body["description"].as_str().unwrap_or_default().trim();
+                if description.is_empty() {
+                    return Err(anyhow!("describe what the skill should do"));
+                }
+                let state = self.hub.develop_skill(&realm, name, Some(description))?;
+                let run = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": run}))
+            }
+            (Method::Post, ["realms", r, "skills", name, "develop"]) => {
+                let body = read_json(request).unwrap_or(json!({}));
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let record = realm.skills().get(name)?;
+                let feedback = body["feedback"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|f| !f.is_empty());
+                // Rework continues the development run, which knows the skill.
+                let state = match (&record.dev_run, feedback) {
+                    (Some(run), Some(feedback)) => {
+                        self.ensure_idle(r, run)?;
+                        let state = self.hub.follow_up(&realm, run, feedback)?;
+                        realm
+                            .skills()
+                            .update(name, |s| s.status = SkillStatus::Developing)?;
+                        state
+                    }
+                    _ => self.hub.develop_skill(&realm, name, None)?,
+                };
+                let run = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": run}))
+            }
+            (Method::Get, ["realms", r, "skills", name, "files"]) => {
+                let realm = self.realm(r)?;
+                realm.skills().get(name)?;
+                let dir = realm.skills().draft_dir(name);
+                let files: Vec<Value> = crate::skill::list_files(&dir)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|f| {
+                        let content = std::fs::read_to_string(dir.join(&f)).ok();
+                        json!({"path": f.display().to_string(), "content": content})
+                    })
+                    .collect();
+                json_response(200, json!(files))
+            }
+            (Method::Post, ["realms", r, "skills", name, action]) => {
+                let realm = self.realm(r)?;
+                let store = realm.skills();
+                match *action {
+                    "evaluate" => {
+                        self.hub.evaluate_skill(&realm, name)?;
+                    }
+                    "install" => {
+                        store.install(name)?;
+                    }
+                    "uninstall" => {
+                        store.uninstall(name)?;
+                    }
+                    "reject" => {
+                        store.update(name, |s| s.status = SkillStatus::Rejected)?;
+                    }
+                    _ => return Err(anyhow!("unknown action")),
+                }
+                json_response(200, self.skills(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "skills", name]) => {
+                let realm = self.realm(r)?;
+                if !realm.skills().remove(name)? {
+                    return Err(anyhow!("no such skill"));
+                }
+                json_response(200, self.skills(&realm)?)
+            }
             (Method::Get, ["realms", r, "objectives"]) => {
                 json_response(200, self.objectives(&self.realm(r)?)?)
             }
@@ -889,6 +977,25 @@ impl App {
 
     fn spawn(&self, realm: Realm, state: State, job: Job) {
         self.runner.spawn(realm, state, job);
+    }
+
+    fn skills(&self, realm: &Realm) -> Result<Value> {
+        let list: Vec<Value> = realm
+            .skills()
+            .list()?
+            .into_iter()
+            .map(|r| {
+                let developing = r.dev_run.as_deref().is_some_and(|run| {
+                    self.live(realm.name(), run).is_some() || self.hub.is_live(realm, run)
+                });
+                let mut v = json!(r);
+                v["developing_now"] = json!(developing);
+                v["passed"] = json!(r.evaluation.as_ref().is_some_and(|e| e.passed()));
+                v["summary"] = json!(r.evaluation.as_ref().map(|e| e.describe()));
+                v
+            })
+            .collect();
+        Ok(json!(list))
     }
 
     fn objectives(&self, realm: &Realm) -> Result<Value> {

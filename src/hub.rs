@@ -19,6 +19,7 @@ use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
 use crate::realm::{PROVIDER_KEYS, Realm};
 use crate::runtime::Runtime;
+use crate::skill::{self, SkillRecord, SkillStatus, SkillStore};
 use crate::state::{Origin, State, Status, render_plan};
 use crate::tools::{self, Access, PlanHandle, RealmTools, Workspace};
 use anyhow::{Context, Result, bail};
@@ -129,6 +130,10 @@ impl Hub {
             source: String::new(),
             plan: PlanHandle::default(),
             integrations: Vec::new(),
+            skills: SkillStore::new("/nonexistent"),
+            inbox: self.home.inbox(),
+            realm: String::new(),
+            developing: None,
         })
         .iter()
         .map(|t| {
@@ -250,6 +255,17 @@ impl Hub {
                 source: format!("run:{}", state.id),
                 plan: plan.clone(),
                 integrations: realm.config.integrations.clone(),
+                skills: realm.skills(),
+                inbox: self.home.inbox(),
+                realm: realm.name().to_string(),
+                developing: match &state.skill {
+                    Some(name) => Some((
+                        name.clone(),
+                        self.skill_scratch(realm, &state.id),
+                        self.denied_to_skills(realm)?,
+                    )),
+                    None => None,
+                },
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),
@@ -289,6 +305,14 @@ impl Hub {
             && !realm.config.checks.is_empty();
         if wants_checks && !hooks.cancel.is_cancelled() {
             self.run_checks(realm, state, &workspace, observer, &hooks.cancel)?;
+        }
+        if state.skill.is_some()
+            && let Err(e) = self.skill_run_ended(realm, state, &hooks.cancel)
+        {
+            eprintln!(
+                "warning: could not evaluate skill of run {}: {e:#}",
+                state.id
+            );
         }
         if state.origin.is_some()
             && let Err(e) = self.objective_run_ended(realm, state)
@@ -564,19 +588,30 @@ impl Hub {
     /// the owner's checkout, and write only its worktree and the git data it
     /// needs.
     pub fn workspace_for(&self, realm: &Realm, state: &State) -> Result<Workspace> {
+        if let Some(name) = &state.skill {
+            // A skill is built in its own folder, with nothing else of the
+            // realm in reach and no credentials.
+            let draft = realm.skills().draft_dir(name);
+            std::fs::create_dir_all(&draft)?;
+            let mut ws = Workspace::new(&draft)?;
+            for denied in self.denied_to_skills(realm)? {
+                ws = ws.with_rule(denied, Access::None);
+            }
+            return Ok(ws
+                .with_secrets(Vec::new(), self.redactions(realm)?)
+                .with_sandbox(true));
+        }
         let root = match &state.change {
             Some(c) if c.status == ChangeStatus::Open => c.path.clone(),
             Some(c) => bail!("this run's change was {}", c.status.as_str()),
             None => realm.root()?,
         };
-        let mut ws = Workspace::new(&root)?.with_rule(self.home.dir(), Access::None);
-        for other in self.home.realms()? {
-            if other.name() != realm.name()
-                && let Some(other_root) = &other.config.root
-            {
-                ws = ws.with_rule(other_root, Access::None);
-            }
+        let mut ws = Workspace::new(&root)?;
+        for denied in self.denied_to(realm)? {
+            ws = ws.with_rule(denied, Access::None);
         }
+        // Installed skills run from the home: readable, never writable.
+        ws = ws.with_rule(realm.skills().installed_root(), Access::Read);
         let mut env = realm.command_env()?;
         if let Some(change) = &state.change {
             ws = ws.with_rule(&change.repo, Access::Read);
@@ -593,6 +628,36 @@ impl Hub {
                 env.push(("CARGO_TARGET_DIR".into(), target.display().to_string()));
             }
         }
+        Ok(ws
+            .with_secrets(env, self.redactions(realm)?)
+            .with_sandbox(true))
+    }
+
+    /// What no run of `realm` may reach: Airth's home and other realms' folders.
+    fn denied_to(&self, realm: &Realm) -> Result<Vec<PathBuf>> {
+        let mut out = vec![self.home.dir().to_path_buf()];
+        for other in self.home.realms()? {
+            if other.name() != realm.name()
+                && let Some(root) = &other.config.root
+            {
+                out.push(root.clone());
+            }
+        }
+        Ok(out)
+    }
+
+    /// What a skill being developed or evaluated may not reach: the above,
+    /// and its own realm's folder too.
+    fn denied_to_skills(&self, realm: &Realm) -> Result<Vec<PathBuf>> {
+        let mut out = self.denied_to(realm)?;
+        if let Some(root) = &realm.config.root {
+            out.push(root.clone());
+        }
+        Ok(out)
+    }
+
+    /// Credential values to hide from the model, with their names.
+    fn redactions(&self, realm: &Realm) -> Result<Vec<(String, String)>> {
         // Provider settings like the model name are not secret; keys are.
         let not_secret = |k: &str| PROVIDER_KEYS.contains(&k) && !CREDENTIAL_KEYS.contains(&k);
         let mut redact: Vec<(String, String)> = realm
@@ -611,7 +676,138 @@ impl Hub {
                 .into_iter()
                 .filter(|(k, _)| CREDENTIAL_KEYS.contains(&k.as_str())),
         );
-        Ok(ws.with_secrets(env, redact).with_sandbox(true))
+        Ok(redact)
+    }
+
+    fn skill_scratch(&self, realm: &Realm, run: &str) -> PathBuf {
+        realm.cache_dir().join("skill-tests").join(run)
+    }
+
+    /// Start developing a skill: a run whose workspace is the skill's draft
+    /// folder. The skill is the one a run proposed, or a new one the owner
+    /// describes (`description`). Saved, not started.
+    pub fn develop_skill(
+        &self,
+        realm: &Realm,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<State> {
+        if realm.config.archived {
+            bail!("realm '{}' is archived", realm.name());
+        }
+        let store = realm.skills();
+        let record = match (store.get(name), description) {
+            (Ok(record), _) => record,
+            (Err(_), Some(description)) => {
+                store
+                    .propose(SkillRecord {
+                        name: name.to_string(),
+                        status: SkillStatus::Proposed,
+                        description: description.trim().to_string(),
+                        reason: String::new(),
+                        spec: String::new(),
+                        proposed_by: "owner".into(),
+                        created_at: Utc::now(),
+                        dev_run: None,
+                        evaluation: None,
+                        installed: None,
+                    })?
+                    .0
+            }
+            (Err(e), None) => return Err(e),
+        };
+        if let Some(run) = &record.dev_run
+            && self.is_live(realm, run)
+        {
+            bail!("skill '{name}' is already being developed (run {run})");
+        }
+        let brief = skill::development_brief(&record);
+        let mut state = State::new(&brief, Some(&realm.runs_dir()));
+        state.objective = format!("Develop the skill {name}");
+        state.realm = realm.name().to_string();
+        state.skill = Some(name.to_string());
+        state.messages.push(Message::user_text(brief));
+        state.save()?;
+        let run = state.id.clone();
+        store.update(name, |r| {
+            r.status = SkillStatus::Developing;
+            r.dev_run = Some(run);
+        })?;
+        Ok(state)
+    }
+
+    /// Evaluate the skill a development run built, and tell the owner.
+    fn skill_run_ended(&self, realm: &Realm, state: &State, cancel: &CancelToken) -> Result<()> {
+        let Some(name) = &state.skill else {
+            return Ok(());
+        };
+        let store = realm.skills();
+        let draft = store.draft_dir(name);
+        let scratch = self.skill_scratch(realm, &state.id);
+        let eval = skill::evaluate(
+            &draft,
+            name,
+            &scratch,
+            &self.denied_to_skills(realm)?,
+            cancel,
+        )?;
+        let _ = std::fs::remove_dir_all(&scratch);
+        let passed = eval.passed();
+        let summary = eval.describe();
+        store.update(name, |r| {
+            r.status = if passed {
+                SkillStatus::Ready
+            } else {
+                SkillStatus::Failed
+            };
+            r.evaluation = Some(eval);
+        })?;
+        let (kind, title) = if passed {
+            (
+                Kind::Review,
+                format!("Skill {name} is ready for your review ({summary})"),
+            )
+        } else {
+            (
+                Kind::Failed,
+                format!("Skill {name} failed its evaluation ({summary})"),
+            )
+        };
+        self.home.inbox().push(
+            kind,
+            realm.name(),
+            Some(&state.id),
+            &title,
+            state.report.as_deref().unwrap_or_default(),
+        )?;
+        Ok(())
+    }
+
+    /// Evaluate a skill's draft again (after the owner or a run changed it).
+    pub fn evaluate_skill(&self, realm: &Realm, name: &str) -> Result<SkillRecord> {
+        let store = realm.skills();
+        store.get(name)?;
+        let scratch = realm
+            .cache_dir()
+            .join("skill-tests")
+            .join(format!("owner-{name}"));
+        let eval = skill::evaluate(
+            &store.draft_dir(name),
+            name,
+            &scratch,
+            &self.denied_to_skills(realm)?,
+            &CancelToken::default(),
+        )?;
+        let _ = std::fs::remove_dir_all(&scratch);
+        store.update(name, |r| {
+            let installed = r.installed.as_ref().is_some_and(|i| i.hash == eval.hash);
+            r.status = match (eval.passed(), installed) {
+                (true, true) => SkillStatus::Installed,
+                (true, false) => SkillStatus::Ready,
+                (false, _) => SkillStatus::Failed,
+            };
+            r.evaluation = Some(eval);
+        })
     }
 
     fn briefing(&self, realm: &Realm, state: &State, ws: &Workspace) -> Result<Briefing> {
@@ -1798,5 +1994,207 @@ mod tests {
                 .as_deref(),
             Some("stopped")
         );
+    }
+
+    /// v0.5 acceptance: Airth identifies a missing capability, implements a
+    /// solution, tests it, and requests approval before enabling it.
+    #[test]
+    fn missing_capability_becomes_a_tested_skill_enabled_only_by_the_owner() {
+        let f = fixture();
+        std::fs::write(f.root.path().join("secret-plan.txt"), "realm data").unwrap();
+        std::fs::write(f.root.path().join("notes.txt"), "alpha beta gamma delta").unwrap();
+
+        // 1. A run hits the limitation and proposes a skill.
+        let (hub, _, systems) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "1",
+                    "propose_skill",
+                    json!({"name": "word_count", "description": "Count the words in a text file of the workspace.",
+                           "reason": "Counting words with shell one-liners is error-prone.",
+                           "spec": "Input {path}; prints '<n> words'; fails on a missing file."}),
+                ),
+                done("Proposed word_count."),
+            ],
+        );
+        hub.dispatch(
+            &f.realm,
+            "How many words are in notes.txt?",
+            config(5),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+        assert!(systems.lock().unwrap()[0].contains("propose_skill"));
+        let skills = f.realm.skills();
+        let record = skills.get("word_count").unwrap();
+        assert_eq!(record.status, SkillStatus::Proposed);
+        assert!(record.proposed_by.starts_with("run:"));
+        assert!(
+            f.home.inbox().list().unwrap()[0]
+                .title
+                .contains("proposes a new skill")
+        );
+
+        // 2. A development run builds it in isolation and tests it.
+        let sample = tempfile::tempdir().unwrap();
+        crate::skill::tests::write_word_count(sample.path());
+        let file = |n: &str| std::fs::read_to_string(sample.path().join(n)).unwrap();
+        let (hub, _, _) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "1",
+                    "read_file",
+                    json!({"path": f.root.path().join("secret-plan.txt")}),
+                ),
+                call(
+                    "2",
+                    "write_file",
+                    json!({"path": "skill.json", "content": file("skill.json")}),
+                ),
+                call(
+                    "3",
+                    "write_file",
+                    json!({"path": "main.py", "content": file("main.py")}),
+                ),
+                call(
+                    "4",
+                    "write_file",
+                    json!({"path": "tests.json", "content": "[{\"name\": \"counts\", \"input\": {\"path\": \"a.txt\"}, \"files\": {\"a.txt\": \"one two\"}, \"expect\": {\"contains\": [\"3 words\"]}}]"}),
+                ),
+                call("5", "test_skill", json!({})),
+                call(
+                    "6",
+                    "write_file",
+                    json!({"path": "tests.json", "content": file("tests.json")}),
+                ),
+                call("7", "test_skill", json!({})),
+                done("word_count is built and all tests pass."),
+            ],
+        );
+        let mut dev = hub.develop_skill(&f.realm, "word_count", None).unwrap();
+        assert!(
+            dev.messages[0]
+                .content
+                .iter()
+                .any(|b| matches!(b, ContentBlock::Text { text } if text.contains("tests.json")))
+        );
+        hub.drive(&f.realm, &mut dev, config(20), hooks(&mut NoObserver, true))
+            .unwrap();
+        assert_eq!(dev.status, Status::Completed);
+        assert!(
+            dev.events[0].status != crate::state::EventStatus::Ok,
+            "the development run cannot read the realm's files: {}",
+            dev.events[0].result
+        );
+        assert!(
+            dev.events[4].result.contains("0/1 tests passed"),
+            "{}",
+            dev.events[4].result
+        );
+        assert!(
+            dev.events[6].result.contains("2/2 tests passed"),
+            "{}",
+            dev.events[6].result
+        );
+        let record = skills.get("word_count").unwrap();
+        assert_eq!(record.status, SkillStatus::Ready);
+        assert!(record.evaluation.as_ref().unwrap().passed());
+        assert!(
+            f.home
+                .inbox()
+                .list()
+                .unwrap()
+                .last()
+                .unwrap()
+                .title
+                .contains("ready for your review")
+        );
+
+        // 3. Not enabled until the owner installs it.
+        assert!(skills.enabled().is_empty());
+        assert!(!hub.skills().iter().any(|s| s.name == "word_count"));
+        skills.install("word_count").unwrap();
+
+        // 4. Runs now have it, under the realm's skill rule.
+        let (hub, _, _) = make_hub(
+            &f.home,
+            vec![
+                call("1", "word_count", json!({"path": "notes.txt"})),
+                done("notes.txt has 4 words."),
+            ],
+        );
+        let state = hub
+            .dispatch(
+                &f.realm,
+                "How many words are in notes.txt?",
+                config(5),
+                hooks(&mut NoObserver, true),
+            )
+            .unwrap();
+        assert_eq!(state.status, Status::Completed);
+        assert_eq!(
+            state.events[0].result.trim(),
+            "4 words",
+            "{:?}",
+            state.events[0]
+        );
+
+        // Denied by policy, it does not run.
+        let mut realm = f.home.realm("work").unwrap();
+        realm.config.policy.set(Capability::Skill, Rule::Deny);
+        realm.save().unwrap();
+        let (hub, _, _) = make_hub(
+            &f.home,
+            vec![
+                call("1", "word_count", json!({"path": "notes.txt"})),
+                done("ok"),
+            ],
+        );
+        let state = hub
+            .dispatch(&realm, "count", config(5), hooks(&mut NoObserver, true))
+            .unwrap();
+        assert_eq!(state.events[0].status, crate::state::EventStatus::Denied);
+    }
+
+    #[test]
+    fn skill_tests_cannot_reach_the_realm() {
+        let f = fixture();
+        std::fs::write(f.root.path().join("private.txt"), "realm data").unwrap();
+        let store = f.realm.skills();
+        store
+            .propose(SkillRecord {
+                name: "word_count".into(),
+                status: SkillStatus::Proposed,
+                description: "Count words".into(),
+                reason: String::new(),
+                spec: String::new(),
+                proposed_by: "owner".into(),
+                created_at: Utc::now(),
+                dev_run: None,
+                evaluation: None,
+                installed: None,
+            })
+            .unwrap();
+        let draft = store.draft_dir("word_count");
+        crate::skill::tests::write_word_count(&draft);
+        let private = f.root.path().canonicalize().unwrap().join("private.txt");
+        std::fs::write(
+            draft.join("tests.json"),
+            json!([{"name": "escape", "input": {"path": private}, "expect": {"exit": 1}}])
+                .to_string(),
+        )
+        .unwrap();
+        let hub = Hub::new(f.home.clone());
+        let r = hub.evaluate_skill(&f.realm, "word_count").unwrap();
+        let eval = r.evaluation.unwrap();
+        if crate::sandbox::available() {
+            assert!(
+                eval.passed(),
+                "the realm's file was readable: {}",
+                eval.report()
+            );
+        }
     }
 }

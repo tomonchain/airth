@@ -6,12 +6,15 @@ mod http;
 mod memory;
 mod plan;
 mod shell;
+mod skill;
 
 use crate::cancel::CancelToken;
 use crate::integration::Integration;
 use crate::memory::MemoryStore;
 use crate::models::ToolSpec;
+use crate::notify::Inbox;
 use crate::permissions::Capability;
+use crate::skill::SkillStore;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
@@ -46,29 +49,54 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
 /// What a run in a realm brings to its tools.
 pub struct RealmTools {
     pub memory: MemoryStore,
-    /// Provenance of what the run remembers, e.g. "run:<id>".
+    /// Provenance of what the run remembers or proposes, e.g. "run:<id>".
     pub source: String,
     pub plan: PlanHandle,
     pub integrations: Vec<Integration>,
+    pub skills: SkillStore,
+    /// Where proposals are announced to the owner.
+    pub inbox: Inbox,
+    pub realm: String,
+    /// Set for a run developing a skill: the skill's name, and where its
+    /// tests run.
+    pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
 }
 
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
-/// memory and its integrations.
+/// memory, integrations and installed skills. A run developing a skill gets
+/// `test_skill` instead of memory and skills.
 pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
     let mut tools = default_tools();
     tools.push(Box::new(plan::UpdatePlan { plan: realm.plan }));
     tools.push(Box::new(http::HttpRequest {
         integrations: realm.integrations,
     }));
+    if let Some((name, scratch, deny)) = realm.developing {
+        tools.push(Box::new(skill::TestSkill {
+            name,
+            scratch,
+            deny,
+        }));
+        return tools;
+    }
     tools.push(Box::new(memory::Remember {
         memory: realm.memory,
-        source: realm.source,
+        source: realm.source.clone(),
     }));
+    tools.push(Box::new(skill::ProposeSkill {
+        store: realm.skills.clone(),
+        source: realm.source,
+        inbox: realm.inbox,
+        realm: realm.realm,
+    }));
+    for (manifest, dir) in realm.skills.enabled() {
+        tools.push(Box::new(skill::SkillTool { manifest, dir }));
+    }
     tools
 }
 
 pub use plan::PlanHandle;
-pub use shell::run_shell;
+pub use shell::{run_shell, run_shell_with_input};
 
 /// How much of the filesystem a path grants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -138,6 +166,13 @@ impl Workspace {
         // Longest first, so a secret containing another is replaced whole.
         self.secrets
             .sort_by_key(|(_, v)| std::cmp::Reverse(v.len()));
+        self
+    }
+
+    /// Add one environment variable for commands.
+    pub fn with_env(mut self, key: &str, value: &str) -> Self {
+        self.env.retain(|(k, _)| k != key);
+        self.env.push((key.to_string(), value.to_string()));
         self
     }
 

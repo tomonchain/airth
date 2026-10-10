@@ -157,6 +157,10 @@ pub struct State {
     /// The objective that started this run, when it started on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
+    /// For a run developing a skill: the skill's name. Its workspace is the
+    /// skill's draft folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill: Option<String>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -183,6 +187,7 @@ impl State {
             grants: Vec::new(),
             budget: Budget::default(),
             origin: None,
+            skill: None,
             path,
         }
     }

@@ -500,6 +500,19 @@ details.check pre.out { margin: 4px 0 8px; max-height: 320px; }
 .clamp { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .pad-top { padding-top: 8px; }
 
+.mono { font-family: var(--mono); }
+.chip.skill-ready { background: var(--accent-soft); color: var(--accent); }
+.chip.skill-installed { background: var(--ok-soft); color: var(--ok); }
+.chip.skill-failed { background: var(--err-soft); color: var(--err); }
+.chip.skill-developing, .chip.skill-proposed { background: var(--warn-soft); color: var(--warn); }
+.ok { color: var(--ok); }
+.eval { display: grid; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+.eval-row { font-size: 12.5px; }
+.eval-row.good { color: var(--ok); }
+.eval-row.bad { color: var(--err); }
+.eval-row pre { margin-top: 4px; color: var(--text); }
+.files { display: grid; gap: 8px; }
+
 .center-note { margin: auto; color: var(--muted); text-align: center; padding: 40px; max-width: 460px; }
 .center-note h1 { font-size: 18px; color: var(--text); }
 
