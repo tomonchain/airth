@@ -193,6 +193,7 @@ impl Home {
                 isolation,
                 checks,
                 share_owner_profile: true,
+                integrations: Vec::new(),
                 archived: false,
                 created_at: Utc::now(),
             },

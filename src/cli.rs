@@ -104,6 +104,94 @@ pub enum SecretCmd {
     Rm { key: String },
 }
 
+#[derive(Subcommand)]
+pub enum IntegrationCmd {
+    /// List the realm's integrations
+    List,
+    /// Add (or replace) an integration: requests under BASE_URL get these headers
+    #[command(
+        after_help = "Example:\n  airth secret set GITHUB_TOKEN\n  airth integration add github https://api.github.com \\\n    --header \"Authorization: Bearer [secret:GITHUB_TOKEN]\" \\\n    --description \"GitHub REST API\"\n\nPut credentials in headers as [secret:NAME], never as plain values."
+    )]
+    Add {
+        name: String,
+        base_url: String,
+        /// "Name: value", repeatable; [secret:NAME] is filled in from the realm's credentials
+        #[arg(long = "header", short = 'H')]
+        headers: Vec<String>,
+        /// What the service is for (the agent sees this)
+        #[arg(long, default_value = "")]
+        description: String,
+    },
+    /// Remove an integration
+    Rm { name: String },
+}
+
+pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
+    let mut realm = ctx.realm()?;
+    match command {
+        IntegrationCmd::List => {
+            if realm.config.integrations.is_empty() {
+                eprintln!(
+                    "realm {} has no integrations (airth integration add ...)",
+                    realm.name()
+                );
+            }
+            for i in &realm.config.integrations {
+                println!("{:<16} {}", i.name, i.base_url);
+                if !i.description.is_empty() {
+                    println!("{:<16} {}", "", i.description);
+                }
+                for (k, v) in &i.headers {
+                    println!("{:<16} {k}: {v}", "");
+                }
+            }
+        }
+        IntegrationCmd::Add {
+            name,
+            base_url,
+            headers,
+            description,
+        } => {
+            let mut map = std::collections::BTreeMap::new();
+            for h in headers {
+                let (k, v) = h
+                    .split_once(':')
+                    .with_context(|| format!("headers look like \"Name: value\", not '{h}'"))?;
+                map.insert(k.trim().to_string(), v.trim().to_string());
+            }
+            let integration = crate::integration::Integration {
+                name,
+                description,
+                base_url,
+                headers: map,
+            };
+            let missing: Vec<String> = integration
+                .secret_names()
+                .into_iter()
+                .filter(|k| realm.secret(k).is_none())
+                .collect();
+            let name = integration.name.clone();
+            realm.set_integration(integration)?;
+            eprintln!(
+                "\x1b[32m✓\x1b[0m integration {name} saved in realm {}",
+                realm.name()
+            );
+            for k in missing {
+                eprintln!(
+                    "\x1b[33m!\x1b[0m it uses {k}, which is not set yet: airth secret set {k}"
+                );
+            }
+        }
+        IntegrationCmd::Rm { name } => {
+            if !realm.remove_integration(&name)? {
+                bail!("no integration '{name}' in realm {}", realm.name());
+            }
+            eprintln!("removed {name}");
+        }
+    }
+    Ok(true)
+}
+
 pub fn realm(ctx: &Ctx, command: RealmCmd) -> Result<bool> {
     let home = ctx.home();
     match command {
@@ -240,13 +328,11 @@ fn print_realm(ctx: &Ctx, realm: &crate::realm::Realm) -> Result<()> {
     }
     println!("root         {}", realm.root()?.display());
     println!("isolation    {}", c.isolation.as_str());
-    println!(
-        "policy       read {} · write {} · execute {} · memory {}",
-        c.policy.read.as_str(),
-        c.policy.write.as_str(),
-        c.policy.execute.as_str(),
-        c.policy.memory.as_str()
-    );
+    let policy: Vec<String> = Capability::ALL
+        .iter()
+        .map(|cap| format!("{} {}", cap.as_str(), c.policy.rule(*cap).as_str()))
+        .collect();
+    println!("policy       {}", policy.join(" · "));
     println!(
         "checks       {}",
         if c.checks.is_empty() {
@@ -271,6 +357,15 @@ fn print_realm(ctx: &Ctx, realm: &crate::realm::Realm) -> Result<()> {
             "(none)".to_string()
         } else {
             secrets.join(", ")
+        }
+    );
+    let integrations: Vec<&str> = c.integrations.iter().map(|i| i.name.as_str()).collect();
+    println!(
+        "integrations {}",
+        if integrations.is_empty() {
+            "(none)".to_string()
+        } else {
+            integrations.join(", ")
         }
     );
     println!("runs         {}", ctx.hub().runs(realm)?.len());

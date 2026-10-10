@@ -178,6 +178,81 @@ impl Tool for WriteFile {
     }
 }
 
+pub struct EditFile;
+
+impl EditFile {
+    /// The file and its content before and after the edit.
+    fn edit(input: &Value, ws: &Workspace) -> Result<(std::path::PathBuf, String, String)> {
+        let rel = str_arg(input, "path")?;
+        let old_text = str_arg(input, "old_text")?;
+        let new_text = str_arg(input, "new_text")?;
+        let replace_all = input["replace_all"].as_bool().unwrap_or(false);
+        if old_text.is_empty() {
+            anyhow::bail!("old_text is empty; use write_file to create a file");
+        }
+        let path = ws.resolve_writable(rel)?;
+        let old = std::fs::read_to_string(&path).with_context(|| format!("cannot read {rel}"))?;
+        let new = match old.matches(old_text).count() {
+            0 => anyhow::bail!(
+                "old_text was not found in {rel}; read the file again and copy the text exactly, whitespace included"
+            ),
+            1 => old.replacen(old_text, new_text, 1),
+            n if replace_all => {
+                let _ = n;
+                old.replace(old_text, new_text)
+            }
+            n => anyhow::bail!(
+                "old_text appears {n} times in {rel}; include more surrounding lines to pick one, or set replace_all"
+            ),
+        };
+        Ok((path, old, new))
+    }
+}
+
+impl Tool for EditFile {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "edit_file".into(),
+            description: "Change part of an existing file: replace old_text (which must appear exactly once, unless replace_all is set) with new_text. Prefer it to write_file for changes to existing files: it is cheaper and safer. Requires human approval; the human sees a diff.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Workspace-relative file path"},
+                    "old_text": {"type": "string", "description": "The exact text to replace, with enough context to be unique"},
+                    "new_text": {"type": "string", "description": "The replacement"},
+                    "replace_all": {"type": "boolean", "description": "Replace every occurrence, default false"}
+                },
+                "required": ["path", "old_text", "new_text"]
+            }),
+        }
+    }
+
+    fn capability(&self) -> Capability {
+        Capability::Write
+    }
+
+    fn preview(&self, input: &Value, ws: &Workspace) -> Result<String> {
+        let rel = str_arg(input, "path")?;
+        let (_, old, new) = Self::edit(input, ws)?;
+        let diff = TextDiff::from_lines(&old, &new)
+            .unified_diff()
+            .context_radius(3)
+            .header(&format!("a/{rel}"), &format!("b/{rel}"))
+            .to_string();
+        Ok(format!("modify {rel}\n{diff}"))
+    }
+
+    fn warnings(&self, input: &Value) -> Vec<String> {
+        WriteFile.warnings(input)
+    }
+
+    fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
+        let (path, _, new) = Self::edit(input, ws)?;
+        std::fs::write(&path, new).with_context(|| format!("cannot write {}", path.display()))?;
+        Ok(format!("edited {}", str_arg(input, "path")?))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +294,35 @@ mod tests {
         assert!(
             WriteFile
                 .warnings(&json!({"path": "src/main.rs"}))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn edits_unique_text_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path()).unwrap();
+        std::fs::write(dir.path().join("f.txt"), "a\nb\na\n").unwrap();
+        let c = CancelToken::default();
+        let edit = |old: &str, all: bool| json!({"path": "f.txt", "old_text": old, "new_text": "z", "replace_all": all});
+        assert!(EditFile.execute(&edit("a", false), &ws, &c).is_err());
+        assert!(EditFile.execute(&edit("q", false), &ws, &c).is_err());
+        assert!(EditFile.execute(&edit("", false), &ws, &c).is_err());
+        assert!(
+            EditFile
+                .preview(&edit("b", false), &ws)
+                .unwrap()
+                .contains("+z")
+        );
+        EditFile.execute(&edit("b", false), &ws, &c).unwrap();
+        EditFile.execute(&edit("a", true), &ws, &c).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+            "z\nz\nz\n"
+        );
+        assert!(
+            !EditFile
+                .warnings(&json!({"path": "src/runtime.rs"}))
                 .is_empty()
         );
     }

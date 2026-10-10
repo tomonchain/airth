@@ -4,8 +4,8 @@
 use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::{PermissionGate, PermissionRequest, Verdict};
-use crate::state::{Event, EventStatus};
-use crate::tools::{Tool, Workspace};
+use crate::state::{Event, EventStatus, State};
+use crate::tools::{PlanHandle, Tool, Workspace};
 use chrono::Utc;
 use serde_json::Value;
 
@@ -14,6 +14,7 @@ pub struct Runtime {
     gate: PermissionGate,
     workspace: Workspace,
     cancel: CancelToken,
+    plan: Option<PlanHandle>,
 }
 
 impl Runtime {
@@ -28,6 +29,22 @@ impl Runtime {
             gate,
             workspace,
             cancel,
+            plan: None,
+        }
+    }
+
+    /// The handle the run's `update_plan` tool writes to.
+    pub fn with_plan(mut self, plan: PlanHandle) -> Self {
+        self.plan = Some(plan);
+        self
+    }
+
+    /// Copy what the tools and the gate keep during the run (its plan and the
+    /// owner's grants) into the run's state, to be saved with it.
+    pub fn sync(&self, state: &mut State) {
+        state.grants = self.gate.grants().to_vec();
+        if let Some(plan) = &self.plan {
+            state.plan = plan.lock().unwrap().clone();
         }
     }
 
@@ -67,6 +84,7 @@ impl Runtime {
             capability: tool.capability(),
             preview,
             warnings: tool.warnings(arguments),
+            scope: tool.scope(arguments),
         };
         match self.gate.check(&request) {
             Ok(Verdict::Denied(reason)) => {

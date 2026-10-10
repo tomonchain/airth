@@ -14,6 +14,7 @@
 //! Nothing in a realm is visible to another realm's runs: the hub denies
 //! every run access to the Airth home and to other realms' roots.
 
+use crate::integration::Integration;
 use crate::isolation::Isolation;
 use crate::memory::MemoryStore;
 use crate::permissions::Policy;
@@ -52,6 +53,9 @@ pub struct RealmConfig {
     /// Whether runs in this realm see the owner profile.
     #[serde(default = "yes")]
     pub share_owner_profile: bool,
+    /// Services runs may call with the realm's credentials.
+    #[serde(default)]
+    pub integrations: Vec<Integration>,
     #[serde(default)]
     pub archived: bool,
     #[serde(default = "Utc::now")]
@@ -174,6 +178,28 @@ impl Realm {
             .collect())
     }
 
+    /// Add an integration, or replace the one with the same name.
+    pub fn set_integration(&mut self, integration: Integration) -> Result<()> {
+        integration.validate()?;
+        let list = &mut self.config.integrations;
+        match list.iter_mut().find(|i| i.name == integration.name) {
+            Some(existing) => *existing = integration,
+            None => list.push(integration),
+        }
+        self.save()
+    }
+
+    /// Remove an integration; false if there was none with this name.
+    pub fn remove_integration(&mut self, name: &str) -> Result<bool> {
+        let before = self.config.integrations.len();
+        self.config.integrations.retain(|i| i.name != name);
+        if self.config.integrations.len() == before {
+            return Ok(false);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn set_secret(&self, key: &str, value: &str) -> Result<()> {
         validate_secret_key(key)?;
         if value.contains(['\n', '\r']) {
@@ -277,6 +303,7 @@ mod tests {
                 isolation: Isolation::None,
                 checks: vec![],
                 share_owner_profile: true,
+                integrations: vec![],
                 archived: false,
                 created_at: Utc::now(),
             },

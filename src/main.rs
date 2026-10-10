@@ -3,6 +3,7 @@ mod cancel;
 mod cli;
 mod home;
 mod hub;
+mod integration;
 mod isolation;
 mod memory;
 mod models;
@@ -58,6 +59,14 @@ enum Cmd {
         #[command(flatten)]
         opts: RunOpts,
     },
+    /// Resume a run that was interrupted, stopped or failed
+    Resume {
+        /// Run id, or "last"
+        #[arg(default_value = "last")]
+        run: String,
+        #[command(flatten)]
+        opts: RunOpts,
+    },
     /// List the realm's runs
     Runs,
     /// Show an isolated run's change: files, checks and diff
@@ -106,6 +115,11 @@ enum Cmd {
     Secret {
         #[command(subcommand)]
         command: cli::SecretCmd,
+    },
+    /// Manage the services the realm's runs may call (with which credentials)
+    Integration {
+        #[command(subcommand)]
+        command: cli::IntegrationCmd,
     },
     /// List the skills (tools) agents can use and the permission each needs
     Skills,
@@ -191,6 +205,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
     match command {
         Some(Cmd::Run { objective, opts }) => run(ctx, &objective, opts),
         Some(Cmd::Send { run, message, opts }) => send(ctx, &run, &message, opts),
+        Some(Cmd::Resume { run, opts }) => resume(ctx, &run, opts),
         Some(Cmd::Runs) => runs(ctx),
         Some(Cmd::Review { run }) => review(ctx, &run),
         Some(Cmd::Check { run }) => check(ctx, &run),
@@ -229,6 +244,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
+        Some(Cmd::Integration { command }) => cli::integration(ctx, command),
         Some(Cmd::Skills) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {
@@ -283,6 +299,25 @@ fn send(ctx: &Ctx, run: &str, message: &str, opts: RunOpts) -> Result<bool> {
         cancel: cancel_on_ctrl_c()?,
     };
     let state = hub.send(&realm, run, message, opts.config(), hooks)?;
+    Ok(finish(&state))
+}
+
+fn resume(ctx: &Ctx, run: &str, opts: RunOpts) -> Result<bool> {
+    let realm = ctx.realm()?;
+    let hub = ctx.hub();
+    banner(&hub, &realm);
+    let state = hub.load_run(&realm, run)?;
+    eprintln!("resuming {}: {}", state.id, state.objective);
+    if !state.plan.is_empty() {
+        eprintln!("{}", state::render_plan(&state.plan));
+    }
+    let mut observer = term::TerminalObserver::new(opts.verbose);
+    let hooks = RunHooks {
+        approver: Box::new(TerminalApprover),
+        observer: &mut observer,
+        cancel: cancel_on_ctrl_c()?,
+    };
+    let state = hub.resume_and_drive(&realm, &state.id, opts.config(), hooks)?;
     Ok(finish(&state))
 }
 
@@ -348,7 +383,14 @@ fn finish(state: &State) -> bool {
             state.id
         );
     }
-    eprintln!("\x1b[2mcontinue: airth send {} \"...\"\x1b[0m", state.id);
+    if state.status == Status::Completed {
+        eprintln!("\x1b[2mcontinue: airth send {} \"...\"\x1b[0m", state.id);
+    } else {
+        eprintln!(
+            "\x1b[2mresume: airth resume {0} · or redirect it: airth send {0} \"...\"\x1b[0m",
+            state.id
+        );
+    }
     ok
 }
 
@@ -403,11 +445,17 @@ fn runs(ctx: &Ctx) -> Result<bool> {
             (Some(_), Some(false)) => "checks ✗",
             _ => "",
         };
+        let plan = if run.plan_total > 0 {
+            format!("{}/{}", run.plan_done, run.plan_total)
+        } else {
+            String::new()
+        };
         println!(
-            "{:<24} {:<11} {:>3} it  {:<10} {}",
+            "{:<24} {:<11} {:>3} it  {:>5}  {:<10} {}",
             run.id,
             run.display_status(),
             run.iterations,
+            plan,
             change,
             objective.chars().take(70).collect::<String>()
         );

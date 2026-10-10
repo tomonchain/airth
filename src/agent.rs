@@ -66,6 +66,7 @@ impl<'a> Agent<'a> {
     }
 
     fn checkpoint(&mut self, state: &mut State) -> Result<()> {
+        self.runtime.sync(state);
         state.save()?;
         self.observer.changed(state);
         Ok(())
@@ -219,6 +220,17 @@ pub fn summarize_args(name: &str, input: &Value) -> String {
             input["path"].as_str().unwrap_or("?"),
             input["content"].as_str().map_or(0, str::len)
         ),
+        "edit_file" => input["path"].as_str().unwrap_or("?").to_string(),
+        "http_request" => format!(
+            "{} {}{}",
+            input["method"].as_str().unwrap_or("GET"),
+            input["integration"]
+                .as_str()
+                .map(|i| format!("{i}:"))
+                .unwrap_or_default(),
+            input["url"].as_str().unwrap_or("?")
+        ),
+        "update_plan" => format!("{} steps", input["steps"].as_array().map_or(0, Vec::len)),
         "execute_command" => format!("$ {}", input["command"].as_str().unwrap_or("?")),
         _ => input.to_string(),
     }
@@ -295,13 +307,16 @@ pub fn system_prompt(b: &Briefing) -> String {
         "You work in a loop: observe the environment with your tools, reason about the objective, plan, act, check the result, and continue until the objective is met or you cannot make progress. One response is rarely the whole task.
 
 Tools:
+- update_plan: your plan for the objective, step by step with status. For anything beyond a couple of steps, write the plan before acting and keep it current: the owner follows your progress there, and an interrupted run resumes from it.
 - read_file, list_directory: read freely before you change anything.
-- write_file: writes a whole file; the owner may need to approve it after seeing a diff.
+- edit_file: replaces exact text in a file; write_file: writes a whole file (new files, rewrites). The owner may need to approve each change after seeing a diff.
 - execute_command: runs a shell command in the workspace (builds, tests, git status/diff, ...); the owner may need to approve each command.
+- http_request: calls the realm's integrations (the runtime adds their credentials) or public URLs; the owner may need to approve each request.
 - remember: saves one durable fact to this realm's memory for future runs (preferences, decisions, conventions). Never store secrets.
 
 How to work:
-- Change files only with write_file, never through shell commands (sed, python, heredocs, redirection), so the owner reviews every change as a diff.
+- Change files only with edit_file and write_file, never through shell commands (sed, python, heredocs, redirection), so the owner reviews every change as a diff.
+- Verify each step before marking it done. If a step fails, record why in the plan, then adapt: retry differently, work around it, or mark it blocked and continue with what does not depend on it.
 - Prefer small, reversible, well-scoped changes. One coherent improvement is better than many half-finished ones.
 - Before your first write, state the change you propose and why, in a few sentences, so the owner can judge the approval.
 - If the workspace is a code repository, build and test after changing code, read failures, and fix them. Do not report success unless they pass.

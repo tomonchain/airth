@@ -15,9 +15,10 @@ cargo run -- run "Identify and implement one small improvement to Airth."
 A realm is an isolated area of your life: personal, a job, a company, a side project. Each realm has its own:
 
 - **folder**: a directory you choose (`--root`), or a private one in Airth's home;
-- **permissions**: per capability (`read`, `write`, `execute`, `memory`), each `allow`, `ask` or `deny`;
+- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`), each `allow`, `ask` or `deny`;
 - **memory**: facts Airth keeps between runs, each with where it came from;
 - **credentials**: given to that realm's commands as environment variables, never shown to the model;
+- **integrations**: services its runs may call, with credentials bound to them (see below);
 - **runs**.
 
 Nothing crosses between realms. Airth's runtime enforces this; it does not rely on the model behaving:
@@ -41,6 +42,31 @@ airth secret set GITHUB_TOKEN      # read from stdin, not echoed
 airth owner set name "Thomas"
 airth owner add boundaries "Never push to main"
 ```
+
+## Tasks: plans, approvals, resuming
+
+Give Airth an objective, not steps. For anything beyond a couple of steps it writes a plan and keeps it current as it works. You see the plan live in the app (and in the terminal).
+
+When Airth needs approval, you can answer yes, no (with a reason it sees), or yes **for the rest of this run**: all file changes, all commands, or requests to one integration or host. Requests with a warning, like edits to Airth's own security code, are always asked one by one. Grants end with the run.
+
+A run that did not finish can be resumed. That covers a closed terminal, a crash, a stop, or a model outage that outlasted the retries. Airth answers the calls the interruption cut off and tells the agent how the run ended and where its plan stood. The agent checks what actually happened before going on.
+
+```bash
+airth resume last      # or the Resume button in the app
+```
+
+## Integrations
+
+An integration is a service a realm's runs may call over HTTP, with the credentials you bind to it:
+
+```bash
+airth secret set GITHUB_TOKEN
+airth integration add github https://api.github.com \
+  -H "Authorization: Bearer [secret:GITHUB_TOKEN]" --description "GitHub REST API"
+airth integration list
+```
+
+The agent calls it by name (`http_request` with `integration: "github"`). The runtime adds the credential only to requests under the base URL, so a token can never be sent anywhere else, and the model never sees it. Without an integration, requests carry no credentials and can only reach public addresses, not your local network. Requests need approval unless the realm's `network` rule is `allow`.
 
 ## Isolated changes
 
@@ -69,8 +95,9 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - switch realms;
 - start runs and watch them live: reasoning, tool calls and results;
 - approve or deny each step that needs it, with an optional reason the agent sees;
+- follow each run's plan, and resume runs that did not finish;
 - review, adopt or discard changes;
-- edit each realm's permissions, checks, memory and credentials, and your profile.
+- edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
 The link printed in the terminal contains a private key for this launch; API calls without it are rejected. Use `--port`, `--no-open` and `--max-iterations` to change the defaults.
 
@@ -79,11 +106,12 @@ The link printed in the terminal contains a private key for this launch; API cal
 ```bash
 airth run "<objective>"           # start a run in the current realm
 airth send last "Now add docs"    # continue a run (by id or `last`)
-airth runs                        # the realm's runs: status, checks, objective
+airth resume last                 # resume a run that was interrupted, stopped or failed
+airth runs                        # the realm's runs: status, plan progress, checks, objective
 airth skills                      # the tools, and this realm's rule for each
 ```
 
-Approvals happen in the terminal: answer `y`, or type a reason to deny, and the agent sees that reason. Ctrl-C stops a run cleanly; press it twice to quit at once. A run whose process was killed shows as `interrupted` and can still be continued.
+Approvals happen in the terminal: answer `y`, `a` to allow it for the rest of the run, or type a reason to deny, and the agent sees that reason. Ctrl-C stops a run cleanly; press it twice to quit at once. A run whose process was killed shows as `interrupted` and can still be continued.
 
 ## Configuration
 
@@ -107,10 +135,10 @@ Any of these model settings can also be set per realm as a credential (`airth se
   owner.json                   your profile
   config.json                  the default realm
   realms/<name>/
-    realm.json                 folder, permissions, isolation, checks
+    realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     secrets.env                credentials (mode 600)
-    runs/<id>.json             each run: conversation, tool events, change, checks
+    runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
     worktrees/<id>/            isolated working copies
     files/                     the folder of realms without their own
 ```
@@ -119,13 +147,14 @@ Any of these model settings can also be set per realm as a credential (`airth se
 
 ```text
 src/
-  main.rs         CLI: run, send, runs, review, check, adopt, discard, ui, doctor
-  cli.rs          CLI: realm, owner, memory, secret
+  main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, doctor
+  cli.rs          CLI: realm, owner, memory, secret, integration
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
+  integration.rs  integrations: base URLs with credentials bound to them
   isolation.rs    git worktrees per run: create, commit, diff, adopt, discard
   sandbox.rs      the command sandbox (macOS sandbox-exec)
   ui/             the local app: HTTP server (mod.rs) and the page (index.html, app.js, app.css)
@@ -133,8 +162,9 @@ src/
   cancel.rs       stop signal shared by the CLI, the app, the agent loop and tools
   agent.rs        the loop and the system prompt
   runtime.rs      the single path from a tool call to execution (permission check, redaction, event)
-  permissions.rs  capabilities, rules, policy, terminal approval
-  tools/          read_file, list_directory, write_file, execute_command, remember; workspace access rules
+  permissions.rs  capabilities, rules, policy, run grants, terminal approval
+  tools/          read_file, list_directory, write_file, edit_file, execute_command, http_request,
+                  update_plan, remember; workspace access rules
   models/         provider-neutral Model trait + Anthropic provider
-  state.rs        persisted run state
+  state.rs        persisted run state, plans
 ```

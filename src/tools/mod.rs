@@ -2,10 +2,13 @@
 //! needs; the runtime checks it with the permission layer before `execute`.
 
 mod fs;
+mod http;
 mod memory;
+mod plan;
 mod shell;
 
 use crate::cancel::CancelToken;
+use crate::integration::Integration;
 use crate::memory::MemoryStore;
 use crate::models::ToolSpec;
 use crate::permissions::Capability;
@@ -21,6 +24,11 @@ pub trait Tool {
     fn warnings(&self, _input: &Value) -> Vec<String> {
         Vec::new()
     }
+    /// What an "allow for the rest of this run" answer to this call covers
+    /// (see `PermissionRequest::scope`). None: every call of the capability.
+    fn scope(&self, _input: &Value) -> Option<String> {
+        None
+    }
     /// Long-running tools should poll `cancel` and stop early when it is set.
     fn execute(&self, input: &Value, ws: &Workspace, cancel: &CancelToken) -> Result<String>;
 }
@@ -30,17 +38,36 @@ pub fn default_tools() -> Vec<Box<dyn Tool>> {
         Box::new(fs::ReadFile),
         Box::new(fs::ListDirectory),
         Box::new(fs::WriteFile),
+        Box::new(fs::EditFile),
         Box::new(shell::ExecuteCommand),
     ]
 }
 
-/// The tools of a run in a realm: the defaults plus the realm's memory.
-pub fn realm_tools(memory: MemoryStore, source: String) -> Vec<Box<dyn Tool>> {
+/// What a run in a realm brings to its tools.
+pub struct RealmTools {
+    pub memory: MemoryStore,
+    /// Provenance of what the run remembers, e.g. "run:<id>".
+    pub source: String,
+    pub plan: PlanHandle,
+    pub integrations: Vec<Integration>,
+}
+
+/// The tools of a run in a realm: the defaults plus its plan, the realm's
+/// memory and its integrations.
+pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
     let mut tools = default_tools();
-    tools.push(Box::new(memory::Remember { memory, source }));
+    tools.push(Box::new(plan::UpdatePlan { plan: realm.plan }));
+    tools.push(Box::new(http::HttpRequest {
+        integrations: realm.integrations,
+    }));
+    tools.push(Box::new(memory::Remember {
+        memory: realm.memory,
+        source: realm.source,
+    }));
     tools
 }
 
+pub use plan::PlanHandle;
 pub use shell::run_shell;
 
 /// How much of the filesystem a path grants.

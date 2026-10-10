@@ -48,6 +48,12 @@ impl Observer for TerminalObserver {
             EventStatus::Error => ("✗ error", "31"),
             EventStatus::Denied => ("⊘ denied", "33"),
         };
+        if event.action == "update_plan" && event.status == EventStatus::Ok {
+            for line in event.result.lines().skip(1) {
+                eprintln!("  \x1b[35m{line}\x1b[0m");
+            }
+            return;
+        }
         let first_line = event.result.lines().next().unwrap_or("");
         eprintln!(
             "  \x1b[{color}m{mark}\x1b[0m \x1b[2m{} · {} bytes\x1b[0m",

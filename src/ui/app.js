@@ -224,6 +224,7 @@ function renderSidebar() {
           h("span", null, r.live ? "running" : r.status),
           h("span", null, "·"),
           h("span", null, ago(r.updated_at)),
+          r.plan_total > 0 && h("span", { class: "progress-mini", title: `${r.plan_done} of ${r.plan_total} steps done` }, `${r.plan_done}/${r.plan_total}`),
           r.needs_approval ? h("span", { class: "needs" }, "needs approval") : changeBadge(r))));
   }
   const newBtn = $("#new-run-btn");
@@ -461,7 +462,8 @@ function renderRun() {
         h("span", null, `${s.events.length} tool call${s.events.length === 1 ? "" : "s"}`),
         (s.input_tokens || s.output_tokens) && h("span", { title: `${s.input_tokens} in / ${s.output_tokens} out` }, `${kfmt(s.input_tokens)} in · ${kfmt(s.output_tokens)} out tokens`),
         h("span", null, "updated " + ago(s.updated_at)))),
-    canStop && h("button", { class: "btn danger", type: "button", onclick: stopRun }, "■ Stop"));
+    canStop && h("button", { class: "btn danger", type: "button", onclick: stopRun }, "■ Stop"),
+    s.plan && s.plan.length ? planPanel(s.plan, d.live) : null);
 
   const sc = runEls.scroller;
   const nearBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
@@ -501,10 +503,16 @@ function transcriptNodes(d) {
   s.messages.forEach((m, mi) => {
     if (m.role === "user") {
       const texts = m.content.filter((b) => b.type === "text");
-      if (texts.length)
-        nodes.push(h("div", { class: "msg user" },
-          h("div", { class: "who" }, mi === 0 ? "Objective" : "You"),
-          ...texts.map((b) => h("div", { class: "prose", html: md(b.text) }))));
+      for (const b of texts) {
+        if (b.text.startsWith(RUNTIME_PREFIX)) {
+          nodes.push(h("div", { class: "msg runtime" }, h("div", { class: "who" }, "Resumed"),
+            h("div", { class: "prose", html: md(b.text.slice(RUNTIME_PREFIX.length).trim()) })));
+        } else {
+          nodes.push(h("div", { class: "msg user" },
+            h("div", { class: "who" }, mi === 0 ? "Objective" : "You"),
+            h("div", { class: "prose", html: md(b.text) })));
+        }
+      }
       return;
     }
     m.content.forEach((b, bi) => {
@@ -532,13 +540,49 @@ function transcriptNodes(d) {
       completed: `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
       failed: "The run failed.",
       stopped: "The run stopped.",
-      interrupted: "The run was interrupted (the process exited before it finished). Send a message to resume.",
+      interrupted: "The run was interrupted: the process exited before it finished.",
     }[status];
     const showReport = status !== "completed" && s.report;
-    nodes.push(h("div", { class: "end " + status }, h("div", null, text, showReport && h("pre", null, s.report))));
+    const closed = s.change && s.change.status !== "open";
+    const canResume = status !== "completed" && !closed && !d.elsewhere;
+    nodes.push(h("div", { class: "end " + status },
+      h("div", { class: "grow" }, text, showReport && h("pre", null, s.report),
+        canResume && h("div", { class: "muted small" }, "Resume to let Airth check where it stopped and carry on with its plan, or send a message to redirect it.")),
+      canResume && h("button", { class: "btn primary", type: "button", disabled: !!(app.realmDetail && app.realmDetail.model_error), onclick: resumeRun }, "Resume")));
   }
   if (s.change) nodes.push(changePanel(d));
   return nodes;
+}
+
+const RUNTIME_PREFIX = "[Airth runtime]";
+
+const STEP_MARK = { pending: "○", in_progress: "◐", done: "✓", blocked: "!", skipped: "–" };
+
+function planPanel(plan, live) {
+  const closed = plan.filter((p) => p.status === "done" || p.status === "skipped").length;
+  const current = plan.find((p) => p.status === "in_progress") || plan.find((p) => p.status === "blocked");
+  const el = keyedDetails("plan", { class: "plan" },
+    h("summary", null,
+      h("span", { class: "strong" }, "Plan"),
+      h("span", { class: "plan-bar", "aria-hidden": "true" }, h("span", { style: `width:${Math.round((100 * closed) / plan.length)}%` })),
+      h("span", { class: "muted small" }, `${closed}/${plan.length}`),
+      current && h("span", { class: "plan-current" }, current.title)),
+    h("ol", { class: "plan-steps" }, plan.map((p) =>
+      h("li", { class: "step " + p.status },
+        h("span", { class: "mark", title: p.status.replace("_", " ") }, STEP_MARK[p.status] || "•"),
+        h("div", null, h("div", null, p.title), p.note && h("div", { class: "muted small" }, p.note))))));
+  if (!app.openKeys.has("plan:seen")) { app.openKeys.add("plan:seen"); app.openKeys.add("plan"); el.open = true; }
+  return el;
+}
+
+async function resumeRun() {
+  try {
+    await api(`${runPath(app.realm, app.route.id)}/resume`, {});
+    app.version = null;
+    await Promise.all([pollRun(), refreshRuns()]);
+  } catch (e) {
+    flash(e.message, true);
+  }
 }
 
 function keyedDetails(key, attrs, ...children) {
@@ -548,7 +592,7 @@ function keyedDetails(key, attrs, ...children) {
   return el;
 }
 
-const ICONS = { read_file: "≡", list_directory: "▤", write_file: "✎", execute_command: "❯", remember: "✦" };
+const ICONS = { read_file: "≡", list_directory: "▤", write_file: "✎", edit_file: "✎", execute_command: "❯", remember: "✦", http_request: "⇄", update_plan: "☰" };
 
 function toolLabel(name, input) {
   switch (name) {
@@ -557,6 +601,12 @@ function toolLabel(name, input) {
     case "write_file": return `${input.path}  · ${(input.content || "").split("\n").length} lines`;
     case "execute_command": return "$ " + String(input.command || "").split("\n")[0];
     case "remember": return input.text;
+    case "edit_file": return input.path;
+    case "http_request": return `${input.method || "GET"} ${input.integration ? input.integration + ": " : ""}${input.url || ""}`;
+    case "update_plan": {
+      const steps = input.steps || [];
+      return `${steps.filter((p) => p.status === "done" || p.status === "skipped").length}/${steps.length} steps done`;
+    }
     default: return JSON.stringify(input);
   }
 }
@@ -574,7 +624,9 @@ function toolCard(b, event, result, live, awaiting) {
   const body = [];
   if (b.name === "execute_command") body.push(section("Command", h("pre", { class: "out" }, input.command)));
   else if (b.name === "write_file") body.push(section("New content · " + input.path, h("pre", { class: "out" }, input.content)));
-  else if (!["read_file", "list_directory", "remember"].includes(b.name)) body.push(section("Input", h("pre", { class: "out" }, JSON.stringify(input, null, 2))));
+  else if (b.name === "edit_file") body.push(section("Edit · " + input.path, diffView((input.old_text || "").split("\n").map((l) => "-" + l).concat((input.new_text || "").split("\n").map((l) => "+" + l)).join("\n"), "diff")));
+  else if (b.name === "http_request") body.push(section("Request", h("pre", { class: "out" }, toolLabel(b.name, input) + (input.body ? "\n\n" + input.body : ""))));
+  else if (!["read_file", "list_directory", "remember", "update_plan"].includes(b.name)) body.push(section("Input", h("pre", { class: "out" }, JSON.stringify(input, null, 2))));
   if (output != null) body.push(section("Result", h("pre", { class: "out" }, output || "(empty)")));
 
   return keyedDetails("tool:" + b.id, { class: "tool" },
@@ -604,8 +656,8 @@ function diffView(text, kind) {
 }
 
 function approvalCard(p) {
-  const title = { write_file: "Write this file?", execute_command: "Run this command?", remember: "Remember this?" }[p.tool] || `Allow ${p.tool}?`;
-  const kind = p.tool === "execute_command" ? "command" : p.tool === "remember" ? "plain" : "diff";
+  const title = { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?" }[p.tool] || `Allow ${p.tool}?`;
+  const kind = p.tool === "execute_command" ? "command" : p.tool === "remember" || p.tool === "http_request" ? "plain" : "diff";
   const reason = h("input", {
     id: "deny-reason", type: "text", placeholder: "Reason for denying (optional; Airth sees it)",
     value: app.reason, autocomplete: "off",
@@ -620,6 +672,7 @@ function approvalCard(p) {
     diffView(p.preview, kind),
     h("div", { class: "approval-actions" },
       h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve ", h("kbd", null, modKey + "↵")),
+      p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this run are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this run`),
       h("button", { class: "btn danger", type: "button", onclick: () => answer(false) }, "Deny"),
       reason));
 }
@@ -721,13 +774,13 @@ function askToFix(failed) {
     .catch((e) => { app.changeError = e.message; renderRun(); });
 }
 
-async function answer(approve) {
+async function answer(approve, forRun) {
   const d = app.run;
   if (!d || !d.pending || app.busy) return;
   app.busy = true;
   try {
     await api(`${runPath(app.realm, app.route.id)}/approval`, {
-      approval_id: d.pending.id, approve, reason: approve ? "" : app.reason,
+      approval_id: d.pending.id, approve, for_run: !!forRun, reason: approve ? "" : app.reason,
     });
     app.reason = "";
     app.version = null;
@@ -762,6 +815,7 @@ const CAP_HELP = {
   write: "Create and change files",
   execute: "Run shell commands",
   memory: "Save facts to this realm's memory",
+  network: "Call integrations and websites",
 };
 
 function renderSettings(main) {
@@ -811,6 +865,29 @@ function renderSettings(main) {
     } catch (e) { flash(e.message, true); }
   };
 
+  const integ = {
+    name: h("input", { type: "text", placeholder: "name, e.g. github", autocomplete: "off", spellcheck: "false" }),
+    url: h("input", { type: "text", placeholder: "base URL, e.g. https://api.github.com", autocomplete: "off", spellcheck: "false" }),
+    header: h("input", { type: "text", placeholder: "header (optional), e.g. Authorization: Bearer [secret:GITHUB_TOKEN]", autocomplete: "off", spellcheck: "false" }),
+    desc: h("input", { type: "text", placeholder: "what it is for (the agent sees this)" }),
+  };
+  const addIntegration = async () => {
+    const headers = {};
+    const hv = integ.header.value.trim();
+    if (hv) {
+      const i = hv.indexOf(":");
+      if (i < 1) return flash("Headers look like “Name: value”", true);
+      headers[hv.slice(0, i).trim()] = hv.slice(i + 1).trim();
+    }
+    try {
+      app.realmDetail = await api(`${realmPath(d.name)}/integrations`, {
+        name: integ.name.value.trim(), base_url: integ.url.value.trim(), description: integ.desc.value.trim(), headers,
+      });
+      renderMain();
+      flash("Integration saved");
+    } catch (e) { flash(e.message, true); }
+  };
+
   page(main, d.name, null,
     h("div", { class: "card" },
       field("Description", desc),
@@ -848,6 +925,21 @@ function renderSettings(main) {
             onclick: async () => { app.realmDetail = await api(`${realmPath(d.name)}/secrets/${enc(s.key)}`, undefined, "DELETE"); renderMain(); } }, "×")))
         : h("div", { class: "muted small pad" }, "No credentials."),
       h("div", { class: "inline-form" }, secKey, secVal, h("button", { class: "btn", type: "button", onclick: addSecret }, "Save"))),
+
+    h("h2", null, "Integrations"),
+    h("p", { class: "muted" }, "Services this realm's runs may call. Credentials go in headers as [secret:NAME]: the runtime fills them in, only for requests under the base URL, and the model never sees them. Without an integration, runs can only reach public websites, with no credentials."),
+    h("div", { class: "card" },
+      d.integrations.length ? d.integrations.map((i) =>
+        h("div", { class: "list-row" },
+          h("div", { class: "grow" },
+            h("div", null, h("span", { class: "strong" }, i.name), " ", h("code", { class: "path" }, i.base_url)),
+            i.description && h("div", { class: "muted small" }, i.description),
+            Object.entries(i.headers).map(([k, v]) => h("div", { class: "muted small" }, h("code", null, `${k}: ${v}`))),
+            i.missing_secrets.length > 0 && h("div", { class: "warn small" }, "Missing credential: " + i.missing_secrets.join(", "))),
+          h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + i.name,
+            onclick: async () => { app.realmDetail = await api(`${realmPath(d.name)}/integrations/${enc(i.name)}`, undefined, "DELETE"); renderMain(); } }, "×")))
+        : h("div", { class: "muted small pad" }, "No integrations."),
+      h("div", { class: "stack-form" }, h("div", { class: "inline-form" }, integ.name, integ.url), integ.header, h("div", { class: "inline-form" }, integ.desc, h("button", { class: "btn", type: "button", onclick: addIntegration }, "Add")))),
 
     h("h2", null, "Privacy"),
     h("div", { class: "card" },

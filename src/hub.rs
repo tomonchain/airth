@@ -17,8 +17,8 @@ use crate::models::{self, ContentBlock, Message, Model, Role};
 use crate::permissions::{Approver, Capability, PermissionGate};
 use crate::realm::{PROVIDER_KEYS, Realm};
 use crate::runtime::Runtime;
-use crate::state::{State, Status};
-use crate::tools::{self, Access, Workspace};
+use crate::state::{State, Status, render_plan};
+use crate::tools::{self, Access, PlanHandle, RealmTools, Workspace};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
@@ -54,6 +54,9 @@ pub struct RunSummary {
     pub change: Option<ChangeStatus>,
     /// For isolated runs with changes: whether the latest checks passed.
     pub checks_passed: Option<bool>,
+    /// Steps of the run's plan that are closed (done or skipped), and all steps.
+    pub plan_done: usize,
+    pub plan_total: usize,
 }
 
 impl RunSummary {
@@ -114,17 +117,22 @@ impl Hub {
 
     /// The capabilities an agent dispatched by this hub has.
     pub fn skills(&self) -> Vec<Skill> {
-        tools::realm_tools(MemoryStore::new("/dev/null"), String::new())
-            .iter()
-            .map(|t| {
-                let spec = t.spec();
-                Skill {
-                    name: spec.name,
-                    description: spec.description,
-                    capability: t.capability(),
-                }
-            })
-            .collect()
+        tools::realm_tools(RealmTools {
+            memory: MemoryStore::new("/dev/null"),
+            source: String::new(),
+            plan: PlanHandle::default(),
+            integrations: Vec::new(),
+        })
+        .iter()
+        .map(|t| {
+            let spec = t.spec();
+            Skill {
+                name: spec.name,
+                description: spec.description,
+                capability: t.capability(),
+            }
+        })
+        .collect()
     }
 
     /// Create and save a new run, without starting it. In an isolated realm
@@ -158,6 +166,35 @@ impl Hub {
         if message.is_empty() {
             bail!("the message is empty");
         }
+        let mut state = self.reopen(realm, run)?;
+        append_user_text(&mut state.messages, message);
+        state.status = Status::Running;
+        state.report = None;
+        state.save()?;
+        Ok(state)
+    }
+
+    /// Load a run that did not complete (interrupted, stopped or failed) and
+    /// tell the agent how to pick it up again, ready to drive.
+    pub fn resume(&self, realm: &Realm, run: &str) -> Result<State> {
+        let mut state = self.reopen(realm, run)?;
+        if state.status == Status::Completed {
+            bail!(
+                "run {} completed; send it a message to continue it",
+                state.id
+            );
+        }
+        let message = resume_message(&state);
+        append_user_text(&mut state.messages, &message);
+        state.status = Status::Running;
+        state.report = None;
+        state.save()?;
+        Ok(state)
+    }
+
+    /// A saved run that may be driven again: not live, change still open,
+    /// and with no tool call left unanswered.
+    fn reopen(&self, realm: &Realm, run: &str) -> Result<State> {
         let mut state = self.load_run(realm, run)?;
         if self.is_live(realm, &state.id) {
             bail!(
@@ -174,10 +211,6 @@ impl Hub {
             );
         }
         state.close_dangling_tool_calls();
-        append_user_text(&mut state.messages, message);
-        state.status = Status::Running;
-        state.report = None;
-        state.save()?;
         Ok(state)
     }
 
@@ -194,12 +227,20 @@ impl Hub {
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
         let workspace = self.workspace_for(realm, state)?;
         let briefing = self.briefing(realm, state, &workspace)?;
+        let plan = PlanHandle::new(state.plan.clone().into());
         let runtime = Runtime::new(
-            tools::realm_tools(realm.memory(), format!("run:{}", state.id)),
-            PermissionGate::new(realm.config.policy.clone(), hooks.approver),
+            tools::realm_tools(RealmTools {
+                memory: realm.memory(),
+                source: format!("run:{}", state.id),
+                plan: plan.clone(),
+                integrations: realm.config.integrations.clone(),
+            }),
+            PermissionGate::new(realm.config.policy.clone(), hooks.approver)
+                .with_grants(state.grants.clone()),
             workspace.clone(),
             hooks.cancel.clone(),
-        );
+        )
+        .with_plan(plan);
         let observer = hooks.observer;
         let result = Agent::new(
             &*model,
@@ -245,6 +286,19 @@ impl Hub {
         hooks: RunHooks,
     ) -> Result<State> {
         let mut state = self.create_run(realm, objective)?;
+        self.drive(realm, &mut state, config, hooks)?;
+        Ok(state)
+    }
+
+    /// Resume a run that did not complete and drive it until it stops.
+    pub fn resume_and_drive(
+        &self,
+        realm: &Realm,
+        run: &str,
+        config: AgentConfig,
+        hooks: RunHooks,
+    ) -> Result<State> {
+        let mut state = self.resume(realm, run)?;
         self.drive(realm, &mut state, config, hooks)?;
         Ok(state)
     }
@@ -468,6 +522,8 @@ impl Hub {
                     .as_ref()
                     .filter(|c| c.has_changes() && c.checks.as_ref().is_some_and(|k| k.finished))
                     .map(|c| c.checks_passed()),
+                plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
+                plan_total: s.plan.len(),
                 id: s.id,
                 objective: s.objective,
                 status: s.status,
@@ -565,6 +621,36 @@ fn worktree_git_dir(common: &Path, worktree: &Path) -> PathBuf {
             })
         })
         .unwrap_or(fallback)
+}
+
+/// What the agent is told when its run is picked up again.
+fn resume_message(state: &State) -> String {
+    let how = match state.status {
+        Status::Running => {
+            "was interrupted: the process driving it exited before it finished".to_string()
+        }
+        Status::Stopped | Status::Failed => {
+            let what = if state.status == Status::Failed {
+                "failed"
+            } else {
+                "stopped"
+            };
+            match state.report.as_deref().filter(|r| !r.is_empty()) {
+                Some(report) => format!("{what} ({})", first_line(report, 300)),
+                None => what.to_string(),
+            }
+        }
+        Status::Completed => "completed".to_string(),
+    };
+    let mut out = format!("[Airth runtime] This run {how}. The owner has resumed it.\n\n");
+    if !state.plan.is_empty() {
+        out.push_str(&format!(
+            "Your plan so far:\n{}\n\n",
+            render_plan(&state.plan)
+        ));
+    }
+    out.push_str("Before continuing, check the current state of the workspace and of any system you changed: the step in progress, or the last action before the interruption, may have taken effect fully, partly or not at all. Do not repeat what already took effect. Then continue toward the objective, keeping your plan up to date.");
+    out
 }
 
 fn first_line(text: &str, max: usize) -> String {
@@ -675,7 +761,12 @@ mod tests {
         fn complete(&self, req: &ModelRequest) -> Result<ModelResponse> {
             self.seen.lock().unwrap().push(req.messages.to_vec());
             self.systems.lock().unwrap().push(req.system.to_string());
-            Ok(self.responses.lock().unwrap().remove(0))
+            let mut responses = self.responses.lock().unwrap();
+            if responses.is_empty() {
+                // Out of script: behave like a provider outage.
+                anyhow::bail!("connection reset by peer");
+            }
+            Ok(responses.remove(0))
         }
     }
 
@@ -1108,5 +1199,237 @@ mod tests {
         assert!(hub.adopt(&realm, &state.id).is_err());
         hub.discard(&realm, &state.id).unwrap();
         assert!(!repo.path().join("b.txt").exists());
+    }
+
+    /// Approves everything for the rest of the run, and records what it was asked.
+    struct GrantAll(Arc<Mutex<Vec<String>>>);
+    impl Approver for GrantAll {
+        fn ask(&mut self, request: &PermissionRequest) -> Result<Answer> {
+            self.0.lock().unwrap().push(request.tool.clone());
+            Ok(Answer::YesForRun)
+        }
+    }
+
+    /// A tracker API on loopback: serves the issue list, records posted comments.
+    /// Each request the tracker received: "METHOD path", Authorization, body.
+    type Received = Vec<(String, String, String)>;
+
+    fn tracker() -> (String, std::thread::JoinHandle<Received>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/api", server.server_addr().to_ip().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for _ in 0..2 {
+                let mut req = server.recv().unwrap();
+                let auth = req
+                    .headers()
+                    .iter()
+                    .find(|h| h.field.equiv("Authorization"))
+                    .map(|h| h.value.to_string())
+                    .unwrap_or_default();
+                let mut body = String::new();
+                req.as_reader().read_to_string(&mut body).unwrap();
+                seen.push((format!("{} {}", req.method(), req.url()), auth, body));
+                let reply = if req.url() == "/api/issues" {
+                    r#"[{"id":1,"title":"Login fails on Safari"},{"id":2,"title":"Typo in footer"}]"#
+                } else {
+                    r#"{"ok":true}"#
+                };
+                req.respond(tiny_http::Response::from_string(reply))
+                    .unwrap();
+            }
+            seen
+        });
+        (base, handle)
+    }
+
+    fn plan(steps: &[(&str, &str)]) -> serde_json::Value {
+        json!({"steps": steps.iter().map(|(t, s)| json!({"title": t, "status": s})).collect::<Vec<_>>()})
+    }
+
+    /// v0.3 acceptance: Airth completes a multi-step task across authorized
+    /// tools and resumes after interruption.
+    #[test]
+    fn multi_step_task_across_tools_resumes_after_interruption() {
+        let mut f = fixture();
+        let (base, server) = tracker();
+        f.realm
+            .set_secret("TRACKER_TOKEN", "trk-secret-42")
+            .unwrap();
+        f.realm
+            .set_integration(crate::integration::Integration {
+                name: "tracker".into(),
+                description: "The team's issue tracker".into(),
+                base_url: base,
+                headers: [(
+                    "Authorization".to_string(),
+                    "Bearer [secret:TRACKER_TOKEN]".to_string(),
+                )]
+                .into(),
+            })
+            .unwrap();
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let run_hooks = |observer| RunHooks {
+            approver: Box::new(GrantAll(asked.clone())),
+            observer,
+            cancel: CancelToken::default(),
+        };
+        let steps = [
+            "Fetch open issues",
+            "Write the triage report",
+            "Post a summary",
+        ];
+
+        // Part one: plan, fetch through the integration, then the model provider goes down.
+        let (hub, _, systems) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "1",
+                    "update_plan",
+                    plan(&[
+                        (steps[0], "in_progress"),
+                        (steps[1], "pending"),
+                        (steps[2], "pending"),
+                    ]),
+                ),
+                call(
+                    "2",
+                    "http_request",
+                    json!({"integration": "tracker", "url": "issues"}),
+                ),
+                call(
+                    "3",
+                    "update_plan",
+                    plan(&[
+                        (steps[0], "done"),
+                        (steps[1], "in_progress"),
+                        (steps[2], "pending"),
+                    ]),
+                ),
+            ],
+        );
+        let mut observer = NoObserver;
+        let err = hub
+            .dispatch(
+                &f.realm,
+                "Triage the open issues",
+                config(20),
+                run_hooks(&mut observer),
+            )
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("connection reset"));
+        let failed = hub.load_run(&f.realm, "last").unwrap();
+        assert_eq!(failed.status, Status::Failed);
+        assert_eq!(failed.plan.len(), 3);
+        assert!(failed.plan[0].status.is_closed());
+        assert!(failed.events[1].result.contains("Login fails on Safari"));
+        assert_eq!(
+            failed.grants.len(),
+            1,
+            "the owner allowed the tracker for this run"
+        );
+        assert!(systems.lock().unwrap()[0].contains("http_request"));
+
+        // Part two: the owner resumes it. The agent picks up from its plan.
+        let (hub, seen, _) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "4",
+                    "write_file",
+                    json!({"path": "triage.md", "content": "# Triage\n\n1. Login fails on Safari: high\n2. Typo in footer: low\n"}),
+                ),
+                call(
+                    "5",
+                    "http_request",
+                    json!({"integration": "tracker", "method": "POST", "url": "issues/1/comments", "body": "Marked high priority."}),
+                ),
+                call(
+                    "6",
+                    "update_plan",
+                    plan(&[(steps[0], "done"), (steps[1], "done"), (steps[2], "done")]),
+                ),
+                done("Triaged 2 issues: report in triage.md, summary posted on #1."),
+            ],
+        );
+        let mut observer = NoObserver;
+        let state = hub
+            .resume_and_drive(&f.realm, &failed.id, config(20), run_hooks(&mut observer))
+            .unwrap();
+        assert_eq!(state.status, Status::Completed);
+        assert!(state.plan.iter().all(|s| s.status.is_closed()));
+        assert!(
+            std::fs::read_to_string(f.root.path().join("triage.md"))
+                .unwrap()
+                .contains("Safari")
+        );
+
+        // The agent was told how it was interrupted, with its plan.
+        let seen = seen.lock().unwrap();
+        let resumed = serde_json::to_string(seen[0].last().unwrap()).unwrap();
+        assert!(resumed.contains("connection reset"), "{resumed}");
+        assert!(resumed.contains("[x] 1. Fetch open issues"), "{resumed}");
+        assert!(
+            resumed.contains("[~] 2. Write the triage report"),
+            "{resumed}"
+        );
+
+        // The tracker was approved once for the whole run, the write asked for.
+        assert_eq!(
+            *asked.lock().unwrap(),
+            vec!["http_request".to_string(), "write_file".to_string()]
+        );
+
+        // The credential reached the tracker, and never the model.
+        let requests = server.join().unwrap();
+        assert_eq!(requests[0].0, "GET /api/issues");
+        assert_eq!(requests[1].0, "POST /api/issues/1/comments");
+        assert_eq!(requests[1].2, "Marked high priority.");
+        assert!(requests.iter().all(|r| r.1 == "Bearer trk-secret-42"));
+        for messages in seen.iter() {
+            assert!(
+                !serde_json::to_string(messages)
+                    .unwrap()
+                    .contains("trk-secret-42")
+            );
+        }
+    }
+
+    #[test]
+    fn resume_answers_tool_calls_cut_off_by_a_crash() {
+        let f = fixture();
+        let (hub, seen, _) = make_hub(&f.home, vec![done("Checked: nothing was written.")]);
+        let mut state = hub.create_run(&f.realm, "write a file").unwrap();
+        // What a process killed while running a tool leaves behind.
+        state.messages.push(Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "write_file".into(),
+                input: json!({"path": "a.txt", "content": "x"}),
+            }],
+        });
+        state.save().unwrap();
+        assert_eq!(
+            hub.runs(&f.realm).unwrap()[0].display_status(),
+            "interrupted"
+        );
+
+        let state = hub
+            .resume_and_drive(
+                &f.realm,
+                &state.id,
+                config(5),
+                hooks(&mut NoObserver, false),
+            )
+            .unwrap();
+        assert_eq!(state.status, Status::Completed);
+        let sent = serde_json::to_string(seen.lock().unwrap()[0].last().unwrap()).unwrap();
+        assert!(sent.contains("Not run: the run was interrupted."), "{sent}");
+        assert!(sent.contains("was interrupted: the process"), "{sent}");
+
+        // A completed run is continued with a message, not resumed.
+        assert!(hub.resume(&f.realm, &state.id).is_err());
     }
 }

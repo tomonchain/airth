@@ -14,6 +14,7 @@ use crate::agent::{AgentConfig, Observer};
 use crate::cancel::CancelToken;
 use crate::home::NewRealm;
 use crate::hub::{Hub, RunHooks};
+use crate::integration::Integration;
 use crate::isolation::Isolation;
 use crate::owner::Owner;
 use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
@@ -312,6 +313,29 @@ impl App {
                 self.spawn(realm, state, Job::Drive);
                 ok()
             }
+            (Method::Post, ["realms", r, "runs", id, "resume"]) => {
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                self.ensure_idle(r, id)?;
+                let state = self.hub.resume(&realm, id)?;
+                self.spawn(realm, state, Job::Drive);
+                ok()
+            }
+            (Method::Post, ["realms", r, "integrations"]) => {
+                let body = read_json(request)?;
+                let mut realm = self.realm(r)?;
+                let integration: Integration =
+                    serde_json::from_value(body).context("invalid integration")?;
+                realm.set_integration(integration)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "integrations", name]) => {
+                let mut realm = self.realm(r)?;
+                if !realm.remove_integration(name)? {
+                    return Err(anyhow!("no such integration"));
+                }
+                json_response(200, self.realm_detail(&realm)?)
+            }
             (Method::Post, ["realms", r, "runs", id, "approval"]) => {
                 let body = read_json(request)?;
                 self.answer(r, id, &body)?;
@@ -443,6 +467,20 @@ impl App {
             "model_error": model.err().map(|e| format!("{e:#}")),
             "memory": realm.memory().list()?,
             "secrets": secrets,
+            "integrations": c.integrations.iter().map(|i| {
+                let missing: Vec<String> = i
+                    .secret_names()
+                    .into_iter()
+                    .filter(|k| realm.secret(k).is_none())
+                    .collect();
+                json!({
+                    "name": i.name,
+                    "description": i.description,
+                    "base_url": i.base_url,
+                    "headers": i.headers,
+                    "missing_secrets": missing,
+                })
+            }).collect::<Vec<_>>(),
         }))
     }
 
@@ -525,6 +563,8 @@ impl App {
                     "needs_approval": needs_approval,
                     "change": r.change.map(|c| c.as_str()),
                     "checks_passed": r.checks_passed,
+                    "plan_done": r.plan_done,
+                    "plan_total": r.plan_total,
                 })
             })
             .collect();
@@ -550,6 +590,8 @@ impl App {
                     "capability": p.request.capability.as_str(),
                     "preview": p.request.preview,
                     "warnings": p.request.warnings,
+                    "grantable": p.request.grantable(),
+                    "grant_label": p.request.grant_label(),
                 })
             });
             return Ok(json!({
@@ -583,7 +625,11 @@ impl App {
             .take_if(|p| Some(p.id) == body["approval_id"].as_u64())
             .context("this approval is no longer pending")?;
         let answer = if body["approve"].as_bool() == Some(true) {
-            Answer::Yes
+            if body["for_run"].as_bool() == Some(true) && p.request.grantable() {
+                Answer::YesForRun
+            } else {
+                Answer::Yes
+            }
         } else {
             match body["reason"].as_str().map(str::trim) {
                 Some(r) if !r.is_empty() => Answer::No(format!("denied by user: {r}")),

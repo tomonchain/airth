@@ -2,6 +2,7 @@
 
 use crate::isolation::Change;
 use crate::models::{ContentBlock, Message, Role};
+use crate::permissions::Grant;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,68 @@ pub struct Event {
     pub tool_use_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    Pending,
+    InProgress,
+    Done,
+    Blocked,
+    Skipped,
+}
+
+impl StepStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StepStatus::Pending => "pending",
+            StepStatus::InProgress => "in_progress",
+            StepStatus::Done => "done",
+            StepStatus::Blocked => "blocked",
+            StepStatus::Skipped => "skipped",
+        }
+    }
+
+    fn mark(self) -> &'static str {
+        match self {
+            StepStatus::Pending => "[ ]",
+            StepStatus::InProgress => "[~]",
+            StepStatus::Done => "[x]",
+            StepStatus::Blocked => "[!]",
+            StepStatus::Skipped => "[-]",
+        }
+    }
+
+    /// Nothing left to do for this step.
+    pub fn is_closed(self) -> bool {
+        matches!(self, StepStatus::Done | StepStatus::Skipped)
+    }
+}
+
+/// One step of a run's plan, kept by the agent with the `update_plan` tool.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanStep {
+    pub title: String,
+    pub status: StepStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// The plan as text, one step per line: `[x] title — note`.
+pub fn render_plan(plan: &[PlanStep]) -> String {
+    plan.iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let note = s
+                .note
+                .as_deref()
+                .map(|n| format!(" — {n}"))
+                .unwrap_or_default();
+            format!("{} {}. {}{note}", s.status.mark(), i + 1, s.title)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub id: String,
@@ -71,6 +134,12 @@ pub struct State {
     /// The run's isolated change, when its realm uses worktrees.
     #[serde(default)]
     pub change: Option<Change>,
+    /// The agent's plan for the objective, as it last updated it.
+    #[serde(default)]
+    pub plan: Vec<PlanStep>,
+    /// Standing approvals the owner gave during this run.
+    #[serde(default)]
+    pub grants: Vec<Grant>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -93,6 +162,8 @@ impl State {
             updated_at: Utc::now(),
             realm: String::new(),
             change: None,
+            plan: Vec::new(),
+            grants: Vec::new(),
             path,
         }
     }
