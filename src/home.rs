@@ -2,18 +2,25 @@
 //! about its owner, local and readable only by them.
 //!
 //! ```text
-//! owner.json     the owner profile (see owner.rs)
-//! config.json    the default realm
-//! realms/<name>/ one directory per realm (see realm.rs)
+//! owner.json          the owner profile (see owner.rs)
+//! config.json         the default realm, notification settings
+//! notifications.json  the owner's inbox (see notify.rs)
+//! server.json         the running app's address, while it runs (see ui)
+//! secrets.env         model provider settings for every realm (mode 600)
+//! realms/<name>/      one directory per realm (see realm.rs)
 //! ```
 //!
 //! No run can read or write here: the hub denies the whole home to every
 //! workspace, except the run's own isolated worktree.
 
 use crate::isolation::{self, Isolation};
+use crate::notify::Inbox;
 use crate::owner::Owner;
 use crate::permissions::Policy;
-use crate::realm::{Realm, RealmConfig, validate_name, write_atomic};
+use crate::realm::{
+    PROVIDER_KEYS, Realm, RealmConfig, read_env_file, remove_env_entry, set_env_entry,
+    validate_name, write_atomic,
+};
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -23,6 +30,8 @@ use std::path::{Path, PathBuf};
 #[serde(default)]
 struct Config {
     default_realm: Option<String>,
+    /// Show notifications on the desktop too (macOS). Default on.
+    desktop_notifications: Option<bool>,
 }
 
 /// What a new realm looks like.
@@ -102,13 +111,52 @@ impl Home {
 
     pub fn set_default_realm(&self, name: &str) -> Result<()> {
         self.realm(name)?;
-        let config = Config {
-            default_realm: Some(name.to_string()),
-        };
+        let mut config = self.config();
+        config.default_realm = Some(name.to_string());
+        self.save_config(&config)
+    }
+
+    fn save_config(&self, config: &Config) -> Result<()> {
         write_atomic(
             &self.dir.join("config.json"),
-            &serde_json::to_string_pretty(&config)?,
+            &serde_json::to_string_pretty(config)?,
         )
+    }
+
+    pub fn desktop_notifications(&self) -> bool {
+        self.config().desktop_notifications.unwrap_or(true)
+    }
+
+    pub fn set_desktop_notifications(&self, on: bool) -> Result<()> {
+        let mut config = self.config();
+        config.desktop_notifications = Some(on);
+        self.save_config(&config)
+    }
+
+    /// Model provider settings shared by all realms (a realm's own override
+    /// them). Kept here so a background service does not depend on the
+    /// shell's environment.
+    pub fn provider_settings(&self) -> Result<Vec<(String, String)>> {
+        read_env_file(&self.dir.join("secrets.env"))
+    }
+
+    pub fn set_provider_setting(&self, key: &str, value: &str) -> Result<()> {
+        if !PROVIDER_KEYS.contains(&key) {
+            bail!(
+                "only model settings can be set for all realms ({}); other credentials belong to a realm",
+                PROVIDER_KEYS.join(", ")
+            );
+        }
+        set_env_entry(&self.dir.join("secrets.env"), key, value)
+    }
+
+    pub fn remove_provider_setting(&self, key: &str) -> Result<bool> {
+        remove_env_entry(&self.dir.join("secrets.env"), key)
+    }
+
+    /// The owner's notifications.
+    pub fn inbox(&self) -> Inbox {
+        Inbox::new(self.dir.join("notifications.json")).with_desktop(self.desktop_notifications())
     }
 
     /// All realms, archived ones included, by name.

@@ -7,11 +7,15 @@ mod integration;
 mod isolation;
 mod memory;
 mod models;
+mod notify;
+mod objective;
 mod owner;
 mod permissions;
 mod realm;
 mod runtime;
 mod sandbox;
+mod scheduler;
+mod service;
 mod state;
 mod term;
 mod tools;
@@ -96,6 +100,35 @@ enum Cmd {
         #[arg(long, default_value_t = 50)]
         max_iterations: u32,
     },
+    /// Run Airth in the background: the app server and the scheduler that
+    /// starts objectives (see also `airth service install`)
+    Serve {
+        #[arg(long, default_value_t = 7457)]
+        port: u16,
+        #[arg(long, default_value_t = 50)]
+        max_iterations: u32,
+    },
+    /// Install or remove Airth as a login service, so objectives run while you are away (macOS)
+    Service {
+        #[command(subcommand)]
+        command: service::ServiceCmd,
+    },
+    /// Manage objectives Airth pursues on its own (schedules, file watches, webhooks)
+    Objective {
+        #[command(subcommand)]
+        command: cli::ObjectiveCmd,
+    },
+    /// Show new notifications (then mark them read)
+    Inbox {
+        #[command(flatten)]
+        args: cli::InboxArgs,
+    },
+    /// What happened across your realms recently, and what waits for you
+    Summary {
+        /// How far back to look
+        #[arg(long, default_value_t = 24)]
+        hours: i64,
+    },
     /// Manage realms: isolated areas of your life Airth works in
     Realm {
         #[command(subcommand)]
@@ -132,6 +165,12 @@ struct RunOpts {
     /// Maximum number of model calls
     #[arg(long, default_value_t = 50)]
     max_iterations: u32,
+    /// Stop once the model has used this many tokens (input + output)
+    #[arg(long)]
+    max_tokens: Option<u64>,
+    /// Stop after this many minutes
+    #[arg(long)]
+    max_minutes: Option<u32>,
     /// Print full tool results
     #[arg(short, long)]
     verbose: bool,
@@ -139,9 +178,11 @@ struct RunOpts {
 
 impl RunOpts {
     fn config(&self) -> AgentConfig {
-        AgentConfig {
-            max_iterations: self.max_iterations,
-        }
+        AgentConfig::new(self.max_iterations).within(&agent::Budget {
+            max_iterations: None,
+            max_tokens: self.max_tokens,
+            max_minutes: self.max_minutes,
+        })
     }
 }
 
@@ -226,6 +267,35 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
             eprintln!("discarded the change of run {}", state.id);
             Ok(true)
         }
+        Some(Cmd::Ui { no_open, .. }) if let Some(url) = ui::running_url(&ctx.hub()) => {
+            eprintln!("\x1b[1mairth\x1b[0m is already running → {url}");
+            if !no_open {
+                ui::open_url(&url);
+            }
+            Ok(true)
+        }
+        Some(Cmd::Serve {
+            port,
+            max_iterations,
+        }) => {
+            if let Some(url) = ui::running_url(&ctx.hub()) {
+                anyhow::bail!("Airth is already running for this home → {url}");
+            }
+            ui::serve(
+                ctx.hub(),
+                ui::UiOptions {
+                    port,
+                    open_browser: false,
+                    max_iterations,
+                    realm: None,
+                },
+            )
+            .map(|_| true)
+        }
+        Some(Cmd::Service { command }) => service::run(ctx, command),
+        Some(Cmd::Objective { command }) => cli::objective(ctx, command),
+        Some(Cmd::Inbox { args }) => cli::inbox(ctx, args),
+        Some(Cmd::Summary { hours }) => cli::summary(ctx, hours.clamp(1, 24 * 90)),
         Some(Cmd::Ui {
             port,
             no_open,
@@ -253,6 +323,8 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
                 &objective,
                 RunOpts {
                     max_iterations: 50,
+                    max_tokens: None,
+                    max_minutes: None,
                     verbose: false,
                 },
             )
@@ -318,6 +390,23 @@ fn resume(ctx: &Ctx, run: &str, opts: RunOpts) -> Result<bool> {
         cancel: cancel_on_ctrl_c()?,
     };
     let state = hub.resume_and_drive(&realm, &state.id, opts.config(), hooks)?;
+    Ok(finish(&state))
+}
+
+/// Start an objective's run now, with the owner at the terminal.
+pub fn run_objective(ctx: &Ctx, realm: &Realm, id: &str, verbose: bool) -> Result<bool> {
+    let hub = ctx.hub();
+    banner(&hub, realm);
+    let (mut state, objective) =
+        hub.start_objective(realm, id, "started by the owner", None, chrono::Utc::now())?;
+    eprintln!("objective {}: {}", objective.id, objective.objective);
+    let mut observer = term::TerminalObserver::new(verbose);
+    let hooks = RunHooks {
+        approver: Box::new(TerminalApprover),
+        observer: &mut observer,
+        cancel: cancel_on_ctrl_c()?,
+    };
+    hub.drive(realm, &mut state, AgentConfig::new(50), hooks)?;
     Ok(finish(&state))
 }
 

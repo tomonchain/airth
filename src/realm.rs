@@ -5,6 +5,7 @@
 //! realms/<name>/
 //!   realm.json    settings: root, policy, isolation, checks
 //!   memory.json   long-term memory (see memory.rs)
+//!   objectives.json  persistent objectives and their triggers (see objective.rs)
 //!   secrets.env   credentials, KEY=VALUE, readable only by the owner
 //!   runs/         run states and locks
 //!   worktrees/    isolated working copies of runs
@@ -17,6 +18,7 @@
 use crate::integration::Integration;
 use crate::isolation::Isolation;
 use crate::memory::MemoryStore;
+use crate::objective::ObjectiveStore;
 use crate::permissions::Policy;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
@@ -141,23 +143,17 @@ impl Realm {
         MemoryStore::new(self.dir.join("memory.json"))
     }
 
-    fn secrets_path(&self) -> PathBuf {
+    pub fn objectives(&self) -> ObjectiveStore {
+        ObjectiveStore::new(self.dir.join("objectives.json"))
+    }
+
+    pub(crate) fn secrets_path(&self) -> PathBuf {
         self.dir.join("secrets.env")
     }
 
     /// All credentials of this realm, in file order.
     pub fn secrets(&self) -> Result<Vec<(String, String)>> {
-        let text = match std::fs::read_to_string(self.secrets_path()) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(e) => return Err(e.into()),
-        };
-        Ok(text
-            .lines()
-            .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
-            .filter_map(|l| l.split_once('='))
-            .map(|(k, v)| (k.trim().to_string(), v.to_string()))
-            .collect())
+        read_env_file(&self.secrets_path())
     }
 
     pub fn secret(&self, key: &str) -> Option<String> {
@@ -201,36 +197,12 @@ impl Realm {
     }
 
     pub fn set_secret(&self, key: &str, value: &str) -> Result<()> {
-        validate_secret_key(key)?;
-        if value.contains(['\n', '\r']) {
-            bail!("secret values must fit on one line");
-        }
-        let mut secrets = self.secrets()?;
-        match secrets.iter_mut().find(|(k, _)| k == key) {
-            Some(entry) => entry.1 = value.to_string(),
-            None => secrets.push((key.to_string(), value.to_string())),
-        }
-        self.write_secrets(&secrets)
+        set_env_entry(&self.secrets_path(), key, value)
     }
 
     /// Remove a secret; false if there was none with this key.
     pub fn remove_secret(&self, key: &str) -> Result<bool> {
-        let mut secrets = self.secrets()?;
-        let before = secrets.len();
-        secrets.retain(|(k, _)| k != key);
-        if secrets.len() == before {
-            return Ok(false);
-        }
-        self.write_secrets(&secrets)?;
-        Ok(true)
-    }
-
-    fn write_secrets(&self, secrets: &[(String, String)]) -> Result<()> {
-        let mut text = String::from("# Airth realm credentials. Readable only by you.\n");
-        for (k, v) in secrets {
-            text.push_str(&format!("{k}={v}\n"));
-        }
-        write_private(&self.secrets_path(), &text)
+        remove_env_entry(&self.secrets_path(), key)
     }
 }
 
@@ -247,6 +219,53 @@ pub fn validate_name(name: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// `KEY=value` lines, as in a realm's `secrets.env`.
+pub(crate) fn read_env_file(path: &Path) -> Result<Vec<(String, String)>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    Ok(text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| (k.trim().to_string(), v.to_string()))
+        .collect())
+}
+
+pub(crate) fn set_env_entry(path: &Path, key: &str, value: &str) -> Result<()> {
+    validate_secret_key(key)?;
+    if value.contains(['\n', '\r']) {
+        bail!("secret values must fit on one line");
+    }
+    let mut entries = read_env_file(path)?;
+    match entries.iter_mut().find(|(k, _)| k == key) {
+        Some(entry) => entry.1 = value.to_string(),
+        None => entries.push((key.to_string(), value.to_string())),
+    }
+    write_env_file(path, &entries)
+}
+
+pub(crate) fn remove_env_entry(path: &Path, key: &str) -> Result<bool> {
+    let mut entries = read_env_file(path)?;
+    let before = entries.len();
+    entries.retain(|(k, _)| k != key);
+    if entries.len() == before {
+        return Ok(false);
+    }
+    write_env_file(path, &entries)?;
+    Ok(true)
+}
+
+fn write_env_file(path: &Path, entries: &[(String, String)]) -> Result<()> {
+    let mut text = String::from("# Airth credentials. Readable only by you.\n");
+    for (k, v) in entries {
+        text.push_str(&format!("{k}={v}\n"));
+    }
+    write_private(path, &text)
 }
 
 fn validate_secret_key(key: &str) -> Result<()> {
@@ -271,7 +290,7 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
 }
 
 /// Write a file only the owner can read.
-fn write_private(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> Result<()> {
     use std::io::Write;
     let tmp = path.with_extension("tmp");
     let mut options = std::fs::OpenOptions::new();
@@ -326,7 +345,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(realm.secrets_path())
+            let mode = std::fs::metadata(realm.dir().join("secrets.env"))
                 .unwrap()
                 .permissions()
                 .mode();

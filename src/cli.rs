@@ -99,9 +99,19 @@ pub enum SecretCmd {
     /// List the realm's credential names (values are never shown)
     List,
     /// Set a credential; the value is read from stdin without echo
-    Set { key: String },
+    Set {
+        key: String,
+        /// A model setting (ANTHROPIC_API_KEY, AIRTH_MODEL...) for every realm
+        /// without its own; needed by the background service
+        #[arg(long)]
+        all_realms: bool,
+    },
     /// Remove a credential
-    Rm { key: String },
+    Rm {
+        key: String,
+        #[arg(long)]
+        all_realms: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -124,6 +134,341 @@ pub enum IntegrationCmd {
     },
     /// Remove an integration
     Rm { name: String },
+}
+
+#[derive(Subcommand)]
+pub enum ObjectiveCmd {
+    /// List the realm's objectives
+    List,
+    /// Add (or replace) an objective Airth pursues on its own
+    #[command(
+        after_help = "Examples:\n  airth objective add triage \"Triage new issues and post a summary\" \\\n    --every \"weekdays 08:30\" --allow network:tracker --allow write --max-minutes 20\n  airth objective add inbox \"File the notes dropped in inbox/\" --watch inbox --allow write\n  airth objective add deploy-check \"Check the deploy that just ran\" --webhook\n\nRuns may do what the realm allows plus --allow grants without asking; anything else\nwaits --wait minutes for you (in the app), then is denied."
+    )]
+    Add {
+        id: String,
+        objective: String,
+        /// Run on a schedule: "every 30m", "daily 08:30", "weekdays 09:00", "mon,thu 18:00"
+        #[arg(long, group = "trigger")]
+        every: Option<String>,
+        /// Run when files under this realm path change
+        #[arg(long, group = "trigger")]
+        watch: Option<String>,
+        /// Run when something on this machine POSTs to its webhook URL
+        #[arg(long, group = "trigger")]
+        webhook: bool,
+        /// Approve in advance: write, execute, memory, network, or
+        /// network:<integration or host>. Repeatable
+        #[arg(long = "allow")]
+        allow: Vec<String>,
+        /// Minutes a run waits for you on anything else, before it is denied
+        #[arg(long, default_value_t = 10)]
+        wait: u32,
+        #[arg(long)]
+        max_iterations: Option<u32>,
+        #[arg(long)]
+        max_tokens: Option<u64>,
+        #[arg(long)]
+        max_minutes: Option<u32>,
+    },
+    /// Show an objective, with its webhook URL if it has one
+    Show {
+        id: String,
+    },
+    /// Start an objective's run now, in this terminal
+    Run {
+        id: String,
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    Enable {
+        id: String,
+    },
+    Disable {
+        id: String,
+    },
+    Rm {
+        id: String,
+    },
+}
+
+pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
+    use crate::objective::{Objective, Trigger};
+    let realm = ctx.realm()?;
+    let store = realm.objectives();
+    match command {
+        ObjectiveCmd::List => {
+            let list = store.list()?;
+            if list.is_empty() {
+                eprintln!(
+                    "realm {} has no objectives (airth objective add --help)",
+                    realm.name()
+                );
+            }
+            for o in list {
+                let next = o
+                    .next_at
+                    .map(|t| {
+                        format!(
+                            "next {}",
+                            t.with_timezone(&chrono::Local).format("%a %d %b %H:%M")
+                        )
+                    })
+                    .unwrap_or_default();
+                println!(
+                    "{:<18} {:<8} {:<28} {:<24} last: {}",
+                    o.id,
+                    if o.enabled { "on" } else { "off" },
+                    o.trigger.describe(),
+                    next,
+                    o.last_status.as_deref().unwrap_or("never run")
+                );
+            }
+        }
+        ObjectiveCmd::Add {
+            id,
+            objective,
+            every,
+            watch,
+            webhook,
+            allow,
+            wait,
+            max_iterations,
+            max_tokens,
+            max_minutes,
+        } => {
+            let trigger = match (every, watch, webhook) {
+                (Some(every), _, _) => Trigger::Schedule { every },
+                (_, Some(path), _) => Trigger::Watch { path },
+                (_, _, true) => Trigger::Webhook {
+                    token: crate::ui::random_token()?,
+                },
+                _ => Trigger::Manual,
+            };
+            let approvals = allow
+                .iter()
+                .map(|a| parse_grant(&realm, a))
+                .collect::<Result<Vec<_>>>()?;
+            store.save(Objective {
+                id: id.clone(),
+                objective,
+                trigger,
+                approvals,
+                budget: crate::agent::Budget {
+                    max_iterations,
+                    max_tokens,
+                    max_minutes,
+                },
+                approval_wait_minutes: wait,
+                enabled: true,
+                created_at: chrono::Utc::now(),
+                next_at: None,
+                fingerprint: None,
+                last_run: None,
+                last_at: None,
+                last_status: None,
+            })?;
+            eprintln!(
+                "\x1b[32m✓\x1b[0m objective {id} saved in realm {}",
+                realm.name()
+            );
+            show_objective(ctx, &realm, &id)?;
+            if crate::ui::running_url(&ctx.hub()).is_none() {
+                eprintln!(
+                    "\x1b[33m!\x1b[0m Airth is not running in the background, so it will not start on its own: run `airth serve`, or `airth service install`"
+                );
+            }
+        }
+        ObjectiveCmd::Show { id } => show_objective(ctx, &realm, &id)?,
+        ObjectiveCmd::Run { id, verbose } => {
+            return crate::run_objective(ctx, &realm, &id, verbose);
+        }
+        ObjectiveCmd::Enable { id } | ObjectiveCmd::Disable { id }
+            if !store.list()?.iter().any(|o| o.id == id) =>
+        {
+            bail!("no objective '{id}'")
+        }
+        ObjectiveCmd::Enable { id } => {
+            store.update(&id, |o| {
+                o.enabled = true;
+                o.next_at = None;
+                o.fingerprint = None;
+            })?;
+            eprintln!("enabled {id}");
+        }
+        ObjectiveCmd::Disable { id } => {
+            store.update(&id, |o| o.enabled = false)?;
+            eprintln!("disabled {id}");
+        }
+        ObjectiveCmd::Rm { id } => {
+            if !store.remove(&id)? {
+                bail!("no objective '{id}'");
+            }
+            eprintln!("removed {id}");
+        }
+    }
+    Ok(true)
+}
+
+fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()> {
+    use crate::objective::Trigger;
+    let o = realm.objectives().get(id)?;
+    println!("objective    {}", o.id);
+    println!("goal         {}", o.objective);
+    println!("trigger      {}", o.trigger.describe());
+    if let Trigger::Webhook { token } = &o.trigger {
+        let port = crate::ui::running_url(&ctx.hub())
+            .and_then(|u| {
+                u.split(':')
+                    .nth(2)
+                    .and_then(|p| p.split('/').next())
+                    .map(String::from)
+            })
+            .unwrap_or_else(|| "<port>".into());
+        println!(
+            "webhook      curl -X POST --data @payload.json http://127.0.0.1:{port}/hooks/{}/{}/{token}",
+            realm.name(),
+            o.id
+        );
+    }
+    let approvals: Vec<String> = o
+        .approvals
+        .iter()
+        .map(|g| match &g.scope {
+            Some(s) => format!("{} ({s})", g.capability.as_str()),
+            None => g.capability.as_str().to_string(),
+        })
+        .collect();
+    println!(
+        "approvals    {}",
+        if approvals.is_empty() {
+            "(none: only what the realm allows)".to_string()
+        } else {
+            approvals.join(", ")
+        }
+    );
+    println!(
+        "waits        {} minutes for you, then denies",
+        o.approval_wait_minutes
+    );
+    println!("budget       {}", o.budget.describe());
+    println!("enabled      {}", if o.enabled { "yes" } else { "no" });
+    if let Some(at) = o.last_at {
+        println!(
+            "last run     {} · {} · {}",
+            o.last_run.as_deref().unwrap_or("?"),
+            at.with_timezone(&chrono::Local).format("%a %d %b %H:%M"),
+            o.last_status.as_deref().unwrap_or("?")
+        );
+    }
+    Ok(())
+}
+
+/// `write`, `network`, `network:github` (an integration) or `network:example.com` (a host).
+fn parse_grant(realm: &crate::realm::Realm, text: &str) -> Result<crate::permissions::Grant> {
+    let (cap, scope) = match text.split_once(':') {
+        Some((c, s)) => (c, Some(s.trim())),
+        None => (text, None),
+    };
+    let capability = Capability::parse(cap.trim())?;
+    let scope = match scope {
+        None => None,
+        Some(s) if capability != Capability::Network => {
+            bail!("only network approvals take a scope ('{s}')")
+        }
+        Some(s) if realm.config.integrations.iter().any(|i| i.name == s) => {
+            Some(format!("integration {s}"))
+        }
+        Some(s) => Some(s.to_string()),
+    };
+    Ok(crate::permissions::Grant { capability, scope })
+}
+
+#[derive(clap::Args)]
+pub struct InboxArgs {
+    /// Show read notifications too
+    #[arg(long)]
+    all: bool,
+    /// Turn desktop notifications on or off
+    #[arg(long, value_parser = ["on", "off"])]
+    desktop: Option<String>,
+}
+
+pub fn inbox(ctx: &Ctx, args: InboxArgs) -> Result<bool> {
+    let home = ctx.home();
+    if let Some(d) = args.desktop {
+        home.set_desktop_notifications(d == "on")?;
+        eprintln!("desktop notifications {d}");
+        return Ok(true);
+    }
+    let inbox = home.inbox();
+    let list: Vec<_> = inbox
+        .list()?
+        .into_iter()
+        .filter(|n| args.all || !n.read)
+        .collect();
+    if list.is_empty() {
+        eprintln!("no new notifications");
+    }
+    for n in &list {
+        println!(
+            "\x1b[1m{}\x1b[0m \x1b[2m{} · {}{}\x1b[0m",
+            n.title,
+            n.realm,
+            n.created_at
+                .with_timezone(&chrono::Local)
+                .format("%a %d %b %H:%M"),
+            n.run
+                .as_deref()
+                .map(|r| format!(" · run {r}"))
+                .unwrap_or_default()
+        );
+        for line in n.body.lines().take(6) {
+            println!("  {line}");
+        }
+    }
+    inbox.mark_read(None)?;
+    Ok(true)
+}
+
+pub fn summary(ctx: &Ctx, hours: i64) -> Result<bool> {
+    let since = chrono::Utc::now() - chrono::Duration::hours(hours);
+    let realms = crate::scheduler::summary(&ctx.hub(), since)?;
+    if realms.is_empty() {
+        eprintln!("nothing happened in the last {hours} hours");
+    }
+    for r in realms {
+        println!(
+            "\x1b[1m{}\x1b[0m  {} run(s): {} completed, {} failed, {} stopped",
+            r.realm, r.runs, r.completed, r.failed, r.stopped
+        );
+        for l in &r.recent {
+            let by = l
+                .origin
+                .as_deref()
+                .map(|o| format!(" [{o}]"))
+                .unwrap_or_default();
+            println!("  ✓ {}{by}: {}", l.objective, l.report);
+        }
+        for l in &r.to_review {
+            println!("  ⧗ to review: {} (airth review {})", l.objective, l.id);
+        }
+        for l in &r.unfinished {
+            println!("  ↻ {}: {} (airth resume {})", l.status, l.objective, l.id);
+        }
+        for o in r.objectives.iter().filter(|o| o.enabled) {
+            let next = o
+                .next_at
+                .map(|t| {
+                    format!(
+                        ", next {}",
+                        t.with_timezone(&chrono::Local).format("%a %H:%M")
+                    )
+                })
+                .unwrap_or_default();
+            println!("  ◷ {} ({}{next})", o.id, o.trigger);
+        }
+    }
+    Ok(true)
 }
 
 pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
@@ -472,6 +817,28 @@ pub fn memory(ctx: &Ctx, command: MemoryCmd) -> Result<bool> {
 }
 
 pub fn secret(ctx: &Ctx, command: SecretCmd) -> Result<bool> {
+    match command {
+        SecretCmd::Set {
+            key,
+            all_realms: true,
+        } => {
+            let value = read_secret(&format!("{key} for all realms: "))?;
+            ctx.home().set_provider_setting(&key, &value)?;
+            eprintln!("\x1b[32m✓\x1b[0m saved {key} for every realm without its own");
+            return Ok(true);
+        }
+        SecretCmd::Rm {
+            key,
+            all_realms: true,
+        } => {
+            if !ctx.home().remove_provider_setting(&key)? {
+                bail!("no setting '{key}' for all realms");
+            }
+            eprintln!("removed {key}");
+            return Ok(true);
+        }
+        _ => {}
+    }
     let realm = ctx.realm()?;
     match command {
         SecretCmd::List => {
@@ -482,8 +849,11 @@ pub fn secret(ctx: &Ctx, command: SecretCmd) -> Result<bool> {
             for (k, _) in secrets {
                 println!("{k}");
             }
+            for (k, _) in ctx.home().provider_settings()? {
+                println!("{k} \x1b[2m(all realms)\x1b[0m");
+            }
         }
-        SecretCmd::Set { key } => {
+        SecretCmd::Set { key, .. } => {
             let value = read_secret(&format!("{key} for realm {}: ", realm.name()))?;
             realm.set_secret(&key, &value)?;
             eprintln!(
@@ -491,7 +861,7 @@ pub fn secret(ctx: &Ctx, command: SecretCmd) -> Result<bool> {
                 realm.name()
             );
         }
-        SecretCmd::Rm { key } => {
+        SecretCmd::Rm { key, .. } => {
             if !realm.remove_secret(&key)? {
                 bail!("no credential '{key}' in realm {}", realm.name());
             }

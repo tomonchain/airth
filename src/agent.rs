@@ -12,8 +12,76 @@ use crate::state::{Event, EventStatus, State, Status};
 use anyhow::Result;
 use serde_json::Value;
 
+/// Limits on one drive of a run (a new run, a follow-up or a resume).
+#[derive(Debug, Clone, Copy)]
 pub struct AgentConfig {
     pub max_iterations: u32,
+    /// Input plus output tokens the model may use.
+    pub max_tokens: Option<u64>,
+    /// Wall-clock time the run may take, approvals included.
+    pub max_duration: Option<std::time::Duration>,
+}
+
+impl AgentConfig {
+    pub fn new(max_iterations: u32) -> Self {
+        Self {
+            max_iterations,
+            max_tokens: None,
+            max_duration: None,
+        }
+    }
+
+    /// The tighter of these limits and `budget`'s.
+    pub fn within(mut self, budget: &Budget) -> Self {
+        if let Some(n) = budget.max_iterations {
+            self.max_iterations = self.max_iterations.min(n);
+        }
+        if let Some(n) = budget.max_tokens {
+            self.max_tokens = Some(self.max_tokens.map_or(n, |m| m.min(n)));
+        }
+        if let Some(min) = budget.max_minutes {
+            let d = std::time::Duration::from_secs(u64::from(min) * 60);
+            self.max_duration = Some(self.max_duration.map_or(d, |m| m.min(d)));
+        }
+        self
+    }
+}
+
+/// An execution budget the owner sets on a run or an objective. Unset limits
+/// fall back to the client's defaults.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Budget {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_iterations: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_minutes: Option<u32>,
+}
+
+impl Budget {
+    pub fn is_empty(&self) -> bool {
+        *self == Budget::default()
+    }
+
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(n) = self.max_iterations {
+            parts.push(format!("{n} model calls"));
+        }
+        if let Some(n) = self.max_tokens {
+            parts.push(format!("{n} tokens"));
+        }
+        if let Some(n) = self.max_minutes {
+            parts.push(format!("{n} minutes"));
+        }
+        if parts.is_empty() {
+            "default limits".into()
+        } else {
+            parts.join(", ")
+        }
+    }
 }
 
 /// Receives progress from a running agent. All methods default to no-ops.
@@ -72,6 +140,38 @@ impl<'a> Agent<'a> {
         Ok(())
     }
 
+    /// Which limit of the budget this drive has reached, if any.
+    fn over_budget(
+        &self,
+        state: &State,
+        start: u32,
+        start_tokens: u64,
+        started: std::time::Instant,
+    ) -> Option<String> {
+        let c = &self.config;
+        if state.iterations - start >= c.max_iterations {
+            return Some(format!(
+                "reached the iteration limit ({})",
+                c.max_iterations
+            ));
+        }
+        let used = state.input_tokens + state.output_tokens - start_tokens;
+        if let Some(max) = c.max_tokens
+            && used >= max
+        {
+            return Some(format!("used its token budget ({used} of {max})"));
+        }
+        if let Some(max) = c.max_duration
+            && started.elapsed() >= max
+        {
+            return Some(format!(
+                "reached its time budget ({} minutes)",
+                max.as_secs() / 60
+            ));
+        }
+        None
+    }
+
     pub fn run(&mut self, state: &mut State) -> Result<()> {
         let system = self.system.clone().unwrap_or_else(|| {
             system_prompt(&Briefing::plain(
@@ -84,20 +184,19 @@ impl<'a> Agent<'a> {
         }
         self.checkpoint(state)?;
 
-        // The limit applies per call, so a continued run gets a fresh budget.
+        // Limits apply per call, so a continued run gets a fresh budget.
         let start = state.iterations;
+        let start_tokens = state.input_tokens + state.output_tokens;
+        let started = std::time::Instant::now();
         while state.status == Status::Running {
             if self.cancel.is_cancelled() {
                 state.status = Status::Stopped;
                 state.report = Some("Stopped by the user.".into());
                 break;
             }
-            if state.iterations - start >= self.config.max_iterations {
+            if let Some(limit) = self.over_budget(state, start, start_tokens, started) {
                 state.status = Status::Stopped;
-                state.report = Some(format!(
-                    "Stopped after reaching the iteration limit ({}).",
-                    self.config.max_iterations
-                ));
+                state.report = Some(format!("Stopped: {limit}."));
                 break;
             }
             state.iterations += 1;
@@ -412,7 +511,7 @@ mod tests {
         let mut agent = Agent::new(
             &model,
             runtime,
-            AgentConfig { max_iterations: 10 },
+            AgentConfig::new(10),
             &mut observer,
             CancelToken::default(),
         );
@@ -454,7 +553,7 @@ mod tests {
         let mut agent = Agent::new(
             &model,
             runtime,
-            AgentConfig { max_iterations: 2 },
+            AgentConfig::new(2),
             &mut observer,
             CancelToken::default(),
         );
@@ -480,16 +579,54 @@ mod tests {
             cancel.clone(),
         );
         let mut observer = NoObserver;
-        let mut agent = Agent::new(
-            &model,
-            runtime,
-            AgentConfig { max_iterations: 5 },
-            &mut observer,
-            cancel,
-        );
+        let mut agent = Agent::new(&model, runtime, AgentConfig::new(5), &mut observer, cancel);
         let mut state = State::new("x", None);
         agent.run(&mut state).unwrap();
         assert_eq!(state.status, Status::Stopped);
         assert_eq!(state.iterations, 0);
+    }
+
+    #[test]
+    fn stops_when_the_token_budget_is_spent() {
+        let dir = tempfile::tempdir().unwrap();
+        let costly = || ModelResponse {
+            input_tokens: 600,
+            output_tokens: 100,
+            ..resp(
+                vec![ContentBlock::ToolUse {
+                    id: "x".into(),
+                    name: "list_directory".into(),
+                    input: json!({}),
+                }],
+                StopReason::ToolUse,
+            )
+        };
+        let model = Scripted {
+            responses: RefCell::new(vec![costly(), costly(), costly()]),
+            seen: RefCell::new(vec![]),
+        };
+        let runtime = Runtime::new(
+            default_tools(),
+            PermissionGate::new(Policy::default(), Box::new(Approve)),
+            Workspace::new(dir.path()).unwrap(),
+            CancelToken::default(),
+        );
+        let mut observer = NoObserver;
+        let budget = Budget {
+            max_tokens: Some(1000),
+            ..Budget::default()
+        };
+        let mut agent = Agent::new(
+            &model,
+            runtime,
+            AgentConfig::new(10).within(&budget),
+            &mut observer,
+            CancelToken::default(),
+        );
+        let mut state = State::new("x", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.status, Status::Stopped);
+        assert_eq!(state.iterations, 2);
+        assert!(state.report.unwrap().contains("token budget"));
     }
 }

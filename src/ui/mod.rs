@@ -13,13 +13,16 @@
 use crate::agent::{AgentConfig, Observer};
 use crate::cancel::CancelToken;
 use crate::home::NewRealm;
-use crate::hub::{Hub, RunHooks};
+use crate::hub::{Hub, RunHooks, away_reason};
 use crate::integration::Integration;
 use crate::isolation::Isolation;
+use crate::notify::{Inbox, Kind};
+use crate::objective::{Objective, Trigger};
 use crate::owner::Owner;
 use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
 use crate::realm::{PROVIDER_KEYS, Realm};
 use crate::sandbox;
+use crate::scheduler;
 use crate::state::{State, Status};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -80,13 +83,47 @@ impl Observer for UiObserver {
 }
 
 /// Parks the agent thread until the human answers in the UI or stops the run.
+/// For a run an objective started, the owner may be away: it tells them, and
+/// waits only as long as the objective allows.
 struct UiApprover {
     live: Arc<Live>,
     next_id: u64,
+    away: Option<Away>,
+}
+
+/// An objective's run, which nobody may be watching.
+struct Away {
+    objective: String,
+    realm: String,
+    run: String,
+    wait_minutes: u32,
+    inbox: Inbox,
 }
 
 impl Approver for UiApprover {
     fn ask(&mut self, request: &PermissionRequest) -> Result<Answer> {
+        let deadline = match &self.away {
+            Some(away) if away.wait_minutes == 0 => return Ok(Answer::No(away_reason(0))),
+            Some(away) => {
+                let _ = away.inbox.push(
+                    Kind::Approval,
+                    &away.realm,
+                    Some(&away.run),
+                    &format!("{} is waiting for your approval", away.objective),
+                    &format!(
+                        "{} ({}). It waits {} minutes, then goes on without it.",
+                        request.tool,
+                        request.capability.as_str(),
+                        away.wait_minutes
+                    ),
+                );
+                Some(
+                    std::time::Instant::now()
+                        + Duration::from_secs(u64::from(away.wait_minutes) * 60),
+                )
+            }
+            None => None,
+        };
         let (tx, rx) = mpsc::channel();
         self.next_id += 1;
         *self.live.pending.lock().unwrap() = Some(Pending {
@@ -96,6 +133,10 @@ impl Approver for UiApprover {
         });
         self.live.bump();
         let answer = loop {
+            if deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+                let waited = self.away.as_ref().map_or(0, |a| a.wait_minutes);
+                break Answer::No(away_reason(waited));
+            }
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(answer) => break answer,
                 Err(mpsc::RecvTimeoutError::Timeout) if !self.live.cancel.is_cancelled() => {}
@@ -110,18 +151,109 @@ impl Approver for UiApprover {
 
 /// What a background thread does with a run.
 enum Job {
-    /// Drive the agent (a new run or a follow-up).
+    /// Drive the agent (a new run, a follow-up, a resume).
     Drive,
+    /// Drive a run an objective started, which the owner may not be watching.
+    Unattended {
+        objective: String,
+        wait_minutes: u32,
+    },
     /// Run the realm's checks on the run's change.
     Check,
+}
+
+/// Starts runs on background threads and keeps them in the registry. Shared
+/// by request handlers, the scheduler and webhooks.
+#[derive(Clone)]
+struct Runner {
+    hub: Arc<Hub>,
+    registry: Registry,
+    max_iterations: u32,
 }
 
 struct App {
     hub: Arc<Hub>,
     registry: Registry,
+    runner: Runner,
     token: String,
     port: u16,
     options: UiOptions,
+}
+
+/// Where a running app can be reached, for `airth ui` to reuse it.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ServerInfo {
+    pid: i32,
+    port: u16,
+    token: String,
+}
+
+fn server_file(hub: &Hub) -> std::path::PathBuf {
+    hub.home().dir().join("server.json")
+}
+
+/// The link to the app already serving this home, if one is.
+pub fn running_url(hub: &Hub) -> Option<String> {
+    let text = std::fs::read_to_string(server_file(hub)).ok()?;
+    let info: ServerInfo = serde_json::from_str(&text).ok()?;
+    if !crate::hub::process_alive(info.pid) {
+        return None;
+    }
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], info.port));
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    Some(format!(
+        "http://127.0.0.1:{}/#token={}",
+        info.port, info.token
+    ))
+}
+
+pub fn open_url(url: &str) {
+    open_in_browser(url);
+}
+
+/// Look for due objectives every few seconds and start their runs. Only one
+/// app serves a home at a time, so only one scheduler runs.
+fn run_scheduler(runner: Runner) {
+    loop {
+        match scheduler::due(&runner.hub, chrono::Utc::now()) {
+            Ok(due) => {
+                for d in due {
+                    match runner.hub.start_objective(
+                        &d.realm,
+                        &d.objective,
+                        &d.trigger,
+                        None,
+                        chrono::Utc::now(),
+                    ) {
+                        Ok((state, o)) => {
+                            eprintln!(
+                                "objective {}/{} started run {} ({})",
+                                d.realm.name(),
+                                o.id,
+                                state.id,
+                                d.trigger
+                            );
+                            runner.spawn(
+                                d.realm,
+                                state,
+                                Job::Unattended {
+                                    objective: o.id,
+                                    wait_minutes: o.approval_wait_minutes,
+                                },
+                            );
+                        }
+                        Err(e) => eprintln!(
+                            "objective {}/{} could not start: {e:#}",
+                            d.realm.name(),
+                            d.objective
+                        ),
+                    }
+                }
+            }
+            Err(e) => eprintln!("scheduler: {e:#}"),
+        }
+        std::thread::sleep(scheduler::TICK);
+    }
 }
 
 type HttpResponse = Response<std::io::Cursor<Vec<u8>>>;
@@ -135,25 +267,53 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
         .to_ip()
         .context("server has no IP address")?
         .port();
+    let hub = Arc::new(hub);
+    let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+    let runner = Runner {
+        hub: hub.clone(),
+        registry: registry.clone(),
+        max_iterations: options.max_iterations,
+    };
     let app = App {
-        hub: Arc::new(hub),
-        registry: Arc::new(Mutex::new(HashMap::new())),
+        hub,
+        registry,
+        runner,
         token: random_token()?,
         port,
         options,
     };
+    let info_path = server_file(&app.hub);
+    crate::realm::write_private(
+        &info_path,
+        &serde_json::to_string(&ServerInfo {
+            pid: std::process::id() as i32,
+            port,
+            token: app.token.clone(),
+        })?,
+    )?;
 
     let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
-    eprintln!("\x1b[1mairth ui\x1b[0m → {url}");
+    eprintln!("\x1b[1mairth\x1b[0m → {url}");
     eprintln!(
-        "\x1b[2mThis link grants control of the agent; don't share it. Ctrl-C to quit.\x1b[0m"
+        "\x1b[2mThis link grants control of the agent; don't share it. Objectives run while this is running. Ctrl-C to quit.\x1b[0m"
     );
     if app.options.open_browser {
         open_in_browser(&url);
     }
 
     let registry = app.registry.clone();
-    ctrlc::set_handler(move || shut_down(&registry)).context("cannot install Ctrl-C handler")?;
+    let path = info_path.clone();
+    ctrlc::set_handler(move || shut_down(&registry, &path))
+        .context("cannot install Ctrl-C handler")?;
+    #[cfg(unix)]
+    {
+        // launchd and `kill` stop services with SIGTERM: shut down the same way.
+        let _ =
+            unsafe { libc::signal(libc::SIGTERM, on_sigterm as *const () as libc::sighandler_t) };
+    }
+
+    let runner = app.runner.clone();
+    std::thread::spawn(move || run_scheduler(runner));
 
     for request in server.incoming_requests() {
         app.handle(request);
@@ -161,9 +321,18 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+extern "C" fn on_sigterm(_: libc::c_int) {
+    // Only async-signal-safe work here: ctrlc's handler thread does the rest.
+    unsafe {
+        libc::kill(libc::getpid(), libc::SIGINT);
+    }
+}
+
 /// Stop every live run, give them a moment to save, then exit. A second Ctrl-C exits at once.
-fn shut_down(registry: &Registry) {
+fn shut_down(registry: &Registry, info_path: &std::path::Path) {
     static CALLS: AtomicU64 = AtomicU64::new(0);
+    let _ = std::fs::remove_file(info_path);
     if CALLS.fetch_add(1, Ordering::SeqCst) > 0 {
         std::process::exit(130);
     }
@@ -219,6 +388,11 @@ impl App {
             _ => {}
         }
 
+        if method == Method::Post
+            && let Some(hook) = path.strip_prefix("/hooks/")
+        {
+            return Ok(self.webhook(request, hook));
+        }
         let Some(api) = path.strip_prefix("/api/") else {
             return Ok(json_response(404, json!({"error": "not found"})));
         };
@@ -312,6 +486,75 @@ impl App {
                         .follow_up(&realm, id, body["message"].as_str().unwrap_or_default())?;
                 self.spawn(realm, state, Job::Drive);
                 ok()
+            }
+            (Method::Get, ["inbox"]) => {
+                let mut list = self.hub.home().inbox().list()?;
+                list.reverse();
+                json_response(200, json!(list))
+            }
+            (Method::Post, ["inbox", "read"]) => {
+                let body = read_json(request)?;
+                let ids: Option<Vec<u64>> = body["ids"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(Value::as_u64).collect());
+                self.hub.home().inbox().mark_read(ids.as_deref())?;
+                ok()
+            }
+            (Method::Get, ["summary"]) => {
+                let hours: i64 = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("hours="))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(24);
+                let since = chrono::Utc::now() - chrono::Duration::hours(hours.clamp(1, 24 * 90));
+                json_response(200, json!(scheduler::summary(&self.hub, since)?))
+            }
+            (Method::Get, ["realms", r, "objectives"]) => {
+                json_response(200, self.objectives(&self.realm(r)?)?)
+            }
+            (Method::Post, ["realms", r, "objectives"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.save_objective(&realm, &body)?;
+                json_response(200, self.objectives(&realm)?)
+            }
+            (Method::Patch, ["realms", r, "objectives", id]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                if let Some(enabled) = body["enabled"].as_bool() {
+                    let found = realm.objectives().update(id, |o| {
+                        o.enabled = enabled;
+                        // Re-arm: a schedule missed while disabled does not fire.
+                        o.next_at = None;
+                        o.fingerprint = None;
+                    })?;
+                    if !found {
+                        return Err(anyhow!("no such objective"));
+                    }
+                }
+                json_response(200, self.objectives(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "objectives", id]) => {
+                let realm = self.realm(r)?;
+                if !realm.objectives().remove(id)? {
+                    return Err(anyhow!("no such objective"));
+                }
+                json_response(200, self.objectives(&realm)?)
+            }
+            (Method::Post, ["realms", r, "objectives", id, "run"]) => {
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let (state, _) = self.hub.start_objective(
+                    &realm,
+                    id,
+                    "started by the owner",
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                let run = state.id.clone();
+                // The owner is here: they answer approvals as for any run.
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": run}))
             }
             (Method::Post, ["realms", r, "runs", id, "resume"]) => {
                 let realm = self.realm(r)?;
@@ -412,6 +655,7 @@ impl App {
             "realm": self.options.realm,
             "default_realm": self.hub.home().default_realm(),
             "max_iterations": self.options.max_iterations,
+            "unread": self.hub.home().inbox().unread(),
             "tools": tools,
         })
     }
@@ -644,6 +888,134 @@ impl App {
     }
 
     fn spawn(&self, realm: Realm, state: State, job: Job) {
+        self.runner.spawn(realm, state, job);
+    }
+
+    fn objectives(&self, realm: &Realm) -> Result<Value> {
+        let list: Vec<Value> = realm
+            .objectives()
+            .list()?
+            .into_iter()
+            .map(|o| {
+                let mut v = json!(o);
+                if let Trigger::Webhook { token } = &o.trigger {
+                    v["webhook_url"] = json!(format!(
+                        "http://127.0.0.1:{}/hooks/{}/{}/{token}",
+                        self.port,
+                        realm.name(),
+                        o.id
+                    ));
+                }
+                v["trigger_label"] = json!(o.trigger.describe());
+                v["running"] =
+                    json!(o.last_run.as_deref().is_some_and(
+                        |r| self.live(realm.name(), r).is_some() || self.hub.is_live(realm, r)
+                    ));
+                v
+            })
+            .collect();
+        Ok(json!(list))
+    }
+
+    /// Create or replace an objective from the app's form. Its history (last
+    /// run, schedule state, webhook token) is kept when it is replaced.
+    fn save_objective(&self, realm: &Realm, body: &Value) -> Result<()> {
+        let id = body["id"].as_str().unwrap_or_default().trim().to_string();
+        let existing = realm.objectives().get(&id).ok();
+        let trigger = match body["trigger"]["kind"].as_str().unwrap_or("manual") {
+            "manual" => Trigger::Manual,
+            "schedule" => Trigger::Schedule {
+                every: body["trigger"]["every"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .trim()
+                    .into(),
+            },
+            "watch" => Trigger::Watch {
+                path: body["trigger"]["path"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .trim()
+                    .into(),
+            },
+            "webhook" => Trigger::Webhook {
+                token: match existing.as_ref().map(|o| &o.trigger) {
+                    Some(Trigger::Webhook { token }) => token.clone(),
+                    _ => random_token()?,
+                },
+            },
+            other => return Err(anyhow!("unknown trigger '{other}'")),
+        };
+        let approvals = serde_json::from_value(body["approvals"].clone()).unwrap_or_default();
+        let budget = serde_json::from_value(body["budget"].clone()).unwrap_or_default();
+        let base = existing.filter(|o| o.trigger == trigger);
+        realm.objectives().save(Objective {
+            id,
+            objective: body["objective"].as_str().unwrap_or_default().trim().into(),
+            trigger,
+            approvals,
+            budget,
+            approval_wait_minutes: body["approval_wait_minutes"]
+                .as_u64()
+                .unwrap_or(10)
+                .min(24 * 60) as u32,
+            enabled: body["enabled"].as_bool().unwrap_or(true),
+            created_at: base
+                .as_ref()
+                .map_or_else(chrono::Utc::now, |o| o.created_at),
+            next_at: None,
+            fingerprint: None,
+            last_run: base.as_ref().and_then(|o| o.last_run.clone()),
+            last_at: base.as_ref().and_then(|o| o.last_at),
+            last_status: base.and_then(|o| o.last_status),
+        })
+    }
+
+    /// `POST /hooks/<realm>/<objective>/<token>`: start the objective's run
+    /// with the request body as its (untrusted) data. Anything that does not
+    /// match an enabled webhook objective gets the same 404.
+    fn webhook(&self, request: &mut Request, hook: &str) -> HttpResponse {
+        let not_found = || json_response(404, json!({"error": "not found"}));
+        let parts: Vec<String> = hook.split('/').map(percent_decode).collect();
+        let [realm, id, token] = parts.as_slice() else {
+            return not_found();
+        };
+        let Ok(realm) = self.realm(realm) else {
+            return not_found();
+        };
+        let Ok(objective) = realm.objectives().get(id) else {
+            return not_found();
+        };
+        let valid = matches!(&objective.trigger, Trigger::Webhook { token: t } if constant_time_eq(t, token));
+        if !valid || !objective.enabled || realm.config.archived {
+            return not_found();
+        }
+        let mut body = Vec::new();
+        let _ = request.as_reader().take(64_000).read_to_end(&mut body);
+        let payload = String::from_utf8_lossy(&body).into_owned();
+        match self
+            .hub
+            .start_objective(&realm, id, "webhook", Some(&payload), chrono::Utc::now())
+        {
+            Ok((state, o)) => {
+                let run = state.id.clone();
+                self.spawn(
+                    realm,
+                    state,
+                    Job::Unattended {
+                        objective: o.id,
+                        wait_minutes: o.approval_wait_minutes,
+                    },
+                );
+                json_response(202, json!({"run": run}))
+            }
+            Err(e) => json_response(409, json!({"error": format!("{e:#}")})),
+        }
+    }
+}
+
+impl Runner {
+    fn spawn(&self, realm: Realm, state: State, job: Job) {
         let k = key(realm.name(), &state.id);
         let live = Arc::new(Live {
             snapshot: Mutex::new(state.clone()),
@@ -657,23 +1029,37 @@ impl App {
             .insert(k.clone(), live.clone());
         let hub = self.hub.clone();
         let registry = self.registry.clone();
-        let max_iterations = self.options.max_iterations;
+        let max_iterations = self.max_iterations;
 
         std::thread::spawn(move || {
             let mut state = state;
             let mut observer = UiObserver(live.clone());
+            let away = match &job {
+                Job::Unattended {
+                    objective,
+                    wait_minutes,
+                } => Some(Away {
+                    objective: objective.clone(),
+                    realm: realm.name().to_string(),
+                    run: state.id.clone(),
+                    wait_minutes: *wait_minutes,
+                    inbox: hub.home().inbox(),
+                }),
+                _ => None,
+            };
             match job {
-                Job::Drive => {
+                Job::Drive | Job::Unattended { .. } => {
                     let hooks = RunHooks {
                         approver: Box::new(UiApprover {
                             live: live.clone(),
                             next_id: 0,
+                            away,
                         }),
                         observer: &mut observer,
                         cancel: live.cancel.clone(),
                     };
                     if let Err(e) =
-                        hub.drive(&realm, &mut state, AgentConfig { max_iterations }, hooks)
+                        hub.drive(&realm, &mut state, AgentConfig::new(max_iterations), hooks)
                         && state.status == Status::Running
                     {
                         state.status = Status::Failed;
@@ -780,7 +1166,7 @@ fn content_type(kind: &str) -> Header {
     Header::from_bytes("Content-Type", kind).unwrap()
 }
 
-fn random_token() -> Result<String> {
+pub(crate) fn random_token() -> Result<String> {
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom")
         .and_then(|mut f| f.read_exact(&mut bytes))
@@ -788,7 +1174,7 @@ fn random_token() -> Result<String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-fn constant_time_eq(a: &str, b: &str) -> bool {
+pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
     a.len() == b.len()
         && a.bytes()
             .zip(b.bytes())

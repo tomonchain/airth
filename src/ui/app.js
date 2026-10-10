@@ -156,8 +156,10 @@ function parseRoute() {
   let m;
   if ((m = h.match(/^#\/r\/([^/]+)\/run\/([^/?#]+)/))) return { view: "run", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/settings/))) return { view: "settings", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/objectives/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if (h.startsWith("#/owner")) return { view: "owner" };
+  if (h.startsWith("#/inbox")) return { view: "inbox" };
   if (h.startsWith("#/realms/new")) return { view: "new-realm" };
   return { view: "home" };
 }
@@ -235,7 +237,10 @@ function renderSidebar() {
   foot.replaceChildren();
   if (app.info) $("#version").textContent = "v" + app.info.version;
   const d = app.realmDetail;
+  const unread = app.info ? app.info.unread : 0;
   foot.append(
+    navLink("#/inbox", h("span", null, "Inbox", unread > 0 && h("span", { class: "count" }, String(unread))), app.route.view === "inbox"),
+    app.realm && navLink(`#/r/${enc(app.realm)}/objectives`, "Objectives", app.route.view === "objectives"),
     navLink("#/owner", "Your profile", app.route.view === "owner"),
     app.realm && navLink(`#/r/${enc(app.realm)}/settings`, "Realm settings", app.route.view === "settings"),
     d && h("div", { class: "row", title: d.model_error || d.model || "" }, h("span", { class: "k" }, "model"),
@@ -313,6 +318,8 @@ function renderMain() {
     case "run": return renderRunShell(main);
     case "settings": return renderSettings(main);
     case "owner": return renderOwner(main);
+    case "objectives": return renderObjectives(main);
+    case "inbox": return renderInbox(main);
     case "new-realm": return renderNewRealm(main);
   }
 }
@@ -458,6 +465,7 @@ function renderRun() {
       h("h1", { title: s.objective }, s.objective),
       h("div", { class: "run-meta" },
         h("span", { class: "chip " + (status === "stopping" ? "stopped" : status === "checking" ? "running" : status) }, STATUS_LABEL[status] || status),
+        s.origin && h("span", { class: "chip origin", title: s.origin.trigger }, "◷ " + s.origin.objective),
         h("span", null, `${s.iterations} iteration${s.iterations === 1 ? "" : "s"}`),
         h("span", null, `${s.events.length} tool call${s.events.length === 1 ? "" : "s"}`),
         (s.input_tokens || s.output_tokens) && h("span", { title: `${s.input_tokens} in / ${s.output_tokens} out` }, `${kfmt(s.input_tokens)} in · ${kfmt(s.output_tokens)} out tokens`),
@@ -505,7 +513,7 @@ function transcriptNodes(d) {
       const texts = m.content.filter((b) => b.type === "text");
       for (const b of texts) {
         if (b.text.startsWith(RUNTIME_PREFIX)) {
-          nodes.push(h("div", { class: "msg runtime" }, h("div", { class: "who" }, "Resumed"),
+          nodes.push(h("div", { class: "msg runtime" }, h("div", { class: "who" }, "Airth"),
             h("div", { class: "prose", html: md(b.text.slice(RUNTIME_PREFIX.length).trim()) })));
         } else {
           nodes.push(h("div", { class: "msg user" },
@@ -998,6 +1006,166 @@ async function renderOwner(main) {
     h("div", { class: "row-end spaced" }, owner.updated_at && h("span", { class: "muted small" }, "updated " + ago(owner.updated_at)), saveBtn));
 }
 
+// ---------- objectives ----------
+
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const mins = Math.round((d - Date.now()) / 60000);
+  if (mins <= 0) return "due now";
+  if (mins < 60) return `in ${mins} min`;
+  if (mins < 24 * 60) return `in ${Math.round(mins / 60)} h · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function grantText(g) {
+  return g.scope ? `${g.capability}: ${g.scope.replace(/^integration /, "")}` : `all ${g.capability}`;
+}
+
+let confirmDelete = null;
+
+async function renderObjectives(main) {
+  const realm = app.realm;
+  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each run may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification when a run ends.");
+  const inner = $(".page-inner", main);
+  const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
+  inner.append(listEl);
+  let list;
+  try { list = await api(`${realmPath(realm)}/objectives`); } catch (e) { return flash(e.message, true); }
+  if (app.route.view !== "objectives" || app.realm !== realm) return;
+  const d = app.realmDetail;
+
+  const refresh = (l) => { list = l; draw(); };
+  const draw = () => listEl.replaceChildren(
+    list.length ? h("div", { class: "objectives" }, list.map((o) => h("div", { class: "card objective" + (o.enabled ? "" : " off") },
+      h("div", { class: "objective-head" },
+        h("div", { class: "grow" },
+          h("div", { class: "strong" }, o.id),
+          h("div", null, o.objective)),
+        h("label", { class: "toggle small", title: o.enabled ? "Turn off" : "Turn on" },
+          h("input", { type: "checkbox", checked: o.enabled, onchange: async (e) => {
+            try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, { enabled: e.target.checked }, "PATCH")); } catch (err) { flash(err.message, true); }
+          } }), h("span", null, o.enabled ? "on" : "off"))),
+      h("div", { class: "objective-meta" },
+        h("span", { class: "chip" }, "◷ " + o.trigger_label),
+        o.enabled && o.next_at && h("span", null, "next " + when(o.next_at)),
+        o.running ? h("span", { class: "chip running" }, "running")
+          : o.last_status && h("span", null, "last: ", o.last_run
+            ? h("a", { href: `#/r/${enc(realm)}/run/${enc(o.last_run)}` }, o.last_status)
+            : o.last_status, o.last_at && " · " + ago(o.last_at))),
+      h("div", { class: "objective-meta muted small" },
+        "Approved in advance: ", o.approvals.length ? o.approvals.map(grantText).join(", ") : "nothing beyond the realm's rules",
+        " · waits ", String(o.approval_wait_minutes), " min for you",
+        Object.keys(o.budget || {}).length ? " · budget: " + Object.entries(o.budget).map(([k, v]) => `${v} ${k.replace("max_", "")}`).join(", ") : ""),
+      o.webhook_url && h("div", { class: "objective-meta" }, h("code", { class: "path small" }, "curl -X POST --data @payload.json " + o.webhook_url)),
+      h("div", { class: "row-end" },
+        h("button", { class: "btn", type: "button", disabled: o.running || !!(d && d.model_error), onclick: async () => {
+          try { const r = await api(`${realmPath(realm)}/objectives/${enc(o.id)}/run`, {}); go(`#/r/${enc(realm)}/run/${enc(r.id)}`); } catch (e) { flash(e.message, true); }
+        } }, "Run now"),
+        h("button", { class: "btn danger", type: "button", onclick: async () => {
+          if (confirmDelete !== o.id) { confirmDelete = o.id; return draw(); }
+          confirmDelete = null;
+          try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, undefined, "DELETE")); } catch (e) { flash(e.message, true); }
+        } }, confirmDelete === o.id ? "Really delete?" : "Delete")))))
+      : h("div", { class: "card muted small pad" }, "No objectives yet."));
+  draw();
+
+  // New objective
+  const f = {
+    id: h("input", { type: "text", placeholder: "name, e.g. morning-triage", autocomplete: "off", spellcheck: "false" }),
+    objective: h("textarea", { rows: 3, placeholder: "What each run should achieve, e.g. “Triage new issues in the tracker and write today's summary to triage.md”" }),
+    kind: h("select", null, ["schedule", "watch", "webhook", "manual"].map((k) => h("option", { value: k }, { schedule: "On a schedule", watch: "When files change", webhook: "From a webhook", manual: "Only when I start it" }[k]))),
+    every: h("input", { type: "text", placeholder: "every 30m · daily 08:30 · weekdays 09:00 · mon,thu 18:00", value: "daily 08:30" }),
+    path: h("input", { type: "text", placeholder: "folder or file in the realm, e.g. inbox" }),
+    wait: h("input", { type: "number", min: 0, value: 10 }),
+    minutes: h("input", { type: "number", min: 1, placeholder: "minutes" }),
+    tokens: h("input", { type: "number", min: 1000, step: 1000, placeholder: "tokens" }),
+    iterations: h("input", { type: "number", min: 1, placeholder: "model calls" }),
+  };
+  const grantOptions = [
+    { capability: "write", label: "Change files" },
+    { capability: "execute", label: "Run commands" },
+    { capability: "memory", label: "Save to memory" },
+    { capability: "network", label: "Any web request" },
+    ...((d && d.integrations) || []).map((i) => ({ capability: "network", scope: "integration " + i.name, label: `Call ${i.name}` })),
+  ].map((g) => ({ ...g, box: h("input", { type: "checkbox" }) }));
+  const triggerField = h("div");
+  const syncTrigger = () => triggerField.replaceChildren(
+    f.kind.value === "schedule" ? f.every : f.kind.value === "watch" ? f.path
+      : h("div", { class: "muted small" }, f.kind.value === "webhook" ? "You get a private URL to POST to from this machine; the request body is given to the run as data." : "Start it from this page or with airth objective run."));
+  f.kind.addEventListener("change", syncTrigger);
+  syncTrigger();
+  const num = (el) => (el.value.trim() ? Number(el.value) : undefined);
+  const save = async () => {
+    const body = {
+      id: f.id.value.trim(), objective: f.objective.value.trim(),
+      trigger: { kind: f.kind.value, every: f.every.value, path: f.path.value },
+      approvals: grantOptions.filter((g) => g.box.checked).map((g) => ({ capability: g.capability, scope: g.scope || null })),
+      approval_wait_minutes: num(f.wait) ?? 10,
+      budget: { max_minutes: num(f.minutes), max_tokens: num(f.tokens), max_iterations: num(f.iterations) },
+    };
+    try {
+      refresh(await api(`${realmPath(realm)}/objectives`, body));
+      f.id.value = ""; f.objective.value = "";
+      flash("Objective saved");
+    } catch (e) { flash(e.message, true); }
+  };
+  inner.append(
+    h("h2", null, "New objective"),
+    h("div", { class: "card" },
+      field("Name", f.id),
+      field("Objective", f.objective),
+      field("Starts", h("div", { class: "stack" }, f.kind, triggerField)),
+      field("Approved in advance", h("div", { class: "checks" }, grantOptions.map((g) => h("label", { class: "toggle small" }, g.box, h("span", null, g.label)))),
+        "Commands still run in the realm's sandbox. Edits to Airth's security code are never approved in advance."),
+      field("Otherwise", h("div", { class: "inline" }, "wait ", f.wait, " minutes for me, then deny")),
+      field("Budget per run", h("div", { class: "inline" }, f.minutes, f.tokens, f.iterations), "Leave empty for the defaults."),
+      h("div", { class: "row-end" }, h("button", { class: "btn primary", type: "button", onclick: save }, "Save objective"))));
+}
+
+// ---------- inbox ----------
+
+const KIND_MARK = { completed: "✓", failed: "✗", stopped: "■", approval: "?", review: "⧗" };
+
+async function renderInbox(main) {
+  page(main, "Inbox", "What Airth did on its own, and what waits for you.");
+  const inner = $(".page-inner", main);
+  let notes, summary;
+  try { [notes, summary] = await Promise.all([api("inbox"), api("summary?hours=24")]); } catch (e) { return flash(e.message, true); }
+  if (app.route.view !== "inbox") return;
+  const open = (realm, run) => go(`#/r/${enc(realm)}${run ? "/run/" + enc(run) : ""}`);
+
+  inner.append(h("h2", null, "Last 24 hours"));
+  if (!summary.length) inner.append(h("div", { class: "card muted small pad" }, "Nothing happened."));
+  for (const r of summary) {
+    const line = (mark, l, extra) => h("button", { class: "list-row link", type: "button", onclick: () => open(r.realm, l.id) },
+      h("span", { class: "mark" }, mark),
+      h("div", { class: "grow" }, h("div", null, l.objective, l.origin && h("span", { class: "muted small" }, " · " + l.origin)),
+        (extra || l.report) && h("div", { class: "muted small" }, extra || l.report)));
+    inner.append(h("div", { class: "card" },
+      h("div", { class: "summary-head" }, h("span", { class: "strong" }, r.realm),
+        h("span", { class: "muted small" }, `${r.runs} run${r.runs === 1 ? "" : "s"} · ${r.completed} completed · ${r.failed} failed · ${r.stopped} stopped`)),
+      r.to_review.map((l) => line("⧗", l, "Change waiting for your review")),
+      r.unfinished.map((l) => line("↻", l, `${l.status}: can be resumed`)),
+      r.recent.map((l) => line("✓", l)),
+      r.objectives.filter((o) => o.enabled).length > 0 && h("div", { class: "muted small pad-top" },
+        "Objectives: ", r.objectives.filter((o) => o.enabled).map((o) => o.id + (o.next_at ? ` (${when(o.next_at)})` : "")).join(" · "))));
+  }
+
+  inner.append(h("h2", null, "Notifications"));
+  inner.append(notes.length ? h("div", { class: "card" }, notes.slice(0, 100).map((n) =>
+    h("button", { class: "list-row link" + (n.read ? "" : " unread"), type: "button", onclick: () => open(n.realm, n.run) },
+      h("span", { class: "mark " + n.kind }, KIND_MARK[n.kind] || "•"),
+      h("div", { class: "grow" },
+        h("div", null, n.title),
+        n.body && h("div", { class: "muted small clamp" }, n.body),
+        h("div", { class: "muted small" }, n.realm + " · " + ago(n.created_at))))))
+    : h("div", { class: "card muted small pad" }, "No notifications."));
+  if (notes.some((n) => !n.read)) {
+    api("inbox/read", {}).then(() => { if (app.info) app.info.unread = 0; renderSidebar(); }).catch(() => {});
+  }
+}
+
 // ---------- new realm ----------
 
 function renderNewRealm(main) {
@@ -1072,6 +1240,16 @@ async function refreshRuns() {
   }
 }
 
+async function refreshInfo() {
+  try {
+    const before = app.info && app.info.unread;
+    app.info = await api("info");
+    if (app.info.unread !== before) renderSidebar();
+  } catch (e) {
+    if (e instanceof AuthError) unauthorized();
+  }
+}
+
 async function refreshRealms() {
   try {
     app.realms = await api("realms");
@@ -1109,6 +1287,7 @@ async function boot() {
   await refreshRealms();
   await onRoute();
   setInterval(() => { refreshRealms(); refreshRuns(); }, 2000);
+  setInterval(refreshInfo, 5000);
 }
 
 boot();

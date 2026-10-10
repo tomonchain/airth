@@ -55,6 +55,36 @@ A run that did not finish can be resumed. That covers a closed terminal, a crash
 airth resume last      # or the Resume button in the app
 ```
 
+## Working on its own
+
+An **objective** is work Airth starts by itself: on a schedule, when files change in the realm, or when something on your machine calls its webhook. You decide in advance what its runs may do. Anything else waits for you in the app (10 minutes by default), then is denied, and the run reports what it needed.
+
+```bash
+airth objective add morning-triage "Triage new issues and write today's summary to triage.md" \
+  --every "weekdays 08:30" --allow network:tracker --allow write --max-minutes 20
+airth objective add filer "File the notes dropped in inbox/" --watch inbox --allow write
+airth objective add deploy-check "Check the deploy that just ran" --webhook
+airth objective list                # triggers, next run, last result
+airth objective run morning-triage  # now, in this terminal
+```
+
+Every run, started by an objective or not, can have a **budget**: `--max-iterations`, `--max-tokens`, `--max-minutes`.
+
+Objectives run while Airth runs in the background:
+
+```bash
+airth secret set ANTHROPIC_API_KEY --all-realms   # the service does not see your shell
+airth service install    # macOS: start at login, keep running (or run `airth serve` yourself)
+airth ui                 # opens the running app
+```
+
+When a run ends, Airth notifies you (on macOS, also on the desktop, showing only the realm and the event). Catch up in the app's **Inbox**, or:
+
+```bash
+airth inbox        # new notifications
+airth summary      # the last 24 h across realms: what ran, what waits for review, what's next
+```
+
 ## Integrations
 
 An integration is a service a realm's runs may call over HTTP, with the credentials you bind to it:
@@ -96,6 +126,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - start runs and watch them live: reasoning, tool calls and results;
 - approve or deny each step that needs it, with an optional reason the agent sees;
 - follow each run's plan, and resume runs that did not finish;
+- set up objectives, and read your inbox and the daily summary;
 - review, adopt or discard changes;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
@@ -108,6 +139,7 @@ airth run "<objective>"           # start a run in the current realm
 airth send last "Now add docs"    # continue a run (by id or `last`)
 airth resume last                 # resume a run that was interrupted, stopped or failed
 airth runs                        # the realm's runs: status, plan progress, checks, objective
+airth serve                       # the app and the scheduler, without opening a browser
 airth skills                      # the tools, and this realm's rule for each
 ```
 
@@ -126,17 +158,24 @@ Approvals happen in the terminal: answer `y`, `a` to allow it for the rest of th
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | — |
 | `ANTHROPIC_WORKSPACE_ID` | — (needed for API keys not scoped to a workspace) |
 
-Any of these model settings can also be set per realm as a credential (`airth secret set ANTHROPIC_API_KEY`), for example to bill a work realm to the employer's key. Model keys are used for the realm's model only, and never passed to commands.
+Any of these model settings can also be set per realm as a credential (`airth secret set ANTHROPIC_API_KEY`), for example to bill a work realm to the employer's key, or once for every realm (`--all-realms`), which the background service needs. Model keys are used for the model only, and never passed to commands.
+
+Desktop notifications are on by default on macOS; `airth inbox --desktop off` turns them off.
 
 ## Where things live
 
 ```text
 ~/.airth/                      readable only by you; no run can reach it
   owner.json                   your profile
-  config.json                  the default realm
+  config.json                  the default realm, notification settings
+  secrets.env                  model settings for all realms (mode 600)
+  notifications.json           your inbox
+  server.json                  how to reach the running app (while it runs)
+  logs/serve.log               the background service's log
   realms/<name>/
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
+    objectives.json            objectives: triggers, approvals, budgets, last run
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
     worktrees/<id>/            isolated working copies
@@ -147,17 +186,22 @@ Any of these model settings can also be set per realm as a credential (`airth se
 
 ```text
 src/
-  main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, doctor
-  cli.rs          CLI: realm, owner, memory, secret, integration
+  main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, serve, doctor
+  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
+  objective.rs    persistent objectives, schedules, file watches
+  scheduler.rs    which objectives are due; cross-realm summaries
+  notify.rs       the owner's inbox and desktop notifications
+  service.rs      the login service (launchd)
   integration.rs  integrations: base URLs with credentials bound to them
   isolation.rs    git worktrees per run: create, commit, diff, adopt, discard
   sandbox.rs      the command sandbox (macOS sandbox-exec)
-  ui/             the local app: HTTP server (mod.rs) and the page (index.html, app.js, app.css)
+  ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
+                  (mod.rs) and the page (index.html, app.js, app.css)
   term.rs         terminal output for CLI runs
   cancel.rs       stop signal shared by the CLI, the app, the agent loop and tools
   agent.rs        the loop and the system prompt

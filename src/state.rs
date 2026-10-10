@@ -1,5 +1,6 @@
 //! Persistent execution state of a run, saved as JSON in its realm's `runs/`.
 
+use crate::agent::Budget;
 use crate::isolation::Change;
 use crate::models::{ContentBlock, Message, Role};
 use crate::permissions::Grant;
@@ -112,6 +113,15 @@ pub fn render_plan(plan: &[PlanStep]) -> String {
         .join("\n")
 }
 
+/// What started a run that the owner did not start by hand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Origin {
+    /// The id of the realm's objective.
+    pub objective: String,
+    /// What fired it, e.g. "schedule: daily 08:00".
+    pub trigger: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub id: String,
@@ -137,9 +147,16 @@ pub struct State {
     /// The agent's plan for the objective, as it last updated it.
     #[serde(default)]
     pub plan: Vec<PlanStep>,
-    /// Standing approvals the owner gave during this run.
+    /// Standing approvals the owner gave during this run, or in advance for
+    /// an objective's runs.
     #[serde(default)]
     pub grants: Vec<Grant>,
+    /// Limits on every drive of this run, on top of the client's.
+    #[serde(default, skip_serializing_if = "Budget::is_empty")]
+    pub budget: Budget,
+    /// The objective that started this run, when it started on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -164,6 +181,8 @@ impl State {
             change: None,
             plan: Vec::new(),
             grants: Vec::new(),
+            budget: Budget::default(),
+            origin: None,
             path,
         }
     }
