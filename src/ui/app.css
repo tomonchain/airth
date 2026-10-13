@@ -1322,3 +1322,41 @@ a.rh-tag { color: var(--brand); }
   .welcome-inner { padding: 28px 16px 32px; }
   .welcome-card { padding: 24px 20px 18px; }
 }
+
+/* ---------- What Airth can do ---------- */
+.cando-link {
+  display: flex; width: fit-content; align-items: center; gap: 7px; margin: -6px auto 22px; padding: 6px 14px 6px 11px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 13px; font-weight: 550;
+  transition: border-color .15s, box-shadow .2s var(--ease), transform .2s var(--ease);
+}
+.cando-link .i { color: var(--brand); }
+.cando-link .i svg { width: 16px; height: 16px; }
+.cando-link:hover { border-color: var(--border-strong); box-shadow: var(--shadow); transform: translateY(-1px); }
+.cando-overlay { padding-top: 6vh; }
+.cando { width: min(820px, calc(100vw - 32px)); max-height: 88vh; }
+.cando-head { display: flex; gap: 12px; align-items: flex-start; padding: 22px 24px 14px; border-bottom: 1px solid var(--border); }
+.cando-head h2 { margin: 2px 0 6px; font-size: 21px; letter-spacing: -0.02em; font-weight: 650; }
+.cando-head p { margin: 0; line-height: 1.55; font-size: 13.5px; }
+.cando-body { overflow-y: auto; padding: 18px 24px 22px; display: grid; gap: 16px; }
+.cando-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.cando-card { border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; background: var(--bg); }
+.cando-card.off { opacity: .6; }
+.cando-card p { margin: 0; line-height: 1.5; }
+.cando-top { display: flex; align-items: center; gap: 10px; }
+.cando-top .chip { text-decoration: none; white-space: nowrap; }
+.chip.rule-allow { color: var(--ok); }
+.cando-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.cando-examples .suggestion { font-size: 12.5px; padding: 5px 11px; text-align: left; }
+.cando-more { font-size: 13px; font-weight: 500; text-decoration: none; }
+.cando-services b { font-weight: 600; color: var(--text); }
+.cando-promise { border-radius: 16px; padding: 14px 18px; background: var(--brand-soft); }
+.cando-promise ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.65; font-size: 13px; color: var(--muted); }
+.cando-tools > summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
+.cando-tools > summary::-webkit-details-marker { display: none; }
+.cando-tools > summary::after { content: " ›"; display: inline-block; transition: transform .2s var(--ease); }
+.cando-tools[open] > summary::after { transform: rotate(90deg); }
+.cando-tools > div { margin-top: 8px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+@media (max-width: 760px) {
+  .cando-grid { grid-template-columns: 1fr; }
+  .cando-head, .cando-body { padding-left: 16px; padding-right: 16px; }
+}
