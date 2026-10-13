@@ -1186,3 +1186,10 @@ a.rh-tag { color: var(--brand); }
 .model-controls .model-pill { border: 1px solid var(--border-strong); color: var(--text); }
 .model-controls .mp-label { max-width: 220px; }
 .model-controls .mp-menu { top: calc(100% + 8px); bottom: auto; transform-origin: top right; }
+
+/* Pictures: profile and realms */
+.avatar.has-img, .realm-mark.has-img { background: none; overflow: hidden; }
+.avatar img, .realm-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar.large, .realm-mark.large { width: 56px; height: 56px; font-size: 22px; }
+.realm-mark.large { border-radius: 16px; }
+.picture-edit { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

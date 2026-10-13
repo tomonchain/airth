@@ -15,6 +15,7 @@ use crate::cancel::CancelToken;
 use crate::connectors;
 use crate::home::NewRealm;
 use crate::hub::{Hub, RunHooks, away_reason};
+use crate::images;
 use crate::integration::Integration;
 use crate::isolation::Isolation;
 use crate::notify::{Inbox, Kind};
@@ -685,12 +686,33 @@ impl App {
         let ok = || json_response(200, json!({"ok": true}));
         Ok(match (&method, segments.as_slice()) {
             (Method::Get, ["info"]) => json_response(200, self.info()),
-            (Method::Get, ["owner"]) => json_response(200, json!(self.hub.home().owner()?)),
+            (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =
                     serde_json::from_value(read_json(request)?).context("invalid profile")?;
                 self.hub.home().save_owner(&owner)?;
-                json_response(200, json!(self.hub.home().owner()?))
+                json_response(200, self.owner()?)
+            }
+            // Pictures of the owner and of each realm, for the app.
+            (Method::Get, ["owner", "avatar"]) => image_response(self.hub.home().dir(), "avatar")?,
+            (Method::Put, ["owner", "avatar"]) => {
+                images::save(self.hub.home().dir(), "avatar", &read_bytes(request)?)?;
+                json_response(200, self.owner()?)
+            }
+            (Method::Delete, ["owner", "avatar"]) => {
+                images::remove(self.hub.home().dir(), "avatar")?;
+                json_response(200, self.owner()?)
+            }
+            (Method::Get, ["realms", r, "image"]) => image_response(self.realm(r)?.dir(), "image")?,
+            (Method::Put, ["realms", r, "image"]) => {
+                let realm = self.realm(r)?;
+                images::save(realm.dir(), "image", &read_bytes(request)?)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "image"]) => {
+                let realm = self.realm(r)?;
+                images::remove(realm.dir(), "image")?;
+                json_response(200, self.realm_detail(&realm)?)
             }
             (Method::Get, ["realms"]) => json_response(200, self.realms()?),
             (Method::Post, ["realms"]) => {
@@ -1326,12 +1348,20 @@ impl App {
                     "description": r.config.description,
                     "archived": r.config.archived,
                     "default": default.as_deref() == Some(r.name()),
+                    "image": images::version(r.dir(), "image"),
                     "live": lives.len(),
                     "needs_approval": lives.iter().filter(|l| l.pending.lock().unwrap().is_some()).count(),
                 })
             })
             .collect();
         Ok(json!(realms))
+    }
+
+    /// The owner profile, and the version of their picture (None: none).
+    fn owner(&self) -> Result<Value> {
+        let mut owner = json!(self.hub.home().owner()?);
+        owner["avatar"] = json!(images::version(self.hub.home().dir(), "avatar"));
+        Ok(owner)
     }
 
     fn realm_detail(&self, realm: &Realm) -> Result<Value> {
@@ -1353,6 +1383,7 @@ impl App {
             "share_owner_profile": c.share_owner_profile,
             "archived": c.archived,
             "default": self.hub.home().default_realm().as_deref() == Some(realm.name()),
+            "image": images::version(realm.dir(), "image"),
             "model": model.as_ref().ok().map(|m| m.describe()),
             "model_error": model.err().map(|e| format!("{e:#}")),
             "models": self.hub.model_settings(realm)?,
@@ -2017,6 +2048,32 @@ fn read_json(request: &mut Request) -> Result<Value> {
         .take(MAX_BODY)
         .read_to_string(&mut body)?;
     serde_json::from_str(&body).context("request body must be JSON")
+}
+
+/// A request's raw body, refused past `images::MAX_IMAGE`.
+fn read_bytes(request: &mut Request) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    request
+        .as_reader()
+        .take(images::MAX_IMAGE as u64 + 1)
+        .read_to_end(&mut body)?;
+    if body.len() > images::MAX_IMAGE {
+        anyhow::bail!(
+            "the picture is too large (at most {} KB)",
+            images::MAX_IMAGE / 1024
+        );
+    }
+    Ok(body)
+}
+
+fn image_response(dir: &std::path::Path, stem: &str) -> Result<HttpResponse> {
+    let Some((bytes, mime)) = images::load(dir, stem) else {
+        return Ok(json_response(404, json!({"error": "no picture"})));
+    };
+    Ok(Response::from_data(bytes)
+        .with_header(content_type(mime))
+        .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
+        .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap()))
 }
 
 fn json_response(status: u16, value: Value) -> HttpResponse {

@@ -8,6 +8,7 @@ mod home;
 mod hub;
 #[path = "desktop/icon.rs"]
 mod icon;
+mod images;
 mod integration;
 mod isolation;
 mod memory;

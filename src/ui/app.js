@@ -482,7 +482,7 @@ function renderFoot() {
     app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the realm on this platform." }, "⚠ No command sandbox"),
     h("div", { class: "me" },
       h("button", { class: "me-btn" + (app.route.view === "owner" ? " active" : ""), type: "button", onclick: () => go("#/owner") },
-        h("span", { class: "avatar" }, (name || "?").slice(0, 1).toUpperCase()),
+        pictureMark("avatar", "owner/avatar", app.ownerAvatar, name),
         h("span", { class: "me-name" }, name || "Your profile")),
       themeToggle(),
       app.realm && h("button", { class: "icon-action" + (app.route.view === "settings" ? " active" : ""), type: "button", title: "Realm settings", "aria-label": "Realm settings",
@@ -510,7 +510,7 @@ function renderRealmSwitch() {
   const button = h("button", { class: "realm-button", type: "button", "aria-haspopup": "true", "aria-expanded": String(realmMenuOpen),
       title: current && current.description ? current.description : "",
       onclick: (e) => { e.stopPropagation(); realmMenuOpen = !realmMenuOpen; renderRealmSwitch(); } },
-    h("span", { class: "realm-mark" }, (app.realm || "?").slice(0, 1).toUpperCase()),
+    pictureMark("realm-mark", `${realmPath(app.realm || "")}/image`, current && current.image, app.realm),
     h("span", { class: "realm-name" }, app.realm || "No realm"),
     elsewhere.length > 0 && h("span", { class: "needs-dot", title: "Approvals waiting in other realms" }),
     h("span", { class: "chev" }, icon("chevrons")));
@@ -525,7 +525,7 @@ function renderRealmSwitch() {
   for (const r of app.realms) {
     menu.append(h("button", { class: "realm-option" + (r.name === app.realm ? " active" : "") + (r.archived ? " archived" : ""), type: "button", role: "menuitem",
         onclick: () => { close(); go(`#/r/${enc(r.name)}`); } },
-      h("span", { class: "realm-mark small" }, r.name.slice(0, 1).toUpperCase()),
+      pictureMark("realm-mark small", `${realmPath(r.name)}/image`, r.image, r.name),
       h("span", { class: "grow" }, r.name, r.archived && h("span", { class: "muted" }, " · archived")),
       r.needs_approval > 0 ? h("span", { class: "needs" }, r.needs_approval) : r.live > 0 ? h("span", { class: "dot running" }) : r.name === app.realm ? h("span", { class: "check" }, "✓") : null));
   }
@@ -1775,6 +1775,8 @@ function renderSettings(main) {
 
   page(main, d.name, null,
     h("div", { class: "card" },
+      field("Picture", pictureEditor({ path: `${realmPath(d.name)}/image`, version: d.image, text: d.name,
+        done: async (detail) => { app.realmDetail = detail; await refreshRealms(); renderMain(); renderSidebar(); } }), "Shown in the app only."),
       field("Description", desc),
       field("Workspace", h("code", { class: "path" }, d.root), d.own_root ? null : "A private folder in Airth's home."),
       field("Isolation", h("span", null, d.isolation === "worktree" ? "Each run works in its own git worktree; you adopt or discard its change." : "Runs work directly in the workspace."))),
@@ -1854,6 +1856,70 @@ function flash(text, isError) {
   flashTimer = setTimeout(() => (el.className = ""), isError ? 5000 : 1800);
 }
 
+// ---------- pictures (profile, realms) ----------
+
+/** Pictures are fetched with the API token, so they become blob URLs; cached per version. */
+const pictureCache = new Map();
+const pictureReady = new Map();
+function pictureUrl(path, version) {
+  const key = `${path}@${version}`;
+  if (!pictureCache.has(key)) {
+    pictureCache.set(key, fetch("/api/" + path, { headers: { "X-Airth-Token": token || "" } })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => (b ? URL.createObjectURL(b) : null))
+      .catch(() => null)
+      .then((url) => { pictureReady.set(key, url); return url; }));
+  }
+  return pictureCache.get(key);
+}
+
+/** A round or square mark: the picture if there is one, else the initial. */
+function pictureMark(cls, path, version, text) {
+  const el = h("span", { class: cls }, (text || "?").slice(0, 1).toUpperCase());
+  const show = (url) => { if (url) { el.classList.add("has-img"); el.replaceChildren(h("img", { src: url, alt: "" })); } };
+  if (!version) return el;
+  const ready = pictureReady.get(`${path}@${version}`);
+  // Already loaded: shown at once, so redraws do not flicker.
+  if (ready !== undefined) show(ready);
+  else pictureUrl(path, version).then(show);
+  return el;
+}
+
+/** Reduce a picked image to a 256×256 PNG, centered. */
+async function squarePicture(file) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  canvas.getContext("2d").drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("cannot read this image"))), "image/png"));
+}
+
+/** Choose or remove a picture. `path` is its API path; `done` gets the answer. */
+function pictureEditor({ path, version, text, round, done }) {
+  const input = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true });
+  const send = async (method, body) => {
+    const res = await fetch("/api/" + path, { method, body, headers: { "X-Airth-Token": token || "", "Content-Type": "image/png" } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  };
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try { done(await send("PUT", await squarePicture(file))); flash("Picture saved"); }
+    catch (e) { flash(e.message, true); }
+    input.value = "";
+  });
+  return h("div", { class: "picture-edit" },
+    pictureMark(round ? "avatar large" : "realm-mark large", path, version, text),
+    h("button", { class: "btn", type: "button", onclick: () => input.click() }, version ? "Change picture" : "Add picture"),
+    version && h("button", { class: "btn ghost", type: "button", onclick: async () => {
+      try { done(await send("DELETE")); flash("Picture removed"); } catch (e) { flash(e.message, true); }
+    } }, "Remove"),
+    input);
+}
+
 // ---------- owner profile ----------
 
 const OWNER_LISTS = [
@@ -1881,8 +1947,10 @@ async function renderOwner(main) {
     for (const l of lists) body[l.key] = l.ta.value.split("\n").map((x) => x.trim()).filter(Boolean);
     try { await api("owner", body, "PUT"); app.ownerName = body.name; renderFoot(); flash("Profile saved"); } catch (e) { flash(e.message, true); }
   } }, "Save profile");
+  const picture = field("Picture", pictureEditor({ path: "owner/avatar", version: owner.avatar, text: owner.name, round: true,
+    done: (o) => { app.ownerAvatar = o.avatar; renderFoot(); renderMain(); } }), "Shown in the app only.");
   $(".page-inner", main).append(
-    h("div", { class: "card" }, field("Name", name), field("About", about), lists.map((l) => l.el)),
+    h("div", { class: "card" }, picture, field("Name", name), field("About", about), lists.map((l) => l.el)),
     h("div", { class: "row-end spaced" }, owner.updated_at && h("span", { class: "muted small" }, "updated " + ago(owner.updated_at)), saveBtn),
     h("h2", null, "Appearance"),
     h("p", { class: "muted" }, "Kept in this browser or app window. System follows macOS, day and night."),
@@ -3058,7 +3126,7 @@ async function boot() {
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
   }
-  try { app.ownerName = (await api("owner")).name; } catch {}
+  try { const o = await api("owner"); app.ownerName = o.name; app.ownerAvatar = o.avatar; } catch {}
   await refreshRealms();
   await onRoute();
   // Background refreshes pause while the window is hidden, and catch up when it shows.
