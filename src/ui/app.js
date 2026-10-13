@@ -290,11 +290,11 @@ function parseRoute() {
   const h = location.hash;
   let m;
   if ((m = h.match(/^#\/r\/([^/]+)\/run\/([^/?#]+)/))) return { view: "run", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/settings/))) return { view: "settings", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/settings(?:\/([a-z]+))?/))) return { view: "settings", realm: decodeURIComponent(m[1]), tab: m[2] };
   if ((m = h.match(/^#\/r\/([^/]+)\/objectives/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
-  if (h.startsWith("#/owner")) return { view: "owner" };
+  if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
   if (h.startsWith("#/inbox")) return { view: "inbox" };
   if (h.startsWith("#/usage")) return { view: "usage" };
   if (h.startsWith("#/realms/new")) return { view: "new-realm" };
@@ -1766,7 +1766,11 @@ const CAP_HELP = {
   memory: "Save facts to this realm's memory",
   network: "Call integrations and websites",
   skill: "Use skills you installed",
-  apps: "Work with your Mac apps (Calendar, Reminders, Notes, Mail drafts, Safari, clipboard)",
+  apps: "Calendar, Reminders, Notes, Mail, Safari and the clipboard",
+};
+const CAP_NAME = {
+  read: "Read files", write: "Change files", execute: "Run commands", memory: "Remember things",
+  network: "Use the web and integrations", skill: "Use skills", apps: "Use your Mac apps",
 };
 
 const MODEL_TIERS = [
@@ -1802,8 +1806,8 @@ function modelSettings(d) {
     const s = m[t.id] || {};
     const choice = choiceOf(t.id);
     const picker = modelPicker({ get: () => choice, set: (c) => save(t.id, c, s.effort || ""), auto: t.auto });
-    const effort = h("select", { "aria-label": `${t.name} model effort`, title: "Reasoning effort: higher thinks more and costs more" },
-      ["", "low", "medium", "high", "xhigh", "max"].map((e) => h("option", { value: e }, e ? `effort: ${e}` : "effort: default")));
+    const effort = h("select", { class: "pill-select", "aria-label": `${t.name} model effort`, title: "Reasoning effort: higher thinks more and costs more" },
+      ["", "low", "medium", "high", "xhigh", "max"].map((e) => h("option", { value: e }, e ? `Effort: ${e}` : "Effort: default")));
     effort.value = s.effort || "";
     effort.disabled = choice === "auto" && t.id !== "main";
     effort.addEventListener("change", () => save(t.id, choice, effort.value));
@@ -1815,13 +1819,29 @@ function modelSettings(d) {
   });
   return h("div", { class: "card" },
     h("div", { class: "policy" }, rows),
-    h("label", { class: "muted small check-row" }, allRealms, " Apply my changes to all realms (a realm's own setting wins over the shared one; saving here for all realms removes this realm's own)"),
-    field("In use", d.model ? h("span", null, d.model) : h("span", { class: "warn" }, d.model_error || "not configured")));
+    h("label", { class: "check-row" }, allRealms,
+      h("span", null, "Apply my next change to all realms",
+        h("span", { class: "muted small block" }, "It also replaces this realm's own setting. Otherwise a change applies to this realm only, and a realm's own setting wins over the shared one."))),
+    field("In use", d.model ? h("span", { class: "value" }, d.model) : h("span", { class: "value warn" }, d.model_error || "not configured")));
 }
+
+const SETTINGS_TABS = [
+  ["general", "General", "gear"],
+  ["models", "Models", "brain"],
+  ["permissions", "Permissions", "check"],
+  ["memory", "Memory", "notes"],
+  ["access", "Access", "plug"],
+  ["advanced", "Advanced", "terminal"],
+];
+const settingsUi = { addIntegration: false };
+
+/** A home-relative path: easier to read than the full one. */
+const tildePath = (p) => (p || "").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 
 function renderSettings(main) {
   const d = app.realmDetail;
   if (!d) return page(main, "Realm settings", "Loading…");
+  const tab = SETTINGS_TABS.find((t) => t[0] === app.route.tab) || SETTINGS_TABS[0];
   const save = async (patch, msg) => {
     try {
       app.realmDetail = await api(realmPath(d.name), patch, "PATCH");
@@ -1831,131 +1851,168 @@ function renderSettings(main) {
       renderSidebar();
     } catch (e) { flash(e.message, true); }
   };
-
-  const desc = h("input", { type: "text", value: d.description, placeholder: "What this realm is about (the agent sees this)" });
-  desc.addEventListener("change", () => save({ description: desc.value }));
-
-  const policy = h("div", { class: "policy" }, Object.keys(CAP_HELP).map((cap) =>
-    h("div", { class: "policy-row" },
-      h("div", null, h("div", { class: "strong" }, cap), h("div", { class: "muted small" }, CAP_HELP[cap])),
-      h("div", { class: "seg", role: "radiogroup", "aria-label": cap },
-        ["allow", "ask", "deny"].map((rule) =>
-          h("button", { type: "button", role: "radio", "aria-checked": String(d.policy[cap] === rule), class: d.policy[cap] === rule ? "on rule-" + rule : "",
-            onclick: () => save({ policy: { [cap]: rule } }) }, rule))))));
-
-  const checks = h("textarea", { rows: 3, placeholder: "One command per line, e.g. cargo test" });
-  checks.value = d.checks.join("\n");
-
-  const memInput = h("input", { type: "text", placeholder: "Something Airth should remember in this realm…" });
-  const addMemory = async () => {
-    if (!memInput.value.trim()) return;
-    try {
-      app.realmDetail = await api(`${realmPath(d.name)}/memory`, { text: memInput.value });
-      renderMain();
-    } catch (e) { flash(e.message, true); }
+  const remove = async (path) => {
+    try { app.realmDetail = await api(path, undefined, "DELETE"); renderMain(); } catch (e) { flash(e.message, true); }
   };
-  memInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemory(); });
+  const section = (title, sub, ...body) => [title && h("h2", null, title), sub && h("p", { class: "muted lead" }, sub), ...body];
 
-  const secKey = h("input", { type: "text", placeholder: "NAME, e.g. GITHUB_TOKEN", autocomplete: "off", spellcheck: "false" });
-  const secVal = h("input", { type: "password", placeholder: "value", autocomplete: "new-password" });
-  const addSecret = async () => {
-    try {
-      app.realmDetail = await api(`${realmPath(d.name)}/secrets`, { key: secKey.value.trim().toUpperCase(), value: secVal.value });
-      renderMain();
-      flash("Credential saved");
-    } catch (e) { flash(e.message, true); }
+  const general = () => {
+    const desc = h("textarea", { rows: 2, placeholder: "What this realm is about (Airth reads this in every run)" });
+    desc.value = d.description;
+    desc.addEventListener("change", () => save({ description: desc.value.trim() }, "Description saved"));
+    return [
+      h("div", { class: "card" },
+        field("Picture", pictureEditor({ path: `${realmPath(d.name)}/image`, version: d.image, text: d.name,
+          done: async (detail) => { app.realmDetail = detail; await refreshRealms(); renderMain(); renderSidebar(); } }), "Shown in the app only."),
+        field("Description", desc),
+        field("Workspace", h("span", { class: "value path", title: d.root }, tildePath(d.root)), d.own_root ? null : "A private folder in Airth's home."),
+        field("Changes", h("span", { class: "value" }, d.isolation === "worktree"
+          ? "Each run works on its own copy (a git worktree); you adopt or discard what it changed."
+          : "Runs work directly in the workspace."))),
+      ...section("Your profile", null,
+        h("div", { class: "card" },
+          h("label", { class: "toggle" },
+            h("input", { type: "checkbox", checked: d.share_owner_profile, onchange: (e) => save({ share_owner_profile: e.target.checked }) }),
+            h("span", null, h("span", null, "Share your profile with this realm's runs"),
+              h("span", { class: "muted small block" }, "Your name, what you do, your preferences and boundaries, from ", h("a", { href: "#/owner" }, "your profile"), "."))))),
+    ];
   };
 
-  const integ = {
-    name: h("input", { type: "text", placeholder: "name, e.g. github", autocomplete: "off", spellcheck: "false" }),
-    url: h("input", { type: "text", placeholder: "base URL, e.g. https://api.github.com", autocomplete: "off", spellcheck: "false" }),
-    header: h("input", { type: "text", placeholder: "header (optional), e.g. Authorization: Bearer [secret:GITHUB_TOKEN]", autocomplete: "off", spellcheck: "false" }),
-    desc: h("input", { type: "text", placeholder: "what it is for (the agent sees this)" }),
-  };
-  const addIntegration = async () => {
-    const headers = {};
-    const hv = integ.header.value.trim();
-    if (hv) {
-      const i = hv.indexOf(":");
-      if (i < 1) return flash("Headers look like “Name: value”", true);
-      headers[hv.slice(0, i).trim()] = hv.slice(i + 1).trim();
-    }
-    try {
-      app.realmDetail = await api(`${realmPath(d.name)}/integrations`, {
-        name: integ.name.value.trim(), base_url: integ.url.value.trim(), description: integ.desc.value.trim(), headers,
-      });
-      renderMain();
-      flash("Integration saved");
-    } catch (e) { flash(e.message, true); }
-  };
-
-  page(main, d.name, null,
-    h("div", { class: "card" },
-      field("Picture", pictureEditor({ path: `${realmPath(d.name)}/image`, version: d.image, text: d.name,
-        done: async (detail) => { app.realmDetail = detail; await refreshRealms(); renderMain(); renderSidebar(); } }), "Shown in the app only."),
-      field("Description", desc),
-      field("Workspace", h("code", { class: "path" }, d.root), d.own_root ? null : "A private folder in Airth's home."),
-      field("Isolation", h("span", null, d.isolation === "worktree" ? "Each run works in its own git worktree; you adopt or discard its change." : "Runs work directly in the workspace."))),
-
-    h("h2", null, "Models"),
-    h("p", { class: "muted" }, "Which models this realm's runs use. With a fast model, Airth sorts each new request: simple ones (questions, lookups, short texts) go to the fast model, which costs much less; the rest to the main model. A model's key goes under Credentials."),
+  const models = () => section(null,
+    "Which models this realm's runs use. With a fast model, Airth sorts each new request: simple ones (questions, lookups, short texts) go to the fast model, which costs much less; the rest go to the main model.",
     modelSettings(d),
+    h("p", { class: "muted small" }, "A model's API key goes under ", h("a", { href: `#/r/${enc(d.name)}/settings/access` }, "Access"), "."));
 
-    h("h2", null, "Permissions"),
-    h("p", { class: "muted" }, "What Airth may do in this realm without asking. Only you can change this."),
-    h("div", { class: "card" }, policy),
+  const permissions = () => section(null,
+    "What Airth may do in this realm. Only you can change this.",
+    h("div", { class: "legend muted small" },
+      h("span", null, h("b", { class: "rule-allow" }, "Allow"), " does it without asking"),
+      h("span", null, h("b", { class: "rule-ask" }, "Ask"), " waits for your approval"),
+      h("span", null, h("b", { class: "rule-deny" }, "Deny"), " never")),
+    h("div", { class: "card" }, h("div", { class: "policy" }, Object.keys(CAP_HELP).map((cap) =>
+      h("div", { class: "policy-row" },
+        h("div", null, h("div", { class: "strong" }, CAP_NAME[cap] || cap), h("div", { class: "muted small" }, CAP_HELP[cap])),
+        h("div", { class: "seg", role: "radiogroup", "aria-label": CAP_NAME[cap] || cap },
+          ["allow", "ask", "deny"].map((rule) =>
+            h("button", { type: "button", role: "radio", "aria-checked": String(d.policy[cap] === rule), class: d.policy[cap] === rule ? "on rule-" + rule : "",
+              onclick: () => save({ policy: { [cap]: rule } }) }, rule[0].toUpperCase() + rule.slice(1)))))))));
 
-    h("h2", null, "Checks"),
-    h("p", { class: "muted" }, "Commands Airth's runtime runs on every change before you can adopt it. They run in the run's sandbox."),
-    h("div", { class: "card" }, checks,
-      h("div", { class: "row-end" }, h("button", { class: "btn", type: "button", onclick: () => save({ checks: checks.value.split("\n") }, "Checks saved") }, "Save checks"))),
+  const memory = () => {
+    const input = h("input", { type: "text", placeholder: "Something Airth should remember in this realm…" });
+    const add = async () => {
+      if (!input.value.trim()) return;
+      try { app.realmDetail = await api(`${realmPath(d.name)}/memory`, { text: input.value }); renderMain(); flash("Remembered"); }
+      catch (e) { flash(e.message, true); }
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+    return section(null, "What Airth remembers in this realm. Runs in other realms never see it.",
+      h("div", { class: "card" },
+        h("div", { class: "inline-form first" }, input, h("button", { class: "btn", type: "button", onclick: add }, "Add")),
+        d.memory.length ? d.memory.map((m) =>
+          h("div", { class: "list-row" },
+            h("div", { class: "grow" }, m.text, h("div", { class: "muted small" }, (m.source === "owner" ? "added by you" : "learned in " + m.source.replace("run:", "run ")) + " · " + ago(m.created_at))),
+            h("button", { class: "icon-btn", type: "button", title: "Forget", "aria-label": "Forget", onclick: () => remove(`${realmPath(d.name)}/memory/${enc(m.id)}`) }, "×")))
+          : h("div", { class: "empty-row muted small" }, "Nothing yet. Runs add what they learn; you can add facts here.")));
+  };
 
-    h("h2", null, "Memory"),
-    h("p", { class: "muted" }, "What Airth remembers in this realm. Runs in other realms never see it."),
-    h("div", { class: "card" },
-      d.memory.length ? d.memory.map((m) =>
-        h("div", { class: "list-row" },
-          h("div", { class: "grow" }, m.text, h("div", { class: "muted small" }, (m.source === "owner" ? "added by you" : "learned in " + m.source.replace("run:", "run ")) + " · " + ago(m.created_at))),
-          h("button", { class: "icon-btn", type: "button", title: "Forget", "aria-label": "Forget",
-            onclick: async () => { app.realmDetail = await api(`${realmPath(d.name)}/memory/${enc(m.id)}`, undefined, "DELETE"); renderMain(); } }, "×")))
-        : h("div", { class: "muted small pad" }, "Nothing yet."),
-      h("div", { class: "inline-form" }, memInput, h("button", { class: "btn", type: "button", onclick: addMemory }, "Add"))),
+  const access = () => {
+    const key = h("input", { type: "text", placeholder: "NAME, e.g. GITHUB_TOKEN", autocomplete: "off", spellcheck: "false" });
+    const val = h("input", { type: "password", placeholder: "value", autocomplete: "new-password" });
+    const addSecret = async () => {
+      try {
+        app.realmDetail = await api(`${realmPath(d.name)}/secrets`, { key: key.value.trim().toUpperCase(), value: val.value });
+        renderMain();
+        flash("Key saved");
+      } catch (e) { flash(e.message, true); }
+    };
+    val.addEventListener("keydown", (e) => { if (e.key === "Enter") addSecret(); });
 
-    h("h2", null, "Credentials"),
-    h("p", { class: "muted" }, "Given to this realm's commands as environment variables, and hidden from the model. Model keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY…) are used for this realm's model only."),
-    h("div", { class: "card" },
-      d.secrets.length ? d.secrets.map((s) =>
-        h("div", { class: "list-row" },
-          h("code", { class: "grow" }, s.key), s.provider && h("span", { class: "chip" }, "model"),
-          h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + s.key,
-            onclick: async () => { app.realmDetail = await api(`${realmPath(d.name)}/secrets/${enc(s.key)}`, undefined, "DELETE"); renderMain(); } }, "×")))
-        : h("div", { class: "muted small pad" }, "No credentials."),
-      h("div", { class: "inline-form" }, secKey, secVal, h("button", { class: "btn", type: "button", onclick: addSecret }, "Save"))),
+    const integ = {
+      name: h("input", { type: "text", placeholder: "name, e.g. github", autocomplete: "off", spellcheck: "false" }),
+      url: h("input", { type: "text", placeholder: "base URL, e.g. https://api.github.com", autocomplete: "off", spellcheck: "false" }),
+      header: h("input", { type: "text", placeholder: "header (optional), e.g. Authorization: Bearer [secret:GITHUB_TOKEN]", autocomplete: "off", spellcheck: "false" }),
+      desc: h("input", { type: "text", placeholder: "what it is for (Airth reads this)" }),
+    };
+    const addIntegration = async () => {
+      const headers = {};
+      const hv = integ.header.value.trim();
+      if (hv) {
+        const i = hv.indexOf(":");
+        if (i < 1) return flash("Headers look like “Name: value”", true);
+        headers[hv.slice(0, i).trim()] = hv.slice(i + 1).trim();
+      }
+      try {
+        app.realmDetail = await api(`${realmPath(d.name)}/integrations`, {
+          name: integ.name.value.trim(), base_url: integ.url.value.trim(), description: integ.desc.value.trim(), headers,
+        });
+        settingsUi.addIntegration = false;
+        renderMain();
+        flash("Integration saved");
+      } catch (e) { flash(e.message, true); }
+    };
 
-    h("h2", null, "Integrations"),
-    h("p", { class: "muted" }, "Services this realm's runs may call. Credentials go in headers as [secret:NAME]: the runtime fills them in, only for requests under the base URL, and the model never sees them. Without an integration, runs can only reach public websites, with no credentials."),
-    h("div", { class: "card" },
-      d.integrations.length ? d.integrations.map((i) =>
-        h("div", { class: "list-row" },
-          h("div", { class: "grow" },
-            h("div", null, h("span", { class: "strong" }, i.name), " ", h("code", { class: "path" }, i.base_url)),
-            i.description && h("div", { class: "muted small" }, i.description),
-            Object.entries(i.headers).map(([k, v]) => h("div", { class: "muted small" }, h("code", null, `${k}: ${v}`))),
-            i.missing_secrets.length > 0 && h("div", { class: "warn small" }, "Missing credential: " + i.missing_secrets.join(", "))),
-          h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + i.name,
-            onclick: async () => { app.realmDetail = await api(`${realmPath(d.name)}/integrations/${enc(i.name)}`, undefined, "DELETE"); renderMain(); } }, "×")))
-        : h("div", { class: "muted small pad" }, "No integrations."),
-      h("div", { class: "stack-form" }, h("div", { class: "inline-form" }, integ.name, integ.url), integ.header, h("div", { class: "inline-form" }, integ.desc, h("button", { class: "btn", type: "button", onclick: addIntegration }, "Add")))),
+    return [
+      ...section("Keys", "Given to this realm's commands as environment variables, and never shown to the model. Model keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY…) are used for this realm's models only.",
+        h("div", { class: "card" },
+          d.secrets.length ? d.secrets.map((s) =>
+            h("div", { class: "list-row" },
+              h("code", { class: "grow" }, s.key), s.provider && h("span", { class: "chip" }, "model"),
+              h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + s.key, onclick: () => remove(`${realmPath(d.name)}/secrets/${enc(s.key)}`) }, "×")))
+            : h("div", { class: "empty-row muted small" }, "No keys yet."),
+          h("div", { class: "inline-form" }, key, val, h("button", { class: "btn", type: "button", onclick: addSecret }, "Save")))),
+      ...section("Integrations", "Services this realm's runs may call. A header can carry a key as [secret:NAME]: the runtime fills it in, only for requests under the base URL, and the model never sees it. Without an integration, runs reach only public websites, with no keys.",
+        h("p", { class: "muted small" }, "For common services (Notion, Linear, GitHub, Stripe…), ",
+          h("a", { href: `#/r/${enc(d.name)}/skills`, onclick: () => { skillUi.tab = "connectors"; } }, "Connectors"),
+          " set this up in one step."),
+        h("div", { class: "card" },
+          d.integrations.length ? d.integrations.map((i) =>
+            h("div", { class: "list-row" },
+              h("div", { class: "grow" },
+                h("div", null, h("span", { class: "strong" }, i.name), " ", h("code", { class: "path" }, i.base_url)),
+                i.description && h("div", { class: "muted small" }, i.description),
+                Object.entries(i.headers).map(([k, v]) => h("div", { class: "muted small" }, h("code", null, `${k}: ${v}`))),
+                i.missing_secrets.length > 0 && h("div", { class: "warn small" }, "Missing key: " + i.missing_secrets.join(", "))),
+              h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + i.name, onclick: () => remove(`${realmPath(d.name)}/integrations/${enc(i.name)}`) }, "×")))
+            : h("div", { class: "empty-row muted small" }, "No integrations."),
+          settingsUi.addIntegration
+            ? h("div", { class: "stack-form" },
+                h("div", { class: "inline-form" }, integ.name, integ.url), integ.header, integ.desc,
+                h("div", { class: "row-end" },
+                  h("button", { class: "btn ghost", type: "button", onclick: () => { settingsUi.addIntegration = false; renderMain(); } }, "Cancel"),
+                  h("button", { class: "btn primary", type: "button", onclick: addIntegration }, "Add integration")))
+            : h("div", { class: "row-start" }, h("button", { class: "btn", type: "button", onclick: () => { settingsUi.addIntegration = true; renderMain(); } }, icon("plus"), "Add an integration")))),
+    ];
+  };
 
-    h("h2", null, "Privacy"),
-    h("div", { class: "card" },
-      h("label", { class: "toggle" },
-        h("input", { type: "checkbox", checked: d.share_owner_profile, onchange: (e) => save({ share_owner_profile: e.target.checked }) }),
-        h("span", null, "Share your profile with this realm's runs"))),
+  const advanced = () => {
+    const checks = h("textarea", { rows: 3, placeholder: "One command per line, e.g. cargo test" });
+    checks.value = d.checks.join("\n");
+    return [
+      ...section("Checks", "Commands the runtime runs on every change before you can adopt it, in the run's sandbox. Useful for code: tests, linters.",
+        h("div", { class: "card" }, checks,
+          h("div", { class: "row-end" }, h("button", { class: "btn", type: "button", onclick: () => save({ checks: checks.value.split("\n") }, "Checks saved") }, "Save checks")))),
+      ...section("Realm", null,
+        h("div", { class: "card" },
+          h("div", { class: "policy-row" },
+            h("div", null, h("div", { class: "strong" }, "Default realm"),
+              h("div", { class: "muted small" }, d.default ? "Airth opens this realm when nothing else is chosen." : "The realm Airth opens when nothing else is chosen.")),
+            d.default ? h("span", { class: "chip" }, "default") : h("button", { class: "btn", type: "button", onclick: () => save({ default: true }, "Default realm set") }, "Make default")),
+          h("div", { class: "policy-row" },
+            h("div", null, h("div", { class: "strong" }, d.archived ? "Archived" : "Archive"),
+              h("div", { class: "muted small" }, "Hides the realm from the switcher and stops its objectives. Its runs, memory and files are kept; you can restore it.")),
+            h("button", { class: "btn" + (d.archived ? "" : " danger"), type: "button", onclick: () => save({ archived: !d.archived }, d.archived ? "Restored" : "Archived") }, d.archived ? "Restore" : "Archive")))),
+    ];
+  };
 
-    h("div", { class: "row-end spaced" },
-      !d.default && h("button", { class: "btn", type: "button", onclick: () => save({ default: true }, "Default realm set") }, "Make default"),
-      h("button", { class: "btn danger", type: "button", onclick: () => save({ archived: !d.archived }, d.archived ? "Restored" : "Archived") }, d.archived ? "Restore realm" : "Archive realm")));
+  const body = { general, models, permissions, memory, access, advanced }[tab[0]]();
+  main.append(h("div", { class: "page" }, h("div", { class: "page-inner settings" },
+    h("div", { class: "settings-head" },
+      pictureMark("realm-mark large", `${realmPath(d.name)}/image`, d.image, d.name),
+      h("div", null, h("h1", null, d.name), h("div", { class: "muted" }, "Realm settings"))),
+    h("div", { class: "tabs", role: "tablist" }, SETTINGS_TABS.map(([id, label, ic]) =>
+      h("button", { type: "button", role: "tab", "aria-selected": String(id === tab[0]), class: "tab" + (id === tab[0] ? " on" : ""),
+        onclick: () => go(`#/r/${enc(d.name)}/settings/${id}`) }, icon(ic), label))),
+    ...body)));
 }
 
 function field(label, control, help) {
@@ -2039,38 +2096,60 @@ function pictureEditor({ path, version, text, round, done }) {
 // ---------- owner profile ----------
 
 const OWNER_LISTS = [
-  ["preferences", "Preferences", "How you like things done"],
-  ["goals", "Goals", "Short- and long-term"],
-  ["commitments", "Commitments", "What you are on the hook for"],
-  ["boundaries", "Boundaries", "Lines Airth must never cross"],
+  ["preferences", "Preferences", "How you like things done", "e.g. Answer in French\nShort, direct answers"],
+  ["goals", "Goals", "Short- and long-term", "e.g. Launch my shop before December"],
+  ["commitments", "Commitments", "What you are on the hook for", "e.g. A newsletter every Friday"],
+  ["boundaries", "Boundaries", "Lines Airth must never cross", "e.g. Never email a client without my OK"],
 ];
+const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"]];
 
 async function renderOwner(main) {
-  page(main, "Your profile", "What Airth knows about you. Realms that share your profile give it to every run; you can turn that off per realm.");
+  const tab = OWNER_TABS.find((t) => t[0] === app.route.tab) || OWNER_TABS[0];
+  const inner = h("div", { class: "page-inner settings" },
+    h("div", { class: "settings-head" },
+      pictureMark("avatar large", "owner/avatar", app.ownerAvatar, app.ownerName),
+      h("div", null, h("h1", null, app.ownerName || "Your profile"), h("div", { class: "muted" }, app.ownerName ? "Your profile" : "Tell Airth who you are"))),
+    h("div", { class: "tabs", role: "tablist" }, OWNER_TABS.map(([id, label, ic]) =>
+      h("button", { type: "button", role: "tab", "aria-selected": String(id === tab[0]), class: "tab" + (id === tab[0] ? " on" : ""),
+        onclick: () => go(id === "profile" ? "#/owner" : `#/owner/${id}`) }, icon(ic), label))));
+  main.append(h("div", { class: "page" }, inner));
+  if (tab[0] === "appearance") {
+    inner.append(h("p", { class: "muted lead" }, "Kept in this browser or app window. System follows macOS, day and night."), appearanceCard());
+    return;
+  }
   let owner;
   try { owner = await api("owner"); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "owner") return;
   const name = h("input", { type: "text", value: owner.name, placeholder: "Your name" });
   const about = h("textarea", { rows: 3, placeholder: "Who you are, what you do" });
   about.value = owner.about;
-  const lists = OWNER_LISTS.map(([key, label, help]) => {
-    const ta = h("textarea", { rows: 3, placeholder: "One per line" });
+  const lists = OWNER_LISTS.map(([key, label, help, example]) => {
+    const ta = h("textarea", { rows: 3, placeholder: example });
     ta.value = owner[key].join("\n");
-    return { key, ta, el: field(label, ta, help) };
+    return { key, ta, el: field(label, ta, help + " · one per line") };
   });
-  const saveBtn = h("button", { class: "btn primary", type: "button", onclick: async () => {
+  // Each field saves when you leave it, like the realm settings.
+  const status = h("span", { class: "muted small" }, owner.updated_at ? "Saved · updated " + ago(owner.updated_at) : "Changes save on their own");
+  const save = async () => {
     const body = { name: name.value.trim(), about: about.value.trim() };
     for (const l of lists) body[l.key] = l.ta.value.split("\n").map((x) => x.trim()).filter(Boolean);
-    try { await api("owner", body, "PUT"); app.ownerName = body.name; renderFoot(); flash("Profile saved"); } catch (e) { flash(e.message, true); }
-  } }, "Save profile");
+    try {
+      await api("owner", body, "PUT");
+      const renamed = app.ownerName !== body.name;
+      app.ownerName = body.name;
+      renderFoot();
+      status.textContent = "Saved";
+      flash("Profile saved");
+      if (renamed) $(".settings-head h1", inner).textContent = body.name || "Your profile";
+    } catch (e) { flash(e.message, true); }
+  };
+  for (const el of [name, about, ...lists.map((l) => l.ta)]) el.addEventListener("change", save);
   const picture = field("Picture", pictureEditor({ path: "owner/avatar", version: owner.avatar, text: owner.name, round: true,
     done: (o) => { app.ownerAvatar = o.avatar; renderFoot(); renderMain(); } }), "Shown in the app only.");
-  $(".page-inner", main).append(
+  inner.append(
+    h("p", { class: "muted lead" }, "What Airth knows about you. Realms that share your profile give it to every run; you can turn that off in a realm's settings."),
     h("div", { class: "card" }, picture, field("Name", name), field("About", about), lists.map((l) => l.el)),
-    h("div", { class: "row-end spaced" }, owner.updated_at && h("span", { class: "muted small" }, "updated " + ago(owner.updated_at)), saveBtn),
-    h("h2", null, "Appearance"),
-    h("p", { class: "muted" }, "Kept in this browser or app window. System follows macOS, day and night."),
-    appearanceCard());
+    h("div", { class: "row-end" }, status));
 }
 
 function appearanceCard() {
@@ -2789,7 +2868,7 @@ async function renderMcpTab(inner, realm) {
     h("p", { class: "muted" },
       "A stdio server: the command that starts it. Airth starts it in this realm's sandbox, lists its tools, and stops it after each call. ",
       "Calls follow the realm's skill rule (now: ", h("strong", null, POLICY_WORDS[rule] || rule), "). ",
-      "If it needs a token, add it under Realm settings → Credentials: the server gets it as an environment variable."),
+      "If it needs a token, add it under Realm settings → Access: the server gets it as an environment variable."),
     h("div", { class: "card" },
       field("Name", f.name, "Lowercase; tools appear to runs as mcp__name__tool."),
       field("Command", f.command, "e.g. npx -y @modelcontextprotocol/server-filesystem .  ·  uvx mcp-server-git"),
@@ -2831,7 +2910,8 @@ function paletteItems() {
     add("Go to", "Connectors (Notion, Linear, GitHub…)", icon("world"), () => { skillUi.tab = "connectors"; go(`#/r/${r}/skills`); });
     add("Go to", "Realm settings", icon("gear"), () => go(`#/r/${r}/settings`));
   }
-  add("Go to", "Profile & appearance", icon("sun"), () => go("#/owner"));
+  add("Go to", "Your profile", icon("notes"), () => go("#/owner"));
+  add("Go to", "Appearance", icon("sun"), () => go("#/owner/appearance"));
   const runs = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   for (const run of runs) {
     const status = run.needs_approval ? "awaiting" : run.live ? "running" : run.status;

@@ -1243,3 +1243,44 @@ a.rh-tag { color: var(--brand); }
 [data-shell="mac"] .app.side-hidden .icon-action.side-open { top: 12px; left: 84px; }
 [data-shell="mac"] .app.side-hidden .run-header { padding-left: 128px; }
 [data-shell="mac"] .run-header { min-height: 56px; }
+
+/* ---------- Settings ---------- */
+.field { align-items: start; }
+.field > label { padding-top: 9px; }
+.field .value { display: block; padding-top: 8px; line-height: 1.5; }
+.field .value.path { font-size: 13px; overflow-wrap: anywhere; word-break: normal; }
+.block { display: block; margin-top: 2px; }
+.settings-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.settings-head h1 { margin: 0 0 2px; }
+.settings .tabs { margin-bottom: 6px; }
+.settings .tabs + h2, .settings .tabs + .card, .settings .tabs + .lead { margin-top: 18px; }
+.settings .lead { margin-bottom: 14px; line-height: 1.6; }
+.card + p.muted.small { margin-top: 10px; }
+.field:has(.avatar.large, .realm-mark.large) > label { padding-top: 19px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: -2px 0 12px; }
+.legend b { font-weight: 600; }
+.rule-allow { color: var(--ok); }
+.rule-ask { color: var(--warn); }
+.rule-deny { color: var(--err); }
+.empty-row { padding: 14px 0; border-top: 1px solid var(--border); }
+.card > .empty-row:first-child { border-top: 0; }
+.inline-form.first { border-top: 0; }
+.card > .row-start { padding: 12px 0 14px; border-top: 1px solid var(--border); }
+.card > .row-start:first-child { border-top: 0; }
+.card > .stack-form { padding-top: 12px; border-top: 1px solid var(--border); }
+.card > .stack-form .inline-form { padding-top: 0; border-top: 0; }
+.card > .stack-form .row-end { padding-top: 2px; }
+.toggle:has(.block) { align-items: flex-start; }
+.toggle:has(.block) input, .check-row input { margin-top: 3px; }
+.check-row { cursor: pointer; }
+.page select.pill-select {
+  width: auto; height: 36px; border-radius: 999px; padding: 0 30px 0 12px; font-size: 12.5px; color: var(--text);
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4l4-4'/%3E%3C/svg%3E") no-repeat right 12px center;
+}
+.page select.pill-select:hover:not(:disabled) { background-color: var(--hover); }
+.page select.pill-select:disabled { opacity: .45; cursor: default; }
+@media (max-width: 760px) {
+  .field > label { padding-top: 0; }
+  .field .value { padding-top: 0; }
+  .policy-row { flex-wrap: wrap; }
+}
