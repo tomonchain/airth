@@ -1,7 +1,7 @@
 use super::{Tool, Workspace, str_arg};
 use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
-use crate::northstar::{NorthStarStore, SCOPE, Status};
+use crate::northstar::{GOAL_SCOPE, NorthStarStore, SCOPE, Status};
 use crate::permissions::Capability;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
@@ -15,7 +15,7 @@ pub struct NorthStarTool {
 
 fn milestones(input: &Value) -> Result<Vec<(String, String)>> {
     let Some(list) = input["milestones"].as_array() else {
-        bail!("set_milestones needs 'milestones': [{{title, note}}]");
+        bail!("set_milestones needs 'milestones': [{{title, done_when}}]");
     };
     Ok(list
         .iter()
@@ -23,7 +23,11 @@ fn milestones(input: &Value) -> Result<Vec<(String, String)>> {
             Value::String(title) => (title.clone(), String::new()),
             _ => (
                 m["title"].as_str().unwrap_or_default().to_string(),
-                m["note"].as_str().unwrap_or_default().to_string(),
+                m["done_when"]
+                    .as_str()
+                    .or(m["note"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         })
         .collect())
@@ -41,11 +45,13 @@ impl Tool for NorthStarTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "north_star".into(),
-            description: "The milestones toward this realm's North Star (the goal the owner set, shown in your briefing). action=set_milestones: record the agreed milestones, in order (replaces the list; milestones with an existing title keep their id and progress); only after brainstorming them with the owner and getting their agreement. action=update: record progress on one milestone (`milestone` id, optional `status` todo|doing|done|dropped, one-line `note`); mark done only once its outcome is verified. The owner may need to approve; only the owner changes the goal itself.".into(),
+            description: "The milestones toward this realm's North Star (the goal the owner set, shown in your briefing). action=set_milestones: record the agreed milestones, in order (replaces the list; milestones with an existing title keep their id and progress); only after brainstorming them with the owner and getting their agreement. action=update: record progress on one milestone (`milestone` id, optional `status` todo|doing|done|dropped, one-line `note`); mark done only once its outcome is verified. action=set_goal: reword the goal (`goal`, and `why`: why it matters or what success looks like), only to record a wording the owner agreed to in this conversation; the owner always approves it. The owner may need to approve the other actions.".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["set_milestones", "update"]},
+                    "action": {"type": "string", "enum": ["set_milestones", "update", "set_goal"]},
+                    "goal": {"type": "string", "description": "For set_goal: the North Star, specific and measurable"},
+                    "why": {"type": "string", "description": "For set_goal: why it matters, or what success looks like"},
                     "milestones": {
                         "type": "array",
                         "description": "For set_milestones: concrete, verifiable outcomes, in order",
@@ -53,7 +59,7 @@ impl Tool for NorthStarTool {
                             "type": "object",
                             "properties": {
                                 "title": {"type": "string"},
-                                "note": {"type": "string", "description": "How you will know it is reached"}
+                                "done_when": {"type": "string", "description": "How you and the owner will know it is reached"}
                             },
                             "required": ["title"]
                         }
@@ -71,8 +77,15 @@ impl Tool for NorthStarTool {
         Capability::Memory
     }
 
-    fn scope(&self, _: &Value) -> Option<String> {
-        Some(SCOPE.into())
+    fn scope(&self, input: &Value) -> Option<String> {
+        Some(
+            if input["action"] == "set_goal" {
+                GOAL_SCOPE
+            } else {
+                SCOPE
+            }
+            .into(),
+        )
     }
 
     fn preview(&self, input: &Value, _: &Workspace) -> Result<String> {
@@ -84,10 +97,10 @@ impl Tool for NorthStarTool {
         Ok(match str_arg(input, "action")? {
             "set_milestones" => {
                 let mut out = format!("North Star: {goal}\nMilestones:\n");
-                for (i, (title, note)) in milestones(input)?.iter().enumerate() {
+                for (i, (title, done_when)) in milestones(input)?.iter().enumerate() {
                     out.push_str(&format!("{}. {title}", i + 1));
-                    if !note.trim().is_empty() {
-                        out.push_str(&format!(" — {}", note.trim()));
+                    if !done_when.trim().is_empty() {
+                        out.push_str(&format!(" — done when: {}", done_when.trim()));
                     }
                     out.push('\n');
                 }
@@ -110,7 +123,16 @@ impl Tool for NorthStarTool {
                 }
                 out
             }
-            other => bail!("unknown action '{other}' (set_milestones, update)"),
+            "set_goal" => {
+                let why = input["why"].as_str().unwrap_or_default().trim();
+                let mut out = format!("New North Star: {}", str_arg(input, "goal")?.trim());
+                if !why.is_empty() {
+                    out.push_str(&format!("\nWhy: {why}"));
+                }
+                out.push_str(&format!("\n(was: {goal})"));
+                out
+            }
+            other => bail!("unknown action '{other}' (set_milestones, update, set_goal)"),
         })
     }
 
@@ -128,11 +150,16 @@ impl Tool for NorthStarTool {
                 input["note"].as_str(),
                 run,
             )?,
-            other => bail!("unknown action '{other}' (set_milestones, update)"),
+            "set_goal" => self.store.set_goal(
+                str_arg(input, "goal")?,
+                input["why"].as_str().unwrap_or_default(),
+            )?,
+            other => bail!("unknown action '{other}' (set_milestones, update, set_goal)"),
         };
         let (done, total) = star.progress();
         Ok(format!(
-            "Recorded. North Star: {done} of {total} milestones done.\n{}",
+            "Recorded. North Star: {}\n{done} of {total} milestones done.\n{}",
+            star.goal,
             star.render_milestones()
         ))
     }

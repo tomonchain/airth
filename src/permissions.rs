@@ -166,7 +166,14 @@ impl PermissionRequest {
     /// Whether the owner may approve this kind of request for the rest of the
     /// run. Requests with warnings are always asked one by one.
     pub fn grantable(&self) -> bool {
-        self.warnings.is_empty()
+        self.warnings.is_empty() && !self.owner_decides()
+    }
+
+    /// Decisions that are the owner's alone (rewording the North Star): asked
+    /// every time, even where the realm's policy allows the capability.
+    pub fn owner_decides(&self) -> bool {
+        self.capability == Capability::Memory
+            && self.scope.as_deref() == Some(crate::northstar::GOAL_SCOPE)
     }
 
     /// Plain-language description of what a grant for this request covers.
@@ -245,7 +252,11 @@ impl PermissionGate {
     }
 
     pub fn check(&mut self, request: &PermissionRequest) -> Result<Verdict> {
-        Ok(match self.policy.rule(request.capability) {
+        let rule = match self.policy.rule(request.capability) {
+            Rule::Allow if request.owner_decides() => Rule::Ask,
+            rule => rule,
+        };
+        Ok(match rule {
             Rule::Allow => Verdict::Allowed,
             Rule::Deny => Verdict::Denied(format!(
                 "{} capability is disabled by policy",
@@ -457,6 +468,33 @@ mod tests {
             gate.check(&req(Capability::Write)).unwrap(),
             Verdict::Approved
         );
+    }
+
+    #[test]
+    fn the_owner_always_decides_the_north_star() {
+        let goal = PermissionRequest {
+            scope: Some(crate::northstar::GOAL_SCOPE.into()),
+            ..req(Capability::Memory)
+        };
+        let allowed = Policy {
+            memory: Rule::Allow,
+            ..Policy::default()
+        };
+        // Asked even where memory is allowed, and even with a grant for it.
+        let mut gate = PermissionGate::new(allowed, Box::new(Script(vec![Answer::YesForRun])))
+            .with_grants(vec![Grant {
+                capability: Capability::Memory,
+                scope: Some(crate::northstar::GOAL_SCOPE.into()),
+            }]);
+        assert_eq!(gate.check(&goal).unwrap(), Verdict::Approved);
+        assert!(matches!(gate.check(&goal).unwrap(), Verdict::Denied(_)));
+        assert_eq!(gate.grants().len(), 1, "never granted for the run");
+        // Progress on milestones follows the policy as before.
+        let progress = PermissionRequest {
+            scope: Some(crate::northstar::SCOPE.into()),
+            ..req(Capability::Memory)
+        };
+        assert_eq!(gate.check(&progress).unwrap(), Verdict::Allowed);
     }
 
     #[test]

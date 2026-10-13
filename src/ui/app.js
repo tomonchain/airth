@@ -828,8 +828,7 @@ function nsSide() {
       h("input", { type: "checkbox", checked: focusOn(), onchange: toggleFocus }), h("span", null, "Focus")));
 }
 
-async function startNorthStarRun(what) {
-  const realm = app.realm;
+async function startNorthStarRun(what, realm = app.realm) {
   try {
     const r = await api(`${realmPath(realm)}/northstar/${what}`, {});
     await refreshRuns();
@@ -862,7 +861,7 @@ function drawNorthStar(el) {
   if (!ns && !nsUi.open) {
     return el.replaceChildren(h("button", { class: "ns-empty", type: "button", onclick: () => { nsUi.open = true; drawNorthStar(el); } },
       h("span", { class: "ns-star", "aria-hidden": "true" }, "★"),
-      h("span", null, h("span", { class: "strong" }, "Set a North Star"), " · one goal for this realm. You brainstorm the milestones with Airth, and it helps you reach it, every day.")));
+      h("span", null, h("span", { class: "strong" }, "Set a North Star"), " · write the one goal for this realm. Airth then asks you a few questions, helps you sharpen it and define the milestones, and pushes it forward every day.")));
   }
   if (!ns || nsUi.editing) {
     const goal = h("input", { type: "text", value: ns ? ns.goal : "", placeholder: "The one goal this realm works toward, e.g. “100 kit sales by December”" });
@@ -871,7 +870,13 @@ function drawNorthStar(el) {
       if (!goal.value.trim()) return goal.focus();
       nsUi.editing = false;
       nsUi.open = false;
-      await change("", { goal: goal.value, why: why.value }, "PUT", ns ? "North Star saved" : "North Star set. Now brainstorm the milestones.");
+      const isNew = !ns;
+      await change("", { goal: goal.value, why: why.value }, "PUT", ns ? "North Star saved" : null);
+      // A new North Star: Airth starts the conversation that defines it.
+      if (isNew && northStar()) {
+        if (noModel) flash("North Star set. Add a model in the realm settings to define it with Airth.");
+        else { flash("North Star set. Airth has a few questions for you."); startNorthStarRun("brainstorm"); }
+      }
     };
     const cancel = () => { nsUi.editing = false; nsUi.open = false; nsUi.confirmClear = false; drawNorthStar(el); };
     for (const input of [goal, why]) input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); else if (e.key === "Escape") cancel(); });
@@ -884,7 +889,7 @@ function drawNorthStar(el) {
           : h("button", { class: "btn danger ghost", type: "button", onclick: () => { nsUi.confirmClear = true; drawNorthStar(el); } }, "Remove…")),
         h("span", { class: "grow" }),
         h("button", { class: "btn ghost", type: "button", onclick: cancel }, "Cancel"),
-        h("button", { class: "btn primary", type: "button", onclick: save }, ns ? "Save" : "Set North Star"))));
+        h("button", { class: "btn primary", type: "button", onclick: save }, ns ? "Save" : "Set it and define it with Airth"))));
     goal.focus();
     return;
   }
@@ -897,10 +902,11 @@ function drawNorthStar(el) {
           onclick: () => change(`/milestones/${enc(m.id)}`, { status: NS_NEXT[m.status] }, "PATCH") }, NS_MARK[m.status]),
         h("div", { class: "grow" },
           h("div", { class: "ns-m-title" }, m.title, m.id === ns.next && h("span", { class: "chip running" }, "next")),
+          m.done_when && h("div", { class: "muted small" }, "Done when: " + m.done_when),
           m.note && h("div", { class: "muted small" }, m.note)),
         m.runs.length > 0 && h("a", { class: "muted small ns-runs", href: `#/r/${enc(realm)}/run/${enc(m.runs[m.runs.length - 1])}`, title: "The latest run that moved it" },
           `${m.runs.length} run${m.runs.length === 1 ? "" : "s"}`))))
-    : h("p", { class: "muted small ns-hint" }, "No milestones yet. Brainstorm them with Airth: it looks at where things stand, proposes the steps, and records them once you agree.");
+    : h("p", { class: "muted small ns-hint" }, "No milestones yet. Define them with Airth: it asks you a few questions, proposes a sharper goal and the steps to it, and records them once you agree.");
 
   const every = h("input", { type: "text", class: "ns-every", value: s ? s.every : "weekdays 09:00", placeholder: "weekdays 09:00 · every 3h", "aria-label": "When Airth advances it", spellcheck: "false" });
   every.addEventListener("change", () => { if (s) change("/schedule", { every: every.value }, undefined, "Schedule saved"); });
@@ -925,8 +931,8 @@ function drawNorthStar(el) {
     h("div", { class: "ns-actions" },
       has
         ? h("button", { class: "btn primary", type: "button", disabled: noModel, title: "A run on the next milestone: the most valuable step it can complete and verify now", onclick: () => startNorthStarRun("push") }, "Push it forward now")
-        : h("button", { class: "btn primary", type: "button", disabled: noModel, onclick: () => startNorthStarRun("brainstorm") }, "Brainstorm milestones with Airth"),
-      has && h("button", { class: "btn", type: "button", disabled: noModel, onclick: () => startNorthStarRun("brainstorm") }, "Rework milestones")),
+        : h("button", { class: "btn primary", type: "button", disabled: noModel, onclick: () => startNorthStarRun("brainstorm") }, "Define it with Airth"),
+      has && h("button", { class: "btn", type: "button", disabled: noModel, title: "Airth asks what changed and reworks the goal and milestones with you", onclick: () => startNorthStarRun("brainstorm") }, "Refine with Airth")),
     daily));
 }
 
@@ -1489,7 +1495,8 @@ function diffView(text, kind) {
 }
 
 function approvalCard(p) {
-  const title = { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?", north_star: "Record this on the North Star?" }[p.tool] || `Allow ${p.tool}?`;
+  const title = p.tool === "north_star" && p.preview.startsWith("New North Star:") ? "Change your North Star?"
+    : { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?", north_star: "Record this on the North Star?" }[p.tool] || `Allow ${p.tool}?`;
   const kind = p.tool === "execute_command" ? "command" : ["remember", "http_request", "north_star"].includes(p.tool) ? "plain" : "diff";
   const reason = h("input", {
     id: "deny-reason", type: "text", placeholder: "Reason for denying (optional; Airth sees it)",
@@ -2953,12 +2960,19 @@ function renderNewRealm(main) {
     h("option", { value: "" }, "Automatic (a worktree per run for git repositories)"),
     h("option", { value: "none" }, "None: work directly in the folder"),
     h("option", { value: "worktree" }, "Worktree per run"));
+  const star = h("input", { type: "text", placeholder: "Optional: the one goal of this realm, e.g. “100 kit sales by December”" });
   const err = h("div", { class: "error-banner", hidden: true });
   const create = async () => {
     try {
       const r = await api("realms", { name: name.value.trim(), description: desc.value, root: root.value, isolation: iso.value || null });
       await refreshRealms();
       go(`#/r/${enc(r.name)}`);
+      // With a North Star, Airth starts defining it with the owner at once.
+      if (star.value.trim()) {
+        app.realmDetail = await api(`${realmPath(r.name)}/northstar`, { goal: star.value, why: "" }, "PUT");
+        if (app.realmDetail.model) { flash("Realm created. Airth has a few questions about your North Star."); await startNorthStarRun("brainstorm", r.name); }
+        else { flash("Realm created. Add a model in its settings to define the North Star with Airth."); renderMain(); renderSidebar(); }
+      }
     } catch (e) { err.textContent = e.message; err.hidden = false; }
   };
   name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
@@ -2970,7 +2984,8 @@ function renderNewRealm(main) {
       field("Name", name, "Lowercase letters, digits and dashes."),
       field("Description", desc, "Airth sees this, so it knows what the realm is for."),
       field("Folder", root, "The directory Airth works in. Other realms can never read it."),
-      field("Isolation", iso)),
+      field("Isolation", iso),
+      field("North Star", star, "Airth will ask you a few questions to sharpen it and define the milestones with you.")),
     err,
     h("div", { class: "row-end spaced" }, h("button", { class: "btn primary", type: "button", onclick: create }, "Create realm")));
   name.focus();

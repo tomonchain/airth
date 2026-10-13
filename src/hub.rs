@@ -1065,7 +1065,7 @@ impl Hub {
         })
     }
 
-    /// Start brainstorming the milestones toward the realm's North Star with
+    /// Start defining the realm's North Star and its milestones with
     /// the owner, on the main model. The run proposes milestones and records
     /// them only once the owner agrees (approving the record is the owner's
     /// say). Saved, not started.
@@ -1076,7 +1076,7 @@ impl Hub {
             .context("set a North Star first")?;
         let mut state = self.create_run(
             realm,
-            &format!("Brainstorm the milestones toward: {}", star.goal),
+            &format!("Define the North Star and the path to it: {}", star.goal),
         )?;
         append_user_text(&mut state.messages, BRAINSTORM_BRIEF);
         state.north_star = true;
@@ -1291,8 +1291,22 @@ pub fn away_reason(waited_minutes: u32) -> String {
     }
 }
 
-/// What a North Star brainstorming run is asked to do.
-const BRAINSTORM_BRIEF: &str = "[Airth runtime] The owner wants to brainstorm with you the milestones toward this realm's North Star (in your briefing). First look at where things stand, as far as useful: the realm's files, your memory, recent work. Then propose 3 to 7 milestones: concrete, verifiable outcomes, in order, each reachable within days to a couple of weeks, the first one startable today; for each, one line on how you will both know it is reached. Name the biggest risk or open question, and ask the owner what to change. Do not record anything yet: end your turn and let the owner answer. Once the owner agrees (they may adjust), record the milestones with north_star (action set_milestones). Do not start working on them in this run.";
+/// What a run defining the North Star with the owner is asked to do: a short
+/// interview, then a proposal, then recording what the owner agreed to.
+const BRAINSTORM_BRIEF: &str = "[Airth runtime] The owner wants to define this realm's North Star with you (it is in your briefing), and the path to it. Work as a coach, in conversation, over a few turns. Write in the owner's language and keep each message short and easy to answer.
+
+1. Understand. Look briefly at what you can already see (the realm's files, your memory, recent runs) where it helps. Then ask the owner the 3 to 5 questions whose answers would most change the plan, numbered so they can answer quickly. Cover what you cannot see: where things stand today, what success looks like and by when (a measurable target), their constraints (time, money, skills, people), what they want you to take on versus keep for themselves, and the main risk. Do not ask what you can find out yourself. End your turn and wait for the answers. Ask a second, shorter round only if an answer opens something important.
+
+2. Propose. Then propose, concisely:
+   a. the North Star reworded to be specific, measurable and dated, with its why, if it can be sharper (keep the owner's intent and their words where they work);
+   b. 3 to 7 milestones, in order: verifiable outcomes, each reachable within days to a couple of weeks, the first one startable today, each with how you will both know it is reached (done when);
+   c. the facts from the owner's answers worth remembering in this realm;
+   d. a rhythm for you to push it forward on your own (for example weekdays 09:00), and any tool or connector to set up first.
+   Ask what to change, and end your turn.
+
+3. Record, once the owner agrees (they may adjust): north_star set_goal if the goal or its why changed, north_star set_milestones with each milestone's done_when, and remember for each fact. You cannot set the rhythm or connectors yourself: tell the owner where (the North Star card's \"Airth pushes it forward\" switch, with the time; the Connectors page). Do not start working on the milestones in this run.
+
+If milestones already exist, start from them and from what was done: the owner wants to rework the plan, not restart from scratch.";
 
 /// What a run that advances the North Star is asked to do.
 pub const PUSH_OBJECTIVE: &str = "Advance the North Star. Take the next open milestone (the one in progress, else the first one to do), choose the most valuable step toward it that you can complete and verify in this run, do it, and record the progress with north_star. End with a short report: what moved, what is next, and what needs the owner.";
@@ -1844,6 +1858,11 @@ mod tests {
             vec![
                 done("I propose: 1. Landing page live 2. First 10 sales. What should change?"),
                 call("1", "north_star", milestones),
+                call(
+                    "2",
+                    "north_star",
+                    json!({"action": "set_goal", "goal": "100 kit sales by 15 December", "why": "Fund the next product"}),
+                ),
                 done("Recorded."),
             ],
         );
@@ -1878,7 +1897,11 @@ mod tests {
         .unwrap();
         let star = f.realm.north_star().get().unwrap().unwrap();
         assert_eq!(star.progress(), (0, 2));
-        assert_eq!(star.milestones[0].note, "deployed, checkout works");
+        assert_eq!(star.milestones[0].done_when, "deployed, checkout works");
+        assert_eq!(
+            star.goal, "100 kit sales by 15 December",
+            "the owner approved it"
+        );
 
         // A push run advances the next milestone; an unrelated run does not count.
         let (hub, _, systems) = make_hub(

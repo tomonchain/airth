@@ -89,7 +89,7 @@ airth summary      # the last 24 h across realms: what ran, what waits for revie
 
 Give a realm a **North Star**, the one goal its work serves ("100 kit sales by December"). From the realm's home in the app:
 
-1. **Brainstorm milestones with Airth.** It looks at where things stand, proposes 3 to 7 concrete milestones and asks what to change. You discuss them in the run; when you agree, it records them, and that write is yours to approve.
+1. **Define it with Airth.** Write the goal (when you set it, or when you create the realm) and Airth starts a short conversation: it asks you 3 to 5 questions (where things stand, what success looks like and by when, your constraints, what to delegate, the main risk), then proposes a sharper, measurable goal, 3 to 7 milestones each with how you will know it is done, the facts worth remembering, and a rhythm to push it forward. You adjust it in the run; when you agree, it records everything. Changing the goal itself always asks you, whatever the realm's policy. "Refine with Airth" reworks the plan later.
 2. **Push it forward now**, or let **Airth push it forward on its own** (default `weekdays 09:00`, or `every 3h` for all day). Each push takes the next milestone, does the most valuable step it can complete and verify, records the progress, and reports to your inbox. Those runs may record North Star progress without asking; everything else follows the realm's rules.
 3. **See the progress.** The goal and its progress bar stay at the top of the sidebar. Click a milestone's mark to set its status yourself.
 

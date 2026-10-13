@@ -15,6 +15,9 @@ use std::sync::Mutex;
 
 /// The permission scope of North Star updates (capability `memory`).
 pub const SCOPE: &str = "north star";
+/// The scope of rewording the goal itself: never granted ahead (the
+/// scheduled objective gets `SCOPE` only), so the owner approves each change.
+pub const GOAL_SCOPE: &str = "north star goal";
 /// The objective that advances the North Star on a schedule.
 pub const OBJECTIVE_ID: &str = "north-star";
 
@@ -70,6 +73,9 @@ pub struct Milestone {
     pub title: String,
     #[serde(default)]
     pub status: Status,
+    /// How the owner and Airth will know it is reached.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub done_when: String,
     /// The latest progress note.
     #[serde(default)]
     pub note: String,
@@ -122,6 +128,9 @@ impl NorthStar {
             .iter()
             .map(|m| {
                 let mut line = format!("{} {}. {}", m.status.mark(), m.id, m.title);
+                if !m.done_when.is_empty() {
+                    line.push_str(&format!(" (done when: {})", m.done_when));
+                }
                 if !m.note.is_empty() {
                     line.push_str(&format!(" — {}", m.note));
                 }
@@ -141,7 +150,7 @@ impl NorthStar {
             out.push_str(&format!("Why it matters: {}\n", self.why.trim()));
         }
         if self.milestones.is_empty() {
-            out.push_str("No milestones yet. If the owner asks you to brainstorm them, propose 3 to 7 and record them with north_star (action set_milestones) once the owner agrees.\n");
+            out.push_str("No milestones yet. If the owner asks you to define them, propose 3 to 7 and record them with north_star (action set_milestones) once the owner agrees.\n");
         } else {
             let (done, total) = self.progress();
             out.push_str(&format!(
@@ -149,7 +158,7 @@ impl NorthStar {
                 self.render_milestones()
             ));
         }
-        out.push_str("Keep it in sight. Do what the owner asks; when you have a choice, choose what moves the next open milestone forward, and say how your work relates to it. Do not take on unrelated work unprompted. When your run advances a milestone, record it with north_star (action update: the milestone id, a one-line note, and status doing, or done once its outcome is verified). Only the owner changes the goal itself.");
+        out.push_str("Keep it in sight. Do what the owner asks; when you have a choice, choose what moves the next open milestone forward, and say how your work relates to it. Do not take on unrelated work unprompted. When your run advances a milestone, record it with north_star (action update: the milestone id, a one-line note, and status doing, or done once its outcome is verified). The goal is the owner's: you may propose a sharper wording, and record it (north_star set_goal) only once they agree to it.");
         out
     }
 }
@@ -235,8 +244,8 @@ impl NorthStarStore {
         }
     }
 
-    /// Replace the milestones, in order. A milestone with the same title as
-    /// an existing one keeps its id, status and history.
+    /// Replace the milestones (title, done when), in order. A milestone with
+    /// the same title as an existing one keeps its id, status and history.
     pub fn set_milestones(
         &self,
         items: &[(String, String)],
@@ -245,12 +254,12 @@ impl NorthStarStore {
         if items.is_empty() || items.len() > MAX_MILESTONES {
             bail!("give between 1 and {MAX_MILESTONES} milestones");
         }
-        for (title, note) in items {
+        for (title, done_when) in items {
             if title.trim().is_empty() {
                 bail!("a milestone has no title");
             }
             check_len("a milestone title", title.trim(), MAX_TITLE)?;
-            check_len("a milestone note", note.trim(), MAX_NOTE)?;
+            check_len("a milestone's done when", done_when.trim(), MAX_NOTE)?;
         }
         self.modify(|star| {
             let key = |t: &str| t.trim().to_lowercase();
@@ -260,13 +269,13 @@ impl NorthStarStore {
                 .filter_map(|m| m.id.strip_prefix('m')?.parse::<u32>().ok())
                 .max()
                 .unwrap_or(0);
-            for (title, note) in items {
+            for (title, done_when) in items {
                 let milestone = match old.iter().position(|m| key(&m.title) == key(title)) {
                     Some(i) => {
                         let mut m = old.remove(i);
                         m.title = title.trim().to_string();
-                        if !note.trim().is_empty() {
-                            m.note = note.trim().to_string();
+                        if !done_when.trim().is_empty() {
+                            m.done_when = done_when.trim().to_string();
                         }
                         m
                     }
@@ -276,7 +285,8 @@ impl NorthStarStore {
                             id: format!("m{next_id}"),
                             title: title.trim().to_string(),
                             status: Status::Todo,
-                            note: note.trim().to_string(),
+                            done_when: done_when.trim().to_string(),
+                            note: String::new(),
                             done_at: None,
                             runs: run.map(String::from).into_iter().collect(),
                         }
