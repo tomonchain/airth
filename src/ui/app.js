@@ -316,6 +316,8 @@ function preferredRealm() {
 }
 
 async function onRoute() {
+  // On a phone, going somewhere closes the sidebar.
+  if (narrow()) $("#app").classList.add("side-hidden");
   app.route = parseRoute();
   app.run = null;
   app.version = null;
@@ -1196,6 +1198,9 @@ function transcriptNodes(d) {
     else if (group.length > 1) nodes.push(activityGroup(group, last && d.live));
     group = [];
   };
+  const lastAt = s.messages.length - 1;
+  const formAt = !d.live && lastAt >= 0 && s.messages[lastAt].role === "assistant"
+    && numberedQuestions(s.messages[lastAt].content.filter((b) => b.type === "text").map((b) => b.text).join("\n")).length ? lastAt : -1;
   s.messages.forEach((m, mi) => {
     if (s.compaction && mi === s.compaction.upto) {
       flush(false);
@@ -1230,7 +1235,9 @@ function transcriptNodes(d) {
           h("div", { class: "prose", html: mdc(b.summary) })), `think:${mi}:${bi}`) });
       } else if (b.type === "text" && b.text.trim()) {
         flush(false);
-        nodes.push(keyed(assistantMessage(b.text), `t:${mi}:${bi}`));
+        // The questions of the latest answer are shown once, in the form below it.
+        const text = mi === formAt ? withoutQuestions(b.text) : b.text;
+        if (text.trim()) nodes.push(keyed(assistantMessage(text), `t:${mi}:${bi}`));
       } else if (b.type === "tool_use") {
         const ev = events.get(b.id), res = results.get(b.id);
         group.push({ kind: "tool", name: b.name, input: b.input || {},
@@ -1248,7 +1255,7 @@ function transcriptNodes(d) {
     const text = lastMsg0.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
     const questions = numberedQuestions(text);
     const key = `answers:${s.id}:${s.messages.length - 1}`;
-    if (questions.length) nodes.push(keyed(answerForm(questions, key), key));
+    if (questions.length) nodes.push(keyed(answerForm(questions, key, speaksFrench(s)), key));
     else if (s.north_star && s.objective.startsWith("Define my North Star")) nodes.push(keyed(northStarReplies(s), "ns-replies:" + s.messages.length));
   }
   const checking = s.change && s.change.checks && !s.change.checks.finished && d.live;
@@ -1304,11 +1311,25 @@ function numberedQuestions(text) {
   return items.length >= 2 ? items : [];
 }
 
+/** Whether the conversation is in French (the app's own words are English, but what it sends for the owner follows their language). */
+function speaksFrench(s) {
+  // What the owner and Airth wrote, not Airth's own (English) runtime notes.
+  const text = s.messages.slice(-4).flatMap((m) => m.content).filter((b) => b.type === "text" && !b.text.startsWith(RUNTIME_PREFIX)).map((b) => b.text).join(" ").toLowerCase();
+  const hits = (text.match(/\b(je|tu|vous|est|les|des|une|pour|avec|que|qui|pas|mon|ton|c'est|qu'est-ce)\b/g) || []).length;
+  const en = (text.match(/\b(the|you|is|are|and|for|with|what|your|this|that)\b/g) || []).length;
+  return hits > en;
+}
+
+/** The text without its numbered questions (they move to the answer form). */
+function withoutQuestions(text) {
+  return text.split("\n").filter((line) => !(/^\s*\d+[.)]\s+/.test(line) && line.includes("?"))).join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
 /** Answers typed in the question form, kept across redraws (the transcript is rebuilt on every poll). */
 const answerDrafts = new Map();
 
 /** One field per question, sent as a single follow-up. */
-function answerForm(questions, key) {
+function answerForm(questions, key, fr) {
   const fields = questions.map((q, i) => {
     const ta = h("textarea", { rows: 1, placeholder: "Your answer (or leave empty)", "aria-label": q });
     ta.value = answerDrafts.get(`${key}:${i}`) || "";
@@ -1318,7 +1339,7 @@ function answerForm(questions, key) {
     return { q, ta };
   });
   const send = async () => {
-    const lines = fields.map((f, i) => `${i + 1}. ${f.q}\n→ ${f.ta.value.trim() || "(no answer)"}`);
+    const lines = fields.map((f, i) => `${i + 1}. ${f.q}\n→ ${f.ta.value.trim() || (fr ? "(pas de réponse)" : "(no answer)")}`);
     if (fields.every((f) => !f.ta.value.trim())) return fields[0].ta.focus();
     btn.disabled = true;
     try {
@@ -1335,12 +1356,13 @@ function answerForm(questions, key) {
 
 /** Suggested replies under the latest answer of a run defining the North Star. */
 function northStarReplies(s) {
+  const fr = speaksFrench(s);
   const recorded = s.events.some((e) => e.action === "north_star" && e.status === "ok");
   if (recorded) return h("div", { class: "quick-replies" },
     h("button", { class: "chip-btn primary", type: "button", onclick: () => go(`#/r/${enc(app.realm)}`) }, "★ See my North Star"));
   return h("div", { class: "quick-replies" },
-    h("button", { class: "chip-btn primary", type: "button", onclick: () => sendFollowUp("That looks good. Record it as proposed.").catch((e) => flash(e.message, true)) }, "Looks good, record it"),
-    h("button", { class: "chip-btn", type: "button", onclick: () => { const ta = $(".composer textarea"); if (ta) { ta.value = "I'd change: "; ta.focus(); ta.dispatchEvent(new Event("input")); } } }, "Change something…"));
+    h("button", { class: "chip-btn primary", type: "button", onclick: () => sendFollowUp(fr ? "C'est bon, enregistre-le tel que proposé." : "That looks good. Record it as proposed.").catch((e) => flash(e.message, true)) }, "Looks good, record it"),
+    h("button", { class: "chip-btn", type: "button", onclick: () => { const ta = $(".composer textarea"); if (ta) { ta.value = fr ? "Je changerais : " : "I'd change: "; ta.focus(); ta.dispatchEvent(new Event("input")); } } }, "Change something…"));
 }
 
 /** Past tense for a finished activity line: [verb, one, many]. */
@@ -2881,14 +2903,32 @@ function closePalette() {
   if (prevFocus && prevFocus.focus && document.contains(prevFocus)) prevFocus.focus();
 }
 
+/** Phone-sized windows: the sidebar opens over the page, on demand. */
+const narrow = () => window.matchMedia("(max-width: 760px)").matches;
+
 function sidebarHidden() {
+  if (narrow()) return true;
   try { return localStorage.getItem("airth-sidebar") === "hidden"; } catch { return false; }
 }
+
+// Crossing the phone-size boundary: closed on a phone, the owner's choice otherwise.
+window.matchMedia("(max-width: 760px)").addEventListener("change", () => {
+  const root = $("#app");
+  if (root) root.classList.toggle("side-hidden", sidebarHidden());
+});
+
+// On a phone, a tap outside the open sidebar closes it.
+document.addEventListener("click", (e) => {
+  const root = $("#app");
+  if (!narrow() || !root || root.classList.contains("side-hidden")) return;
+  if (e.target.closest && (e.target.closest(".sidebar") || e.target.closest(".side-open"))) return;
+  root.classList.add("side-hidden");
+});
 
 function toggleSidebar() {
   const hidden = !$("#app").classList.contains("side-hidden");
   $("#app").classList.toggle("side-hidden", hidden);
-  try { localStorage.setItem("airth-sidebar", hidden ? "hidden" : "shown"); } catch {}
+  if (!narrow()) try { localStorage.setItem("airth-sidebar", hidden ? "hidden" : "shown"); } catch {}
 }
 
 document.addEventListener("keydown", (e) => {
