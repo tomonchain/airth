@@ -8,12 +8,14 @@
 //! client chooses *who* approves, never *whether* approval is needed or what
 //! the run may reach.
 
-use crate::agent::{Agent, AgentConfig, Briefing, Observer, system_prompt};
+use crate::agent::{Agent, AgentConfig, Briefing, Observer, run_context};
 use crate::cancel::CancelToken;
 use crate::home::Home;
 use crate::isolation::{self, ChangeStatus, CheckResult, CheckRun, Isolation};
 use crate::memory::MemoryStore;
-use crate::models::{self, ContentBlock, Message, Model, Role};
+use crate::models::router::{Connections, Routed, Tier};
+use crate::models::{ContentBlock, Message, Model, Role};
+use crate::northstar;
 use crate::notify::Kind;
 use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
@@ -29,7 +31,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Provider settings that are credentials.
-const CREDENTIAL_KEYS: &[&str] = &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+const CREDENTIAL_KEYS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "OPENAI_API_KEY",
+    "XAI_API_KEY",
+];
 
 /// How long one check command may run.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(1800);
@@ -63,6 +70,8 @@ pub struct RunSummary {
     /// Steps of the run's plan that are closed (done or skipped), and all steps.
     pub plan_done: usize,
     pub plan_total: usize,
+    /// The run served the realm's North Star (see `is_focus`).
+    pub focus: bool,
 }
 
 impl RunSummary {
@@ -85,18 +94,26 @@ pub struct RunHooks<'a> {
 
 pub struct Hub {
     home: Home,
-    /// A model used for every realm instead of each realm's configuration (tests).
-    model: Option<Arc<dyn Model>>,
+    /// Connections used for every realm instead of each realm's configuration (tests).
+    connections: Option<Connections>,
 }
 
 impl Hub {
     pub fn new(home: Home) -> Self {
-        Self { home, model: None }
+        Self {
+            home,
+            connections: None,
+        }
     }
 
     #[cfg(test)]
-    pub fn with_model(mut self, model: Box<dyn Model>) -> Self {
-        self.model = Some(Arc::from(model));
+    pub fn with_model(self, model: Box<dyn Model>) -> Self {
+        self.with_connections(Connections::single(Arc::from(model)))
+    }
+
+    #[cfg(test)]
+    pub fn with_connections(mut self, connections: Connections) -> Self {
+        self.connections = Some(connections);
         self
     }
 
@@ -104,23 +121,245 @@ impl Hub {
         &self.home
     }
 
-    /// The model for a realm: its own provider credentials if it has some
-    /// (realm secrets), else the environment's.
+    /// The main model of a realm (to check one is configured, and name it).
     pub fn model_for(&self, realm: &Realm) -> Result<Arc<dyn Model>> {
-        if let Some(model) = &self.model {
-            return Ok(model.clone());
-        }
+        Ok(self.connections_for(realm)?.main)
+    }
+
+    /// The realm's model settings, looked up by name: its own credentials,
+    /// then the shared ones, then the environment.
+    fn settings(&self, realm: &Realm) -> Result<impl Fn(&str) -> Option<String>> {
         let secrets = realm.secrets()?;
         let shared = self.home.provider_settings()?;
-        let get = |key: &str| {
+        Ok(move |key: &str| {
             secrets
                 .iter()
                 .chain(&shared)
                 .find(|(k, v)| k == key && !v.is_empty())
                 .map(|(_, v)| v.clone())
                 .or_else(|| std::env::var(key).ok())
+        })
+    }
+
+    /// The model for a choice like `deepseek/deepseek-chat`, built with the
+    /// realm's credential for that provider only. Errors say what is missing.
+    pub fn chosen_model(&self, realm: &Realm, choice: &str) -> Result<Arc<dyn Model>> {
+        let get = self.settings(realm)?;
+        let settings = crate::models::choice_settings(choice, &get)?;
+        Ok(Arc::from(crate::models::from_settings(&settings)?))
+    }
+
+    /// The model connections set for a realm, for the app: per tier, its
+    /// provider, model and effort, and where they come from ("realm", "all"
+    /// for every realm's shared settings, "env", or None: not set).
+    pub fn model_settings(&self, realm: &Realm) -> Result<serde_json::Value> {
+        let secrets = realm.secrets()?;
+        let shared = self.home.provider_settings()?;
+        let find = |key: &str| -> Option<(String, &'static str)> {
+            let in_list = |list: &[(String, String)]| {
+                list.iter()
+                    .find(|(k, v)| k == key && !v.trim().is_empty())
+                    .map(|(_, v)| v.clone())
+            };
+            in_list(&secrets)
+                .map(|v| (v, "realm"))
+                .or_else(|| in_list(&shared).map(|v| (v, "all")))
+                .or_else(|| {
+                    std::env::var(key)
+                        .ok()
+                        .filter(|v| !v.trim().is_empty())
+                        .map(|v| (v, "env"))
+                })
         };
-        Ok(Arc::from(models::from_settings(&get)?))
+        let mut out = serde_json::Map::new();
+        for tier in MODEL_TIERS {
+            let [provider, model, effort] = tier_keys(tier).map(|k| find(&k));
+            let source = model.as_ref().or(provider.as_ref()).map(|(_, s)| *s);
+            out.insert(
+                tier.to_string(),
+                serde_json::json!({
+                    "provider": provider.map(|(v, _)| v),
+                    "model": model.map(|(v, _)| v),
+                    "effort": effort.map(|(v, _)| v),
+                    "source": source,
+                }),
+            );
+        }
+        Ok(serde_json::Value::Object(out))
+    }
+
+    /// Set one model connection of a realm ("main", "fast" or "fallback"),
+    /// for this realm only or for every realm. An empty value removes the
+    /// setting: an empty model turns the fast or fallback connection off,
+    /// and an empty provider or effort inherits the main connection's.
+    pub fn set_model_tier(
+        &self,
+        realm: &Realm,
+        tier: &str,
+        provider: &str,
+        model: &str,
+        effort: &str,
+        all_realms: bool,
+    ) -> Result<()> {
+        if !MODEL_TIERS.contains(&tier) {
+            bail!("unknown model tier '{tier}' (main, fast or fallback)");
+        }
+        let provider = provider.trim().to_lowercase();
+        let model = model.trim();
+        let effort = effort.trim().to_lowercase();
+        if !provider.is_empty()
+            && !crate::models::provider_catalog()
+                .iter()
+                .any(|(id, _, _)| *id == provider)
+        {
+            bail!("unknown provider '{provider}'");
+        }
+        if model.len() > 200 || model.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            bail!("a model name has no spaces");
+        }
+        if !effort.is_empty() && !EFFORTS.contains(&effort.as_str()) {
+            bail!("effort is one of {}", EFFORTS.join(", "));
+        }
+        let off = tier != "main" && model.is_empty();
+        let values = if off {
+            [String::new(), String::new(), String::new()]
+        } else {
+            [provider, model.to_string(), effort]
+        };
+        for (key, value) in tier_keys(tier).iter().zip(values) {
+            if all_realms {
+                // The shared value applies here only without a realm value.
+                realm.remove_secret(key)?;
+                if value.is_empty() {
+                    self.home.remove_provider_setting(key)?;
+                } else {
+                    self.home.set_provider_setting(key, &value)?;
+                }
+            } else if value.is_empty() {
+                realm.remove_secret(key)?;
+            } else {
+                realm.set_secret(key, &value)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Providers and their live model lists, for the app's model picker.
+    pub fn model_options(&self, realm: &Realm) -> Result<Vec<serde_json::Value>> {
+        let get = self.settings(realm)?;
+        let catalog = crate::models::provider_catalog();
+        let lists: Vec<Option<Result<Vec<String>>>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = catalog
+                .iter()
+                .map(|(id, _, key)| {
+                    let configured =
+                        key.is_none_or(|k| get(k).is_some_and(|v| !v.trim().is_empty()));
+                    let get = &get;
+                    scope.spawn(move || {
+                        (configured && *id != "ollama").then(|| crate::models::list_models(id, get))
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or(None))
+                .collect()
+        });
+        let main = get("AIRTH_PROVIDER").unwrap_or_else(|| "anthropic".into());
+        Ok(catalog
+            .iter()
+            .zip(lists)
+            .map(|((id, name, key), list)| {
+                let configured = key.is_none_or(|k| get(k).is_some_and(|v| !v.trim().is_empty()));
+                serde_json::json!({
+                    "id": id,
+                    "name": name,
+                    "key": key,
+                    "configured": configured,
+                    "default_model": (main.trim().eq_ignore_ascii_case(id)).then(|| get("AIRTH_MODEL")).flatten(),
+                    "models": list.as_ref().and_then(|l| l.as_ref().ok()).cloned().unwrap_or_default(),
+                    "error": list.and_then(|l| l.err()).map(|e| format!("{e:#}")),
+                })
+            })
+            .collect())
+    }
+
+    /// The model a drive uses: the one the owner picked for the run, else the
+    /// realm's routing. Switching model marks the history as foreign, so the
+    /// new model does not get the previous one's provider-specific blocks.
+    fn model_for_drive(
+        &self,
+        realm: &Realm,
+        connections: &Connections,
+        state: &mut State,
+    ) -> Result<Routed> {
+        let key = state.model_choice.clone().unwrap_or_else(|| "auto".into());
+        let switched = state.answered_by.as_deref().is_some_and(|prev| prev != key);
+        state.answered_by = Some(key);
+        let Some(choice) = state.model_choice.clone() else {
+            let mut routed = self.route(connections, state);
+            if switched {
+                routed = Routed::new_after(routed, state.model_len());
+            }
+            return Ok(routed);
+        };
+        let chosen = self.chosen_model(realm, &choice)?;
+        // If the chosen service fails, the realm's own connections take over.
+        let mut order = vec![chosen];
+        order.extend(connections.order(Tier::Strong));
+        Ok(Routed::new(
+            order,
+            if switched { state.model_len() } else { 0 },
+        ))
+    }
+
+    /// Every model connection of a realm: its own provider settings if it
+    /// has some (realm secrets), else the shared ones, else the environment's.
+    pub fn connections_for(&self, realm: &Realm) -> Result<Connections> {
+        if let Some(connections) = &self.connections {
+            return Ok(connections.clone());
+        }
+        Connections::from_settings(&self.settings(realm)?)
+    }
+
+    /// The model a drive of `state` uses. With a fast connection, the latest
+    /// ask is triaged: the run stays on the fast model only while asks are
+    /// simple. Triage usage is counted in the run.
+    fn route(&self, connections: &Connections, state: &mut State) -> Routed {
+        if connections.fast.is_some() {
+            // Runs from before routing, and skill development, use the main model.
+            let current = state
+                .tier
+                .or((state.iterations > 0 || state.skill.is_some()).then_some(Tier::Strong));
+            let mut tier = current;
+            if current != Some(Tier::Strong)
+                && let Some(ask) = latest_ask(state)
+            {
+                let triage = connections.triage(&ask);
+                if let Some(r) = triage.response {
+                    state.input_tokens += r.input_tokens;
+                    state.output_tokens += r.output_tokens;
+                    state.usage.push(crate::state::Usage {
+                        at: Utc::now(),
+                        model: r.model,
+                        input: r.input_tokens,
+                        output: r.output_tokens,
+                        cache_read: r.cache_read_tokens,
+                        cache_write: r.cache_write_tokens,
+                    });
+                }
+                tier = Some(triage.tier);
+            }
+            state.tier = Some(tier.unwrap_or(Tier::Strong));
+            // Moving to another model: what the previous one wrote is foreign.
+            let foreign = if current.is_some() && current != state.tier {
+                state.model_len()
+            } else {
+                0
+            };
+            return Routed::new(connections.order(state.tier.unwrap()), foreign);
+        }
+        Routed::new(connections.order(Tier::Strong), 0)
     }
 
     /// The capabilities an agent dispatched by this hub has.
@@ -134,6 +373,7 @@ impl Hub {
             inbox: self.home.inbox(),
             realm: String::new(),
             developing: None,
+            north_star: Some(crate::northstar::NorthStarStore::new("/nonexistent")),
         })
         .iter()
         .map(|t| {
@@ -235,8 +475,8 @@ impl Hub {
         config: AgentConfig,
         hooks: RunHooks,
     ) -> Result<()> {
-        let model = match self.model_for(realm) {
-            Ok(model) => model,
+        let connections = match self.connections_for(realm) {
+            Ok(connections) => connections,
             Err(e) => {
                 state.status = Status::Failed;
                 state.report = Some(format!("no model available: {e:#}"));
@@ -246,8 +486,13 @@ impl Hub {
             }
         };
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
+        let model = self.model_for_drive(realm, &connections, state)?;
+        state.save()?;
         let workspace = self.workspace_for(realm, state)?;
-        let briefing = self.briefing(realm, state, &workspace)?;
+        let context = frozen_context(
+            state,
+            run_context(&self.briefing(realm, state, &workspace)?),
+        );
         let plan = PlanHandle::new(state.plan.clone().into());
         let runtime = Runtime::new(
             tools::realm_tools(RealmTools {
@@ -266,6 +511,8 @@ impl Hub {
                     )),
                     None => None,
                 },
+                north_star: (state.skill.is_none() && realm.north_star().get()?.is_some())
+                    .then(|| realm.north_star()),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),
@@ -274,14 +521,21 @@ impl Hub {
         )
         .with_plan(plan);
         let observer = hooks.observer;
+        let mut config = config.within(&state.budget);
+        // AIRTH_COMPACT_AT: tokens past which the conversation is summarized (0: never).
+        if let Some(v) = self.settings(realm)?("AIRTH_COMPACT_AT")
+            && let Ok(n) = v.trim().parse::<u64>()
+        {
+            config.compact_at = (n > 0).then_some(n.max(20_000));
+        }
         let result = Agent::new(
-            &*model,
+            &model,
             runtime,
-            config.within(&state.budget),
+            config,
             &mut *observer,
             hooks.cancel.clone(),
         )
-        .with_system(system_prompt(&briefing))
+        .with_context(context)
         .run(state);
 
         if let Some(change) = &mut state.change {
@@ -355,6 +609,7 @@ impl Hub {
             objective: objective.id.clone(),
             trigger: trigger.to_string(),
         });
+        state.north_star = objective.id == northstar::OBJECTIVE_ID;
         state.save()?;
 
         let fingerprint = match &objective.trigger {
@@ -810,6 +1065,79 @@ impl Hub {
         })
     }
 
+    /// Start brainstorming the milestones toward the realm's North Star with
+    /// the owner, on the main model. The run proposes milestones and records
+    /// them only once the owner agrees (approving the record is the owner's
+    /// say). Saved, not started.
+    pub fn brainstorm_north_star(&self, realm: &Realm) -> Result<State> {
+        let star = realm
+            .north_star()
+            .get()?
+            .context("set a North Star first")?;
+        let mut state = self.create_run(
+            realm,
+            &format!("Brainstorm the milestones toward: {}", star.goal),
+        )?;
+        append_user_text(&mut state.messages, BRAINSTORM_BRIEF);
+        state.north_star = true;
+        state.tier = Some(Tier::Strong);
+        state.save()?;
+        Ok(state)
+    }
+
+    /// Start a run that advances the North Star now. Saved, not started.
+    pub fn push_north_star(&self, realm: &Realm) -> Result<State> {
+        let star = realm
+            .north_star()
+            .get()?
+            .context("set a North Star first")?;
+        if star.milestones.is_empty() {
+            bail!("brainstorm the milestones first");
+        }
+        let mut state = self.create_run(realm, PUSH_OBJECTIVE)?;
+        state.north_star = true;
+        state.save()?;
+        Ok(state)
+    }
+
+    /// Have Airth advance the North Star on a schedule (`every`, e.g.
+    /// "weekdays 09:00"), or stop it (None). Its runs may record North Star
+    /// progress without asking; anything else follows the realm's rules.
+    pub fn schedule_north_star(&self, realm: &Realm, every: Option<&str>) -> Result<()> {
+        let store = realm.objectives();
+        let Some(every) = every.map(str::trim).filter(|e| !e.is_empty()) else {
+            store.remove(northstar::OBJECTIVE_ID)?;
+            return Ok(());
+        };
+        realm
+            .north_star()
+            .get()?
+            .context("set a North Star first")?;
+        let existing = store.get(northstar::OBJECTIVE_ID).ok();
+        let trigger = Trigger::Schedule {
+            every: every.to_string(),
+        };
+        let same = existing.as_ref().filter(|o| o.trigger == trigger);
+        store.save(Objective {
+            id: northstar::OBJECTIVE_ID.into(),
+            objective: PUSH_OBJECTIVE.into(),
+            trigger,
+            approvals: vec![crate::permissions::Grant {
+                capability: Capability::Memory,
+                scope: Some(northstar::SCOPE.into()),
+            }],
+            budget: existing.as_ref().map(|o| o.budget).unwrap_or_default(),
+            approval_wait_minutes: existing.as_ref().map_or(30, |o| o.approval_wait_minutes),
+            enabled: true,
+            created_at: existing.as_ref().map_or_else(Utc::now, |o| o.created_at),
+            next_at: same.and_then(|o| o.next_at),
+            fingerprint: None,
+            last_run: existing.as_ref().and_then(|o| o.last_run.clone()),
+            last_at: existing.as_ref().and_then(|o| o.last_at),
+            last_status: existing.and_then(|o| o.last_status),
+        })
+    }
+
     fn briefing(&self, realm: &Realm, state: &State, ws: &Workspace) -> Result<Briefing> {
         let owner = if realm.config.share_owner_profile {
             self.home.owner()?.prompt_section()
@@ -824,16 +1152,22 @@ impl Hub {
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
             checks: realm.config.checks.clone(),
+            north_star: match &state.skill {
+                Some(_) => None,
+                None => realm.north_star().get()?.map(|s| s.prompt_section()),
+            },
         })
     }
 
     /// All saved runs of a realm, oldest first. Unreadable files are reported and skipped.
     pub fn runs(&self, realm: &Realm) -> Result<Vec<RunSummary>> {
+        let star = realm.north_star().get().ok().flatten();
         Ok(self
             .load_all(realm)?
             .into_iter()
             .map(|s| RunSummary {
                 live: self.is_live(realm, &s.id),
+                focus: is_focus(&s, star.as_ref()),
                 change: s.change.as_ref().map(|c| c.status),
                 checks_passed: s
                     .change
@@ -849,6 +1183,11 @@ impl Hub {
                 updated_at: s.updated_at,
             })
             .collect())
+    }
+
+    /// Every saved run of the realm, in full (for reports such as token usage).
+    pub fn all_runs(&self, realm: &Realm) -> Result<Vec<State>> {
+        self.load_all(realm)
     }
 
     fn load_all(&self, realm: &Realm) -> Result<Vec<State>> {
@@ -950,6 +1289,23 @@ pub fn away_reason(waited_minutes: u32) -> String {
             "the owner did not answer within {waited_minutes} minutes (they may be away). Do without it, and list it in your final report for the owner."
         )
     }
+}
+
+/// What a North Star brainstorming run is asked to do.
+const BRAINSTORM_BRIEF: &str = "[Airth runtime] The owner wants to brainstorm with you the milestones toward this realm's North Star (in your briefing). First look at where things stand, as far as useful: the realm's files, your memory, recent work. Then propose 3 to 7 milestones: concrete, verifiable outcomes, in order, each reachable within days to a couple of weeks, the first one startable today; for each, one line on how you will both know it is reached. Name the biggest risk or open question, and ask the owner what to change. Do not record anything yet: end your turn and let the owner answer. Once the owner agrees (they may adjust), record the milestones with north_star (action set_milestones). Do not start working on them in this run.";
+
+/// What a run that advances the North Star is asked to do.
+pub const PUSH_OBJECTIVE: &str = "Advance the North Star. Take the next open milestone (the one in progress, else the first one to do), choose the most valuable step toward it that you can complete and verify in this run, do it, and record the progress with north_star. End with a short report: what moved, what is next, and what needs the owner.";
+
+/// Whether a run served the realm's North Star: started for it (a
+/// brainstorm, a push, the scheduled objective), or it recorded progress.
+fn is_focus(state: &State, star: Option<&northstar::NorthStar>) -> bool {
+    state.north_star
+        || state
+            .origin
+            .as_ref()
+            .is_some_and(|o| o.objective == northstar::OBJECTIVE_ID)
+        || star.is_some_and(|s| s.involves(&state.id))
 }
 
 /// What an objective's run is told about how it started and what it may do.
@@ -1098,6 +1454,24 @@ pub(crate) fn process_alive(_pid: i32) -> bool {
     true
 }
 
+/// What the owner last asked: the text of the latest user turn, without
+/// Airth's own notes. None when the turn holds only those (a resume).
+fn latest_ask(state: &State) -> Option<String> {
+    let last = state.messages.iter().rev().find(|m| m.role == Role::User)?;
+    let text: Vec<&str> = last
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Text { text } if !text.starts_with("[Airth runtime]") => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let text = text.join("\n\n");
+    (!text.trim().is_empty()).then_some(text)
+}
+
 /// Add a user message, merging into the last message if it is already a user
 /// turn (e.g. tool results from a run that hit its iteration limit).
 fn append_user_text(messages: &mut Vec<Message>, text: &str) {
@@ -1107,6 +1481,50 @@ fn append_user_text(messages: &mut Vec<Message>, text: &str) {
         }),
         _ => messages.push(Message::user_text(text)),
     }
+}
+
+/// The model connections a realm can set (see models/router.rs).
+const MODEL_TIERS: [&str; 3] = ["main", "fast", "fallback"];
+/// Reasoning effort levels (Anthropic's; OpenAI-style providers take the
+/// lower ones).
+const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+/// The provider, model and effort settings of a tier.
+fn tier_keys(tier: &str) -> [String; 3] {
+    let prefix = match tier {
+        "main" => "AIRTH_".to_string(),
+        other => format!("AIRTH_{}_", other.to_uppercase()),
+    };
+    ["PROVIDER", "MODEL", "EFFORT"].map(|k| format!("{prefix}{k}"))
+}
+
+/// The context a drive of `state` sends: always the one the run started
+/// with, since changing it would invalidate the provider's cache of the whole
+/// conversation. If the realm's context changed since (a new memory, an
+/// edited profile or North Star), the new one is sent once, as a note after
+/// the conversation.
+fn frozen_context(state: &mut State, fresh: String) -> String {
+    let Some(started) = state.context.clone() else {
+        state.context = Some(fresh.clone());
+        return fresh;
+    };
+    let latest = state.context_update.as_ref().unwrap_or(&started);
+    if *latest != fresh && !state.messages.is_empty() {
+        let note = ContentBlock::Text {
+            text: format!(
+                "[Airth runtime] What you were told about your realm, owner or memory changed since this run started. It is now:\n\n{fresh}"
+            ),
+        };
+        match state.messages.last_mut() {
+            Some(m) if m.role == Role::User => m.content.push(note),
+            _ => state.messages.push(Message {
+                role: Role::User,
+                content: vec![note],
+            }),
+        }
+        state.context_update = Some(fresh);
+    }
+    started
 }
 
 #[cfg(test)]
@@ -1132,7 +1550,10 @@ mod tests {
         }
         fn complete(&self, req: &ModelRequest) -> Result<ModelResponse> {
             self.seen.lock().unwrap().push(req.messages.to_vec());
-            self.systems.lock().unwrap().push(req.system.to_string());
+            self.systems
+                .lock()
+                .unwrap()
+                .push(format!("{}\n\n{}", req.system, req.context));
             let mut responses = self.responses.lock().unwrap();
             if responses.is_empty() {
                 // Out of script: behave like a provider outage.
@@ -1160,6 +1581,8 @@ mod tests {
             model: "scripted".into(),
             input_tokens: 0,
             output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
         }
     }
 
@@ -1237,6 +1660,302 @@ mod tests {
             seen,
             systems,
         )
+    }
+
+    #[test]
+    fn model_tiers_are_set_per_realm_or_for_all() {
+        let f = fixture();
+        let (hub, _, _) = make_hub(&f.home, vec![]);
+        let realm = f.realm;
+        hub.set_model_tier(
+            &realm,
+            "main",
+            "anthropic",
+            "claude-opus-5-5",
+            "high",
+            false,
+        )
+        .unwrap();
+        hub.set_model_tier(&realm, "fast", "", "claude-haiku-4-5", "", true)
+            .unwrap();
+        let m = hub.model_settings(&realm).unwrap();
+        assert_eq!(m["main"]["model"], "claude-opus-5-5");
+        assert_eq!(m["main"]["source"], "realm");
+        assert_eq!(m["fast"]["model"], "claude-haiku-4-5");
+        assert_eq!(m["fast"]["source"], "all");
+        assert!(
+            m["fast"]["provider"].is_null(),
+            "inherits the main provider"
+        );
+        assert!(m["fallback"]["source"].is_null());
+        assert_eq!(
+            realm.secret("AIRTH_FAST_MODEL"),
+            None,
+            "shared, not in the realm"
+        );
+        // An empty model turns the fast connection off.
+        hub.set_model_tier(&realm, "fast", "", "", "", true)
+            .unwrap();
+        assert!(hub.model_settings(&realm).unwrap()["fast"]["model"].is_null());
+        assert!(
+            hub.set_model_tier(&realm, "turbo", "", "x", "", false)
+                .is_err()
+        );
+        assert!(
+            hub.set_model_tier(&realm, "main", "nope", "x", "", false)
+                .is_err()
+        );
+        assert!(
+            hub.set_model_tier(&realm, "main", "", "a b", "", false)
+                .is_err()
+        );
+        assert!(
+            hub.set_model_tier(&realm, "main", "", "x", "huge", false)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_run_keeps_the_context_it_started_with() {
+        let mut state = State::new("x", None);
+        assert_eq!(frozen_context(&mut state, "memory: a".into()), "memory: a");
+        state.messages.push(Message::user_text("x"));
+        assert_eq!(frozen_context(&mut state, "memory: a".into()), "memory: a");
+        assert_eq!(state.messages[0].content.len(), 1, "unchanged: no note");
+        // The realm's context changed: the run still sends the old one, and
+        // gets the new one once, as a note after the conversation.
+        assert_eq!(
+            frozen_context(&mut state, "memory: a, b".into()),
+            "memory: a"
+        );
+        assert_eq!(state.messages.len(), 1);
+        assert!(matches!(&state.messages[0].content[1],
+            ContentBlock::Text { text } if text.ends_with("memory: a, b")));
+        state.messages.push(Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text { text: "ok".into() }],
+        });
+        frozen_context(&mut state, "memory: a, b".into());
+        assert_eq!(state.messages.len(), 2, "already sent");
+        frozen_context(&mut state, "memory: b".into());
+        assert_eq!(state.messages.len(), 3);
+        assert_eq!(state.messages[2].role, Role::User);
+    }
+
+    #[test]
+    fn simple_asks_run_on_the_fast_model_until_one_needs_more() {
+        let f = fixture();
+        let named = |model: &str, r: ModelResponse| ModelResponse {
+            model: model.into(),
+            input_tokens: 5,
+            ..r
+        };
+        let mut answer = done("It is 9 am in Tokyo.");
+        answer.content.insert(
+            0,
+            ContentBlock::Reasoning {
+                summary: "time zones".into(),
+                raw: json!({"type": "thinking", "signature": "fast-sig"}),
+            },
+        );
+        let fast = Scripted {
+            responses: Mutex::new(vec![
+                named("fast", done("SIMPLE")),
+                named("fast", answer),
+                named("fast", done("COMPLEX")),
+            ]),
+            ..Scripted::default()
+        };
+        let main = Scripted {
+            responses: Mutex::new(vec![
+                named("main", done("Planned the migration.")),
+                named("main", done("Done again.")),
+            ]),
+            ..Scripted::default()
+        };
+        let (fast_seen, main_seen) = (fast.seen.clone(), main.seen.clone());
+        let hub = Hub::new(f.home.clone()).with_connections(Connections {
+            main: Arc::new(main),
+            fast: Some(Arc::new(fast)),
+            fallback: None,
+        });
+
+        let state = hub
+            .dispatch(
+                &f.realm,
+                "What time is it in Tokyo?",
+                config(5),
+                hooks(&mut NoObserver, false),
+            )
+            .unwrap();
+        assert_eq!(state.tier, Some(Tier::Fast));
+        assert_eq!(state.report.as_deref(), Some("It is 9 am in Tokyo."));
+        // The triage call is counted with the run.
+        let models: Vec<&str> = state.usage.iter().map(|u| u.model.as_str()).collect();
+        assert_eq!(models, ["fast", "fast"]);
+        assert_eq!(state.input_tokens, 10);
+
+        // A follow-up that needs more moves the run to the main model.
+        let state = hub
+            .send(
+                &f.realm,
+                &state.id,
+                "Now plan the database migration",
+                config(5),
+                hooks(&mut NoObserver, false),
+            )
+            .unwrap();
+        assert_eq!(state.tier, Some(Tier::Strong));
+        assert_eq!(state.report.as_deref(), Some("Planned the migration."));
+        let sent = format!("{:?}", main_seen.lock().unwrap()[0]);
+        assert!(!sent.contains("fast-sig"), "{sent}");
+        assert!(sent.contains("It is 9 am"), "{sent}");
+
+        // It stays there: no more triage.
+        hub.send(
+            &f.realm,
+            &state.id,
+            "thanks",
+            config(5),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+        assert_eq!(fast_seen.lock().unwrap().len(), 3);
+        assert_eq!(main_seen.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn north_star_milestones_are_brainstormed_then_advanced() {
+        let f = fixture();
+        let hub = Hub::new(f.home.clone());
+        assert!(hub.brainstorm_north_star(&f.realm).is_err(), "no goal yet");
+        f.realm
+            .north_star()
+            .set_goal("100 kit sales by December", "Fund the next product")
+            .unwrap();
+        assert!(hub.push_north_star(&f.realm).is_err(), "no milestones yet");
+
+        // Brainstorm: a proposal first, recorded only after the owner agrees.
+        let milestones = json!({"action": "set_milestones", "milestones": [
+            {"title": "Landing page live", "note": "deployed, checkout works"},
+            {"title": "First 10 sales"}]});
+        let (hub, _, systems) = make_hub(
+            &f.home,
+            vec![
+                done("I propose: 1. Landing page live 2. First 10 sales. What should change?"),
+                call("1", "north_star", milestones),
+                done("Recorded."),
+            ],
+        );
+        let mut brainstorm = hub.brainstorm_north_star(&f.realm).unwrap();
+        assert_eq!(brainstorm.tier, Some(Tier::Strong));
+        hub.drive(
+            &f.realm,
+            &mut brainstorm,
+            config(5),
+            hooks(&mut NoObserver, true),
+        )
+        .unwrap();
+        assert!(
+            f.realm
+                .north_star()
+                .get()
+                .unwrap()
+                .unwrap()
+                .milestones
+                .is_empty()
+        );
+        let system = systems.lock().unwrap()[0].clone();
+        assert!(system.contains("100 kit sales by December"), "{system}");
+        assert!(system.contains("No milestones yet"), "{system}");
+        hub.send(
+            &f.realm,
+            &brainstorm.id,
+            "Looks good",
+            config(5),
+            hooks(&mut NoObserver, true),
+        )
+        .unwrap();
+        let star = f.realm.north_star().get().unwrap().unwrap();
+        assert_eq!(star.progress(), (0, 2));
+        assert_eq!(star.milestones[0].note, "deployed, checkout works");
+
+        // A push run advances the next milestone; an unrelated run does not count.
+        let (hub, _, systems) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "1",
+                    "north_star",
+                    json!({"action": "update", "milestone": "m1", "status": "done", "note": "Live on Vercel"}),
+                ),
+                done("Landing page is live."),
+                done("Here is the weather."),
+            ],
+        );
+        let mut push = hub.push_north_star(&f.realm).unwrap();
+        hub.drive(&f.realm, &mut push, config(5), hooks(&mut NoObserver, true))
+            .unwrap();
+        assert!(systems.lock().unwrap()[0].contains("[ ] m1. Landing page live"));
+        let other = hub
+            .dispatch(
+                &f.realm,
+                "Weather?",
+                config(5),
+                hooks(&mut NoObserver, true),
+            )
+            .unwrap();
+        let star = f.realm.north_star().get().unwrap().unwrap();
+        assert_eq!(star.progress(), (1, 2));
+        assert!(star.involves(&push.id));
+        let focus: Vec<(String, bool)> = hub
+            .runs(&f.realm)
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.id, r.focus))
+            .collect();
+        assert!(focus.contains(&(brainstorm.id.clone(), true)));
+        assert!(focus.contains(&(push.id.clone(), true)));
+        assert!(focus.contains(&(other.id.clone(), false)));
+
+        // Denied by the owner, nothing is recorded.
+        let (hub, _, _) = make_hub(
+            &f.home,
+            vec![
+                call(
+                    "1",
+                    "north_star",
+                    json!({"action": "update", "milestone": "m2", "status": "done"}),
+                ),
+                done("ok"),
+            ],
+        );
+        hub.dispatch(&f.realm, "x", config(5), hooks(&mut NoObserver, false))
+            .unwrap();
+        assert_eq!(
+            f.realm.north_star().get().unwrap().unwrap().progress(),
+            (1, 2)
+        );
+
+        // The daily push: an objective whose runs may record progress unasked.
+        hub.schedule_north_star(&f.realm, Some("weekdays 09:00"))
+            .unwrap();
+        let o = f.realm.objectives().get(northstar::OBJECTIVE_ID).unwrap();
+        assert_eq!(o.objective, PUSH_OBJECTIVE);
+        assert_eq!(o.approvals[0].scope.as_deref(), Some(northstar::SCOPE));
+        assert!(hub.schedule_north_star(&f.realm, Some("whenever")).is_err());
+        let (state, _) = hub
+            .start_objective(
+                &f.realm,
+                northstar::OBJECTIVE_ID,
+                "manual",
+                None,
+                Utc::now(),
+            )
+            .unwrap();
+        assert!(state.north_star);
+        hub.schedule_north_star(&f.realm, None).unwrap();
+        assert!(f.realm.objectives().get(northstar::OBJECTIVE_ID).is_err());
     }
 
     #[test]

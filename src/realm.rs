@@ -6,6 +6,7 @@
 //!   realm.json    settings: root, policy, isolation, checks
 //!   memory.json   long-term memory (see memory.rs)
 //!   objectives.json  persistent objectives and their triggers (see objective.rs)
+//!   northstar.json   the realm's North Star and its milestones (see northstar.rs)
 //!   skills/       skills: proposals, drafts, installed copies (see skill.rs)
 //!   secrets.env   credentials, KEY=VALUE, readable only by the owner
 //!   runs/         run states and locks
@@ -32,10 +33,26 @@ pub const PROVIDER_KEYS: &[&str] = &[
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_WORKSPACE_ID",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "XAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "MISTRAL_API_KEY",
+    "OPENROUTER_API_KEY",
     "AIRTH_PROVIDER",
     "AIRTH_MODEL",
     "AIRTH_EFFORT",
+    "AIRTH_COMPACT_AT",
     "AIRTH_MAX_TOKENS",
+    // Extra connections (see models/router.rs).
+    "AIRTH_FAST_PROVIDER",
+    "AIRTH_FAST_MODEL",
+    "AIRTH_FAST_EFFORT",
+    "AIRTH_FAST_MAX_TOKENS",
+    "AIRTH_FALLBACK_PROVIDER",
+    "AIRTH_FALLBACK_MODEL",
+    "AIRTH_FALLBACK_EFFORT",
+    "AIRTH_FALLBACK_MAX_TOKENS",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +167,35 @@ impl Realm {
 
     pub fn objectives(&self) -> ObjectiveStore {
         ObjectiveStore::new(self.dir.join("objectives.json"))
+    }
+
+    pub fn north_star(&self) -> crate::northstar::NorthStarStore {
+        crate::northstar::NorthStarStore::new(self.dir.join("northstar.json"))
+    }
+
+    /// Names the owner gave runs, by run id. Kept apart from the runs, which a
+    /// live run rewrites as it works; the objective itself never changes.
+    pub fn run_titles(&self) -> std::collections::BTreeMap<String, String> {
+        std::fs::read_to_string(self.dir.join("run-titles.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    /// Name a run; an empty title goes back to the objective.
+    pub fn set_run_title(&self, run: &str, title: &str) -> Result<()> {
+        let mut titles = self.run_titles();
+        let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        if title.is_empty() {
+            titles.remove(run);
+        } else {
+            titles.insert(run.to_string(), title.chars().take(120).collect());
+        }
+        let path = self.dir.join("run-titles.json");
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(&titles)?)?;
+        std::fs::rename(&tmp, &path)?;
+        Ok(())
     }
 
     pub(crate) fn secrets_path(&self) -> PathBuf {
@@ -333,6 +379,17 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn runs_can_be_renamed_and_unnamed() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = realm(dir.path());
+        assert!(r.run_titles().is_empty());
+        r.set_run_title("run1", "  Kit   launch\n plan ").unwrap();
+        assert_eq!(r.run_titles().get("run1").unwrap(), "Kit launch plan");
+        r.set_run_title("run1", "   ").unwrap();
+        assert!(!r.run_titles().contains_key("run1"));
     }
 
     #[test]

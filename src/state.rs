@@ -122,6 +122,35 @@ pub struct Origin {
     pub trigger: String,
 }
 
+/// One model call's token usage, as the provider reported it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Usage {
+    pub at: DateTime<Utc>,
+    pub model: String,
+    /// All input tokens, cached ones included.
+    pub input: u64,
+    pub output: u64,
+    /// Of `input`: read from the prompt cache.
+    #[serde(default)]
+    pub cache_read: u64,
+    /// Of `input`: written to the prompt cache.
+    #[serde(default)]
+    pub cache_write: u64,
+}
+
+/// A long conversation replaced, for the model, by the model's own summary
+/// of it. The messages stay in the run, for the owner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Compaction {
+    /// The model sees the summary, then `messages[upto..]`.
+    pub upto: usize,
+    /// The message that stands for `messages[..upto]`.
+    pub summary: String,
+    /// How many times the run was compacted.
+    #[serde(default)]
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub id: String,
@@ -136,6 +165,10 @@ pub struct State {
     pub input_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
+    /// Every model call's usage, in order (runs from before this was
+    /// recorded only have the totals above).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub usage: Vec<Usage>,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
     /// The realm the run belongs to.
@@ -161,6 +194,32 @@ pub struct State {
     /// skill's draft folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill: Option<String>,
+    /// Which model connection the run uses, when the realm has a fast one
+    /// (see models/router.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<crate::models::router::Tier>,
+    /// The model the owner picked for this run (`provider/model`), used
+    /// instead of the realm's routing; None: the realm decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_choice: Option<String>,
+    /// The choice ("auto" or `provider/model`) of the last drive, to notice
+    /// when the run moves to another model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_by: Option<String>,
+    /// The run works toward the realm's North Star (brainstorming it, or
+    /// started to advance it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub north_star: bool,
+    /// What the run was told about its realm when it started. Every drive
+    /// sends it unchanged, so the provider's cache of the conversation stays
+    /// valid; later changes are sent as a message (`context_update`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// The latest context sent as a message, if it changed since the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_update: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction: Option<Compaction>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -180,6 +239,7 @@ impl State {
             report: None,
             input_tokens: 0,
             output_tokens: 0,
+            usage: Vec::new(),
             updated_at: Utc::now(),
             realm: String::new(),
             change: None,
@@ -188,6 +248,13 @@ impl State {
             budget: Budget::default(),
             origin: None,
             skill: None,
+            tier: None,
+            context: None,
+            context_update: None,
+            compaction: None,
+            model_choice: None,
+            answered_by: None,
+            north_star: false,
             path,
         }
     }
@@ -205,6 +272,27 @@ impl State {
     /// After an interruption the last assistant turn may hold tool calls with no
     /// results. Answer each one, from the recorded event if the tool did run, so
     /// the conversation is valid to continue.
+    /// The conversation as the model sees it: after a compaction, the
+    /// summary and what came after it.
+    pub fn model_messages(&self) -> std::borrow::Cow<'_, [Message]> {
+        match &self.compaction {
+            Some(c) => {
+                let mut out = vec![Message::user_text(&c.summary)];
+                out.extend_from_slice(&self.messages[c.upto.min(self.messages.len())..]);
+                std::borrow::Cow::Owned(out)
+            }
+            None => std::borrow::Cow::Borrowed(&self.messages),
+        }
+    }
+
+    /// How many messages the model sees.
+    pub fn model_len(&self) -> usize {
+        match &self.compaction {
+            Some(c) => 1 + self.messages.len().saturating_sub(c.upto),
+            None => self.messages.len(),
+        }
+    }
+
     pub fn close_dangling_tool_calls(&mut self) {
         let Some(last) = self.messages.last() else {
             return;

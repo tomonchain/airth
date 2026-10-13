@@ -15,7 +15,7 @@ cargo run -- run "Identify and implement one small improvement to Airth."
 A realm is an isolated area of your life: personal, a job, a company, a side project. Each realm has its own:
 
 - **folder**: a directory you choose (`--root`), or a private one in Airth's home;
-- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`), each `allow`, `ask` or `deny`;
+- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`, `apps`), each `allow`, `ask` or `deny`;
 - **memory**: facts Airth keeps between runs, each with where it came from;
 - **credentials**: given to that realm's commands as environment variables, never shown to the model;
 - **integrations**: services its runs may call, with credentials bound to them (see below);
@@ -85,6 +85,23 @@ airth inbox        # new notifications
 airth summary      # the last 24 h across realms: what ran, what waits for review, what's next
 ```
 
+## North Star: one goal, every day
+
+Give a realm a **North Star**, the one goal its work serves ("100 kit sales by December"). From the realm's home in the app:
+
+1. **Brainstorm milestones with Airth.** It looks at where things stand, proposes 3 to 7 concrete milestones and asks what to change. You discuss them in the run; when you agree, it records them, and that write is yours to approve.
+2. **Push it forward now**, or let **Airth push it forward on its own** (default `weekdays 09:00`, or `every 3h` for all day). Each push takes the next milestone, does the most valuable step it can complete and verify, records the progress, and reports to your inbox. Those runs may record North Star progress without asking; everything else follows the realm's rules.
+3. **See the progress.** The goal and its progress bar stay at the top of the sidebar. Click a milestone's mark to set its status yourself.
+
+Every run of the realm sees the North Star and its milestones, prefers the work that moves the next one, and records what it advanced. **Focus** (on by default, per realm, in the sidebar) shadows the runs and objectives that did not serve the goal, and the realm's home suggests goal-oriented work instead of generic ideas. Runs that need your approval are never shadowed.
+
+```bash
+airth northstar set "100 kit sales by December" --why "Fund the next product"
+airth northstar show                 # goal, milestones, progress
+airth northstar milestone m2 done    # set a status yourself
+airth northstar daily "every 3h"     # or "off"
+```
+
 ## Skills: Airth extends itself
 
 When a run needs a capability Airth lacks, it can **propose a skill**: a small program with tests that would become a new tool. You decide what happens next:
@@ -102,6 +119,30 @@ airth skill develop word_count --feedback "Also count lines"   # rework it, then
 ```
 
 The app's **Skills** page does the same: develop, review files and test results, ask for changes, install, uninstall. `airth tools` lists every tool a run has, installed skills included.
+
+The same page has more tabs:
+
+- **Connectors:** like the connectors of Claude or ChatGPT. Click **Connect** on Notion, Linear, Stripe, Vercel, Sentry, PayPal, Canva, Intercom, Figma, Webflow, Cloudflare, Square or Supabase: the service's sign-in page opens in your browser, and once you accept, Airth keeps the access in the realm (renewed on its own, never readable by commands or the model) and runs get the service's tools. Search the official [MCP Registry](https://registry.modelcontextprotocol.io) for more, or add a custom server URL. Services that only issue API keys (Lemon Squeezy, Qonto, Brevo, GitHub…) are below: paste a token once, and Airth binds it to the service's official API and checks it. Gmail and Google go through macOS (System Settings → Internet Accounts) and the Mac app tools.
+- **Catalog:** ready-made Agent Skills from [github.com/anthropics/skills](https://github.com/anthropics/skills) (PDF, Word, slides, design, MCP building…). Install one in a realm and its runs see it in their `use_skill` tool: they read its instructions when a task matches, as guidance that never outranks your boundaries. Binaries and very large files are left out, and a skill's scripts run only once copied into the workspace, with your approval.
+- **MCP servers:** add a stdio [Model Context Protocol](https://modelcontextprotocol.io) server by the command that starts it (e.g. `npx -y @modelcontextprotocol/server-memory`). Airth connects it in the realm's sandbox, with the realm's credentials (put its token under Credentials), and lists its tools. Runs get them as `mcp__<server>__<tool>`, under the realm's `skill` rule. Each call starts the server and stops it afterwards.
+
+Runs can be renamed: click a run's title, or double-click it in the sidebar. The name is only for you; the objective the agent works on does not change. What you type in a message box stays there as a draft (per run, and per realm on the new-run screen) when you switch runs or reload; you can write your next message while a run works, and send it when it stops.
+
+Changed the app's page? `node scripts/ui_smoke.js` renders every view in a fake DOM with data full of empty fields, and fails if any visible text says `null`, `false`, `undefined` or similar.
+
+## Installing on a Mac
+
+```bash
+cargo install --path .                              # installs ~/.cargo/bin/airth (put it on your PATH)
+airth secret set ANTHROPIC_API_KEY --all-realms     # the background service does not see your shell
+airth service install                               # runs in the background, starts at login, adds Airth.app
+```
+
+Open **Airth.app** from Spotlight, Launchpad or the Dock. It is a native app with its own window: ⌥⇧A shows or hides it from anywhere, and closing the window keeps Airth in the menu bar. Use 🎙 in the message box to dictate. `airth ui` opens the same app in your browser.
+
+With your approval, Airth works with your Mac apps: Calendar, Reminders, Notes, Mail (it only prepares drafts; you send them), Safari tabs, the clipboard, and opening apps and links. The realm's `apps` rule decides; answer "Allow Calendar for this run" to stop being asked about one app.
+
+**Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version).
 
 ## Integrations
 
@@ -147,6 +188,9 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - set up objectives, and read your inbox and the daily summary;
 - develop, review and install skills;
 - review, adopt or discard changes;
+- see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);
+- switch between light, dark and system appearance (the sun/moon button, or your profile), and set the text size, reading width and whether ↵ or ⌘↵ sends;
+- move around from the keyboard: ⌘K searches runs, pages, realms and actions; ⌘⇧O starts a new run; ⌘B hides the sidebar;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
 The link printed in the terminal contains a private key for this launch; API calls without it are rejected. Use `--port`, `--no-open` and `--max-iterations` to change the defaults.
@@ -166,18 +210,56 @@ Approvals happen in the terminal: answer `y`, `a` to allow it for the rest of th
 
 ## Configuration
 
+**Pick the model per request.** The message box has a model menu (the brain icon). **Auto** uses the realm's model and routing; or pick any model of a provider whose key the realm has: Claude, GPT, Grok, DeepSeek, Mistral, or anything on OpenRouter. The lists come live from each provider, and you can type `provider/model` for one that is not listed. The choice sticks to the run until you change it. Each provider only ever receives its own key. Add keys under Realm settings → Credentials, or for every realm with `airth secret set DEEPSEEK_API_KEY --all-realms`.
+
 | Variable | Default |
 |---|---|
 | `AIRTH_HOME` | `~/.airth` |
 | `AIRTH_REALM` | the realm whose folder holds the current directory, else the default |
-| `AIRTH_PROVIDER` | `anthropic` |
-| `AIRTH_MODEL` | `claude-opus-5-5` |
-| `AIRTH_EFFORT` | `high` |
+| `AIRTH_PROVIDER` | `anthropic` (also `openai`, `xai`, `ollama`) |
+| `AIRTH_MODEL` | `claude-opus-5-5` (required for the other providers) |
+| `AIRTH_EFFORT` | `high` (other providers: sent as `reasoning_effort` only if set) |
 | `AIRTH_MAX_TOKENS` | `16000` |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | — |
 | `ANTHROPIC_WORKSPACE_ID` | — (needed for API keys not scoped to a workspace) |
+| `OPENAI_API_KEY` | — (`openai`; also used by a custom endpoint) |
+| `XAI_API_KEY` | — (`xai`, the Grok models) |
+| `DEEPSEEK_API_KEY` | — (`deepseek`) |
+| `MISTRAL_API_KEY` | — (`mistral`) |
+| `OPENROUTER_API_KEY` | — (`openrouter`: most models with one key) |
+| `OPENAI_BASE_URL` | the provider's (`https://api.openai.com/v1`, `https://api.x.ai/v1`, `http://localhost:11434/v1`) |
+
+`openai`, `xai` and `ollama` share one OpenAI-compatible Chat Completions provider, so any compatible endpoint (LM Studio, OpenRouter, a vLLM server...) works with `OPENAI_BASE_URL`. For example, a fully local realm:
+
+```bash
+airth secret set AIRTH_PROVIDER     # ollama
+airth secret set AIRTH_MODEL        # a local model with tool calling, e.g. qwen3
+airth doctor                        # model provider  ollama/qwen3
+```
 
 Any of these model settings can also be set per realm as a credential (`airth secret set ANTHROPIC_API_KEY`), for example to bill a work realm to the employer's key, or once for every realm (`--all-realms`), which the background service needs. Model keys are used for the model only, and never passed to commands.
+
+### Several models: fast for simple asks, a fallback for outages
+
+A realm can have up to three connections. Each extra one takes the main settings and overrides some, under its prefix:
+
+| Variable | What it does |
+|---|---|
+| `AIRTH_FAST_MODEL` | a quicker, cheaper model. It triages each new ask in one short call: simple asks (a lookup, a short text, a small edit) run on it, everything else on the main model. A run stays on its tier; a follow-up that needs more moves it to the main model, never back |
+| `AIRTH_FAST_PROVIDER`, `AIRTH_FAST_EFFORT`, `AIRTH_FAST_MAX_TOKENS` | when they differ from the main ones |
+| `AIRTH_FALLBACK_MODEL` (and `AIRTH_FALLBACK_PROVIDER`, ...) | used when the others fail: an outage, exhausted credit |
+
+Whatever the tier, a connection that fails hands the run over to the next one (main → fallback → fast, or fast → main → fallback), so one provider running out of credit no longer stops the work. For example, Opus for real work, a local model for quick asks, Grok when Anthropic is down:
+
+```bash
+airth secret set AIRTH_FAST_PROVIDER --all-realms       # ollama
+airth secret set AIRTH_FAST_MODEL --all-realms          # qwen3
+airth secret set AIRTH_FALLBACK_PROVIDER --all-realms   # xai
+airth secret set AIRTH_FALLBACK_MODEL --all-realms      # grok-4
+airth doctor   # model provider  anthropic/claude-opus-5-5 · fast: ollama/qwen3 · fallback: xai/grok-4
+```
+
+The run's details show which tier it used; the Usage page counts the triage calls with the run.
 
 Desktop notifications are on by default on macOS; `airth inbox --desktop off` turns them off.
 
@@ -195,6 +277,7 @@ Desktop notifications are on by default on macOS; `airth inbox --desktop off` tu
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     objectives.json            objectives: triggers, approvals, budgets, last run
+    northstar.json             the North Star, its milestones and the runs that moved them
     skills/                    skills.json, drafts/<skill>/, installed/<skill>/
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
@@ -207,14 +290,16 @@ Desktop notifications are on by default on macOS; `airth inbox --desktop off` tu
 ```text
 src/
   main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary, skill
+  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
   objective.rs    persistent objectives, schedules, file watches
+  northstar.rs    a realm's North Star: goal, milestones, progress
   scheduler.rs    which objectives are due; cross-realm summaries
+  usage.rs        token usage across realms, from each run's recorded model calls
   notify.rs       the owner's inbox and desktop notifications
   service.rs      the login service (launchd)
   skill.rs        skills: manifests, evaluation, installation
@@ -222,14 +307,15 @@ src/
   isolation.rs    git worktrees per run: create, commit, diff, adopt, discard
   sandbox.rs      the command sandbox (macOS sandbox-exec)
   ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
-                  (mod.rs) and the page (index.html, app.js, app.css)
+                  (mod.rs) and the page (index.html, theme.js, app.js, app.css)
   term.rs         terminal output for CLI runs
   cancel.rs       stop signal shared by the CLI, the app, the agent loop and tools
   agent.rs        the loop and the system prompt
   runtime.rs      the single path from a tool call to execution (permission check, redaction, event)
   permissions.rs  capabilities, rules, policy, run grants, terminal approval
   tools/          read_file, list_directory, write_file, edit_file, execute_command, http_request,
-                  update_plan, remember, propose_skill, test_skill, installed skills; workspace access rules
-  models/         provider-neutral Model trait + Anthropic provider
+                  update_plan, remember, north_star, propose_skill, test_skill, installed skills; workspace access rules
+  models/         provider-neutral Model trait; Anthropic and OpenAI-compatible (OpenAI, xAI, Ollama) providers;
+                  router.rs: fast/main/fallback connections, triage, failover
   state.rs        persisted run state, plans
 ```

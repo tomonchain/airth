@@ -45,6 +45,7 @@ const MAX_TIMEOUT: u64 = 600;
 const MAX_TESTS: usize = 50;
 /// Names of Airth's own tools, which a skill cannot take.
 pub const RESERVED: &[&str] = &[
+    "mail",
     "read_file",
     "list_directory",
     "write_file",
@@ -55,6 +56,13 @@ pub const RESERVED: &[&str] = &[
     "remember",
     "propose_skill",
     "test_skill",
+    "calendar",
+    "reminders",
+    "notes",
+    "mail_draft",
+    "safari",
+    "clipboard",
+    "open_on_mac",
 ];
 
 fn default_timeout() -> u64 {
@@ -210,6 +218,11 @@ impl SkillStore {
         Self {
             dir: dir.as_ref().to_path_buf(),
         }
+    }
+
+    /// The realm's `skills/` folder, which also holds catalog skills and MCP servers.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     fn file(&self) -> PathBuf {

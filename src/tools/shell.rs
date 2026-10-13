@@ -1,4 +1,4 @@
-use super::{Tool, Workspace, str_arg, truncate};
+use super::{Tool, Workspace, str_arg, truncate_middle};
 use crate::cancel::CancelToken;
 use crate::models::ToolSpec;
 use crate::permissions::Capability;
@@ -11,7 +11,10 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
 const MAX_TIMEOUT_SECS: u64 = 1800;
-const MAX_OUTPUT: usize = 30_000;
+/// Of each stream, the start and the end kept: most of what matters in long
+/// output (the command's progress, then the errors and summary) is there.
+const KEEP_HEAD: usize = 6_000;
+const KEEP_TAIL: usize = 14_000;
 
 pub struct ExecuteCommand;
 
@@ -107,8 +110,8 @@ impl ShellOutput {
     pub fn streams(&self) -> String {
         format!(
             "--- stdout ---\n{}\n--- stderr ---\n{}",
-            truncate(self.stdout.clone(), MAX_OUTPUT),
-            truncate(self.stderr.clone(), MAX_OUTPUT)
+            truncate_middle(self.stdout.clone(), KEEP_HEAD, KEEP_TAIL),
+            truncate_middle(self.stderr.clone(), KEEP_HEAD, KEEP_TAIL)
         )
     }
 }
@@ -126,13 +129,10 @@ pub fn run_shell(
 
 /// `run_shell`, with `input` written to the command's stdin (installed skills
 /// read their arguments there).
-pub fn run_shell_with_input(
-    command: &str,
-    ws: &Workspace,
-    cancel: &CancelToken,
-    timeout: Duration,
-    input: Option<&str>,
-) -> Result<ShellOutput> {
+/// `sh -c command` in the workspace root, under the workspace's sandbox, with
+/// only the passed-through variables and the workspace's own environment, in
+/// its own process group. Streams are left for the caller to set up.
+pub(super) fn sandboxed_command(command: &str, ws: &Workspace) -> Command {
     let mut cmd = if ws.sandboxed() && sandbox::available() {
         let mut c = Command::new(sandbox::program());
         c.arg("-p").arg(sandbox::profile(ws.rules())).arg("sh");
@@ -149,14 +149,7 @@ pub fn run_shell_with_input(
                 .iter()
                 .filter_map(|k| Some((k, std::env::var_os(k)?))),
         )
-        .envs(ws.env().iter().map(|(k, v)| (k, v)))
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .envs(ws.env().iter().map(|(k, v)| (k, v)));
     #[cfg(unix)]
     {
         // Own process group, so the command and everything it spawns can be
@@ -164,6 +157,24 @@ pub fn run_shell_with_input(
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
+    cmd
+}
+
+pub fn run_shell_with_input(
+    command: &str,
+    ws: &Workspace,
+    cancel: &CancelToken,
+    timeout: Duration,
+    input: Option<&str>,
+) -> Result<ShellOutput> {
+    let mut cmd = sandboxed_command(command, ws);
+    cmd.stdin(if input.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
     let mut child = cmd.spawn().context("failed to spawn sh")?;
     if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
         let text = text.to_string();
@@ -216,7 +227,7 @@ pub fn run_shell_with_input(
 /// Kill the command and every process it spawned. Killing only `sh` would leave
 /// its children running with our output pipes open, so a timeout would not end
 /// the call.
-fn kill_process_group(child: &mut Child) {
+pub(super) fn kill_process_group(child: &mut Child) {
     #[cfg(unix)]
     {
         // The child leads its own group (`process_group(0)`), so its pid is the

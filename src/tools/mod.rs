@@ -1,10 +1,15 @@
 //! Tools are capabilities the agent can invoke. Each declares the capability it
 //! needs; the runtime checks it with the permission layer before `execute`.
 
+pub mod catalog;
 mod fs;
 mod http;
+mod mac;
+pub mod mcp;
 mod memory;
+mod northstar;
 mod plan;
+pub mod remote;
 mod shell;
 mod skill;
 
@@ -60,6 +65,8 @@ pub struct RealmTools {
     /// Set for a run developing a skill: the skill's name, and where its
     /// tests run.
     pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
+    /// The realm's North Star, when the owner set one.
+    pub north_star: Option<crate::northstar::NorthStarStore>,
 }
 
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
@@ -83,15 +90,26 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         memory: realm.memory,
         source: realm.source.clone(),
     }));
+    if let Some(store) = realm.north_star {
+        tools.push(Box::new(northstar::NorthStarTool {
+            store,
+            run: realm.source.strip_prefix("run:").map(String::from),
+        }));
+    }
     tools.push(Box::new(skill::ProposeSkill {
         store: realm.skills.clone(),
         source: realm.source,
         inbox: realm.inbox,
         realm: realm.realm,
     }));
+    tools.extend(mac::tools());
     for (manifest, dir) in realm.skills.enabled() {
         tools.push(Box::new(skill::SkillTool { manifest, dir }));
     }
+    // Tools of the MCP servers the owner connected to this realm.
+    tools.extend(mcp::tools_for(realm.skills.dir()));
+    // Skills the owner installed from the catalog, read through `use_skill`.
+    tools.extend(catalog::tool_for(realm.skills.dir()));
     tools
 }
 
@@ -309,6 +327,28 @@ pub(crate) fn truncate(text: String, max: usize) -> String {
     )
 }
 
+/// Keep the start and the end of long output, where commands print what
+/// they did and how it ended (errors, summaries); drop the middle.
+pub(crate) fn truncate_middle(text: String, head: usize, tail: usize) -> String {
+    if text.len() <= head + tail {
+        return text;
+    }
+    let mut start = head;
+    while !text.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = text.len() - tail;
+    while !text.is_char_boundary(end) {
+        end += 1;
+    }
+    format!(
+        "{}\n... [{} bytes cut from the middle] ...\n{}",
+        &text[..start],
+        end - start,
+        &text[end..]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,6 +412,19 @@ mod tests {
             ],
         );
         assert_eq!(ws.redact("x abcd1234 ab"), "x [secret:TOKEN] ab");
+    }
+
+    #[test]
+    fn truncate_middle_keeps_both_ends() {
+        let text = format!("start{}error: boom", "x".repeat(1000));
+        let out = truncate_middle(text, 5, 11);
+        assert_eq!(
+            out,
+            "start\n... [1000 bytes cut from the middle] ...\nerror: boom"
+        );
+        assert_eq!(truncate_middle("short".into(), 2, 3), "short");
+        let out = truncate_middle("ééééé".into(), 3, 3);
+        assert!(out.starts_with("é\n") && out.ends_with("\né"), "{out}");
     }
 
     #[test]

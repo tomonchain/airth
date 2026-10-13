@@ -17,10 +17,14 @@ impl Tool for ReadFile {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "read_file".into(),
-            description: "Read a UTF-8 text file from the workspace. Paths are relative to the workspace root.".into(),
+            description: "Read a UTF-8 text file from the workspace. Paths are relative to the workspace root. For a large file of which you need only a part (a function, a section, the lines around an error), read just those lines with offset and limit.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "Workspace-relative file path"}},
+                "properties": {
+                    "path": {"type": "string", "description": "Workspace-relative file path"},
+                    "offset": {"type": "integer", "description": "Optional: first line to read, from 1"},
+                    "limit": {"type": "integer", "description": "Optional: how many lines to read"}
+                },
                 "required": ["path"]
             }),
         }
@@ -38,7 +42,35 @@ impl Tool for ReadFile {
         let path = ws.resolve(str_arg(input, "path")?)?;
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read {}", path.display()))?;
-        Ok(truncate(text, MAX_READ))
+        let offset = input["offset"].as_u64().map(|n| n.max(1) as usize);
+        let limit = input["limit"].as_u64().map(|n| n as usize);
+        if offset.is_none() && limit.is_none() {
+            if text.len() <= MAX_READ {
+                return Ok(text);
+            }
+            let shown = truncate(text.clone(), MAX_READ);
+            let next = text.as_bytes()[..MAX_READ]
+                .iter()
+                .filter(|&&b| b == b'\n')
+                .count()
+                + 1;
+            return Ok(format!(
+                "{shown}\n[the file has {} lines; read the rest with offset={next}]",
+                text.lines().count()
+            ));
+        }
+        let total = text.lines().count();
+        let first = offset.unwrap_or(1);
+        let selected: Vec<&str> = text
+            .lines()
+            .skip(first - 1)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect();
+        let last = first + selected.len().saturating_sub(1);
+        Ok(format!(
+            "[lines {first}-{last} of {total}]\n{}",
+            truncate(selected.join("\n"), MAX_READ)
+        ))
     }
 }
 
@@ -256,6 +288,35 @@ impl Tool for EditFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_range_of_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path()).unwrap();
+        std::fs::write(dir.path().join("f.txt"), "a\nb\nc\nd\n").unwrap();
+        let read = |input: Value| {
+            ReadFile
+                .execute(&input, &ws, &CancelToken::default())
+                .unwrap()
+        };
+        assert_eq!(read(json!({"path": "f.txt"})), "a\nb\nc\nd\n");
+        assert_eq!(
+            read(json!({"path": "f.txt", "offset": 2, "limit": 2})),
+            "[lines 2-3 of 4]\nb\nc"
+        );
+        assert_eq!(
+            read(json!({"path": "f.txt", "offset": 4})),
+            "[lines 4-4 of 4]\nd"
+        );
+        let big = "line\n".repeat(MAX_READ / 5 + 100);
+        std::fs::write(dir.path().join("big.txt"), &big).unwrap();
+        let out = read(json!({"path": "big.txt"}));
+        assert!(
+            out.ends_with(&format!("read the rest with offset={}]", MAX_READ / 5 + 1)),
+            "{}",
+            &out[out.len() - 120..]
+        );
+    }
 
     #[test]
     fn write_then_read_and_list() {

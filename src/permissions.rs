@@ -22,6 +22,9 @@ pub enum Capability {
     Network,
     /// Using a skill the owner installed (scoped to that skill).
     Skill,
+    /// Working with the owner's Mac apps: Calendar, Reminders, Notes, Mail,
+    /// Safari, the clipboard (scoped to the app).
+    Apps,
     /// Bookkeeping inside the run itself (its plan). Touches nothing outside
     /// the run, so it is always allowed and not part of a policy.
     Internal,
@@ -29,13 +32,14 @@ pub enum Capability {
 
 impl Capability {
     /// The capabilities a realm's policy governs.
-    pub const ALL: [Capability; 6] = [
+    pub const ALL: [Capability; 7] = [
         Capability::Read,
         Capability::Write,
         Capability::Execute,
         Capability::Memory,
         Capability::Network,
         Capability::Skill,
+        Capability::Apps,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -46,6 +50,7 @@ impl Capability {
             Capability::Memory => "memory",
             Capability::Network => "network",
             Capability::Skill => "skill",
+            Capability::Apps => "apps",
             Capability::Internal => "internal",
         }
     }
@@ -54,7 +59,9 @@ impl Capability {
         match Self::ALL.into_iter().find(|c| c.as_str() == s) {
             Some(c) => Ok(c),
             None => {
-                bail!("unknown capability '{s}' (read, write, execute, memory, network, skill)")
+                bail!(
+                    "unknown capability '{s}' (read, write, execute, memory, network, skill, apps)"
+                )
             }
         }
     }
@@ -96,6 +103,7 @@ pub struct Policy {
     pub memory: Rule,
     pub network: Rule,
     pub skill: Rule,
+    pub apps: Rule,
 }
 
 impl Default for Policy {
@@ -107,6 +115,7 @@ impl Default for Policy {
             memory: Rule::Ask,
             network: Rule::Ask,
             skill: Rule::Ask,
+            apps: Rule::Ask,
         }
     }
 }
@@ -120,6 +129,7 @@ impl Policy {
             Capability::Memory => self.memory,
             Capability::Network => self.network,
             Capability::Skill => self.skill,
+            Capability::Apps => self.apps,
             Capability::Internal => Rule::Allow,
         }
     }
@@ -132,6 +142,7 @@ impl Policy {
             Capability::Memory => &mut self.memory,
             Capability::Network => &mut self.network,
             Capability::Skill => &mut self.skill,
+            Capability::Apps => &mut self.apps,
             Capability::Internal => return,
         } = rule;
     }
@@ -161,6 +172,11 @@ impl PermissionRequest {
     /// Plain-language description of what a grant for this request covers.
     pub fn grant_label(&self) -> String {
         match (&self.scope, self.capability) {
+            (Some(app), Capability::Apps) => app.clone(),
+            (Some(skill), Capability::Skill) => format!("the {skill} skill"),
+            (Some(scope), Capability::Memory) if scope == crate::northstar::SCOPE => {
+                "North Star updates".into()
+            }
             (Some(scope), _) => format!("{} requests to {scope}", self.capability.as_str()),
             (None, Capability::Write) => "all file changes".into(),
             (None, Capability::Execute) => "all commands".into(),
@@ -271,6 +287,9 @@ const SECURITY_CRITICAL: &[&str] = &[
     "src/tools/http.rs",
     "src/skill.rs",
     "src/tools/skill.rs",
+    "src/tools/mac.rs",
+    "src/update.rs",
+    "src/service.rs",
 ];
 
 /// Paths whose modification would change how permissions are enforced.

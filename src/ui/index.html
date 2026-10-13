@@ -4,25 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Airth</title>
+<script src="/theme.js"></script>
 <link rel="stylesheet" href="/app.css">
-<link rel="icon" href="data:,">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
 <body>
 <div id="app" class="app">
   <aside class="sidebar">
-    <div class="brand">
-      <span class="logo" aria-hidden="true"></span>
-      <span class="brand-name">airth</span>
-      <span class="version" id="version"></span>
+    <div class="side-top">
+      <div class="realm-switch" id="realm-switch"></div>
+      <button class="icon-action" id="side-close" type="button" title="Hide sidebar (⌘B)" aria-label="Hide sidebar"></button>
     </div>
-    <div class="realm-switch" id="realm-switch"></div>
-    <button class="btn primary new-run" id="new-run-btn" type="button">
-      <span aria-hidden="true">+</span> New run
-    </button>
-    <div class="section-label">Runs</div>
+    <nav class="side-nav" id="side-nav" aria-label="Airth"></nav>
     <nav class="run-list" id="run-list" aria-label="Runs"></nav>
     <div class="sidebar-foot" id="sidebar-foot"></div>
   </aside>
+  <button class="icon-action side-open" id="side-open" type="button" title="Show sidebar (⌘B)" aria-label="Show sidebar"></button>
 
   <main class="main" id="main"></main>
 </div>

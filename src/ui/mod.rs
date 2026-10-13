@@ -12,6 +12,7 @@
 
 use crate::agent::{AgentConfig, Observer};
 use crate::cancel::CancelToken;
+use crate::connectors;
 use crate::home::NewRealm;
 use crate::hub::{Hub, RunHooks, away_reason};
 use crate::integration::Integration;
@@ -25,6 +26,8 @@ use crate::sandbox;
 use crate::scheduler;
 use crate::skill::SkillStatus;
 use crate::state::{State, Status};
+use crate::tools::catalog;
+use crate::tools::mcp::McpStore;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -37,6 +40,8 @@ use tiny_http::{Header, Method, Request, Response, Server};
 const INDEX_HTML: &str = include_str!("index.html");
 const APP_JS: &str = include_str!("app.js");
 const APP_CSS: &str = include_str!("app.css");
+const THEME_JS: &str = include_str!("theme.js");
+const FAVICON: &str = include_str!("favicon.svg");
 const MAX_BODY: u64 = 1 << 20;
 
 pub struct UiOptions {
@@ -179,6 +184,162 @@ struct App {
     token: String,
     port: u16,
     options: UiOptions,
+    update: Arc<Mutex<UpdateState>>,
+    /// Requests run on their own threads; changes to stored settings still
+    /// happen one at a time (see `route`).
+    writes: Mutex<()>,
+}
+
+impl App {
+    fn write_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.writes.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Where the self-update stands, as shown in the app.
+#[derive(Default, serde::Serialize)]
+struct UpdateState {
+    /// The newer version, if there is one.
+    available: Option<crate::update::Available>,
+    /// idle, preparing, ready, failed or restarting.
+    phase: &'static str,
+    /// What preparing is doing now (building, testing...).
+    step: Option<String>,
+    error: Option<String>,
+    /// The built and tested binary, for the version in `available`.
+    #[serde(skip)]
+    staged: Option<std::path::PathBuf>,
+    #[serde(skip)]
+    prepared_commit: Option<String>,
+}
+
+/// Every minute, look for a newer version (asking the upstream every 30
+/// minutes) and prepare it: build and test it, ready to install on restart.
+fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
+    let work = hub.home().dir().join("update");
+    let mut ticks: u64 = 0;
+    loop {
+        let fetch = ticks.is_multiple_of(30) || state.lock().unwrap().phase == "checking";
+        ticks += 1;
+        match crate::update::check(fetch) {
+            Ok(found) => {
+                let todo = {
+                    let mut st = state.lock().unwrap();
+                    if st.phase == "checking" {
+                        st.phase = "idle";
+                    }
+                    let todo = match &found {
+                        Some(a)
+                            if st.prepared_commit.as_deref() != Some(a.commit.as_str())
+                                && st.phase != "restarting" =>
+                        {
+                            Some(a.clone())
+                        }
+                        _ => None,
+                    };
+                    if found.is_none() && st.phase != "restarting" {
+                        *st = UpdateState {
+                            phase: "idle",
+                            ..Default::default()
+                        };
+                    }
+                    st.available = found;
+                    todo
+                };
+                if let Some(available) = todo {
+                    {
+                        let mut st = state.lock().unwrap();
+                        st.phase = "preparing";
+                        st.error = None;
+                        st.prepared_commit = Some(available.commit.clone());
+                    }
+                    let step_state = state.clone();
+                    let result = crate::update::prepare(&available, &work, &|step| {
+                        step_state.lock().unwrap().step = Some(step.to_string());
+                    });
+                    let mut st = state.lock().unwrap();
+                    st.step = None;
+                    match result {
+                        Ok(staged) => {
+                            eprintln!("update {} is ready: restart to install it", available.short);
+                            st.phase = "ready";
+                            st.staged = Some(staged);
+                        }
+                        Err(e) => {
+                            eprintln!("update {} failed: {e:#}", available.short);
+                            st.phase = "failed";
+                            st.error = Some(format!("{e:#}"));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let mut st = state.lock().unwrap();
+                if st.phase == "checking" {
+                    st.phase = "idle";
+                    st.error = Some(format!("{e:#}"));
+                }
+            }
+        }
+        for _ in 0..60 {
+            if state.lock().unwrap().phase == "checking" {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+/// The app's access key, kept in the home so links keep working across
+/// restarts (and updates).
+fn persistent_token(hub: &Hub) -> Result<String> {
+    let path = hub.home().dir().join("ui-token");
+    if let Ok(t) = std::fs::read_to_string(&path)
+        && t.trim().len() >= 32
+        && t.trim().bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Ok(t.trim().to_string());
+    }
+    let token = random_token()?;
+    crate::realm::write_private(&path, &token)?;
+    Ok(token)
+}
+
+/// Stop the runs, then come back as the new binary: launchd restarts the
+/// service when it exits; otherwise the process replaces itself.
+fn restart(registry: Registry, info_path: std::path::PathBuf, exe: std::path::PathBuf, port: u16) {
+    let lives: Vec<Arc<Live>> = registry.lock().unwrap().values().cloned().collect();
+    for live in &lives {
+        live.cancel.cancel();
+    }
+    for _ in 0..100 {
+        if registry.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = std::fs::remove_file(&info_path);
+    if std::env::var("AIRTH_SERVICE").as_deref() == Ok("1") {
+        std::process::exit(0);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut args: Vec<String> = std::env::args().skip(1).collect();
+        // Same port (so the page reconnects), and no new browser tab.
+        if let Some(i) = args.iter().position(|a| a == "--port") {
+            args.drain(i..(i + 2).min(args.len()));
+        }
+        args.retain(|a| !a.starts_with("--port="));
+        args.push("--port".into());
+        args.push(port.to_string());
+        if args.iter().any(|a| a == "ui") && !args.iter().any(|a| a == "--no-open") {
+            args.push("--no-open".into());
+        }
+        let err = std::process::Command::new(&exe).args(&args).exec();
+        eprintln!("restart failed: {err}");
+    }
+    std::process::exit(1);
 }
 
 /// Where a running app can be reached, for `airth ui` to reuse it.
@@ -208,8 +369,19 @@ pub fn running_url(hub: &Hub) -> Option<String> {
     ))
 }
 
+/// Open `url` and wait for the opener, so a command that exits right after
+/// (as `airth ui` does when Airth is already running) cannot cut it off.
 pub fn open_url(url: &str) {
-    open_in_browser(url);
+    let opener = if cfg!(target_os = "macos") {
+        "/usr/bin/open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(opener)
+        .arg(url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 /// Look for due objectives every few seconds and start their runs. Only one
@@ -260,6 +432,52 @@ fn run_scheduler(runner: Runner) {
 type HttpResponse = Response<std::io::Cursor<Vec<u8>>>;
 
 pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
+    let server = start(hub, options)?;
+    eprintln!("\x1b[1mairth\x1b[0m → {}", server.url);
+    eprintln!(
+        "\x1b[2mThis link grants control of the agent; don't share it. Objectives run while this is running. Ctrl-C to quit.\x1b[0m"
+    );
+    let registry = server.registry.clone();
+    let path = server.info_path.clone();
+    ctrlc::set_handler(move || shut_down(&registry, &path))
+        .context("cannot install Ctrl-C handler")?;
+    #[cfg(unix)]
+    {
+        // launchd and `kill` stop services with SIGTERM: shut down the same way.
+        let _ =
+            unsafe { libc::signal(libc::SIGTERM, on_sigterm as *const () as libc::sighandler_t) };
+    }
+    let _ = server.thread.join();
+    Ok(())
+}
+
+/// A running app server: requests are served on their own thread.
+pub struct Running {
+    pub url: String,
+    registry: Registry,
+    info_path: std::path::PathBuf,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl Running {
+    /// Stop the runs in progress (they can be resumed) and forget the server.
+    pub fn stop(&self) {
+        let lives: Vec<Arc<Live>> = self.registry.lock().unwrap().values().cloned().collect();
+        for live in &lives {
+            live.cancel.cancel();
+        }
+        for _ in 0..50 {
+            if self.registry.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = std::fs::remove_file(&self.info_path);
+    }
+}
+
+/// Start the app server, the scheduler and the updater, without blocking.
+pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
     let server = Server::http(("127.0.0.1", options.port))
         .or_else(|_| Server::http(("127.0.0.1", 0)))
         .map_err(|e| anyhow!("cannot start the UI server: {e}"))?;
@@ -269,6 +487,7 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
         .context("server has no IP address")?
         .port();
     let hub = Arc::new(hub);
+    let token_hub = hub.clone();
     let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
     let runner = Runner {
         hub: hub.clone(),
@@ -279,9 +498,14 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
         hub,
         registry,
         runner,
-        token: random_token()?,
+        token: persistent_token(&token_hub)?,
         port,
         options,
+        update: Arc::new(Mutex::new(UpdateState {
+            phase: "idle",
+            ..Default::default()
+        })),
+        writes: Mutex::new(()),
     };
     let info_path = server_file(&app.hub);
     crate::realm::write_private(
@@ -294,32 +518,33 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
     )?;
 
     let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
-    eprintln!("\x1b[1mairth\x1b[0m → {url}");
-    eprintln!(
-        "\x1b[2mThis link grants control of the agent; don't share it. Objectives run while this is running. Ctrl-C to quit.\x1b[0m"
-    );
     if app.options.open_browser {
         open_in_browser(&url);
     }
 
-    let registry = app.registry.clone();
-    let path = info_path.clone();
-    ctrlc::set_handler(move || shut_down(&registry, &path))
-        .context("cannot install Ctrl-C handler")?;
-    #[cfg(unix)]
-    {
-        // launchd and `kill` stop services with SIGTERM: shut down the same way.
-        let _ =
-            unsafe { libc::signal(libc::SIGTERM, on_sigterm as *const () as libc::sighandler_t) };
-    }
-
     let runner = app.runner.clone();
     std::thread::spawn(move || run_scheduler(runner));
+    let (hub, update) = (app.hub.clone(), app.update.clone());
+    std::thread::spawn(move || run_updater(hub, update));
 
+    let registry = app.registry.clone();
+    let thread = std::thread::spawn(move || serve_requests(server, app));
+    Ok(Running {
+        url,
+        registry,
+        info_path,
+        thread,
+    })
+}
+
+/// Serve the app: one thread per request, so a slow provider (sign-in, model
+/// lists, registry search) never freezes the app, nor an approval.
+fn serve_requests(server: Server, app: App) {
+    let app = Arc::new(app);
     for request in server.incoming_requests() {
-        app.handle(request);
+        let app = Arc::clone(&app);
+        std::thread::spawn(move || app.handle(request));
     }
-    Ok(())
 }
 
 #[cfg(unix)]
@@ -386,6 +611,46 @@ impl App {
             (Method::Get, "/app.css") => {
                 return Ok(static_response(APP_CSS, "text/css; charset=utf-8"));
             }
+            (Method::Get, "/theme.js") => {
+                return Ok(static_response(THEME_JS, "text/javascript; charset=utf-8"));
+            }
+            (Method::Get, "/favicon.svg") => {
+                return Ok(static_response(FAVICON, "image/svg+xml"));
+            }
+            // The browser coming back from a connector's sign-in page. It cannot
+            // carry the API token; the one-time `state` Airth issued is the proof.
+            (Method::Get, "/oauth/callback") => {
+                let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                    .into_owned()
+                    .collect();
+                let page = |title: &str, text: &str| {
+                    static_response(
+                        &format!(
+                            "<!doctype html><html><head><meta charset=\"utf-8\"><title>Airth</title>\
+                             <script src=\"/theme.js\"></script><link rel=\"stylesheet\" href=\"/app.css\"></head>\
+                             <body><div class=\"center-note\"><span class=\"logo\"></span><h1>{}</h1><p>{}</p></div></body></html>",
+                            html_escape(title),
+                            html_escape(text)
+                        ),
+                        "text/html; charset=utf-8",
+                    )
+                };
+                let result = match (params.get("state"), params.get("code"), params.get("error")) {
+                    (_, _, Some(error)) => Err(anyhow!(
+                        "{}",
+                        params.get("error_description").unwrap_or(error)
+                    )),
+                    (Some(state), Some(code), None) => crate::tools::remote::finish(state, code),
+                    _ => Err(anyhow!("the sign-in page did not say whether it worked")),
+                };
+                return Ok(match result {
+                    Ok(name) => page(
+                        &format!("{name} is connected"),
+                        "Airth can now use it in this realm. You can close this tab.",
+                    ),
+                    Err(e) => page("The connection did not work", &format!("{e:#}")),
+                });
+            }
             _ => {}
         }
 
@@ -405,6 +670,18 @@ impl App {
         }
         let segments: Vec<String> = api.split('/').map(percent_decode).collect();
         let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+        // Changes to stored settings happen one at a time. Exceptions: reads;
+        // approvals and stops, which only touch live runs; and the routes that
+        // wait on a remote service, which take the lock only around their writes.
+        let concurrent = method == Method::Get
+            || matches!(
+                segments.as_slice(),
+                [.., "approval"]
+                    | [.., "stop"]
+                    | ["realms", _, "connect"]
+                    | ["realms", _, "connectors", ..]
+            );
+        let _writes = (!concurrent).then(|| self.write_lock());
         let ok = || json_response(200, json!({"ok": true}));
         Ok(match (&method, segments.as_slice()) {
             (Method::Get, ["info"]) => json_response(200, self.info()),
@@ -442,6 +719,50 @@ impl App {
                 }
                 json_response(200, self.realm_detail(&realm)?)
             }
+            (Method::Put, ["realms", r, "northstar"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                realm.north_star().set_goal(
+                    body["goal"].as_str().unwrap_or_default(),
+                    body["why"].as_str().unwrap_or_default(),
+                )?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "northstar"]) => {
+                let realm = self.realm(r)?;
+                realm.north_star().clear()?;
+                self.hub.schedule_north_star(&realm, None)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Patch, ["realms", r, "northstar", "milestones", id]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let status = body["status"]
+                    .as_str()
+                    .map(crate::northstar::Status::parse)
+                    .transpose()?;
+                realm.north_star().update(id, status, None, None)?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Post, ["realms", r, "northstar", "schedule"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.hub
+                    .schedule_north_star(&realm, body["every"].as_str())?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Post, ["realms", r, "northstar", action @ ("brainstorm" | "push")]) => {
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let state = if *action == "brainstorm" {
+                    self.hub.brainstorm_north_star(&realm)?
+                } else {
+                    self.hub.push_north_star(&realm)?
+                };
+                let id = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": id}))
+            }
             (Method::Post, ["realms", r, "secrets"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
@@ -462,16 +783,46 @@ impl App {
             (Method::Post, ["realms", r, "runs"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                self.hub.model_for(&realm).context("no model available")?;
-                let state = self
+                let choice = self.model_choice(&realm, &body)?;
+                let mut state = self
                     .hub
                     .create_run(&realm, body["objective"].as_str().unwrap_or_default())?;
+                if choice.is_some() {
+                    state.model_choice = choice;
+                    state.save()?;
+                }
                 let id = state.id.clone();
                 self.spawn(realm, state, Job::Drive);
                 json_response(200, json!({"id": id}))
             }
+            (Method::Post, ["realms", r, "models"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
+                self.hub.set_model_tier(
+                    &realm,
+                    &text("tier"),
+                    &text("provider"),
+                    &text("model"),
+                    &text("effort"),
+                    body["all_realms"].as_bool().unwrap_or(false),
+                )?;
+                json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Get, ["realms", r, "models"]) => {
+                let realm = self.realm(r)?;
+                let force = query.split('&').any(|kv| kv == "refresh=1");
+                json_response(200, self.model_options(&realm, force)?)
+            }
             (Method::Get, ["realms", r, "runs", id]) => {
                 json_response(200, self.run(&self.realm(r)?, id, query)?)
+            }
+            (Method::Patch, ["realms", r, "runs", id]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.hub.load_run(&realm, id)?;
+                realm.set_run_title(id, body["title"].as_str().unwrap_or_default())?;
+                json_response(200, json!({"title": realm.run_titles().get(*id)}))
             }
             (Method::Get, ["realms", r, "runs", id, "diff"]) => {
                 let diff = self.hub.diff(&self.realm(r)?, id)?;
@@ -480,12 +831,50 @@ impl App {
             (Method::Post, ["realms", r, "runs", id, "messages"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                self.hub.model_for(&realm).context("no model available")?;
+                let choice = self.model_choice(&realm, &body)?;
                 self.ensure_idle(r, id)?;
-                let state =
+                let mut state =
                     self.hub
                         .follow_up(&realm, id, body["message"].as_str().unwrap_or_default())?;
+                // The picker always sends its value: "auto" goes back to the realm's routing.
+                if body.get("model").is_some() {
+                    state.model_choice = choice;
+                    state.save()?;
+                }
                 self.spawn(realm, state, Job::Drive);
+                ok()
+            }
+            (Method::Post, ["update", "check"]) => {
+                let mut st = self.update.lock().unwrap();
+                if st.phase == "idle" || st.phase == "failed" {
+                    st.phase = "checking";
+                    st.prepared_commit = None;
+                }
+                ok()
+            }
+            (Method::Post, ["update", "restart"]) => {
+                let staged = {
+                    let mut st = self.update.lock().unwrap();
+                    if st.phase != "ready" {
+                        return Err(anyhow!("no update is ready to install"));
+                    }
+                    let staged = st.staged.clone().context("no update is ready")?;
+                    st.phase = "restarting";
+                    staged
+                };
+                let exe = match crate::update::install(&staged) {
+                    Ok(exe) => exe,
+                    Err(e) => {
+                        let mut st = self.update.lock().unwrap();
+                        st.phase = "failed";
+                        st.error = Some(format!("installing failed: {e:#}"));
+                        return Err(e);
+                    }
+                };
+                eprintln!("installed the update; restarting");
+                let (registry, path, port) =
+                    (self.registry.clone(), server_file(&self.hub), self.port);
+                std::thread::spawn(move || restart(registry, path, exe, port));
                 ok()
             }
             (Method::Get, ["inbox"]) => {
@@ -509,6 +898,174 @@ impl App {
                     .unwrap_or(24);
                 let since = chrono::Utc::now() - chrono::Duration::hours(hours.clamp(1, 24 * 90));
                 json_response(200, json!(scheduler::summary(&self.hub, since)?))
+            }
+            (Method::Get, ["usage"]) => {
+                let days: u32 = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("days="))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(30);
+                let report = crate::usage::report(&self.hub, days, chrono::Local::now())?;
+                json_response(200, json!(report))
+            }
+            (Method::Get, ["catalog"]) => {
+                let force = query.split('&').any(|kv| kv == "refresh=1");
+                let (index, refreshing) =
+                    catalog::index(&self.hub.home().dir().join("catalog.json"), force);
+                let skills: Vec<Value> = index
+                    .skills
+                    .iter()
+                    .map(|s| {
+                        let (take, skip) = s.installable();
+                        json!({
+                            "name": s.name,
+                            "title": s.title,
+                            "description": s.description,
+                            "files": take.len(),
+                            "skipped": skip.len(),
+                        })
+                    })
+                    .collect();
+                json_response(
+                    200,
+                    json!({
+                        "source": format!("https://github.com/{}", catalog::REPO),
+                        "fetched_at": index.fetched_at,
+                        "error": index.error,
+                        "refreshing": refreshing,
+                        "skills": skills,
+                    }),
+                )
+            }
+            (Method::Get, ["realms", r, "catalog"]) => {
+                json_response(200, self.catalog_installed(&self.realm(r)?))
+            }
+            (Method::Post, ["realms", r, "catalog", name, "install"]) => {
+                let realm = self.realm(r)?;
+                let (index, _) = catalog::index(&self.hub.home().dir().join("catalog.json"), false);
+                let skill = index
+                    .skills
+                    .into_iter()
+                    .find(|s| s.name == *name)
+                    .context("this skill is not in the catalog (refresh it?)")?;
+                catalog::install_in_background(skill, realm.skills().dir().to_path_buf());
+                json_response(200, self.catalog_installed(&realm))
+            }
+            (Method::Delete, ["realms", r, "catalog", name]) => {
+                let realm = self.realm(r)?;
+                if !catalog::uninstall(realm.skills().dir(), name)? {
+                    return Err(anyhow!("this skill is not installed"));
+                }
+                json_response(200, self.catalog_installed(&realm))
+            }
+            (Method::Get, ["realms", r, "connectors"]) => {
+                json_response(200, self.connectors(&self.realm(r)?, None))
+            }
+            (Method::Post, ["realms", r, "connectors", id]) => {
+                let body = read_json(request)?;
+                let c = connectors::find(id)?;
+                let realm = {
+                    let _w = self.write_lock();
+                    let mut realm = self.realm(r)?;
+                    connectors::connect(
+                        &mut realm,
+                        &c,
+                        body["token"].as_str().unwrap_or_default(),
+                    )?;
+                    realm
+                };
+                // Prove it works right away (no lock held while waiting on the
+                // service); a refused token stays saved, to fix or remove.
+                let check = connectors::check(&realm, &c);
+                json_response(200, self.connectors(&realm, Some((id, check))))
+            }
+            (Method::Post, ["realms", r, "connectors", id, "check"]) => {
+                let realm = self.realm(r)?;
+                let check = connectors::check(&realm, &connectors::find(id)?);
+                json_response(200, self.connectors(&realm, Some((id, check))))
+            }
+            (Method::Delete, ["realms", r, "connectors", id]) => {
+                let _w = self.write_lock();
+                let mut realm = self.realm(r)?;
+                if !connectors::disconnect(&mut realm, &connectors::find(id)?)? {
+                    return Err(anyhow!("this connector is not connected"));
+                }
+                json_response(200, self.connectors(&realm, None))
+            }
+            (Method::Post, ["realms", r, "connect"]) => {
+                // A remote MCP connector: save it, then open its sign-in page.
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let dir = realm.skills().dir().to_path_buf();
+                let name = body["name"].as_str().unwrap_or_default().trim().to_string();
+                {
+                    let _w = self.write_lock();
+                    McpStore::new(&dir).save_remote(
+                        &name,
+                        body["url"].as_str().unwrap_or_default(),
+                        body["description"].as_str().unwrap_or_default(),
+                    )?;
+                }
+                let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
+                match crate::tools::remote::start(&dir, &name, &redirect) {
+                    Ok(crate::tools::remote::Started::SignIn(url)) => {
+                        let open = url.clone();
+                        std::thread::spawn(move || open_url(&open));
+                        json_response(200, json!({"sign_in": url}))
+                    }
+                    Ok(crate::tools::remote::Started::Open) => {
+                        self.mcp_connect(&realm, &name)?;
+                        json_response(200, json!({"open": true}))
+                    }
+                    Err(e) => {
+                        let message = format!("{e:#}");
+                        let _w = self.write_lock();
+                        McpStore::new(&dir).update(&name, |s| s.error = Some(message.clone()))?;
+                        return Err(e);
+                    }
+                }
+            }
+            (Method::Get, ["registry"]) => {
+                let search = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("search="))
+                    .map(percent_decode)
+                    .unwrap_or_default();
+                json_response(200, json!(registry_search(&search)?))
+            }
+            (Method::Get, ["realms", r, "mcp"]) => json_response(200, self.mcp(&self.realm(r)?)?),
+            (Method::Post, ["realms", r, "mcp"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let name = body["name"].as_str().unwrap_or_default().trim();
+                McpStore::new(realm.skills().dir()).save(
+                    name,
+                    body["command"].as_str().unwrap_or_default(),
+                    body["description"].as_str().unwrap_or_default(),
+                )?;
+                self.mcp_connect(&realm, name)?;
+                json_response(200, self.mcp(&realm)?)
+            }
+            (Method::Post, ["realms", r, "mcp", name, "connect"]) => {
+                let realm = self.realm(r)?;
+                self.mcp_connect(&realm, name)?;
+                json_response(200, self.mcp(&realm)?)
+            }
+            (Method::Patch, ["realms", r, "mcp", name]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                if let Some(enabled) = body["enabled"].as_bool() {
+                    McpStore::new(realm.skills().dir()).update(name, |s| s.enabled = enabled)?;
+                }
+                json_response(200, self.mcp(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "mcp", name]) => {
+                let realm = self.realm(r)?;
+                if !McpStore::new(realm.skills().dir()).remove(name)? {
+                    return Err(anyhow!("no such MCP server"));
+                }
+                crate::tools::remote::forget_auth(realm.skills().dir(), name);
+                json_response(200, self.mcp(&realm)?)
             }
             (Method::Get, ["realms", r, "skills"]) => {
                 json_response(200, self.skills(&self.realm(r)?)?)
@@ -737,7 +1294,8 @@ impl App {
             })
             .collect();
         json!({
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": crate::update::version(),
+            "update": &*self.update.lock().unwrap(),
             "home": self.hub.home().dir().display().to_string(),
             "sandbox": sandbox::available(),
             "realm": self.options.realm,
@@ -778,7 +1336,7 @@ impl App {
 
     fn realm_detail(&self, realm: &Realm) -> Result<Value> {
         let c = &realm.config;
-        let model = self.hub.model_for(realm);
+        let model = self.hub.connections_for(realm);
         let secrets: Vec<Value> = realm
             .secrets()?
             .into_iter()
@@ -795,9 +1353,11 @@ impl App {
             "share_owner_profile": c.share_owner_profile,
             "archived": c.archived,
             "default": self.hub.home().default_realm().as_deref() == Some(realm.name()),
-            "model": model.as_ref().ok().map(|m| m.name()),
+            "model": model.as_ref().ok().map(|m| m.describe()),
             "model_error": model.err().map(|e| format!("{e:#}")),
+            "models": self.hub.model_settings(realm)?,
             "memory": realm.memory().list()?,
+            "north_star": self.north_star(realm)?,
             "secrets": secrets,
             "integrations": c.integrations.iter().map(|i| {
                 let missing: Vec<String> = i
@@ -814,6 +1374,37 @@ impl App {
                 })
             }).collect::<Vec<_>>(),
         }))
+    }
+
+    /// The realm's North Star for the app: the goal and milestones, progress,
+    /// the milestone to work on, and the schedule that advances it.
+    fn north_star(&self, realm: &Realm) -> Result<Value> {
+        let Some(star) = realm.north_star().get()? else {
+            return Ok(Value::Null);
+        };
+        let (done, total) = star.progress();
+        let objective = realm.objectives().get(crate::northstar::OBJECTIVE_ID).ok();
+        let mut v = json!(star);
+        v["done"] = json!(done);
+        v["total"] = json!(total);
+        v["next"] = json!(star.next().map(|m| &m.id));
+        v["schedule"] = match objective {
+            Some(o) => json!({
+                "every": match &o.trigger {
+                    Trigger::Schedule { every } => every.clone(),
+                    _ => String::new(),
+                },
+                "enabled": o.enabled,
+                "next_at": o.next_at,
+                "last_run": o.last_run,
+                "last_status": o.last_status,
+                "running": o.last_run.as_deref().is_some_and(
+                    |r| self.live(realm.name(), r).is_some() || self.hub.is_live(realm, r)
+                ),
+            }),
+            None => Value::Null,
+        };
+        Ok(v)
     }
 
     fn create_realm(&self, body: &Value) -> Result<Realm> {
@@ -877,6 +1468,7 @@ impl App {
 
     fn runs(&self, realm: &Realm) -> Result<Value> {
         let registry = self.registry.lock().unwrap();
+        let titles = realm.run_titles();
         let runs: Vec<Value> = self
             .hub
             .runs(realm)?
@@ -887,6 +1479,7 @@ impl App {
                 let needs_approval = live.is_some_and(|l| l.pending.lock().unwrap().is_some());
                 json!({
                     "id": r.id,
+                    "title": titles.get(&r.id),
                     "objective": r.objective,
                     "status": r.display_status(),
                     "live": r.live || live.is_some(),
@@ -897,6 +1490,7 @@ impl App {
                     "checks_passed": r.checks_passed,
                     "plan_done": r.plan_done,
                     "plan_total": r.plan_total,
+                    "focus": r.focus,
                 })
             })
             .collect();
@@ -933,6 +1527,7 @@ impl App {
                 "state": state,
                 "pending": pending,
                 "checks_required": checks_required,
+                "title": realm.run_titles().get(id),
             }));
         }
         let state = self.hub.load_run(realm, id)?;
@@ -945,6 +1540,7 @@ impl App {
             "state": state,
             "pending": null,
             "checks_required": checks_required,
+            "title": realm.run_titles().get(id),
         }))
     }
 
@@ -977,6 +1573,124 @@ impl App {
 
     fn spawn(&self, realm: Realm, state: State, job: Job) {
         self.runner.spawn(realm, state, job);
+    }
+
+    /// The model picked in the app for a request (`provider/model`), checked
+    /// now so a missing key is reported before the run starts. "auto" or
+    /// nothing: the realm's own model and routing.
+    fn model_choice(&self, realm: &Realm, body: &Value) -> Result<Option<String>> {
+        match body["model"]
+            .as_str()
+            .map(str::trim)
+            .filter(|m| !m.is_empty() && *m != "auto")
+        {
+            Some(choice) => {
+                self.hub.chosen_model(realm, choice)?;
+                Ok(Some(choice.to_string()))
+            }
+            None => {
+                self.hub.model_for(realm).context("no model available")?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// Providers and models for the picker, cached ten minutes per realm (the
+    /// lists come from each provider's API).
+    fn model_options(&self, realm: &Realm, force: bool) -> Result<Value> {
+        static CACHE: std::sync::OnceLock<Mutex<HashMap<String, (std::time::Instant, Value)>>> =
+            std::sync::OnceLock::new();
+        let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if !force
+            && let Some((at, v)) = cache.lock().unwrap().get(realm.name())
+            && at.elapsed() < Duration::from_secs(600)
+        {
+            return Ok(v.clone());
+        }
+        let value = json!({
+            "providers": self.hub.model_options(realm)?,
+            "default": self.hub.model_for(realm).ok().map(|m| m.name()),
+        });
+        cache.lock().unwrap().insert(
+            realm.name().to_string(),
+            (std::time::Instant::now(), value.clone()),
+        );
+        Ok(value)
+    }
+
+    /// The connectors catalog with each one's state in the realm, and the
+    /// result of a connection check when one just ran.
+    fn connectors(&self, realm: &Realm, check: Option<(&str, Result<Option<String>>)>) -> Value {
+        let list: Vec<Value> = connectors::catalog()
+            .iter()
+            .map(|c| connectors::status(realm, c))
+            .collect();
+        let check = check.map(|(id, r)| match r {
+            Ok(message) => json!({"id": id, "ok": true, "message": message}),
+            Err(e) => json!({"id": id, "ok": false, "message": format!("{e:#}")}),
+        });
+        json!({
+            "connectors": list,
+            "check": check,
+            "apps_rule": realm.config.policy.rule(Capability::Apps).as_str(),
+        })
+    }
+
+    /// Catalog skills installed in the realm, those installing, and failures.
+    fn catalog_installed(&self, realm: &Realm) -> Value {
+        let store = realm.skills();
+        let dir = store.dir();
+        let (installing, errors) = catalog::install_status(dir);
+        json!({
+            "installed": catalog::installed(dir),
+            "installing": installing,
+            "errors": errors.into_iter().collect::<HashMap<_, _>>(),
+        })
+    }
+
+    /// The realm's MCP servers, with the names the agent sees for their tools.
+    fn mcp(&self, realm: &Realm) -> Result<Value> {
+        let servers: Vec<Value> = McpStore::new(realm.skills().dir())
+            .list()?
+            .into_iter()
+            .map(|s| {
+                let tools: Vec<Value> = s
+                    .tools
+                    .iter()
+                    .map(|t| {
+                        json!({
+                            "name": t.name,
+                            "agent_name": crate::tools::mcp::tool_name(&s.name, &t.name),
+                            "description": t.description,
+                        })
+                    })
+                    .collect();
+                json!({
+                    "name": s.name,
+                    "command": s.command,
+                    "url": s.url,
+                    "signed_in": crate::tools::remote::load_auth(realm.skills().dir(), &s.name)
+                        .is_some_and(|a| a.access_token.is_some()),
+                    "description": s.description,
+                    "enabled": s.enabled,
+                    "connecting": s.connecting(),
+                    "server_info": s.server_info,
+                    "connected_at": s.connected_at,
+                    "error": s.error,
+                    "tools": tools,
+                })
+            })
+            .collect();
+        Ok(json!(servers))
+    }
+
+    /// Start a server in the realm's sandbox, with its credentials, exactly as
+    /// a run would, and list its tools in the background.
+    fn mcp_connect(&self, realm: &Realm, name: &str) -> Result<()> {
+        let ws = self
+            .hub
+            .workspace_for(realm, &State::new("connect an MCP server", None))?;
+        crate::tools::mcp::connect_in_background(realm.skills().dir(), name, ws)
     }
 
     fn skills(&self, realm: &Realm) -> Result<Value> {
@@ -1186,6 +1900,63 @@ impl Runner {
     }
 }
 
+/// Text made safe to put in an HTML page.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Search the official MCP Registry for servers that can be connected as
+/// connectors: a Streamable HTTP endpoint that needs no API key header (the
+/// ones that need sign-in use OAuth).
+fn registry_search(search: &str) -> Result<Vec<Value>> {
+    let mut url = reqwest::Url::parse("https://registry.modelcontextprotocol.io/v0/servers")?;
+    url.query_pairs_mut()
+        .append_pair("limit", "60")
+        .append_pair("version", "latest");
+    if !search.trim().is_empty() {
+        url.query_pairs_mut().append_pair("search", search.trim());
+    }
+    let body: Value = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent(concat!("airth/", env!("CARGO_PKG_VERSION")))
+        .build()?
+        .get(url)
+        .send()
+        .context("cannot reach the MCP Registry")?
+        .json()
+        .context("unexpected answer from the MCP Registry")?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for entry in body["servers"].as_array().into_iter().flatten() {
+        let s = &entry["server"];
+        let Some(name) = s["name"].as_str() else {
+            continue;
+        };
+        let remote = s["remotes"].as_array().into_iter().flatten().find(|r| {
+            r["type"] == "streamable-http"
+                && !r["headers"]
+                    .as_array()
+                    .is_some_and(|h| h.iter().any(|h| h["isRequired"] == true))
+                && r["url"].as_str().is_some_and(|u| !u.contains('{'))
+        });
+        let Some(remote) = remote else { continue };
+        if !seen.insert(name.to_string()) {
+            continue;
+        }
+        out.push(json!({
+            "name": name,
+            "title": s["title"].as_str().unwrap_or_else(|| name.rsplit('/').next().unwrap_or(name)),
+            "description": s["description"],
+            "url": remote["url"],
+            "website": s["websiteUrl"].as_str().or(s["repository"]["url"].as_str()),
+        }));
+    }
+    Ok(out)
+}
+
 /// Keep huge diffs (lockfiles, generated code) from freezing the page.
 fn truncate_diff(diff: String) -> String {
     const MAX: usize = 400_000;
@@ -1305,6 +2076,78 @@ fn open_in_browser(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_service_does_not_freeze_the_app() {
+        // A remote MCP server that takes 2 seconds to answer.
+        let slow = Server::http("127.0.0.1:0").unwrap();
+        let slow_url = format!("http://{}/mcp", slow.server_addr().to_ip().unwrap());
+        std::thread::spawn(move || {
+            for req in slow.incoming_requests() {
+                std::thread::sleep(Duration::from_secs(2));
+                let _ = req.respond(Response::from_string("").with_status_code(500));
+            }
+        });
+        let home_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        home.create_realm(NewRealm {
+            name: "r".into(),
+            description: String::new(),
+            root: Some(root.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let hub = Arc::new(Hub::new(home));
+        let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+        let app = App {
+            runner: Runner {
+                hub: hub.clone(),
+                registry: registry.clone(),
+                max_iterations: 1,
+            },
+            hub,
+            registry,
+            token: "t0k3n".into(),
+            port,
+            options: UiOptions {
+                port,
+                open_browser: false,
+                max_iterations: 1,
+                realm: None,
+            },
+            update: Arc::new(Mutex::new(UpdateState::default())),
+            writes: Mutex::new(()),
+        };
+        std::thread::spawn(move || serve_requests(server, app));
+        let base = format!("http://127.0.0.1:{port}");
+        let b = base.clone();
+        let pending = std::thread::spawn(move || {
+            reqwest::blocking::Client::new()
+                .post(format!("{b}/api/realms/r/connect"))
+                .header("X-Airth-Token", "t0k3n")
+                .body(json!({"name": "slow", "url": slow_url}).to_string())
+                .send()
+                .map(|r| r.status().as_u16())
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        let started = std::time::Instant::now();
+        let info = reqwest::blocking::Client::new()
+            .get(format!("{base}/api/realms/r"))
+            .header("X-Airth-Token", "t0k3n")
+            .send()
+            .unwrap();
+        assert!(info.status().is_success(), "{}", info.status());
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "the app waited for the slow service ({:?})",
+            started.elapsed()
+        );
+        // The slow connection itself still finishes (with the service's error).
+        assert_eq!(pending.join().unwrap().unwrap(), 400);
+    }
 
     #[test]
     fn tokens_are_random_hex() {

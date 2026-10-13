@@ -1,12 +1,18 @@
 mod agent;
 mod cancel;
 mod cli;
+mod connectors;
+#[cfg(target_os = "macos")]
+mod desktop;
 mod home;
 mod hub;
+#[path = "desktop/icon.rs"]
+mod icon;
 mod integration;
 mod isolation;
 mod memory;
 mod models;
+mod northstar;
 mod notify;
 mod objective;
 mod owner;
@@ -21,6 +27,8 @@ mod state;
 mod term;
 mod tools;
 mod ui;
+mod update;
+mod usage;
 
 use agent::AgentConfig;
 use anyhow::{Context, Result};
@@ -100,7 +108,13 @@ enum Cmd {
         /// Maximum number of model calls per run or follow-up
         #[arg(long, default_value_t = 50)]
         max_iterations: u32,
+        /// Open the app and return at once, starting Airth in the background
+        /// if it is not running (used by Airth.app)
+        #[arg(long)]
+        detach: bool,
     },
+    /// Open Airth in its own window (macOS)
+    App,
     /// Run Airth in the background: the app server and the scheduler that
     /// starts objectives (see also `airth service install`)
     Serve {
@@ -108,6 +122,19 @@ enum Cmd {
         port: u16,
         #[arg(long, default_value_t = 50)]
         max_iterations: u32,
+        /// If Airth already runs for this home, wait for it to stop and take
+        /// over, instead of exiting (used by the login service)
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Update Airth from its source repository: build, test, install, restart
+    Update {
+        /// Only say whether an update is available
+        #[arg(long)]
+        check: bool,
+        /// Go back to the version the last update replaced
+        #[arg(long)]
+        rollback: bool,
     },
     /// Install or remove Airth as a login service, so objectives run while you are away (macOS)
     Service {
@@ -139,6 +166,12 @@ enum Cmd {
     Owner {
         #[command(subcommand)]
         command: cli::OwnerCmd,
+    },
+    /// The realm's North Star: the one goal its work serves, and its milestones
+    #[command(name = "northstar", alias = "north-star")]
+    NorthStar {
+        #[command(subcommand)]
+        command: cli::NorthStarCmd,
     },
     /// Show or edit the realm's long-term memory
     Memory {
@@ -231,7 +264,10 @@ fn cancel_on_ctrl_c() -> Result<CancelToken> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    if launched_as_app() {
+        cli.command = Some(Cmd::App);
+    }
     let result = Home::locate().and_then(|home| {
         let ctx = Ctx {
             home,
@@ -284,9 +320,16 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Serve {
             port,
             max_iterations,
+            wait,
         }) => {
             if let Some(url) = ui::running_url(&ctx.hub()) {
-                anyhow::bail!("Airth is already running for this home → {url}");
+                if !wait {
+                    anyhow::bail!("Airth is already running for this home → {url}");
+                }
+                eprintln!("Airth is already running for this home; taking over when it stops");
+                while ui::running_url(&ctx.hub()).is_some() {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
             }
             ui::serve(
                 ctx.hub(),
@@ -300,13 +343,41 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
             .map(|_| true)
         }
         Some(Cmd::Service { command }) => service::run(ctx, command),
+        Some(Cmd::App) => desktop_app(ctx),
+        Some(Cmd::Update { check, rollback }) => self_update(ctx, check, rollback),
         Some(Cmd::Objective { command }) => cli::objective(ctx, command),
         Some(Cmd::Inbox { args }) => cli::inbox(ctx, args),
         Some(Cmd::Summary { hours }) => cli::summary(ctx, hours.clamp(1, 24 * 90)),
         Some(Cmd::Ui {
+            port, detach: true, ..
+        }) => {
+            // Start a server that outlives this command, then open it.
+            let exe = std::env::current_exe()?;
+            let mut cmd = Command::new(exe);
+            cmd.args(["ui", "--no-open", "--port", &port.to_string()])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                cmd.process_group(0);
+            }
+            cmd.spawn().context("cannot start Airth")?;
+            for _ in 0..100 {
+                if let Some(url) = ui::running_url(&ctx.hub()) {
+                    ui::open_url(&url);
+                    return Ok(true);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            anyhow::bail!("Airth did not start; try `airth ui` in a terminal")
+        }
+        Some(Cmd::Ui {
             port,
             no_open,
             max_iterations,
+            ..
         }) => ui::serve(
             ctx.hub(),
             ui::UiOptions {
@@ -319,6 +390,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         .map(|_| true),
         Some(Cmd::Realm { command }) => cli::realm(ctx, command),
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
+        Some(Cmd::NorthStar { command }) => cli::north_star(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),
@@ -399,6 +471,75 @@ fn resume(ctx: &Ctx, run: &str, opts: RunOpts) -> Result<bool> {
     };
     let state = hub.resume_and_drive(&realm, &state.id, opts.config(), hooks)?;
     Ok(finish(&state))
+}
+
+#[cfg(target_os = "macos")]
+fn desktop_app(ctx: &Ctx) -> Result<bool> {
+    desktop::run(
+        ctx.hub(),
+        ui::UiOptions {
+            port: 7457,
+            open_browser: false,
+            max_iterations: 50,
+            realm: None,
+        },
+    )
+    .map(|_| true)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn desktop_app(_: &Ctx) -> Result<bool> {
+    anyhow::bail!("the desktop app is macOS only; use `airth ui`")
+}
+
+/// Started as Airth.app (from the Dock, Finder or Spotlight): no arguments,
+/// and the binary sits inside an app bundle.
+fn launched_as_app() -> bool {
+    std::env::args().len() == 1
+        && std::env::current_exe()
+            .is_ok_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+}
+
+fn self_update(ctx: &Ctx, check_only: bool, rollback: bool) -> Result<bool> {
+    eprintln!("airth {}", update::version());
+    if rollback {
+        let exe = update::rollback()?;
+        eprintln!(
+            "\x1b[32m✓\x1b[0m restored the previous version in {}",
+            exe.display()
+        );
+        service::restart_if_running();
+        return Ok(true);
+    }
+    let Some(available) = update::check(true)? else {
+        eprintln!("Airth is up to date");
+        return Ok(true);
+    };
+    eprintln!(
+        "update available: {} ({} change{} from {})",
+        available.short,
+        available.count,
+        if available.count == 1 { "" } else { "s" },
+        available.from
+    );
+    for c in &available.changes {
+        eprintln!("  · {c}");
+    }
+    if check_only {
+        return Ok(true);
+    }
+    let work = ctx.home().dir().join("update");
+    let staged = update::prepare(&available, &work, &|step| eprintln!("{step}…"))?;
+    let exe = update::install(&staged)?;
+    eprintln!(
+        "\x1b[32m✓\x1b[0m installed {} in {}",
+        available.short,
+        exe.display()
+    );
+    if !service::restart_if_running() && ui::running_url(&ctx.hub()).is_some() {
+        eprintln!("restart the running `airth ui` to use it");
+    }
+    Ok(true)
 }
 
 /// Start an objective's run now, with the owner at the terminal.
@@ -723,8 +864,8 @@ fn doctor(ctx: &Ctx) -> Result<bool> {
         match &realm {
             Ok(r) => ctx
                 .hub()
-                .model_for(r)
-                .map(|m| m.name())
+                .connections_for(r)
+                .map(|c| c.describe())
                 .map_err(|e| e.to_string()),
             Err(_) => models::from_env()
                 .map(|m| m.name())

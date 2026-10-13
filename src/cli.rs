@@ -85,6 +85,30 @@ pub enum OwnerCmd {
 }
 
 #[derive(Subcommand)]
+pub enum NorthStarCmd {
+    /// Show the realm's North Star, its milestones and progress
+    Show,
+    /// Set (or reword) the North Star; milestones are kept
+    Set {
+        goal: String,
+        /// Why it matters, or what success looks like
+        #[arg(long, default_value = "")]
+        why: String,
+    },
+    /// Forget the North Star and its milestones
+    Clear,
+    /// Set a milestone's status yourself
+    Milestone {
+        /// Its id, e.g. m2
+        id: String,
+        #[arg(value_parser = ["todo", "doing", "done", "dropped"])]
+        status: String,
+    },
+    /// Have Airth advance it on a schedule ("weekdays 09:00", "every 3h"), or "off"
+    Daily { every: String },
+}
+
+#[derive(Subcommand)]
 pub enum MemoryCmd {
     /// List what the realm remembers, with where each memory came from
     List,
@@ -954,6 +978,74 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
     }
     home.save_owner(&owner)?;
     eprintln!("\x1b[32m✓\x1b[0m profile saved");
+    Ok(true)
+}
+
+pub fn north_star(ctx: &Ctx, command: NorthStarCmd) -> Result<bool> {
+    let realm = ctx.realm()?;
+    let store = realm.north_star();
+    match command {
+        NorthStarCmd::Show => match store.get()? {
+            None => eprintln!(
+                "realm {} has no North Star. Set one: airth northstar set \"...\"",
+                realm.name()
+            ),
+            Some(star) => {
+                let (done, total) = star.progress();
+                println!("\x1b[1m★ {}\x1b[0m", star.goal);
+                if !star.why.is_empty() {
+                    println!("  \x1b[2m{}\x1b[0m", star.why);
+                }
+                if star.milestones.is_empty() {
+                    println!("no milestones yet: brainstorm them in the app (airth ui)");
+                } else {
+                    println!(
+                        "{done}/{total} milestones done\n{}",
+                        star.render_milestones()
+                    );
+                }
+                if let Ok(o) = realm.objectives().get(crate::northstar::OBJECTIVE_ID) {
+                    println!("\x1b[2mAirth advances it: {}\x1b[0m", o.trigger.describe());
+                }
+            }
+        },
+        NorthStarCmd::Set { goal, why } => {
+            store.set_goal(&goal, &why)?;
+            eprintln!("North Star set for realm {}", realm.name());
+        }
+        NorthStarCmd::Clear => {
+            if !store.clear()? {
+                bail!("realm {} has no North Star", realm.name());
+            }
+            ctx.hub().schedule_north_star(&realm, None)?;
+            eprintln!("North Star cleared");
+        }
+        NorthStarCmd::Milestone { id, status } => {
+            let star = store.update(
+                &id,
+                Some(crate::northstar::Status::parse(&status)?),
+                None,
+                None,
+            )?;
+            let (done, total) = star.progress();
+            eprintln!("{id} is {status} ({done}/{total} done)");
+        }
+        NorthStarCmd::Daily { every } => {
+            let off = every.trim() == "off";
+            ctx.hub()
+                .schedule_north_star(&realm, (!off).then_some(every.as_str()))?;
+            eprintln!(
+                "{}",
+                if off {
+                    "Airth no longer advances the North Star on its own".to_string()
+                } else {
+                    format!(
+                        "Airth advances the North Star: {every} (needs `airth service install` or `airth ui` running)"
+                    )
+                }
+            );
+        }
+    }
     Ok(true)
 }
 
