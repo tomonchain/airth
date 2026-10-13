@@ -1208,8 +1208,13 @@ function transcriptNodes(d) {
       if (texts.length) flush(false);
       texts.forEach((b, ti) => {
         if (b.text.startsWith(RUNTIME_PREFIX)) {
-          nodes.push(keyed(h("div", { class: "msg runtime" }, h("div", { class: "who" }, "Airth"),
-            h("div", { class: "prose", html: mdc(b.text.slice(RUNTIME_PREFIX.length).trim()) })), `rt:${mi}:${ti}`));
+          const body = b.text.slice(RUNTIME_PREFIX.length).trim();
+          // Long runtime texts are instructions for the model: folded, behind a plain-language line.
+          nodes.push(keyed(body.length > 400
+            ? keyedDetails(`rt:${mi}:${ti}`, { class: "runtime-brief" },
+                h("summary", null, h("span", { class: "ns-star", "aria-hidden": "true" }, "★"), " ", runtimeLabel(body), h("span", { class: "muted" }, " · how Airth was asked to work")),
+                h("div", { class: "prose", html: mdc(body) }))
+            : h("div", { class: "msg runtime" }, h("div", { class: "who" }, "Airth"), h("div", { class: "prose", html: mdc(body) })), `rt:${mi}:${ti}`));
         } else {
           nodes.push(keyed(h("div", { class: "msg user" + (mi === 0 ? " objective" : "") },
             h("div", { class: "who" }, mi === 0 ? "Objective" : "You"),
@@ -1238,6 +1243,14 @@ function transcriptNodes(d) {
   const answers = nodes.filter((n) => n.classList.contains("assistant"));
   if (answers.length) answers[answers.length - 1].classList.add("latest");
 
+  const lastMsg0 = s.messages[s.messages.length - 1];
+  if (!d.live && lastMsg0 && lastMsg0.role === "assistant") {
+    const text = lastMsg0.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    const questions = numberedQuestions(text);
+    const key = `answers:${s.id}:${s.messages.length - 1}`;
+    if (questions.length) nodes.push(keyed(answerForm(questions, key), key));
+    else if (s.north_star && s.objective.startsWith("Define my North Star")) nodes.push(keyed(northStarReplies(s), "ns-replies:" + s.messages.length));
+  }
   const checking = s.change && s.change.checks && !s.change.checks.finished && d.live;
   if (d.pending) nodes.push(keyed(approvalCard(d.pending), "approval:" + d.pending.id));
   else if (d.live && !checking) {
@@ -1251,8 +1264,11 @@ function transcriptNodes(d) {
     nodes.push(keyed(working(label), "working"));
   } else if (!d.live) {
     const status = d.interrupted ? "interrupted" : s.status;
+    const last = s.messages[s.messages.length - 1];
+    const asks = last && last.role === "assistant" && (numberedQuestions(last.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")).length > 0
+      || (s.north_star && s.objective.startsWith("Define my North Star") && !s.events.some((e) => e.action === "north_star" && e.status === "ok")));
     const text = {
-      completed: `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
+      completed: asks ? "Your turn: Airth is waiting for your answer." : `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
       failed: "The run failed.",
       stopped: "The run stopped.",
       interrupted: "The run was interrupted: the process exited before it finished.",
@@ -1270,6 +1286,62 @@ function transcriptNodes(d) {
 }
 
 const RUNTIME_PREFIX = "[Airth runtime]";
+
+/** What a long runtime instruction is about, for the owner. */
+function runtimeLabel(body) {
+  if (body.includes("define this realm's North Star")) return "Airth asks you a few questions, proposes a plan, and records it once you agree";
+  if (body.includes("conversation grew long")) return "Earlier conversation summarized";
+  return "Instructions Airth received";
+}
+
+/** The numbered questions at the end of an answer ("1. Where do you stand? ..."), if there are at least two. */
+function numberedQuestions(text) {
+  const items = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*(\d+)[.)]\s+(.+)$/);
+    if (m && m[2].includes("?")) items.push(m[2].replace(/\*\*|__|`/g, "").trim());
+  }
+  return items.length >= 2 ? items : [];
+}
+
+/** Answers typed in the question form, kept across redraws (the transcript is rebuilt on every poll). */
+const answerDrafts = new Map();
+
+/** One field per question, sent as a single follow-up. */
+function answerForm(questions, key) {
+  const fields = questions.map((q, i) => {
+    const ta = h("textarea", { rows: 1, placeholder: "Your answer (or leave empty)", "aria-label": q });
+    ta.value = answerDrafts.get(`${key}:${i}`) || "";
+    const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
+    ta.addEventListener("input", () => { answerDrafts.set(`${key}:${i}`, ta.value); fit(); });
+    setTimeout(fit, 0);
+    return { q, ta };
+  });
+  const send = async () => {
+    const lines = fields.map((f, i) => `${i + 1}. ${f.q}\n→ ${f.ta.value.trim() || "(no answer)"}`);
+    if (fields.every((f) => !f.ta.value.trim())) return fields[0].ta.focus();
+    btn.disabled = true;
+    try {
+      await sendFollowUp(lines.join("\n\n"));
+      fields.forEach((_, i) => answerDrafts.delete(`${key}:${i}`));
+    } catch (e) { flash(e.message, true); btn.disabled = false; }
+  };
+  const btn = h("button", { class: "btn primary", type: "button", onclick: send }, "Send my answers");
+  return h("div", { class: "answer-form" },
+    h("div", { class: "answer-head" }, "Answer here, or reply in your own words below."),
+    fields.map((f, i) => h("label", { class: "answer-q" }, h("span", { class: "answer-n" }, i + 1), h("span", { class: "grow" }, h("span", { class: "answer-text" }, f.q), f.ta))),
+    h("div", { class: "row-end" }, btn));
+}
+
+/** Suggested replies under the latest answer of a run defining the North Star. */
+function northStarReplies(s) {
+  const recorded = s.events.some((e) => e.action === "north_star" && e.status === "ok");
+  if (recorded) return h("div", { class: "quick-replies" },
+    h("button", { class: "chip-btn primary", type: "button", onclick: () => go(`#/r/${enc(app.realm)}`) }, "★ See my North Star"));
+  return h("div", { class: "quick-replies" },
+    h("button", { class: "chip-btn primary", type: "button", onclick: () => sendFollowUp("That looks good. Record it as proposed.").catch((e) => flash(e.message, true)) }, "Looks good, record it"),
+    h("button", { class: "chip-btn", type: "button", onclick: () => { const ta = $(".composer textarea"); if (ta) { ta.value = "I'd change: "; ta.focus(); ta.dispatchEvent(new Event("input")); } } }, "Change something…"));
+}
 
 /** Past tense for a finished activity line: [verb, one, many]. */
 const DONE_VERBS = {
@@ -1494,6 +1566,21 @@ function diffView(text, kind) {
   return el;
 }
 
+/** A North Star or memory change, as text rather than code. */
+function readablePreview(text) {
+  if (text.startsWith("New North Star: ")) {
+    const field = (prefix) => (text.split("\n").find((l) => l.startsWith(prefix)) || "").slice(prefix.length);
+    const was = field("(was: ").replace(/\)$/, "");
+    const why = field("Why: ");
+    return h("div", { class: "preview-readable" },
+      h("div", { class: "pr-label" }, "Now"), h("div", { class: "pr-old" }, was),
+      h("div", { class: "pr-label" }, "Becomes"), h("div", { class: "pr-new" }, field("New North Star: ")),
+      why && h("div", { class: "muted small" }, "Why: " + why));
+  }
+  return h("div", { class: "preview-readable" }, text.split("\n").filter((l) => l.trim()).map((l) =>
+    /^\d+\. /.test(l) ? h("div", { class: "pr-item" }, l) : h("div", { class: "pr-line" }, l)));
+}
+
 function approvalCard(p) {
   const title = p.tool === "north_star" && p.preview.startsWith("New North Star:") ? "Change your North Star?"
     : { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?", north_star: "Record this on the North Star?" }[p.tool] || `Allow ${p.tool}?`;
@@ -1509,7 +1596,7 @@ function approvalCard(p) {
       h("h3", null, title),
       h("span", { class: "chip rule-ask" }, p.capability)),
     p.warnings.map((w) => h("div", { class: "approval-warn" }, "⚠ " + w)),
-    diffView(p.preview, kind),
+    ["north_star", "remember"].includes(p.tool) ? readablePreview(p.preview) : diffView(p.preview, kind),
     h("div", { class: "approval-actions" },
       h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve ", h("kbd", null, modKey + "↵")),
       p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this run are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this run`),

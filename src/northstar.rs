@@ -246,11 +246,7 @@ impl NorthStarStore {
 
     /// Replace the milestones (title, done when), in order. A milestone with
     /// the same title as an existing one keeps its id, status and history.
-    pub fn set_milestones(
-        &self,
-        items: &[(String, String)],
-        run: Option<&str>,
-    ) -> Result<NorthStar> {
+    pub fn set_milestones(&self, items: &[(String, String)]) -> Result<NorthStar> {
         if items.is_empty() || items.len() > MAX_MILESTONES {
             bail!("give between 1 and {MAX_MILESTONES} milestones");
         }
@@ -288,7 +284,8 @@ impl NorthStarStore {
                             done_when: done_when.trim().to_string(),
                             note: String::new(),
                             done_at: None,
-                            runs: run.map(String::from).into_iter().collect(),
+                            // Credited to runs that move it, not to the one defining it.
+                            runs: Vec::new(),
                         }
                     }
                 };
@@ -373,10 +370,7 @@ mod tests {
             .set_goal("100 kit sales by December", "Fund the next product")
             .unwrap();
         let star = store
-            .set_milestones(
-                &items(&["Landing page live", "First sale", "SEO funnel"]),
-                Some("r1"),
-            )
+            .set_milestones(&items(&["Landing page live", "First sale", "SEO funnel"]))
             .unwrap();
         assert_eq!(star.progress(), (0, 3));
         assert_eq!(star.next().unwrap().id, "m1");
@@ -394,7 +388,8 @@ mod tests {
             .unwrap();
         assert_eq!(star.progress(), (1, 3));
         assert_eq!(star.next().unwrap().id, "m2");
-        assert!(star.involves("r2") && star.involves("r1") && !star.involves("r3"));
+        // Runs that moved a milestone are credited, not the one that listed them.
+        assert!(star.involves("r2") && !star.involves("r1") && !star.involves("r3"));
         assert!(star.milestones[0].done_at.is_some());
         assert!(
             store
@@ -406,10 +401,7 @@ mod tests {
 
         // Reworking the list keeps what matches, drops the rest, adds new ids.
         let star = store
-            .set_milestones(
-                &items(&["first sale", "Newsletter", "Landing page live"]),
-                None,
-            )
+            .set_milestones(&items(&["first sale", "Newsletter", "Landing page live"]))
             .unwrap();
         let ids: Vec<&str> = star.milestones.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["m2", "m4", "m1"]);
@@ -432,7 +424,7 @@ mod tests {
         );
         assert!(section.contains("1 of 2 done"), "{section}");
 
-        assert!(store.set_milestones(&[], None).is_err());
+        assert!(store.set_milestones(&[]).is_err());
         assert!(store.clear().unwrap());
         assert!(!store.clear().unwrap());
     }

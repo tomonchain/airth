@@ -143,7 +143,7 @@ impl Tool for NorthStarTool {
         }
         let run = self.run.as_deref();
         let star = match str_arg(input, "action")? {
-            "set_milestones" => self.store.set_milestones(&milestones(input)?, run)?,
+            "set_milestones" => self.store.set_milestones(&milestones(input)?)?,
             "update" => self.store.update(
                 str_arg(input, "milestone")?,
                 status(input)?,

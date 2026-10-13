@@ -1074,12 +1074,15 @@ impl Hub {
             .north_star()
             .get()?
             .context("set a North Star first")?;
-        let mut state = self.create_run(
-            realm,
-            &format!("Define the North Star and the path to it: {}", star.goal),
-        )?;
+        let mut state = self.create_run(realm, &format!("Define my North Star: {}", star.goal))?;
         append_user_text(&mut state.messages, BRAINSTORM_BRIEF);
         state.north_star = true;
+        // The owner started this conversation to record milestones: those
+        // writes need no further approval. Rewording the goal still does.
+        state.grants.push(crate::permissions::Grant {
+            capability: Capability::Memory,
+            scope: Some(northstar::SCOPE.into()),
+        });
         state.tier = Some(Tier::Strong);
         state.save()?;
         Ok(state)

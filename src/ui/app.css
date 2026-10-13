@@ -1193,3 +1193,39 @@ a.rh-tag { color: var(--brand); }
 .avatar.large, .realm-mark.large { width: 56px; height: 56px; font-size: 22px; }
 .realm-mark.large { border-radius: 16px; }
 .picture-edit { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Runtime instructions for the model: folded behind one plain line. */
+.runtime-brief { margin: 4px 0 14px; font-size: 13px; color: var(--muted); }
+.runtime-brief > summary { cursor: pointer; list-style: none; padding: 8px 12px; border-radius: 10px; background: var(--brand-soft); color: var(--text); }
+.runtime-brief > summary::-webkit-details-marker { display: none; }
+.runtime-brief > .prose { padding: 10px 14px; font-size: 12.5px; }
+
+/* Answering an agent's numbered questions, one field each. */
+.answer-form { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 14px 16px 12px; margin: 4px 0 20px; box-shadow: var(--shadow-sm, none); }
+.answer-head { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+.answer-q { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.answer-q:first-of-type { border-top: 0; }
+.answer-n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 650; background: var(--brand-soft); color: var(--brand); margin-top: 1px; }
+.answer-text { display: block; font-size: 13.5px; font-weight: 500; margin-bottom: 6px; }
+.answer-q textarea { width: 100%; resize: none; overflow: hidden; min-height: 36px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 10px; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; line-height: 1.45; }
+.answer-q textarea:focus { outline: 0; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.answer-form .row-end { margin-top: 6px; }
+
+/* Suggested replies */
+.quick-replies { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 22px; }
+.chip-btn { border: 1px solid var(--border-strong); background: transparent; color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
+.chip-btn:hover { background: var(--hover); }
+.chip-btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.chip-btn.primary:hover { opacity: .88; }
+
+/* Readable approvals (North Star, memory) */
+.preview-readable { margin: 10px 18px 4px; padding: 12px 14px; border-radius: 12px; background: var(--hover); font-size: 13.5px; line-height: 1.5; display: grid; gap: 4px; }
+.pr-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-top: 4px; }
+.pr-old { color: var(--muted); text-decoration: line-through; }
+.pr-new { font-weight: 600; font-size: 15px; }
+.pr-line { font-weight: 500; }
+.pr-item { padding-left: 4px; }
+
+/* The sidebar's North Star never overflows it. */
+.ns-side { min-width: 0; max-width: 100%; overflow: hidden; }
+.ns-side-goal { min-width: 0; }
