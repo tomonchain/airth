@@ -12,9 +12,10 @@ use crate::ui::{self, UiOptions};
 use anyhow::{Context, Result};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use tao::dpi::LogicalSize;
+use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::platform::macos::WindowBuilderExtMacOS;
 use tao::window::WindowBuilder;
 use tray_icon::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, accelerator::Accelerator,
@@ -25,7 +26,16 @@ use wry::{NewWindowResponse, WebViewBuilder};
 enum UserEvent {
     Menu(MenuEvent),
     HotKey(GlobalHotKeyEvent),
+    /// The page asks to move the window (a press on its title bar area).
+    Drag,
+    /// A double click on the title bar area.
+    Zoom,
 }
+
+/// The page draws its own title bar: it knows it runs in the app window, and
+/// a press on an empty spot of the top strip moves the window.
+/// (Runs before the document exists; theme.js applies it.)
+const WINDOW_SCRIPT: &str = r#"window.airthShell = "mac";"#;
 
 /// Open a link outside the app, in the default browser.
 fn open_outside(url: &str) {
@@ -101,11 +111,26 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         .with_title("Airth")
         .with_inner_size(LogicalSize::new(1240.0, 840.0))
         .with_min_inner_size(LogicalSize::new(720.0, 480.0))
+        // The page fills the whole window; the traffic lights sit on it.
+        .with_titlebar_transparent(true)
+        .with_title_hidden(true)
+        .with_fullsize_content_view(true)
+        .with_traffic_light_inset(LogicalPosition::new(16.0, 19.0))
         .build(&event_loop)
         .context("cannot open the window")?;
     let nav_origin = origin.clone();
+    let ipc = event_loop.create_proxy();
     let webview = WebViewBuilder::new()
         .with_url(&url)
+        .with_initialization_script(WINDOW_SCRIPT)
+        .with_ipc_handler(move |request| {
+            let event = match request.body().as_str() {
+                "drag" => UserEvent::Drag,
+                "zoom" => UserEvent::Zoom,
+                _ => return,
+            };
+            let _ = ipc.send_event(event);
+        })
         .with_navigation_handler(move |to| {
             if to.starts_with(&nav_origin) || to.starts_with("about:") {
                 return true;
@@ -198,6 +223,10 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
                     let _ = webview.reload();
                 }
             }
+            Event::UserEvent(UserEvent::Drag) => {
+                let _ = window.drag_window();
+            }
+            Event::UserEvent(UserEvent::Zoom) => window.set_maximized(!window.is_maximized()),
             Event::UserEvent(UserEvent::HotKey(e))
                 if e.id == hotkey.id() && e.state == HotKeyState::Pressed =>
             {

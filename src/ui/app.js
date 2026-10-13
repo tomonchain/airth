@@ -2925,6 +2925,24 @@ document.addEventListener("click", (e) => {
   root.classList.add("side-hidden");
 });
 
+// In the Mac app the page is the title bar: an empty spot of the top strip
+// moves the window, and a double click zooms it, as in other Mac apps.
+const TITLE_BAR = 44;
+const INTERACTIVE = "button, a, input, textarea, select, label, summary, [contenteditable], [role=button], .renamable";
+function onTitleBar(e) {
+  if (document.documentElement.dataset.shell !== "mac" || !window.ipc) return false;
+  if (e.button !== 0 || e.clientY > TITLE_BAR) return false;
+  return !(e.target.closest && e.target.closest(INTERACTIVE));
+}
+document.addEventListener("mousedown", (e) => {
+  if (!onTitleBar(e)) return;
+  e.preventDefault(); // no text selection from a title bar click
+  if (e.detail === 1) window.ipc.postMessage("drag");
+});
+document.addEventListener("dblclick", (e) => {
+  if (onTitleBar(e)) window.ipc.postMessage("zoom");
+});
+
 function toggleSidebar() {
   const hidden = !$("#app").classList.contains("side-hidden");
   $("#app").classList.toggle("side-hidden", hidden);

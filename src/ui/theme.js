@@ -14,6 +14,8 @@
     root.dataset.themePref = pref;
   };
   applyTheme(get("theme"));
+  // Set by the Mac app's window, which leaves the title bar to the page.
+  if (window.airthShell) root.dataset.shell = window.airthShell;
   root.dataset.text = get("text");
   root.dataset.width = get("width");
   media.addEventListener("change", () => { if (get("theme") === "system") applyTheme("system"); });

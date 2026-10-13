@@ -1234,3 +1234,12 @@ a.rh-tag { color: var(--brand); }
 /* The sidebar's North Star never overflows it. */
 .ns-side { min-width: 0; max-width: 100%; overflow: hidden; }
 .ns-side-goal { min-width: 0; }
+
+/* ---------- Mac app window ----------
+   The page fills the window, title bar included: the traffic lights sit on the
+   top-left corner, so what would go under them moves aside. */
+[data-shell="mac"] .sidebar { position: relative; padding-top: 50px; }
+[data-shell="mac"] #side-close { position: absolute; top: 12px; right: 10px; margin: 0; }
+[data-shell="mac"] .app.side-hidden .icon-action.side-open { top: 12px; left: 84px; }
+[data-shell="mac"] .app.side-hidden .run-header { padding-left: 128px; }
+[data-shell="mac"] .run-header { min-height: 56px; }
