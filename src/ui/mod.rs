@@ -686,6 +686,13 @@ impl App {
         let ok = || json_response(200, json!({"ok": true}));
         Ok(match (&method, segments.as_slice()) {
             (Method::Get, ["info"]) => json_response(200, self.info()),
+            (Method::Get, ["setup"]) => json_response(200, self.setup()?),
+            (Method::Post, ["setup", "key"]) => {
+                let body = read_json(request)?;
+                self.hub
+                    .set_shared_anthropic_key(body["key"].as_str().unwrap_or_default())?;
+                json_response(200, self.setup()?)
+            }
             (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =
@@ -1326,6 +1333,20 @@ impl App {
             "unread": self.hub.home().inbox().unread(),
             "tools": tools,
         })
+    }
+
+    /// What is set up already, for the welcome guide.
+    fn setup(&self) -> Result<Value> {
+        let realms: Vec<_> = self
+            .hub
+            .home()
+            .realms()?
+            .into_iter()
+            .filter(|r| !r.config.archived)
+            .collect();
+        let model_ready = self.hub.shared_model_ready()
+            || realms.iter().any(|r| self.hub.model_for(r).is_ok());
+        Ok(json!({ "realms": realms.len(), "model_ready": model_ready }))
     }
 
     fn realms(&self) -> Result<Value> {

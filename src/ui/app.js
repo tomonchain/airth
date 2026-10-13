@@ -298,6 +298,7 @@ function parseRoute() {
   if (h.startsWith("#/inbox")) return { view: "inbox" };
   if (h.startsWith("#/usage")) return { view: "usage" };
   if (h.startsWith("#/realms/new")) return { view: "new-realm" };
+  if (h.startsWith("#/welcome")) return { view: "welcome" };
   return { view: "home" };
 }
 
@@ -315,6 +316,11 @@ function preferredRealm() {
   return (pick(app.realm) || pick(saved) || pick(app.info && app.info.realm) || live.find((r) => r.default) || live[0] || {}).name || null;
 }
 
+/** Whether the owner finished or skipped the welcome guide in this window. */
+function welcomed() {
+  try { return localStorage.getItem("airth-welcomed") === "1"; } catch { return false; }
+}
+
 async function onRoute() {
   // On a phone, going somewhere closes the sidebar.
   if (narrow()) $("#app").classList.add("side-hidden");
@@ -328,8 +334,11 @@ async function onRoute() {
   confirmDiscard = false;
   if (app.route.view === "home") {
     const r = preferredRealm();
-    return go(r ? `#/r/${enc(r)}` : "#/realms/new");
+    if (!r) return go(welcomed() ? "#/realms/new" : "#/welcome");
+    return go(`#/r/${enc(r)}`);
   }
+  // The guide has the whole window; the sidebar comes back after.
+  $("#app").classList.toggle("welcoming", app.route.view === "welcome");
   if (app.route.realm && app.route.realm !== app.realm) await selectRealm(app.route.realm);
   renderMain();
   renderSidebar();
@@ -480,7 +489,7 @@ function renderFoot() {
   const name = (app.ownerName || "").trim();
   foot.replaceChildren(
     updateWidget(),
-    d && !d.model && h("button", { class: "side-warn", type: "button", title: d.model_error || "", onclick: () => go(`#/r/${enc(app.realm)}/settings`) }, "⚠ No model configured"),
+    d && !d.model && h("button", { class: "side-warn", type: "button", title: d.model_error || "", onclick: () => go(`#/r/${enc(app.realm)}/settings/models`) }, "⚠ No model configured"),
     app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the realm on this platform." }, "⚠ No command sandbox"),
     h("div", { class: "me" },
       h("button", { class: "me-btn" + (app.route.view === "owner" ? " active" : ""), type: "button", onclick: () => go("#/owner") },
@@ -576,6 +585,7 @@ function renderMain() {
     case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
     case "new-realm": return renderNewRealm(main);
+    case "welcome": return renderWelcome(main);
   }
 }
 
@@ -986,7 +996,11 @@ function renderNew(main) {
     },
   });
   if (modelError) {
-    c.errorEl.textContent = "No model for this realm: " + modelError + " Add a model credential in the realm settings (ANTHROPIC_API_KEY, or AIRTH_PROVIDER=openai|xai|ollama with AIRTH_MODEL and its key), or set it in Airth's environment.";
+    c.errorEl.replaceChildren(
+      h("span", { title: modelError }, "Airth has no model yet, so it cannot start a run. "),
+      h("a", { href: "#/welcome", onclick: () => { welcomeUi.step = WELCOME_STEPS.indexOf("model"); welcomeUi.setup = null; } }, "Connect Claude"),
+      " or ",
+      h("a", { href: `#/r/${enc(app.realm)}/settings/models` }, "choose another provider"), ".");
     c.errorEl.hidden = false;
   }
   const isCode = d && d.own_root && d.checks.length > 0;
@@ -2904,6 +2918,7 @@ function paletteItems() {
   }
   add("Go to", "Inbox", icon("inbox"), () => go("#/inbox"));
   add("Go to", "Usage", icon("chart"), () => go("#/usage"));
+  add("Go to", "Welcome guide", icon("compass"), () => { welcomeUi.step = 0; welcomeUi.setup = null; go("#/welcome"); });
   if (r) {
     add("Go to", "Objectives", icon("clock"), () => go(`#/r/${r}/objectives`));
     add("Go to", "Skills", icon("spark"), () => go(`#/r/${r}/skills`));
@@ -3214,6 +3229,177 @@ function renderNewRealm(main) {
     err,
     h("div", { class: "row-end spaced" }, h("button", { class: "btn primary", type: "button", onclick: create }, "Create realm")));
   name.focus();
+}
+
+// ---------- welcome guide ----------
+
+/** The first launch: what Airth is, then the few things it needs, one at a time. */
+const WELCOME_STEPS = ["hello", "you", "model", "realm", "tips"];
+const welcomeUi = { step: 0, setup: null, realm: null, star: "" };
+
+async function renderWelcome(main) {
+  if (!welcomeUi.setup) {
+    try { welcomeUi.setup = await api("setup"); } catch { welcomeUi.setup = { realms: app.realms.length, model_ready: false }; }
+    if (app.route.view !== "welcome") return;
+  }
+  const s = welcomeUi.setup;
+  const step = WELCOME_STEPS[welcomeUi.step] || "hello";
+  const next = () => { welcomeUi.step = Math.min(welcomeUi.step + 1, WELCOME_STEPS.length - 1); renderMain(); };
+  const back = () => { welcomeUi.step = Math.max(welcomeUi.step - 1, 0); renderMain(); };
+  const err = h("div", { class: "error-banner", hidden: true });
+  const fail = (e) => { err.textContent = e.message; err.hidden = false; };
+  const busy = async (btn, work) => {
+    btn.disabled = true;
+    try { await work(); } catch (e) { fail(e); } finally { btn.disabled = false; }
+  };
+  const actions = (...items) => h("div", { class: "welcome-actions" },
+    welcomeUi.step > 0 ? h("button", { class: "btn ghost", type: "button", onclick: back }, "Back") : h("span"),
+    h("div", { class: "row-start" }, ...items));
+  const skip = (label) => h("button", { class: "btn ghost", type: "button", onclick: next }, label || "Skip");
+
+  let body;
+  if (step === "hello") {
+    const point = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
+    body = [
+      h("div", { class: "logo welcome-logo", "aria-hidden": "true" }),
+      h("h1", null, "Welcome to Airth"),
+      h("p", { class: "lead" }, "Your personal agent. It works on your Mac with your files, apps and services, and asks you before anything that matters."),
+      h("div", { class: "welcome-points" },
+        point("folder", "Realms", "Each area of your life (work, a project, home) gets its own files, memory, keys and rules. Nothing crosses between them."),
+        point("send", "Runs", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own."),
+        point("star", "North Star", "Give a realm one goal. Airth helps you break it into milestones and keeps moving it forward.")),
+      h("p", { class: "muted small" }, "Setting up takes about two minutes."),
+      actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Get started")),
+    ];
+  } else if (step === "you") {
+    const name = h("input", { type: "text", placeholder: "Your first name", value: app.ownerName || "" });
+    const about = h("textarea", { rows: 3, placeholder: "e.g. Freelance designer in Lyon. I sell kits online on the side." });
+    const go_on = h("button", { class: "btn primary", type: "button" }, "Continue");
+    go_on.onclick = () => busy(go_on, async () => {
+      if (name.value.trim() || about.value.trim()) {
+        const owner = await api("owner");
+        const keep = Object.fromEntries(OWNER_LISTS.map(([k]) => [k, owner[k]]));
+        await api("owner", { ...keep, name: name.value.trim() || owner.name, about: about.value.trim() || owner.about }, "PUT");
+        app.ownerName = name.value.trim() || owner.name;
+        renderFoot();
+      }
+      next();
+    });
+    api("owner").then((o) => { if (!name.value) name.value = o.name || ""; if (!about.value) about.value = o.about || ""; }).catch(() => {});
+    body = [
+      h("h1", null, "A little about you"),
+      h("p", { class: "lead" }, "Airth uses this to write and decide the way you would. It stays on this Mac; you choose which realms see it."),
+      h("label", { class: "welcome-label" }, "Name", name),
+      h("label", { class: "welcome-label" }, "What you do", about),
+      err,
+      actions(skip(), go_on),
+    ];
+    setTimeout(() => name.focus());
+  } else if (step === "model") {
+    if (s.model_ready) {
+      body = [
+        h("h1", null, "Airth can think"),
+        h("p", { class: "lead" }, h("span", { class: "ok" }, "✓ "), "A model is set up. You can change it, or add a cheaper fast model, in each realm's settings under Models."),
+        actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
+      ];
+    } else {
+      const key = h("input", { type: "password", placeholder: "sk-ant-…", autocomplete: "off", spellcheck: "false" });
+      const save = h("button", { class: "btn primary", type: "button" }, "Check and save");
+      save.onclick = () => busy(save, async () => {
+        welcomeUi.setup = await api("setup/key", { key: key.value });
+        flash("Key saved");
+        next();
+      });
+      key.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); });
+      body = [
+        h("h1", null, "Connect a model"),
+        h("p", { class: "lead" }, "Airth thinks with Claude, through your own Anthropic account: you pay Anthropic directly for what you use."),
+        h("ol", { class: "welcome-steps" },
+          h("li", null, "Open ", h("a", { href: "https://console.anthropic.com/settings/keys", target: "_blank", rel: "noopener" }, "console.anthropic.com/settings/keys"), " and sign in."),
+          h("li", null, "Create a key, copy it, and paste it here.")),
+        h("label", { class: "welcome-label" }, "Anthropic API key", key),
+        h("p", { class: "muted small" }, "Airth checks the key, then keeps it on this Mac only (in ~/.airth, readable by you alone) for all your realms. The model never sees it. Prefer OpenAI, Grok, DeepSeek, Mistral, OpenRouter or a local Ollama model? Skip this and pick one in a realm's settings."),
+        err,
+        actions(skip("Later"), save),
+      ];
+      setTimeout(() => key.focus());
+    }
+  } else if (step === "realm") {
+    if (welcomeUi.realm || s.realms > 0) {
+      const n = welcomeUi.realm ? 1 : s.realms;
+      body = [
+        h("h1", null, welcomeUi.realm ? `“${welcomeUi.realm}” is ready` : "Your realms are ready"),
+        h("p", { class: "lead" }, welcomeUi.realm ? "Your first realm exists, with a private folder of its own." : `You already have ${n} realm${n > 1 ? "s" : ""}. Add more anytime from the realm menu, top left.`),
+        actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
+      ];
+    } else {
+      const name = h("input", { type: "text", value: "personal", autocomplete: "off", spellcheck: "false" });
+      name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
+      const desc = h("input", { type: "text", placeholder: "e.g. My personal life: admin, health, side projects" });
+      const star = h("input", { type: "text", placeholder: "Optional, e.g. “Run a half marathon in March”" });
+      const create = h("button", { class: "btn primary", type: "button" }, "Create realm");
+      create.onclick = () => busy(create, async () => {
+        const r = await api("realms", { name: name.value.trim(), description: desc.value.trim() });
+        welcomeUi.realm = r.name;
+        welcomeUi.star = star.value.trim();
+        await refreshRealms();
+        renderSidebar();
+        next();
+      });
+      body = [
+        h("h1", null, "Your first realm"),
+        h("p", { class: "lead" }, "A realm is one area of your life. Start with one; add others (work, a client, a project) whenever you like."),
+        h("label", { class: "welcome-label" }, "Name", name, h("span", { class: "muted small" }, "Lowercase letters, digits and dashes.")),
+        h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every run of the realm.")),
+        h("label", { class: "welcome-label" }, "North Star", star, h("span", { class: "muted small" }, "The one goal of this realm. Airth will ask you a few questions to sharpen it.")),
+        err,
+        actions(create),
+      ];
+      setTimeout(() => desc.focus());
+    }
+  } else {
+    const tip = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
+    const mac = document.documentElement.dataset.shell === "mac";
+    const done = h("button", { class: "btn primary", type: "button" }, welcomeUi.star && s.model_ready ? "Define my North Star" : "Start using Airth");
+    done.onclick = () => busy(done, async () => {
+      try { localStorage.setItem("airth-welcomed", "1"); } catch {}
+      const realm = welcomeUi.realm || preferredRealm();
+      const star = welcomeUi.star;
+      Object.assign(welcomeUi, { step: 0, setup: null, realm: null, star: "" });
+      if (!realm) return go("#/realms/new");
+      go(`#/r/${enc(realm)}`);
+      if (star) {
+        app.realmDetail = await api(`${realmPath(realm)}/northstar`, { goal: star, why: "" }, "PUT");
+        if (app.realmDetail.model) await startNorthStarRun("brainstorm", realm);
+        else { flash("Connect a model in the realm's settings to define the North Star with Airth."); renderMain(); renderSidebar(); }
+      }
+    });
+    body = [
+      h("h1", null, "You're set"),
+      h("p", { class: "lead" }, "A few things worth knowing:"),
+      h("div", { class: "welcome-points" },
+        tip("pencil", "New run", "Ask for anything in plain words: “sort my downloads”, “draft a reply to Marc”, “plan my week”."),
+        tip("inbox", "Inbox", "When Airth needs your OK, or finishes something, it lands here (and in a notification)."),
+        tip("clock", "Objectives", "Recurring work: every morning, when a file changes, or on a webhook."),
+        tip("world", "Skills & connectors", "Connect Notion, Linear, Stripe… or install skills, per realm."),
+        tip("search", modKey + "K", "Find a run, a page or an action from anywhere in the app."),
+        mac && tip("window", "⌥⇧A", "Shows or hides Airth from any app. Closing the window keeps Airth in the menu bar.")),
+      err,
+      actions(done),
+    ];
+  }
+
+  main.append(h("div", { class: "page welcome" },
+    h("div", { class: "welcome-inner" },
+      h("div", { class: "welcome-dots", "aria-label": `Step ${welcomeUi.step + 1} of ${WELCOME_STEPS.length}` },
+        WELCOME_STEPS.map((_, i) => h("span", { class: i === welcomeUi.step ? "on" : i < welcomeUi.step ? "done" : "" }))),
+      h("div", { class: "welcome-card" }, ...body),
+      welcomeUi.step < WELCOME_STEPS.length - 1 && h("button", { class: "welcome-skip", type: "button", onclick: () => {
+        try { localStorage.setItem("airth-welcomed", "1"); } catch {}
+        Object.assign(welcomeUi, { step: 0, setup: null, realm: null, star: "" });
+        const r = preferredRealm();
+        go(r ? `#/r/${enc(r)}` : "#/realms/new");
+      } }, "Skip the guide"))));
 }
 
 // ---------- polling ----------

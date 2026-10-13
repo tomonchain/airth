@@ -140,6 +140,8 @@ airth service install                               # runs in the background, st
 
 Open **Airth.app** from Spotlight, Launchpad or the Dock. It is a native app with its own window: ⌥⇧A shows or hides it from anywhere, and closing the window keeps Airth in the menu bar. Use 🎙 in the message box to dictate. `airth ui` opens the same app in your browser.
 
+The first time, a short guide walks you through it: who you are, your Anthropic API key (checked, then kept in `~/.airth/secrets.env` for every realm), and your first realm with its North Star. Reopen it anytime with ⌘K → Welcome guide.
+
 With your approval, Airth works with your Mac apps: Calendar, Reminders, Notes, Mail (it only prepares drafts; you send them), Safari tabs, the clipboard, and opening apps and links. The realm's `apps` rule decides; answer "Allow Calendar for this run" to stop being asked about one app.
 
 **Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version).

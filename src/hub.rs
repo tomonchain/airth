@@ -141,6 +141,37 @@ impl Hub {
         })
     }
 
+    /// Whether a model is set up for every realm (shared settings or the
+    /// environment): what the welcome guide checks before any realm exists.
+    pub fn shared_model_ready(&self) -> bool {
+        let shared = self.home.provider_settings().unwrap_or_default();
+        let get = |key: &str| {
+            shared
+                .iter()
+                .find(|(k, v)| k == key && !v.is_empty())
+                .map(|(_, v)| v.clone())
+                .or_else(|| std::env::var(key).ok())
+        };
+        crate::models::from_settings(&get).is_ok()
+    }
+
+    /// Check an Anthropic API key with the API (listing models is free),
+    /// then keep it for every realm.
+    pub fn set_shared_anthropic_key(&self, key: &str) -> Result<()> {
+        let key = key.trim();
+        if key.is_empty() {
+            bail!("paste your API key");
+        }
+        if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            bail!("an API key has no spaces");
+        }
+        crate::models::list_models("anthropic", &|k| {
+            (k == "ANTHROPIC_API_KEY").then(|| key.to_string())
+        })
+        .map_err(|e| anyhow::anyhow!("Anthropic did not accept this key ({e})"))?;
+        self.home.set_provider_setting("ANTHROPIC_API_KEY", key)
+    }
+
     /// The model for a choice like `deepseek/deepseek-chat`, built with the
     /// realm's credential for that provider only. Errors say what is missing.
     pub fn chosen_model(&self, realm: &Realm, choice: &str) -> Result<Arc<dyn Model>> {
@@ -1677,6 +1708,15 @@ mod tests {
             seen,
             systems,
         )
+    }
+
+    #[test]
+    fn a_shared_key_is_checked_before_it_is_kept() {
+        let f = fixture();
+        let (hub, _, _) = make_hub(&f.home, vec![]);
+        assert!(hub.set_shared_anthropic_key("  ").is_err());
+        assert!(hub.set_shared_anthropic_key("sk-ant bad").is_err());
+        assert!(f.home.provider_settings().unwrap().is_empty());
     }
 
     #[test]
