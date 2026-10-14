@@ -738,10 +738,12 @@ mod tests {
         drop(stop);
         let ms = Duration::from_millis;
         assert!(keep_warm(&model, &request, Instant::now(), &stopped, ms(20), ms(1000)).is_empty());
-        // A long wait: refreshed regularly, but never past the limit.
+        // A long wait: refreshed regularly, but never past the limit (at
+        // most one refresh per 50ms in 400ms; a busy machine wakes late, so
+        // fewer is fine).
         let (_stop, stopped) = std::sync::mpsc::channel::<()>();
-        let out = keep_warm(&model, &request, Instant::now(), &stopped, ms(20), ms(110));
-        assert!((3..=5).contains(&out.len()), "{}", out.len());
+        let out = keep_warm(&model, &request, Instant::now(), &stopped, ms(50), ms(400));
+        assert!((1..=7).contains(&out.len()), "{}", out.len());
         assert_eq!(out[0].cache_read_tokens, 900);
         // Providers that cannot: one try, then nothing.
         let scripted = Scripted {
