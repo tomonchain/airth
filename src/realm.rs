@@ -198,6 +198,30 @@ impl Realm {
         Ok(())
     }
 
+    /// Ids of the runs the owner archived (hidden from the main list). Kept
+    /// apart from the runs for the same reason as the titles.
+    pub fn archived_runs(&self) -> std::collections::BTreeSet<String> {
+        std::fs::read_to_string(self.dir.join("run-archived.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    /// Archive a run, or bring it back.
+    pub fn set_run_archived(&self, run: &str, archived: bool) -> Result<()> {
+        let mut ids = self.archived_runs();
+        if archived {
+            ids.insert(run.to_string());
+        } else {
+            ids.remove(run);
+        }
+        let path = self.dir.join("run-archived.json");
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(&ids)?)?;
+        std::fs::rename(&tmp, &path)?;
+        Ok(())
+    }
+
     pub(crate) fn secrets_path(&self) -> PathBuf {
         self.dir.join("secrets.env")
     }
@@ -390,6 +414,17 @@ mod tests {
         assert_eq!(r.run_titles().get("run1").unwrap(), "Kit launch plan");
         r.set_run_title("run1", "   ").unwrap();
         assert!(!r.run_titles().contains_key("run1"));
+    }
+
+    #[test]
+    fn runs_are_archived_and_restored() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = realm(dir.path());
+        assert!(r.archived_runs().is_empty());
+        r.set_run_archived("run1", true).unwrap();
+        assert!(r.archived_runs().contains("run1"));
+        r.set_run_archived("run1", false).unwrap();
+        assert!(r.archived_runs().is_empty());
     }
 
     #[test]

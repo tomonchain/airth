@@ -869,6 +869,23 @@ impl Hub {
         Ok(state)
     }
 
+    /// Delete a chat for good: its file, its name and archive mark, and its
+    /// worktree if the change is still open. An adopted change stays.
+    pub fn delete_run(&self, realm: &Realm, run: &str) -> Result<()> {
+        let mut state = self.load_run(realm, run)?;
+        let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
+        if let Some(change) = state.change.as_mut()
+            && change.status == ChangeStatus::Open
+        {
+            isolation::discard(change)?;
+        }
+        let path = state.path().context("this run is not saved")?.to_path_buf();
+        std::fs::remove_file(path)?;
+        realm.set_run_title(&state.id, "")?;
+        realm.set_run_archived(&state.id, false)?;
+        Ok(())
+    }
+
     /// Where a run works and what it may reach. Every run is denied the Airth
     /// home and the other realms' roots; an isolated run may read (not write)
     /// the owner's checkout, and write only its worktree and the git data it
@@ -2127,6 +2144,30 @@ mod tests {
         let _lock = RunLock::acquire(&f.realm.runs_dir(), &state.id).unwrap();
         assert!(hub.is_live(&f.realm, &state.id));
         assert!(hub.follow_up(&f.realm, &state.id, "hi").is_err());
+    }
+
+    #[test]
+    fn deleting_a_run_removes_it_and_its_marks() {
+        let f = fixture();
+        let hub = Hub::new(f.home.clone());
+        let state = hub.create_run(&f.realm, "obj").unwrap();
+        f.realm.set_run_title(&state.id, "Name").unwrap();
+        f.realm.set_run_archived(&state.id, true).unwrap();
+        hub.delete_run(&f.realm, &state.id).unwrap();
+        assert!(hub.runs(&f.realm).unwrap().is_empty());
+        assert!(f.realm.run_titles().is_empty());
+        assert!(f.realm.archived_runs().is_empty());
+        assert!(hub.delete_run(&f.realm, &state.id).is_err());
+    }
+
+    #[test]
+    fn live_runs_cannot_be_deleted() {
+        let f = fixture();
+        let hub = Hub::new(f.home.clone());
+        let state = hub.create_run(&f.realm, "obj").unwrap();
+        let _lock = RunLock::acquire(&f.realm.runs_dir(), &state.id).unwrap();
+        assert!(hub.delete_run(&f.realm, &state.id).is_err());
+        assert_eq!(hub.runs(&f.realm).unwrap().len(), 1);
     }
 
     #[test]

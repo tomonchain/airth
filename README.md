@@ -207,7 +207,7 @@ airth ui
 
 This opens Airth in your browser, served locally on `127.0.0.1`. From there you can:
 - switch realms;
-- start chats and watch them live: reasoning, tool calls and results;
+- start chats and watch them live: reasoning, tool calls and results; archive or delete the ones you are done with;
 - approve or deny each step that needs it, with an optional reason the agent sees;
 - follow each chat's plan, and resume chats that did not finish;
 - set up routines, and read your inbox and the daily summary;

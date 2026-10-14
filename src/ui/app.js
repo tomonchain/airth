@@ -66,6 +66,7 @@ const ICON = {
   books: TB("M5 5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zm4 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zM5 8h4m0 8h4m.803-11.44l2.184-.53c.562-.135 1.133.19 1.282.732l3.695 13.418a1.02 1.02 0 0 1-.634 1.219l-.133.041l-2.184.53c-.562.135-1.133-.19-1.282-.732L13.036 5.82a1.02 1.02 0 0 1 .634-1.219zM14 9l4-1m-2 8l3.923-.98"),
   download: TB("M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5l5-5m-5-7v12"),
   trash: TB("M4 7h16m-10 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"),
+  archive: TB("M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"),
   refresh: TB("M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4m-4 4a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"),
   check: TB("m5 12l5 5L20 7"),
   x: TB("M18 6L6 18M6 6l12 12"),
@@ -276,6 +277,7 @@ const app = {
   realm: null, // current realm name
   realmDetail: null, // settings of the current realm
   runs: [],
+  showArchived: false, // the sidebar lists archived chats instead
   route: { view: "home" },
   run: null, // last full response for the current run
   version: null,
@@ -464,7 +466,10 @@ function renderRunList() {
   const list = $("#run-list");
   list.replaceChildren();
   if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No chats yet."));
-  const runs = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  const all = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  const archivedCount = all.filter((r) => r.archived).length;
+  const runs = all.filter((r) => app.showArchived ? r.archived : !r.archived);
+  if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" }, app.showArchived ? "No archived chats." : "All chats are archived."));
   const focus = focusOn();
   let group = null;
   for (const r of runs) {
@@ -481,7 +486,55 @@ function renderRunList() {
           ondblclick: (e) => { e.preventDefault(); editInPlace(e.currentTarget, r.id, runName(r)); } },
         focus && r.focus && h("span", { class: "ns-star small", "aria-hidden": "true" }, "★"),
         h("span", { class: "obj" }, runName(r)),
+        !r.live && runActions(r),
         runMark(r)));
+  }
+  if (archivedCount || app.showArchived) {
+    list.append(h("button", { class: "run-archive-toggle", type: "button",
+      onclick: () => { app.showArchived = !app.showArchived; renderRunList(); } },
+      app.showArchived ? "← Back to chats" : `Archived (${archivedCount})`));
+  }
+}
+
+/** Hover buttons of a sidebar chat: archive (or restore) and delete (asks twice). */
+function runActions(r) {
+  const stop = (fn) => (e) => { e.preventDefault(); e.stopPropagation(); fn(e.currentTarget); };
+  const del = h("span", { class: "run-act danger", role: "button", tabindex: "0", title: "Delete this chat for good",
+    onclick: stop((el) => {
+      if (el.dataset.sure) { deleteRun(r.id); return; }
+      el.dataset.sure = "1";
+      el.classList.add("sure");
+      el.textContent = "Delete?";
+      setTimeout(() => { if (el.isConnected) { delete el.dataset.sure; el.classList.remove("sure"); el.replaceChildren(icon("trash")); } }, 3000);
+    }) }, icon("trash"));
+  const arch = h("span", { class: "run-act", role: "button", tabindex: "0", title: r.archived ? "Restore this chat" : "Archive this chat",
+    onclick: stop(() => archiveRun(r.id, !r.archived)) }, icon("archive"));
+  for (const el of [arch, del]) el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") el.click(); });
+  return h("span", { class: "run-acts" }, arch, del);
+}
+
+async function archiveRun(id, archived) {
+  try {
+    await api(`${runPath(app.realm, id)}/archive`, { archived });
+    const run = app.runs.find((r) => r.id === id);
+    if (run) run.archived = archived;
+    if (app.route.view === "run" && app.route.id === id && archived) go(`#/r/${enc(app.realm)}`);
+    renderRunList();
+    flash(archived ? "Chat archived" : "Chat restored");
+  } catch (e) {
+    flash(e.message, true);
+  }
+}
+
+async function deleteRun(id) {
+  try {
+    await api(runPath(app.realm, id), undefined, "DELETE");
+    app.runs = app.runs.filter((r) => r.id !== id);
+    if (app.route.view === "run" && app.route.id === id) go(`#/r/${enc(app.realm)}`);
+    renderRunList();
+    flash("Chat deleted");
+  } catch (e) {
+    flash(e.message, true);
   }
 }
 

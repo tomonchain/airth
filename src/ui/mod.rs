@@ -1010,6 +1010,20 @@ impl App {
                 realm.set_run_title(id, body["title"].as_str().unwrap_or_default())?;
                 json_response(200, json!({"title": realm.run_titles().get(*id)}))
             }
+            (Method::Post, ["realms", r, "runs", id, "archive"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                self.ensure_idle(r, id)?;
+                self.hub.load_run(&realm, id)?;
+                let archived = body["archived"].as_bool().unwrap_or(true);
+                realm.set_run_archived(id, archived)?;
+                json_response(200, json!({"archived": archived}))
+            }
+            (Method::Delete, ["realms", r, "runs", id]) => {
+                self.ensure_idle(r, id)?;
+                self.hub.delete_run(&self.realm(r)?, id)?;
+                ok()
+            }
             (Method::Get, ["realms", r, "runs", id, "diff"]) => {
                 let diff = self.hub.diff(&self.realm(r)?, id)?;
                 json_response(200, json!({"diff": truncate_diff(diff)}))
@@ -1713,6 +1727,7 @@ impl App {
     fn runs(&self, realm: &Realm) -> Result<Value> {
         let registry = self.registry.lock().unwrap();
         let titles = realm.run_titles();
+        let archived = realm.archived_runs();
         let runs: Vec<Value> = self
             .hub
             .runs(realm)?
@@ -1724,6 +1739,7 @@ impl App {
                 json!({
                     "id": r.id,
                     "title": titles.get(&r.id),
+                    "archived": archived.contains(&r.id),
                     "objective": r.objective,
                     "status": r.display_status(),
                     "live": r.live || live.is_some(),
