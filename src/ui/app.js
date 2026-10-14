@@ -3922,28 +3922,40 @@ async function renderInbox(main) {
   inner.append(h("h2", null, "Last 24 hours"));
   if (!summary.length) inner.append(h("div", { class: "card muted small pad" }, "Nothing happened."));
   for (const r of summary) {
-    const line = (mark, l, extra) => h("button", { class: "list-row link", type: "button", onclick: () => open(r.realm, l.id) },
-      h("span", { class: "mark" }, mark),
-      h("div", { class: "grow" }, h("div", null, l.objective, l.origin && h("span", { class: "muted small" }, " · " + l.origin)),
-        (extra || l.report) && h("div", { class: "muted small" }, extra || l.report)));
-    inner.append(h("div", { class: "card" },
-      h("div", { class: "summary-head" }, h("span", { class: "strong" }, r.realm),
+    const line = (mark, l, extra) => h("button", { class: "inbox-row link", type: "button", onclick: () => open(r.realm, l.id) },
+      h("span", { class: "inbox-mark" }, mark),
+      h("div", { class: "grow" }, 
+        h("div", { class: "inbox-title" }, l.objective, l.origin && h("span", { class: "muted small" }, " · " + l.origin)),
+        (extra || l.report) && h("div", { class: "inbox-detail" }, extra || l.report)));
+    const sections = [
+      r.to_review.length > 0 && h("div", { class: "inbox-section" },
+        h("div", { class: "inbox-section-label" }, "To review"),
+        r.to_review.map((l) => line("⧗", l, "Change waiting for your review"))),
+      r.unfinished.length > 0 && h("div", { class: "inbox-section" },
+        h("div", { class: "inbox-section-label" }, "Can resume"),
+        r.unfinished.map((l) => line("↻", l, `${l.status}: can be resumed`))),
+      r.recent.length > 0 && h("div", { class: "inbox-section" },
+        h("div", { class: "inbox-section-label" }, "Recent"),
+        r.recent.map((l) => line("✓", l)))
+    ].filter(Boolean);
+    
+    inner.append(h("div", { class: "card inbox-card" },
+      h("div", { class: "inbox-realm-head" }, h("span", { class: "strong" }, r.realm),
         h("span", { class: "muted small" }, `${r.runs} chat${r.runs === 1 ? "" : "s"} · ${r.completed} completed · ${r.failed} failed · ${r.stopped} stopped`)),
-      r.to_review.map((l) => line("⧗", l, "Change waiting for your review")),
-      r.unfinished.map((l) => line("↻", l, `${l.status}: can be resumed`)),
-      r.recent.map((l) => line("✓", l)),
-      r.objectives.filter((o) => o.enabled).length > 0 && h("div", { class: "muted small pad-top" },
+      sections.length > 0 ? h("div", { class: "inbox-content" }, sections)
+        : h("div", { class: "muted small pad" }, "No activity"),
+      r.objectives.filter((o) => o.enabled).length > 0 && h("div", { class: "inbox-objectives" },
         "Objectives: ", r.objectives.filter((o) => o.enabled).map((o) => o.id + (o.next_at ? ` (${when(o.next_at)})` : "")).join(" · "))));
   }
 
   inner.append(h("h2", null, "Notifications"));
-  inner.append(notes.length ? h("div", { class: "card" }, notes.slice(0, 100).map((n) =>
-    h("button", { class: "list-row link" + (n.read ? "" : " unread"), type: "button", onclick: () => open(n.realm, n.run) },
-      h("span", { class: "mark " + n.kind }, KIND_MARK[n.kind] || "•"),
+  inner.append(notes.length ? h("div", { class: "card inbox-notifications" }, notes.slice(0, 100).map((n) =>
+    h("button", { class: "inbox-notification" + (n.read ? "" : " unread"), type: "button", onclick: () => open(n.realm, n.run) },
+      h("span", { class: "inbox-kind " + n.kind }, KIND_MARK[n.kind] || "•"),
       h("div", { class: "grow" },
-        h("div", null, n.title),
-        n.body && h("div", { class: "muted small clamp" }, n.body),
-        h("div", { class: "muted small" }, n.realm + " · " + ago(n.created_at))))))
+        h("div", { class: "inbox-notif-title" }, n.title),
+        n.body && h("div", { class: "inbox-notif-body" }, n.body),
+        h("div", { class: "inbox-notif-meta" }, n.realm + " · " + ago(n.created_at))))))
     : h("div", { class: "card muted small pad" }, "No notifications."));
   if (notes.some((n) => !n.read)) {
     api("inbox/read", {}).then(() => { if (app.info) app.info.unread = 0; renderSidebar(); }).catch(() => {});
