@@ -98,11 +98,13 @@ impl Anthropic {
             "system": system,
             "messages": request.messages.iter().map(encode_message).collect::<Vec<_>>(),
             "tools": tools,
-            "thinking": {"type": "adaptive", "display": "summarized"},
-            "output_config": {"effort": effort},
             // Automatic prompt caching: the history prefix is re-sent every iteration.
             "cache_control": {"type": "ephemeral"},
         });
+        if adaptive_thinking(&self.model) {
+            body["thinking"] = json!({"type": "adaptive", "display": "summarized"});
+            body["output_config"] = json!({"effort": effort});
+        }
         if self.uses_fallbacks() {
             body["fallbacks"] = json!("default");
         }
@@ -255,6 +257,30 @@ fn decode_response(resp: &Value) -> Result<ModelResponse> {
     })
 }
 
+/// Whether `model` takes adaptive thinking and an effort: Claude 4.6 and
+/// later (Haiku from 5). Older ones, like Haiku 4.5, refuse them. Names Airth
+/// does not recognize (a proxy's, say) get them.
+fn adaptive_thinking(model: &str) -> bool {
+    let Some(rest) = model.strip_prefix("claude-") else {
+        return true;
+    };
+    let mut parts = rest.split('-');
+    let family = parts.next().unwrap_or_default();
+    let number = |p: Option<&str>| {
+        p.filter(|p| p.len() <= 2)
+            .and_then(|p| p.parse::<u32>().ok())
+    };
+    let Some(major) = number(parts.next()) else {
+        return true;
+    };
+    let minor = number(parts.next()).unwrap_or(0);
+    match family {
+        "haiku" => major >= 5,
+        "opus" | "sonnet" => (major, minor) >= (4, 6),
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,6 +311,35 @@ mod tests {
         assert_eq!(quick["system"].as_array().unwrap().len(), 1);
         assert_eq!(quick["output_config"]["effort"], "low");
         assert_eq!(quick["max_tokens"], QUICK_MAX_TOKENS);
+    }
+
+    #[test]
+    fn older_models_get_no_adaptive_thinking() {
+        for model in [
+            "claude-opus-5-5",
+            "claude-sonnet-4-6",
+            "claude-fable-5-1",
+            "custom",
+        ] {
+            assert!(adaptive_thinking(model), "{model}");
+        }
+        for model in [
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-5",
+            "claude-opus-4-20250514",
+        ] {
+            assert!(!adaptive_thinking(model), "{model}");
+        }
+        let haiku = Anthropic::from_settings(&|k| match k {
+            "ANTHROPIC_API_KEY" => Some("k".into()),
+            "AIRTH_MODEL" => Some("claude-haiku-4-5".into()),
+            _ => None,
+        })
+        .unwrap();
+        let messages = [Message::user_text("hi")];
+        let body = haiku.body(&ModelRequest::new("x", &messages, &[]));
+        assert!(body.get("thinking").is_none() && body.get("output_config").is_none());
     }
 
     #[test]
