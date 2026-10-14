@@ -330,7 +330,7 @@ src/
 Airth is **fair source**, under the [Functional Source License 1.1, Apache 2.0 future license](LICENSE.md) (FSL-1.1-ALv2):
 
 - **Free to use**, for yourself or inside your company: install it, run it, read the code, change it, share your changes.
-- **Not for competing products:** you may not offer Airth, or something built from it with the same purpose, as a commercial product or service (for example, hosted Airth). The hosted Airth offer is ours.
+- **Not for competing products:** you may not offer Airth, or something built from it with the same purpose, as a commercial product or service (for example, hosted Airth). The hosted Airth offer is Hedgen Ltd's.
 - **Becomes open source:** each version is also licensed under Apache 2.0 two years after its release.
 
-"Airth" is our name: forks must use another one.
+Airth is made by Hedgen Ltd (United Kingdom), which holds the copyright and the name "Airth": forks must use another one.

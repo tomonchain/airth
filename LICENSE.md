@@ -6,7 +6,7 @@ FSL-1.1-ALv2
 
 ## Notice
 
-Copyright 2026 tomonchain (github.com/tomonchain)
+Copyright 2026 Hedgen Ltd
 
 ## Terms and Conditions
 
