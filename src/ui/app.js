@@ -3570,7 +3570,7 @@ function updateWidget() {
   if (u.phase === "ready")
     return h("div", { class: "update ready" },
       h("div", { class: "strong" }, "New update available"),
-      h("details", null, h("summary", { class: "muted small" }, `${a.short} · ${what} · tests passed`), changes),
+      h("details", null, h("summary", { class: "muted small" }, `${a.short} · ${what} · ${a.release ? "signature verified" : "tests passed"}`), changes),
       h("button", { class: "btn primary", type: "button", onclick: restartToUpdate }, "Restart to update"));
   if (u.phase === "preparing" || u.phase === "checking")
     return h("div", { class: "update" }, h("span", { class: "spinner" }),
@@ -3578,7 +3578,7 @@ function updateWidget() {
   if (u.phase === "failed")
     return h("div", { class: "update failed" },
       h("div", { class: "strong" }, `Update ${a.short} not installed`),
-      h("details", null, h("summary", { class: "muted small" }, "Its build or tests failed"), h("pre", { class: "out small" }, u.error || "")),
+      h("details", null, h("summary", { class: "muted small" }, a.release ? "It could not be downloaded or verified" : "Its build or tests failed"), h("pre", { class: "out small" }, u.error || "")),
       h("button", { class: "btn", type: "button", onclick: () => api("update/check", {}).then(refreshInfo) }, "Try again"));
   return null;
 }

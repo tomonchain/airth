@@ -327,6 +327,12 @@ fn restart(registry: Registry, info_path: std::path::PathBuf, exe: std::path::Pa
     {
         use std::os::unix::process::CommandExt;
         let mut args: Vec<String> = std::env::args().skip(1).collect();
+        // Started as Airth.app (no arguments): come back as the app.
+        if args.is_empty() && exe.to_string_lossy().contains(".app/Contents/MacOS/") {
+            let err = std::process::Command::new(&exe).exec();
+            eprintln!("restart failed: {err}");
+            std::process::exit(1);
+        }
         // Same port (so the page reconnects), and no new browser tab.
         if let Some(i) = args.iter().position(|a| a == "--port") {
             args.drain(i..(i + 2).min(args.len()));
@@ -1344,8 +1350,8 @@ impl App {
             .into_iter()
             .filter(|r| !r.config.archived)
             .collect();
-        let model_ready = self.hub.shared_model_ready()
-            || realms.iter().any(|r| self.hub.model_for(r).is_ok());
+        let model_ready =
+            self.hub.shared_model_ready() || realms.iter().any(|r| self.hub.model_for(r).is_ok());
         Ok(json!({ "realms": realms.len(), "model_ready": model_ready }))
     }
 

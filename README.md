@@ -144,7 +144,7 @@ The first time, a short guide walks you through it: who you are, your Anthropic 
 
 With your approval, Airth works with your Mac apps: Calendar, Reminders, Notes, Mail (it only prepares drafts; you send them), Safari tabs, the clipboard, and opening apps and links. The realm's `apps` rule decides; answer "Allow Calendar for this run" to stop being asked about one app.
 
-**Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version).
+**Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version). The app downloaded from GitHub Releases updates from the published releases instead: it checks each new version's signature before offering it (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Integrations
 

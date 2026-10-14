@@ -25,27 +25,47 @@ fn launcher_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join("Applications/Airth.app"))
 }
 
-/// The binary inside the app bundle: the one the app, the service and (via a
-/// symlink) the `airth` command all run, so an update replaces all three.
-pub fn bundle_binary() -> Result<PathBuf> {
-    Ok(launcher_path()?.join("Contents/MacOS/airth"))
-}
-
-/// Build `~/Applications/Airth.app` around `exe`: Info.plist (with the
-/// reasons macOS shows when Airth asks for the microphone, dictation or to
-/// control other apps), the icon, the binary, an ad-hoc signature.
+/// Build `~/Applications/Airth.app` around `exe`, ad-hoc signed. A release
+/// app is already a signed bundle: it is used where it is (rebuilding it
+/// would break its signature).
 fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
+    if crate::update::from_releases()
+        && let Some(app) = bundle_of(exe)
+    {
+        return Ok(app);
+    }
     let app = launcher_path()?;
-    let contents = app.join("Contents");
-    let binary = bundle_binary()?;
     // Keep the binary if we are it (reinstalling from the app's own binary).
     let staged = std::env::temp_dir().join(format!("airth-{}", std::process::id()));
     std::fs::copy(exe, &staged)?;
     let _ = std::fs::remove_dir_all(&app);
+    let result = write_bundle(&app, &staged, DEV_IDENTIFIER);
+    let _ = std::fs::remove_file(&staged);
+    result?;
+    sign(&app);
+    Ok(app)
+}
+
+/// The Airth.app `exe` sits in, if any.
+fn bundle_of(exe: &std::path::Path) -> Option<PathBuf> {
+    let path = exe.to_string_lossy();
+    path.find(".app/Contents/MacOS/")
+        .map(|i| PathBuf::from(&path[..i + 4]))
+}
+
+/// The bundle id of an Airth.app built on this Mac (`airth service install`).
+const DEV_IDENTIFIER: &str = "local.airth.app";
+/// The bundle id of the published app.
+pub const RELEASE_IDENTIFIER: &str = "io.github.tomonchain.airth";
+
+/// Write Airth.app at `app` around a copy of `exe` (unsigned): Info.plist
+/// (with the reasons macOS shows when Airth asks for the microphone,
+/// dictation or to control other apps), the icon, the binary.
+pub fn write_bundle(app: &std::path::Path, exe: &std::path::Path, identifier: &str) -> Result<()> {
+    let contents = app.join("Contents");
     std::fs::create_dir_all(contents.join("MacOS"))?;
     std::fs::create_dir_all(contents.join("Resources"))?;
-    std::fs::rename(&staged, &binary).or_else(|_| std::fs::copy(&staged, &binary).map(|_| ()))?;
-    let _ = std::fs::remove_file(&staged);
+    std::fs::copy(exe, contents.join("MacOS/airth"))?;
     std::fs::write(
         contents.join("Info.plist"),
         format!(
@@ -55,7 +75,7 @@ fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
 <dict>
   <key>CFBundleName</key><string>Airth</string>
   <key>CFBundleDisplayName</key><string>Airth</string>
-  <key>CFBundleIdentifier</key><string>local.airth.app</string>
+  <key>CFBundleIdentifier</key><string>{identifier}</string>
   <key>CFBundleExecutable</key><string>airth</string>
   <key>CFBundleIconFile</key><string>Airth</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -71,12 +91,11 @@ fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
 </dict>
 </plist>
 "#,
+            identifier = escape(identifier),
             version = env!("CARGO_PKG_VERSION")
         ),
     )?;
-    write_icon(&contents.join("Resources/Airth.icns"))?;
-    sign(&app);
-    Ok(app)
+    write_icon(&contents.join("Resources/Airth.icns"))
 }
 
 /// Ad-hoc sign the bundle, so macOS keeps track of its permissions.
@@ -197,7 +216,10 @@ pub fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
         ServiceCmd::Install => {
             let current = std::env::current_exe()?.canonicalize()?;
             let app = install_app(&current)?;
-            let exe = bundle_binary()?;
+            // The binary inside the app bundle: the one the app, the service
+            // and (via a symlink) the `airth` command all run, so an update
+            // replaces all three.
+            let exe = app.join("Contents/MacOS/airth");
             // The `airth` command becomes a link to the app's binary, so the
             // command, the app and the service are always the same version.
             let invoked = std::env::current_exe()?;
@@ -282,14 +304,22 @@ pub fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
                 );
             }
             eprintln!(
-                "  updates: the app offers them when your Airth checkout has new commits (or `airth update`)"
+                "  updates: {}",
+                if crate::update::from_releases() {
+                    "the app offers each new release (or `airth update`)"
+                } else {
+                    "the app offers them when your Airth checkout has new commits (or `airth update`)"
+                }
             );
         }
         ServiceCmd::Uninstall => {
             let _ = Command::new("launchctl")
                 .args(["bootout", &format!("{}/{LABEL}", domain())])
                 .output();
-            let _ = std::fs::remove_dir_all(launcher_path()?);
+            // The app this built; a release app is the owner's to remove.
+            if !crate::update::from_releases() {
+                let _ = std::fs::remove_dir_all(launcher_path()?);
+            }
             if plist.exists() {
                 std::fs::remove_file(&plist)?;
                 eprintln!("removed the Airth service and app");

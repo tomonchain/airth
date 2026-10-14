@@ -1,0 +1,150 @@
+# Publish Airth for macOS when a version tag is pushed (git tag v0.2.0 &&
+# git push origin v0.2.0): test, build for Apple silicon and Intel, make
+# Airth.app, sign and notarize it (when the Apple secrets are set), and
+# publish a DMG (to install), a zip (for updates) and latest.json (what
+# running apps check). See docs/RELEASING.md.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    env:
+      AIRTH_CHANNEL: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^version = \"$version\"" Cargo.toml; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the version in Cargo.toml"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: |
+          git config --global user.name "Airth CI"
+          git config --global user.email "ci@airth.invalid"
+          cargo test --release --locked
+
+      - name: Build
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create -output dist/airth \
+            target/aarch64-apple-darwin/release/airth \
+            target/x86_64-apple-darwin/release/airth
+          target/aarch64-apple-darwin/release/airth release bundle --binary dist/airth --out dist/Airth.app
+
+      - name: Sign
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            echo "::warning::No Apple certificate: the app is not signed for distribution, macOS will warn when it is first opened"
+            codesign --force --sign - dist/Airth.app
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/airth.keychain-db"
+          security create-keychain -p ci "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p ci "$keychain"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          codesign --force --options runtime --timestamp \
+            --entitlements packaging/entitlements.plist \
+            --sign "$IDENTITY" dist/Airth.app
+          codesign --verify --strict --verbose=2 dist/Airth.app
+          echo "SIGNED=1" >> "$GITHUB_ENV"
+
+      - name: Notarize the app
+        if: env.SIGNED == '1'
+        env:
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          echo "$API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+          ditto -c -k --keepParent dist/Airth.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait
+          xcrun stapler staple dist/Airth.app
+
+      - name: Package
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          ditto -c -k --keepParent dist/Airth.app "dist/Airth-$VERSION.zip"
+          mkdir dist/dmg
+          cp -R dist/Airth.app dist/dmg/
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname Airth -srcfolder dist/dmg -ov -format UDZO "dist/Airth-$VERSION.dmg"
+          if [ "$SIGNED" = 1 ]; then
+            codesign --force --timestamp --sign "$IDENTITY" "dist/Airth-$VERSION.dmg"
+            xcrun notarytool submit "dist/Airth-$VERSION.dmg" \
+              --key "$RUNNER_TEMP/key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait
+            xcrun stapler staple "dist/Airth-$VERSION.dmg"
+          fi
+
+      - name: Release notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --no-merges --format=%s ${previous:+$previous..}"$GITHUB_REF_NAME" > dist/notes.txt
+          {
+            if [ "$SIGNED" != 1 ]; then
+              echo "> This build is not signed by Apple: the first time, open it with right-click → Open."
+              echo
+            fi
+            echo "Download **Airth-$VERSION.dmg**, open it and drag Airth to Applications. Airth then offers each new version on its own."
+            echo
+            echo "## Changes"
+            sed 's/^/- /' dist/notes.txt
+          } > dist/body.md
+
+      - name: Sign the update
+        env:
+          AIRTH_UPDATE_KEY: ${{ secrets.AIRTH_UPDATE_KEY }}
+        run: |
+          target/aarch64-apple-darwin/release/airth release sign "dist/Airth-$VERSION.zip" \
+            --version "$VERSION" \
+            --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/Airth-$VERSION.zip" \
+            --notes dist/notes.txt \
+            --out dist/latest.json
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Airth $VERSION" --notes-file dist/body.md \
+            "dist/Airth-$VERSION.dmg" "dist/Airth-$VERSION.zip" dist/latest.json
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/key.p8" "$RUNNER_TEMP/cert.p12"
+          security delete-keychain "$RUNNER_TEMP/airth.keychain-db" 2>/dev/null || true

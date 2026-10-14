@@ -19,6 +19,7 @@ mod objective;
 mod owner;
 mod permissions;
 mod realm;
+mod release;
 mod runtime;
 mod sandbox;
 mod scheduler;
@@ -136,6 +137,13 @@ enum Cmd {
         /// Go back to the version the last update replaced
         #[arg(long)]
         rollback: bool,
+    },
+    /// Publishing Airth: the app bundle, the update signature (used by the
+    /// release workflow)
+    #[command(hide = true)]
+    Release {
+        #[command(subcommand)]
+        command: release::ReleaseCmd,
     },
     /// Install or remove Airth as a login service, so objectives run while you are away (macOS)
     Service {
@@ -344,6 +352,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
             .map(|_| true)
         }
         Some(Cmd::Service { command }) => service::run(ctx, command),
+        Some(Cmd::Release { command }) => release::run(command),
         Some(Cmd::App) => desktop_app(ctx),
         Some(Cmd::Update { check, rollback }) => self_update(ctx, check, rollback),
         Some(Cmd::Objective { command }) => cli::objective(ctx, command),
