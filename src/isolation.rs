@@ -59,6 +59,10 @@ pub struct Change {
     /// The worktree the run works in.
     pub path: PathBuf,
     pub branch: String,
+    /// The branch of the checkout the chat started from (none when it was detached
+    /// or the chat predates this field). Adopting merges back into it.
+    #[serde(default)]
+    pub base_branch: Option<String>,
     /// The commit the worktree started from.
     pub base: String,
     /// The latest commit on the branch.
@@ -140,9 +144,17 @@ pub fn common_dir(repo: &Path) -> Result<PathBuf> {
     })
 }
 
+/// The branch checked out in `repo`, if any (none when HEAD is detached).
+fn current_branch(repo: &Path) -> Option<String> {
+    git(repo, &["symbolic-ref", "--short", "-q", "HEAD"])
+        .ok()
+        .filter(|b| !b.is_empty())
+}
+
 /// Create a worktree for run `id`, branched from the repository's HEAD.
 pub fn create(repo: &Path, worktrees_dir: &Path, id: &str) -> Result<Change> {
     let base = git(repo, &["rev-parse", "HEAD"]).context("the repository has no commits yet")?;
+    let base_branch = current_branch(repo);
     let branch = format!("airth/{id}");
     std::fs::create_dir_all(worktrees_dir)?;
     let path = worktrees_dir.join(id);
@@ -162,6 +174,7 @@ pub fn create(repo: &Path, worktrees_dir: &Path, id: &str) -> Result<Change> {
         repo: repo.to_path_buf(),
         path: path.canonicalize()?,
         branch,
+        base_branch,
         head: base.clone(),
         base,
         status: ChangeStatus::Open,
@@ -224,6 +237,15 @@ pub fn adopt(change: &mut Change, message: &str) -> Result<()> {
     }
     if !change.has_changes() {
         bail!("there is nothing to adopt: the run changed no files");
+    }
+    if let Some(base) = &change.base_branch {
+        let now = current_branch(&change.repo);
+        if now.as_deref() != Some(base.as_str()) {
+            bail!(
+                "your checkout is on {}, but this chat started from '{base}': switch back to '{base}' to adopt it",
+                now.map_or("no branch".to_string(), |b| format!("'{b}'"))
+            );
+        }
     }
     if let Err(e) = git(
         &change.repo,
@@ -321,6 +343,25 @@ pub(crate) mod tests {
         );
         assert!(!change.path.exists());
         assert!(adopt(&mut change, "again").is_err());
+    }
+
+    #[test]
+    fn adopt_requires_the_branch_the_chat_started_from() {
+        let repo = repo();
+        let wt = tempfile::tempdir().unwrap();
+        git(repo.path(), &["config", "user.name", "t"]).unwrap();
+        git(repo.path(), &["config", "user.email", "t@t"]).unwrap();
+        let mut change = create(repo.path(), wt.path(), "r3").unwrap();
+        let start = change.base_branch.clone().expect("a branch");
+        std::fs::write(change.path.join("a.txt"), "two\n").unwrap();
+        commit(&mut change, "run r3").unwrap();
+        git(repo.path(), &["checkout", "-q", "-b", "other"]).unwrap();
+        let err = adopt(&mut change, "adopt").unwrap_err().to_string();
+        assert!(err.contains(&start), "{err}");
+        assert_eq!(change.status, ChangeStatus::Open);
+        git(repo.path(), &["checkout", "-q", &start]).unwrap();
+        adopt(&mut change, "adopt").unwrap();
+        assert_eq!(change.status, ChangeStatus::Adopted);
     }
 
     #[test]
