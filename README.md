@@ -1,16 +1,37 @@
 # Airth
 
-A persistent, local-first personal agent, written in Rust. One owner, multiple realms, one intelligence. See [SPECS_V1.1.md](SPECS_V1.1.md) for the vision and roadmap, and [docs/decisions.md](docs/decisions.md) for how it is built.
+**A personal AI agent that works for you in the background, on your machine, inside the limits you set.**
+
+Give Airth a goal ("triage new issues every morning", "reach 100 sales by December") and it plans, acts, checks its own work and reports back. It runs locally, written in Rust, and keeps its memory between chats. One owner, multiple realms, one intelligence.
 
 Free to use, fair source: see [License](#license).
 
+## Why Airth
+
+- **Realms keep your life apart.** Your job, your company and a side project each get their own folder, permissions, memory and credentials. Nothing crosses between them, and the runtime enforces it (on macOS, commands run in a sandbox).
+- **You review before anything lands.** Each chat works in its own git worktree. You read the diff and the test results, then adopt or discard.
+- **It works on its own, within bounds.** Schedules, file watches and webhooks start work for you. What a run may do is decided in advance, and anything else waits for your approval.
+- **One goal at a time.** Set a North Star and Airth picks the next step toward it every day.
+- **Your keys, your models.** Claude, GPT, Grok, DeepSeek, Mistral, OpenRouter, or a fully local model with Ollama. Credentials are never shown to the model.
+- **It extends itself.** It can propose new skills, and you review and install them. It also connects to Notion, Linear, Stripe, GitHub and other MCP services.
+
+## Quick start
+
+You need [Rust](https://rustup.rs) and an [Anthropic API key](https://console.anthropic.com). Other providers work too, see [Configuration](#configuration).
+
 ```bash
+git clone https://github.com/tomonchain/airth && cd airth
+cargo install --path .                            # installs ~/.cargo/bin/airth
 export ANTHROPIC_API_KEY=...
-cargo run -- realm create airth --root . --description "Airth's own source code"
-cargo run -- doctor
-cargo run -- ui                                   # the app
-cargo run -- run "Identify and implement one small improvement to Airth."
+airth realm create myproject --root ~/code/myproject --description "My project"
+airth doctor                                      # checks the setup
+airth ui                                          # opens the app in your browser
+airth run "Find and fix one small bug, with a test."
 ```
+
+Then run `airth review last` to read what it changed, and `airth adopt <run>` to merge it. On a Mac, [Installing on a Mac](#installing-on-a-mac) adds a native app that starts at login.
+
+See [SPECS_V1.1.md](SPECS_V1.1.md) for the vision and roadmap, and [docs/decisions.md](docs/decisions.md) for how it is built.
 
 ## Realms
 
