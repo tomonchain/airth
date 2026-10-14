@@ -2208,13 +2208,16 @@ mod tests {
         );
         let shell = &state.events[2].result;
         assert!(shell.contains("[]"), "{shell}");
-        assert!(!shell.contains("work-token-value"), "{shell}");
+        // Reading the other realm's files from a command is only stopped by the sandbox.
         if crate::sandbox::available() {
+            assert!(!shell.contains("work-token-value"), "{shell}");
             assert!(!shell.contains("work-confidential"), "{shell}");
         }
-        let everything = format!("{:?}", seen.lock().unwrap());
-        assert!(!everything.contains("work-token-value"));
-
+        // What the model saw includes the command's output, so this too needs the sandbox.
+        if crate::sandbox::available() {
+            let everything = format!("{:?}", seen.lock().unwrap());
+            assert!(!everything.contains("work-token-value"));
+        }
         // The work realm itself can read its file, and never sees its token in clear.
         let (hub, _, systems) = make_hub(
             &f.home,

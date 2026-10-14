@@ -14,7 +14,26 @@ use std::path::{Path, PathBuf};
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 pub fn available() -> bool {
-    cfg!(target_os = "macos") && Path::new(SANDBOX_EXEC).exists()
+    cfg!(target_os = "macos") && Path::new(SANDBOX_EXEC).exists() && can_start()
+}
+
+#[cfg(not(test))]
+fn can_start() -> bool {
+    true
+}
+
+/// Tests may run inside another sandbox (a chat running the checks), where
+/// `sandbox-exec` is refused: there they count it as absent.
+#[cfg(test)]
+fn can_start() -> bool {
+    static USABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *USABLE.get_or_init(|| {
+        std::process::Command::new(SANDBOX_EXEC)
+            .args(["-p", "(version 1)(allow default)", "/usr/bin/true"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
 }
 
 pub fn program() -> &'static str {
