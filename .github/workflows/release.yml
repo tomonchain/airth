@@ -114,7 +114,9 @@ jobs:
       - name: Release notes
         run: |
           previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
-          git log --no-merges --format=%s ${previous:+$previous..}"$GITHUB_REF_NAME" > dist/notes.txt
+          # Every commit since the previous version, but the version bump itself.
+          git log --no-merges --format=%s ${previous:+$previous..}"$GITHUB_REF_NAME" \
+            | sed -E '/^Airth [0-9]+\.[0-9]+(\.[0-9]+)?$/d' > dist/notes.txt
           {
             if [ "$SIGNED" != 1 ]; then
               echo "> This build is not signed by Apple: the first time, open it with right-click → Open."
