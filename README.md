@@ -93,7 +93,7 @@ airth objective run morning-triage  # now, in this terminal
 
 Every run, started by an objective or not, can have a **budget**: `--max-iterations`, `--max-tokens`, `--max-minutes`.
 
-Objectives run while Airth runs in the background:
+Routines (called objectives in the CLI) run while Airth runs in the background:
 
 ```bash
 airth secret set ANTHROPIC_API_KEY --all-realms   # the service does not see your shell
@@ -116,7 +116,7 @@ Give a realm a **North Star**, the one goal its work serves ("100 kit sales by D
 2. **Push it forward now**, or let **Airth push it forward on its own** (default `weekdays 09:00`, or `every 3h` for all day). Each push takes the next milestone, does the most valuable step it can complete and verify, records the progress, and reports to your inbox. Those runs may record North Star progress without asking; everything else follows the realm's rules.
 3. **See the progress.** The goal and its progress bar stay at the top of the sidebar. Click a milestone's mark to set its status yourself.
 
-Every run of the realm sees the North Star and its milestones, prefers the work that moves the next one, and records what it advanced. **Focus** (on by default, per realm, in the sidebar) shadows the runs and objectives that did not serve the goal, and the realm's home suggests goal-oriented work instead of generic ideas. Runs that need your approval are never shadowed.
+Every run of the realm sees the North Star and its milestones, prefers the work that moves the next one, and records what it advanced. **Focus** (on by default, per realm, in the sidebar) shadows the chats and routines that did not serve the goal, and the New chat page suggests goal-oriented work instead of generic ideas. The goal and its milestones live on their own North Star page (click the goal in the sidebar). Chats that need your approval are never shadowed.
 
 ```bash
 airth northstar set "100 kit sales by December" --why "Fund the next product"
@@ -210,7 +210,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - start chats and watch them live: reasoning, tool calls and results;
 - approve or deny each step that needs it, with an optional reason the agent sees;
 - follow each chat's plan, and resume chats that did not finish;
-- set up objectives, and read your inbox and the daily summary;
+- set up routines, and read your inbox and the daily summary;
 - develop, review and install skills;
 - review, adopt or discard changes;
 - see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);

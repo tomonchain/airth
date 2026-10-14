@@ -294,7 +294,8 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/run\/([^/?#]+)/))) return { view: "run", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/settings(?:\/([a-z]+))?/))) return { view: "settings", realm: decodeURIComponent(m[1]), tab: m[2] };
   if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
-  if ((m = h.match(/^#\/r\/([^/]+)\/objectives/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/(?:routines|objectives)/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/northstar/))) return { view: "northstar", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
@@ -382,7 +383,42 @@ function renderSidebar() {
   renderNav();
   renderRunList();
   renderFoot();
+  renderStatus();
   updateTitle();
+}
+
+// Past this many input tokens a chat is summarized (see AIRTH_COMPACT_AT): the context "full" mark.
+const CONTEXT_LIMIT = 150000;
+
+/** The thin footer: how full the open chat's context is, its tokens, and today's tokens. */
+function renderStatus() {
+  const el = $("#statusbar");
+  if (!el) return;
+  const sep = () => h("span", { class: "sb-sep", "aria-hidden": "true" }, "·");
+  const tokens = (label, input, output, title) =>
+    h("span", { class: "sb-item", title }, label, `${kfmt(input)} in`, sep(), `${kfmt(output)} out`);
+  const items = [];
+  const s = app.route.view === "run" && app.run ? app.run.state : null;
+  if (s) {
+    const last = s.usage && s.usage.length ? s.usage[s.usage.length - 1].input : 0;
+    const pct = Math.min(100, Math.round((100 * last) / CONTEXT_LIMIT));
+    const fill = h("span");
+    fill.style.width = pct + "%";
+    items.push(
+      h("span", { class: "sb-item", title: `${last} input tokens in the last call; the chat is summarized past ${CONTEXT_LIMIT}` },
+        "Context", h("span", { class: "sb-meter" + (pct >= 90 ? " hot" : pct >= 70 ? " warm" : ""), "aria-hidden": "true" }, fill), `${pct}%`),
+      tokens("This chat ", s.input_tokens || 0, s.output_tokens || 0, `${s.input_tokens || 0} in / ${s.output_tokens || 0} out`));
+  }
+  const t = app.today;
+  items.push(h("span", { class: "sb-spacer" }));
+  if (t) items.push(tokens("Today ", t.input, t.output, `${t.input} in / ${t.output} out, all realms`));
+  el.replaceChildren(...items);
+}
+
+async function refreshToday() {
+  if (app.unauthorized) return;
+  try { app.today = (await api("usage?days=1")).today; } catch { return; }
+  renderStatus();
 }
 
 function renderNav() {
@@ -395,7 +431,7 @@ function renderNav() {
     navLink(r ? `#/r/${r}` : null, "pencil", "New chat", v === "new"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
     navLink("#/inbox", "inbox", "Inbox", v === "inbox", unread > 0 && h("span", { class: "count" }, String(unread))),
-    navLink(r ? `#/r/${r}/objectives` : null, "clock", "Objectives", v === "objectives"),
+    navLink(r ? `#/r/${r}/routines` : null, "clock", "Routines", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
     nsSide());
@@ -595,6 +631,7 @@ function renderMain() {
     case "owner": return renderOwner(main);
     case "documents": return renderDocuments(main);
     case "objectives": return renderObjectives(main);
+    case "northstar": return renderNorthStar(main);
     case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
@@ -845,7 +882,7 @@ function nsSide() {
   const ns = northStar();
   if (!ns) return null;
   return h("div", { class: "ns-side" },
-    h("button", { class: "ns-side-goal", type: "button", title: ns.goal + (ns.total ? `\n${ns.done} of ${ns.total} milestones done` : ""), onclick: () => go(`#/r/${enc(app.realm)}`) },
+    h("button", { class: "ns-side-goal", type: "button", title: ns.goal + (ns.total ? `\n${ns.done} of ${ns.total} milestones done` : ""), onclick: () => go(`#/r/${enc(app.realm)}/northstar`) },
       h("span", { class: "ns-star", "aria-hidden": "true" }, "★"),
       h("span", { class: "grow ns-side-text" }, ns.goal),
       ns.total > 0 && h("span", { class: "progress-mini" }, `${ns.done}/${ns.total}`)),
@@ -862,7 +899,12 @@ async function startNorthStarRun(what, realm = app.realm) {
   } catch (e) { flash(e.message, true); }
 }
 
-/** The North Star card of the realm's home page: goal, progress, milestones, and how Airth pushes it. */
+/** The North Star page: the goal, its milestones and how Airth pushes it (not part of "New chat"). */
+function renderNorthStar(main) {
+  page(main, "North Star", "The one goal of this realm. Every chat sees it and prefers the work that moves it forward.", northStarCard());
+}
+
+/** The North Star card: goal, progress, milestones, and how Airth pushes it. */
 function northStarCard() {
   const el = h("div", { id: "ns-wrap", class: "ns-wrap" });
   drawNorthStar(el);
@@ -937,7 +979,7 @@ function drawNorthStar(el) {
   const every = h("input", { type: "text", class: "ns-every", value: s ? s.every : "weekdays 09:00", placeholder: "weekdays 09:00 · every 3h", "aria-label": "When Airth advances it", spellcheck: "false" });
   every.addEventListener("change", () => { if (s) change("/schedule", { every: every.value }, undefined, "Schedule saved"); });
   const daily = has && h("div", { class: "ns-daily" },
-    h("label", { class: "toggle small", title: "An objective: the chats it starts may record North Star progress without asking; anything else follows this realm's rules" },
+    h("label", { class: "toggle small", title: "A routine: the chats it starts may record North Star progress without asking; anything else follows this realm's rules" },
       h("input", { type: "checkbox", checked: !!s, onchange: (e) => change("/schedule", { every: e.target.checked ? every.value : null }, undefined, e.target.checked ? "Airth will push it forward on its own" : "Stopped") }),
       h("span", null, "Airth pushes it forward on its own")),
     every,
@@ -993,8 +1035,8 @@ const CAN_DO = [
     text: "Remembers what matters in this realm, and keeps the North Star's milestones up to date.",
     examples: ["Remember that I prefer meetings in the morning", "What should I do next for the North Star?"] },
   { caps: [], icon: "clock", title: "Work on its own",
-    text: "Objectives start work for you: on a schedule, when files change, or from a webhook. A brief every morning, a weekly review…",
-    link: ["Set up an objective", (r) => `#/r/${enc(r)}/objectives`] },
+    text: "Routines start work for you: on a schedule, when files change, or from a webhook. A brief every morning, a weekly review…",
+    link: ["Set up a routine", (r) => `#/r/${enc(r)}/routines`] },
   { caps: ["skill"], icon: "spark", title: "New skills",
     text: "When it hits a limit, it can build and test a small tool; nothing is installed until you say so. Or add ready-made skills.",
     link: ["Browse skills", (r) => `#/r/${enc(r)}/skills`] },
@@ -1140,7 +1182,6 @@ function renderNew(main) {
         h("h1", null, first ? `${hello}, ${first}` : "What should Airth work on?"),
         h("p", { class: "sub", title: d ? d.root : "" }, first ? "What should Airth work on?" : d ? d.root : ""),
         tools,
-        northStarCard(),
         c.el,
         h("div", { class: "suggestions" },
           suggestions.map((s) => h("button", { class: "suggestion", type: "button", onclick: () => { c.ta.value = s; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); } }, s))))));
@@ -1284,6 +1325,7 @@ function renderRun() {
   if (nearBottom || app.version === null) sc.scrollTop = sc.scrollHeight;
   syncToBottom();
   updateTitle();
+  renderStatus();
 
   const c = runEls.composer;
   const closed = s.change && s.change.status !== "open";
@@ -1416,7 +1458,6 @@ function transcriptNodes(d) {
         canResume && h("div", { class: "muted small" }, "Resume to let Airth check where it stopped and carry on with its plan, or send a message to redirect it.")),
       canResume && h("button", { class: "btn primary", type: "button", disabled: !!(app.realmDetail && app.realmDetail.model_error), onclick: resumeRun }, "Resume")), "end:" + status));
   }
-  if (s.change) nodes.push(keyed(changePanel(d), "change"));
   return nodes;
 }
 
@@ -1487,7 +1528,7 @@ function northStarReplies(s) {
   const fr = speaksFrench(s);
   const recorded = s.events.some((e) => e.action === "north_star" && e.status === "ok");
   if (recorded) return h("div", { class: "quick-replies" },
-    h("button", { class: "chip-btn primary", type: "button", onclick: () => go(`#/r/${enc(app.realm)}`) }, "★ See my North Star"));
+    h("button", { class: "chip-btn primary", type: "button", onclick: () => go(`#/r/${enc(app.realm)}/northstar`) }, "★ See my North Star"));
   return h("div", { class: "quick-replies" },
     h("button", { class: "chip-btn primary", type: "button", onclick: () => sendFollowUp(fr ? "C'est bon, enregistre-le tel que proposé." : "That looks good. Record it as proposed.").catch((e) => flash(e.message, true)) }, "Looks good, record it"),
     h("button", { class: "chip-btn", type: "button", onclick: () => { const ta = $(".composer textarea"); if (ta) { ta.value = fr ? "Je changerais : " : "I'd change: "; ta.focus(); ta.dispatchEvent(new Event("input")); } } }, "Change something…"));
@@ -1613,6 +1654,7 @@ function sideNodes(d, status) {
       h("div", { class: "side-head" }, h("span", null, "Plan")),
       h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this chat.")));
   }
+  if (s.change) nodes.push(h("section", { class: "side-section" }, changePanel(d)));
   const row = (k, v, title) => v != null && v !== false && h("div", { class: "kv", title: title || "" }, h("span", { class: "k" }, k), h("span", { class: "v" }, v));
   nodes.push(h("section", { class: "side-section" },
     h("div", { class: "side-head" }, h("span", null, "Details")),
@@ -2127,7 +2169,7 @@ function renderSettings(main) {
             d.default ? h("span", { class: "chip" }, "default") : h("button", { class: "btn", type: "button", onclick: () => save({ default: true }, "Default realm set") }, "Make default")),
           h("div", { class: "policy-row" },
             h("div", null, h("div", { class: "strong" }, d.archived ? "Archived" : "Archive"),
-              h("div", { class: "muted small" }, "Hides the realm from the switcher and stops its objectives. Its chats, memory and files are kept; you can restore it.")),
+              h("div", { class: "muted small" }, "Hides the realm from the switcher and stops its routines. Its chats, memory and files are kept; you can restore it.")),
             h("button", { class: "btn" + (d.archived ? "" : " danger"), type: "button", onclick: () => save({ archived: !d.archived }, d.archived ? "Restored" : "Archived") }, d.archived ? "Restore" : "Archive")))),
     ];
   };
@@ -2965,7 +3007,7 @@ document.addEventListener("keydown", (e) => {
 
 async function renderObjectives(main) {
   const realm = app.realm;
-  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification each time it finishes.");
+  page(main, "Routines", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification each time it finishes.");
   const inner = $(".page-inner", main);
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
   inner.append(listEl);
@@ -3006,7 +3048,7 @@ async function renderObjectives(main) {
           confirmDelete = null;
           try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, undefined, "DELETE")); } catch (e) { flash(e.message, true); }
         } }, confirmDelete === o.id ? "Really delete?" : "Delete")))))
-      : h("div", { class: "card muted small pad" }, "No objectives yet."));
+      : h("div", { class: "card muted small pad" }, "No routines yet."));
   draw();
 
   // New objective
@@ -3047,7 +3089,7 @@ async function renderObjectives(main) {
       refresh(await api(`${realmPath(realm)}/objectives`, body));
       f.id.value = ""; f.objective.value = ""; delete f.id.dataset.touched;
       closeWiz();
-      flash("Objective created");
+      flash("Routine created");
     } catch (e) { flash(e.message, true); }
   };
 
@@ -3094,7 +3136,7 @@ async function renderObjectives(main) {
     return [
       h("div", { class: "wiz-q" }, "Ready to go"),
       h("div", { class: "review" },
-        kv("Objective", f.objective.value.trim()), kv("Name", f.id.value.trim()), kv("Runs", when),
+        kv("Task", f.objective.value.trim()), kv("Name", f.id.value.trim()), kv("Runs", when),
         kv("Approved", grantOptions.filter((g) => g.box.checked).map((g) => g.label).join(", ") || "nothing beyond the realm's rules"),
         kv("Waits for you", `${f.wait.value || 10} min`)),
       h("details", { class: "wiz-more" }, h("summary", null, "Limits each time (optional)"),
@@ -3113,12 +3155,12 @@ async function renderObjectives(main) {
         step > 0 ? h("button", { class: "btn ghost", type: "button", onclick: () => { step--; drawWiz(-1); } }, "Back")
           : h("button", { class: "btn ghost", type: "button", onclick: () => closeWiz() }, "Cancel"),
         step < STEPS.length - 1
-          ? h("button", { class: "btn primary", type: "button", onclick: () => { if (!valid()) return flash("Describe the objective first", true); step++; drawWiz(1); } }, "Next")
-          : h("button", { class: "btn primary", type: "button", onclick: save }, icon("check"), "Create objective")));
+          ? h("button", { class: "btn primary", type: "button", onclick: () => { if (!valid()) return flash("Describe the routine first", true); step++; drawWiz(1); } }, "Next")
+          : h("button", { class: "btn primary", type: "button", onclick: save }, icon("check"), "Create routine")));
     if (step === 0 && d >= 0) setTimeout(() => f.objective.focus && f.objective.focus(), 60);
   };
   const wizWrap = h("div", { class: "wizard-wrap", hidden: true }, wiz);
-  const openBtn = h("button", { class: "btn primary", type: "button", onclick: () => { step = 0; wizWrap.hidden = false; openBtn.hidden = true; drawWiz(1); } }, icon("plus"), "New objective");
+  const openBtn = h("button", { class: "btn primary", type: "button", onclick: () => { step = 0; wizWrap.hidden = false; openBtn.hidden = true; drawWiz(1); } }, icon("plus"), "New routine");
   const closeWiz = () => { wizWrap.hidden = true; openBtn.hidden = false; };
   inner.append(h("div", { class: "row-start pad-top" }, openBtn), wizWrap);
 }
@@ -3667,7 +3709,7 @@ function paletteItems() {
     add("North Star", ns.milestones.length ? "Rework the milestones with Airth" : "Brainstorm milestones with Airth", h("span", { class: "i ns-star" }, "★"), () => startNorthStarRun("brainstorm"));
     add("North Star", focusOn() ? "Turn focus mode off" : "Turn focus mode on", h("span", { class: "i ns-star" }, "★"), toggleFocus, { hint: "shadow what does not serve the North Star" });
   } else if (r) {
-    add("North Star", "Set a North Star for this realm", h("span", { class: "i ns-star" }, "★"), () => { nsUi.open = true; go(`#/r/${r}`); });
+    add("North Star", "Set a North Star for this realm", h("span", { class: "i ns-star" }, "★"), () => { nsUi.open = true; go(`#/r/${r}/northstar`); });
   }
   add("Go to", "Inbox", icon("inbox"), () => go("#/inbox"));
   add("Go to", "Usage", icon("chart"), () => go("#/usage"));
@@ -3681,7 +3723,7 @@ function paletteItems() {
   add("Go to", "Welcome guide", icon("compass"), () => { welcomeUi.step = 0; welcomeUi.setup = null; go("#/welcome"); });
   if (r) {
     add("Go to", "Documents", icon("folder"), () => go(`#/r/${r}/documents`));
-    add("Go to", "Objectives", icon("clock"), () => go(`#/r/${r}/objectives`));
+    add("Go to", "Routines", icon("clock"), () => go(`#/r/${r}/routines`));
     add("Go to", "Skills", icon("spark"), () => go(`#/r/${r}/skills`));
     add("Go to", "Connectors (Notion, Linear, GitHub…)", icon("world"), () => { skillUi.tab = "connectors"; go(`#/r/${r}/skills`); });
     add("Go to", "Realm settings", icon("gear"), () => go(`#/r/${r}/settings`));
@@ -3924,7 +3966,7 @@ async function renderInbox(main) {
   for (const r of summary) {
     const line = (mark, l, extra) => h("button", { class: "inbox-row link", type: "button", onclick: () => open(r.realm, l.id) },
       h("span", { class: "inbox-mark" }, mark),
-      h("div", { class: "grow" }, 
+      h("div", { class: "grow" },
         h("div", { class: "inbox-title" }, l.objective, l.origin && h("span", { class: "muted small" }, " · " + l.origin)),
         (extra || l.report) && h("div", { class: "inbox-detail" }, extra || l.report)));
     const sections = [
@@ -3938,14 +3980,13 @@ async function renderInbox(main) {
         h("div", { class: "inbox-section-label" }, "Recent"),
         r.recent.map((l) => line("✓", l)))
     ].filter(Boolean);
-    
     inner.append(h("div", { class: "card inbox-card" },
       h("div", { class: "inbox-realm-head" }, h("span", { class: "strong" }, r.realm),
         h("span", { class: "muted small" }, `${r.runs} chat${r.runs === 1 ? "" : "s"} · ${r.completed} completed · ${r.failed} failed · ${r.stopped} stopped`)),
       sections.length > 0 ? h("div", { class: "inbox-content" }, sections)
         : h("div", { class: "muted small pad" }, "No activity"),
       r.objectives.filter((o) => o.enabled).length > 0 && h("div", { class: "inbox-objectives" },
-        "Objectives: ", r.objectives.filter((o) => o.enabled).map((o) => o.id + (o.next_at ? ` (${when(o.next_at)})` : "")).join(" · "))));
+        "Routines: ", r.objectives.filter((o) => o.enabled).map((o) => o.id + (o.next_at ? ` (${when(o.next_at)})` : "")).join(" · "))));
   }
 
   inner.append(h("h2", null, "Notifications"));
@@ -4153,7 +4194,7 @@ async function renderWelcome(main) {
       h("div", { class: "welcome-points" },
         tip("pencil", "New chat", "Ask for anything in plain words: “sort my downloads”, “draft a reply to Marc”, “plan my week”."),
         tip("inbox", "Inbox", "When Airth needs your OK, or finishes something, it lands here (and in a notification)."),
-        tip("clock", "Objectives", "Recurring work: every morning, when a file changes, or on a webhook."),
+        tip("clock", "Routines", "Recurring work: every morning, when a file changes, or on a webhook."),
         tip("world", "Skills & connectors", "Connect Notion, Linear, Stripe… or install skills, per realm."),
         tip("search", modKey + "K", "Find a chat, a page or an action from anywhere in the app."),
         mac && tip("window", "⌥⇧A", "Shows or hides Airth from any app. Closing the window keeps Airth in the menu bar.")),
@@ -4328,9 +4369,11 @@ async function boot() {
   try { const o = await api("owner"); app.ownerName = o.name; app.ownerAvatar = o.avatar; } catch {}
   await refreshRealms();
   await onRoute();
+  refreshToday();
+  setInterval(() => { if (!document.hidden) refreshToday(); }, 30000);
   // Background refreshes pause while the window is hidden, and catch up when it shows.
   setInterval(() => { if (!document.hidden) { refreshRealms(); refreshRuns(); } }, 2000);
-  setInterval(() => { if (document.hidden) return; refreshInfo(); if (app.route.view === "new" || focusOn()) refreshNorthStar(); }, 5000);
+  setInterval(() => { if (document.hidden) return; refreshInfo(); if (app.route.view === "new" || app.route.view === "northstar" || focusOn()) refreshNorthStar(); }, 5000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshRealms(); refreshRuns(); refreshInfo(); } });
 }
 
