@@ -2536,7 +2536,7 @@ async function openDocPreview(realm, path, meta) {
 
 async function renderObjectives(main) {
   const realm = app.realm;
-  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification when a run ends.");
+  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification each time it finishes.");
   const inner = $(".page-inner", main);
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
   inner.append(listEl);
