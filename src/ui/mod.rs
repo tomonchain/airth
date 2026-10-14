@@ -42,6 +42,8 @@ const INDEX_HTML: &str = include_str!("index.html");
 const APP_JS: &str = include_str!("app.js");
 const APP_CSS: &str = include_str!("app.css");
 const THEME_JS: &str = include_str!("theme.js");
+/// The Documents editor (CodeMirror), built from editor/ by editor/build.sh.
+const EDITOR_JS: &str = include_str!("vendor/editor.js");
 const FAVICON: &str = include_str!("favicon.svg");
 const MAX_BODY: u64 = 1 << 20;
 
@@ -622,6 +624,9 @@ impl App {
             (Method::Get, "/app.css") => {
                 return Ok(static_response(APP_CSS, "text/css; charset=utf-8"));
             }
+            (Method::Get, "/vendor/editor.js") => {
+                return Ok(static_response(EDITOR_JS, "text/javascript; charset=utf-8"));
+            }
             (Method::Get, "/theme.js") => {
                 return Ok(static_response(THEME_JS, "text/javascript; charset=utf-8"));
             }
@@ -780,6 +785,64 @@ impl App {
                     .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
                     .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap())
                     .with_header(Header::from_bytes("Content-Security-Policy", "sandbox").unwrap())
+            }
+            (Method::Get, ["realms", r, "files", "text"]) => {
+                let root = self.realm(r)?.root()?;
+                json_response(
+                    200,
+                    json!(crate::documents::read_text(&root, &param(query, "path"))?),
+                )
+            }
+            // Cheap enough to ask every few seconds: has the open file changed?
+            (Method::Get, ["realms", r, "files", "version"]) => {
+                let root = self.realm(r)?.root()?;
+                let path = crate::documents::resolve(&root, &param(query, "path"))?;
+                json_response(200, json!({ "version": crate::documents::version(&path)? }))
+            }
+            (Method::Put, ["realms", r, "files", "text"]) => {
+                // JSON escapes can make the text up to six times longer.
+                let bytes = read_body(
+                    request,
+                    6 * crate::documents::MAX_TEXT as usize + 4096,
+                    "the text",
+                )?;
+                let body: Value =
+                    serde_json::from_slice(&bytes).context("request body must be JSON")?;
+                let root = self.realm(r)?.root()?;
+                let str_of = |k: &str| body[k].as_str().unwrap_or_default();
+                match crate::documents::save_text(
+                    &root,
+                    str_of("path"),
+                    str_of("text"),
+                    str_of("version"),
+                ) {
+                    Ok(version) => json_response(200, json!({ "version": version })),
+                    Err(crate::documents::SaveError::Changed(version)) => json_response(
+                        409,
+                        json!({ "error": "the file changed since you opened it", "changed": true, "version": version }),
+                    ),
+                    Err(crate::documents::SaveError::Other(e)) => return Err(e),
+                }
+            }
+            (Method::Post, ["realms", r, "files", "new"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                let path = crate::documents::create(
+                    &root,
+                    body["dir"].as_str().unwrap_or(""),
+                    body["name"].as_str().unwrap_or(""),
+                    body["folder"].as_bool() == Some(true),
+                )?;
+                json_response(200, json!({ "path": path }))
+            }
+            (Method::Get, ["realms", r, "files", "all"]) => {
+                const LIMIT: usize = 5000;
+                let root = self.realm(r)?.root()?;
+                let files = crate::documents::all_files(&root, LIMIT);
+                json_response(
+                    200,
+                    json!({ "truncated": files.len() >= LIMIT, "files": files }),
+                )
             }
             (Method::Post, ["realms", r, "files", "preview"]) => {
                 let body = read_json(request)?;
@@ -2264,7 +2327,8 @@ fn static_response(body: &str, kind: &str) -> HttpResponse {
         .with_header(
             Header::from_bytes(
                 "Content-Security-Policy",
-                "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+                // Inline styles: the editor (CodeMirror) writes its own. Scripts stay 'self' only.
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
             )
             .unwrap(),
         )

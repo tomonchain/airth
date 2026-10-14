@@ -100,16 +100,7 @@ pub fn list(dir: &Path) -> Result<Vec<Entry>> {
 /// A name for a new file in `dir` that does not replace another:
 /// "notes.md", then "notes 2.md", "notes 3.md"...
 pub fn free_name(dir: &Path, name: &str) -> Result<String> {
-    let name = name.trim();
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains('\0')
-    {
-        bail!("{name:?} is not a valid file name");
-    }
+    let name = valid_name(name)?;
     if !dir.join(name).exists() {
         return Ok(name.to_string());
     }
@@ -126,6 +117,21 @@ pub fn free_name(dir: &Path, name: &str) -> Result<String> {
     unreachable!()
 }
 
+/// `name` trimmed, if it can name a file: no path, no "." or "..".
+fn valid_name(name: &str) -> Result<&str> {
+    let name = name.trim();
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+    {
+        bail!("{name:?} is not a valid file name");
+    }
+    Ok(name)
+}
+
 /// Write an uploaded file in `dir` (inside `root`) without replacing one.
 /// Returns its path relative to `root`.
 pub fn add(root: &Path, dir: &str, name: &str, bytes: &[u8]) -> Result<String> {
@@ -137,6 +143,144 @@ pub fn add(root: &Path, dir: &str, name: &str, bytes: &[u8]) -> Result<String> {
     let path = dir.join(&name);
     std::fs::write(&path, bytes).with_context(|| format!("cannot write {name}"))?;
     Ok(relative(root, &path))
+}
+
+/// The largest file the editor opens.
+pub const MAX_TEXT: u64 = 2 << 20;
+
+/// A text file opened in the editor, and its version: what a save must
+/// match, so it never replaces a change made meanwhile (by a chat, say).
+#[derive(Debug, Serialize)]
+pub struct Text {
+    pub text: String,
+    pub version: String,
+}
+
+/// The version of a file: when it last changed, and its size.
+pub fn version(path: &Path) -> Result<String> {
+    let meta = std::fs::metadata(path)?;
+    let nanos = meta
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    Ok(format!("{nanos}-{}", meta.len()))
+}
+
+/// A file of the realm as text, for the editor. Refused when it is too
+/// large or not text (an image, an archive...).
+pub fn read_text(root: &Path, rel: &str) -> Result<Text> {
+    let path = resolve(root, rel)?;
+    if !path.is_file() {
+        bail!("{rel} is not a file");
+    }
+    if std::fs::metadata(&path)?.len() > MAX_TEXT {
+        bail!(
+            "{rel} is too large to edit here (at most {} MB)",
+            MAX_TEXT >> 20
+        );
+    }
+    let version = version(&path)?;
+    let bytes = std::fs::read(&path)?;
+    if bytes.contains(&0) {
+        bail!("{rel} is not a text file");
+    }
+    let text = String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("{rel} is not a text file"))?;
+    Ok(Text { text, version })
+}
+
+/// Why a save did not happen.
+#[derive(Debug)]
+pub enum SaveError {
+    /// The file changed since the editor read it (at `version`, now this).
+    Changed(String),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SaveError {
+    fn from(e: anyhow::Error) -> Self {
+        SaveError::Other(e)
+    }
+}
+
+impl From<std::io::Error> for SaveError {
+    fn from(e: std::io::Error) -> Self {
+        SaveError::Other(e.into())
+    }
+}
+
+/// Save the editor's text over a file read at `expected` (its version).
+/// Returns the new version.
+pub fn save_text(root: &Path, rel: &str, text: &str, expected: &str) -> Result<String, SaveError> {
+    let path = resolve(root, rel)?;
+    if !path.is_file() {
+        return Err(anyhow::anyhow!("{rel} is not a file").into());
+    }
+    if text.len() as u64 > MAX_TEXT {
+        return Err(
+            anyhow::anyhow!("too large to save here (at most {} MB)", MAX_TEXT >> 20).into(),
+        );
+    }
+    let now = version(&path)?;
+    if now != expected {
+        return Err(SaveError::Changed(now));
+    }
+    std::fs::write(&path, text)?;
+    Ok(version(&path)?)
+}
+
+/// Create an empty file, or a folder, named `name` in `dir`. Unlike an
+/// upload, the name is the owner's: an existing one is an error.
+pub fn create(root: &Path, dir: &str, name: &str, folder: bool) -> Result<String> {
+    let dir = resolve(root, dir)?;
+    if !dir.is_dir() {
+        bail!("not a folder");
+    }
+    let name = valid_name(name)?;
+    let path = dir.join(name);
+    if path.symlink_metadata().is_ok() {
+        bail!("{name} already exists");
+    }
+    if folder {
+        std::fs::create_dir(&path)
+    } else {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map(|_| ())
+    }
+    .with_context(|| format!("cannot create {name}"))?;
+    Ok(relative(root, &path))
+}
+
+/// Every file of the realm, for "go to file": relative paths, hidden files
+/// and tools' caches left out, at most `limit` of them.
+pub fn all_files(root: &Path, limit: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        let Ok(entries) = list(&dir) else {
+            continue;
+        };
+        for e in entries {
+            let path = dir.join(&e.name);
+            if e.dir {
+                // Not through links: they could lead out of the root, or in circles.
+                if !path.is_symlink() {
+                    dirs.push(path);
+                }
+            } else {
+                out.push(relative(root, &path));
+                if out.len() >= limit {
+                    out.sort();
+                    return out;
+                }
+            }
+        }
+    }
+    out.sort();
+    out
 }
 
 /// Move a file or folder to the owner's Trash (`~/.Trash`), under a name
@@ -322,6 +466,58 @@ mod tests {
             got,
             [("report.md", "run-b", false), ("plan.md", "run-b", true)]
         );
+    }
+
+    #[test]
+    fn a_save_never_replaces_a_change_made_meanwhile() {
+        let (_d, root) = root();
+        std::fs::write(root.join("plan.md"), "v1").unwrap();
+        let first = read_text(&root, "plan.md").unwrap();
+        assert_eq!(first.text, "v1");
+        let saved = save_text(&root, "plan.md", "v2 (mine)", &first.version).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("plan.md")).unwrap(),
+            "v2 (mine)"
+        );
+        // A chat changes it; the editor still has the version it saved.
+        std::fs::write(root.join("plan.md"), "v3 (a chat's)").unwrap();
+        assert!(matches!(
+            save_text(&root, "plan.md", "v4", &saved),
+            Err(SaveError::Changed(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(root.join("plan.md")).unwrap(),
+            "v3 (a chat's)"
+        );
+        assert!(save_text(&root, "../x", "", "").is_err());
+    }
+
+    #[test]
+    fn only_text_opens_in_the_editor() {
+        let (_d, root) = root();
+        std::fs::write(root.join("a.bin"), [0u8, 159, 146, 150]).unwrap();
+        std::fs::write(root.join("b.txt"), "héllo").unwrap();
+        assert!(read_text(&root, "a.bin").is_err());
+        assert_eq!(read_text(&root, "b.txt").unwrap().text, "héllo");
+        assert!(read_text(&root, "").is_err());
+    }
+
+    #[test]
+    fn creating_files_and_listing_them_all() {
+        let (_d, root) = root();
+        assert_eq!(create(&root, "", "src", true).unwrap(), "src");
+        assert_eq!(
+            create(&root, "src", "main.rs", false).unwrap(),
+            "src/main.rs"
+        );
+        assert!(create(&root, "src", "main.rs", false).is_err());
+        assert!(create(&root, "", "../x", false).is_err());
+        std::fs::write(root.join("README.md"), "x").unwrap();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join(".git/HEAD"), "x").unwrap();
+        std::os::unix::fs::symlink("/etc", root.join("etc")).unwrap();
+        assert_eq!(all_files(&root, 100), ["README.md", "src/main.rs"]);
+        assert_eq!(all_files(&root, 1).len(), 1);
     }
 
     #[test]

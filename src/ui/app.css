@@ -45,10 +45,15 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
   color-scheme: light;
+  /* Syntax colors in the Documents editor (.tok-* classes). */
+  --tok-keyword: #8b3fd9; --tok-string: #0a7d4f; --tok-number: #b45309; --tok-comment: #8f8f8f;
+  --tok-type: #0f6fb8; --tok-fn: #2557d6; --tok-prop: #a3366f; --tok-meta: #6b7280; --tok-heading: #0d0d0d;
 }
 
 /* Dark theme: theme.js sets data-theme from the owner's choice (or the system's). */
 :root[data-theme="dark"] {
+    --tok-keyword: #c792ea; --tok-string: #a5d6a7; --tok-number: #f9b872; --tok-comment: #7f8590;
+    --tok-type: #82aaff; --tok-fn: #89ddff; --tok-prop: #f78c9c; --tok-meta: #9aa0aa; --tok-heading: #ffffff;
     --bg: #212121;
     --sidebar: #171717;
     --panel: #2a2a2a;
@@ -1404,21 +1409,101 @@ a.rh-tag { color: var(--brand); }
 .doc-made-open:hover .doc-name { text-decoration: underline; }
 .doc-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doc-overlay { padding-top: 5vh; }
-.doc-preview { width: min(900px, calc(100vw - 32px)); max-height: 90vh; }
-.doc-preview-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px 20px; border-bottom: 1px solid var(--border); }
-.doc-preview-title { min-width: 0; }
-.doc-preview-title .strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doc-preview-body { flex: 1; min-height: 160px; overflow: auto; background: var(--bg); }
-.doc-text { margin: 0; padding: 18px 20px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .doc-md { padding: 20px 26px; line-height: 1.65; }
 .doc-pdf { display: block; width: 100%; height: 72vh; border: 0; background: #fff; }
 .doc-image { display: flex; justify-content: center; padding: 16px; }
 .doc-image img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; }
 .doc-none { padding: 40px 20px; text-align: center; color: var(--muted); }
 .doc-none .i svg { width: 30px; height: 30px; color: var(--faint); }
-.doc-preview-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--border); }
-.doc-preview-foot .btn .i svg { width: 15px; height: 15px; }
+
+/* The documents as a small editor: files, tabs, the open file, a status bar. */
+.ide { flex: 1; min-height: 0; display: flex; }
+.ide.dropping { box-shadow: inset 0 0 0 2px var(--brand); background: var(--brand-soft); }
+.ide-side { width: 250px; flex: none; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+.ide-side-head { display: flex; align-items: center; gap: 2px; padding: 12px 8px 8px 14px; }
+.app.side-hidden .ide-side-head { padding-left: 56px; }
+.ide-root { color: var(--text); text-decoration: none; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ide-tool { border: 0; background: transparent; color: var(--faint); cursor: pointer; padding: 5px; border-radius: 7px; display: inline-flex; }
+.ide-tool:hover { color: var(--text); background: var(--hover); }
+.ide-tool .i svg { width: 15px; height: 15px; }
+.ide-new { display: flex; align-items: center; gap: 6px; padding: 4px 10px 6px 14px; }
+.ide-new .doc-icon svg { width: 15px; height: 15px; }
+.ide-new-input { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--brand); border-radius: 7px; background: var(--panel); color: var(--text); font-size: 12.5px; outline: 0; }
+.ide-tree { flex: 1; overflow: auto; padding: 0 6px 16px; }
+.ide-row {
+  display: flex; align-items: center; gap: 5px; width: 100%; border: 0; background: transparent; cursor: pointer; text-align: left;
+  padding: 3px 8px 3px calc(4px + var(--depth, 0) * 14px); border-radius: 7px; font-size: 13px; color: var(--text); white-space: nowrap;
+}
+.ide-row:hover { background: var(--hover); }
+.ide-row.active, .ide-row.here { background: var(--accent-soft); font-weight: 500; }
+.ide-row .doc-icon svg { width: 15px; height: 15px; }
+.ide-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.ide-chev { width: 12px; flex: none; display: inline-flex; color: var(--faint); transform: rotate(-90deg); transition: transform .15s var(--ease); }
+.ide-chev.open { transform: none; }
+.ide-chev svg { width: 12px; height: 12px; }
+.ide-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text); flex: none; }
+.ide-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.ide-tabs { display: flex; align-items: stretch; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--sidebar); flex: none; scrollbar-width: none; }
+.ide-tabs::-webkit-scrollbar { display: none; }
+.ide-tab {
+  display: flex; align-items: center; gap: 6px; padding: 8px 6px 8px 12px; border: 0; border-right: 1px solid var(--border);
+  background: transparent; color: var(--muted); font-size: 12.5px; cursor: pointer; white-space: nowrap; max-width: 240px; flex: none;
+}
+.ide-tab.home { padding: 8px 12px; }
+.ide-tab:hover { color: var(--text); }
+.ide-tab.active { background: var(--bg); color: var(--text); box-shadow: inset 0 -1px 0 var(--bg), inset 0 2px 0 var(--brand); }
+.ide-tab .doc-icon svg { width: 14px; height: 14px; }
+.ide-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.ide-tab-x { border: 0; background: transparent; color: var(--faint); cursor: pointer; width: 20px; height: 20px; border-radius: 5px; font-size: 15px; line-height: 1; visibility: hidden; position: relative; }
+.ide-tab:hover .ide-tab-x, .ide-tab.active .ide-tab-x { visibility: visible; }
+.ide-tab-x:hover { background: var(--hover); color: var(--text); }
+/* An unsaved tab shows a dot in place of the ×, until hovered. */
+.ide-tab.dirty .ide-tab-x { visibility: visible; color: transparent; }
+.ide-tab.dirty .ide-tab-x::after { content: ""; position: absolute; inset: 6.5px; border-radius: 50%; background: var(--text); }
+.ide-tab.dirty .ide-tab-x:hover { color: var(--text); }
+.ide-tab.dirty .ide-tab-x:hover::after { display: none; }
+.ide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ide-pane { flex: 1; min-height: 0; overflow: auto; }
+.ide-home .page-inner { padding-top: 32px; }
+.ide-md .doc-md { max-width: var(--read-width); margin: 0 auto; padding: 28px 32px 60px; }
+.ide-body .doc-pdf { height: auto; }
+.ide-body .doc-image img { max-height: none; }
+.ide-editor { flex: 1; min-height: 0; overflow: hidden; }
+.ide-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 14px; background: var(--warn-soft); color: var(--text); font-size: 13px; border-bottom: 1px solid var(--border); }
+.ide-banner .btn { padding: 4px 10px; font-size: 12.5px; }
+.ide-status {
+  display: flex; align-items: center; gap: 14px; padding: 4px 8px 4px 14px; border-top: 1px solid var(--border);
+  background: var(--sidebar); font-size: 12px; min-height: 32px; flex: none; white-space: nowrap; overflow: hidden;
+}
+.ide-st-path { overflow: hidden; text-overflow: ellipsis; min-width: 40px; color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.ide-st-dirty { color: var(--warn); }
+.ide-st-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 3px 7px; border-radius: 7px; font-size: 12px; flex: none; }
+.ide-st-btn:hover { background: var(--hover); color: var(--text); }
+.ide-st-btn.danger:hover { color: var(--err); background: var(--err-soft); }
+.ide-st-btn .i svg { width: 14px; height: 14px; }
+.ide-st-btn.ask { color: var(--brand); font-weight: 500; }
+.ide-st-btn.ask kbd { margin-left: 2px; }
+.ide-status .grow { flex: 1; }
+/* Syntax colors (CodeMirror's class highlighter). */
+.ide-editor .tok-keyword, .ide-editor .tok-operatorKeyword, .ide-editor .tok-controlKeyword { color: var(--tok-keyword); }
+.ide-editor .tok-string, .ide-editor .tok-string2, .ide-editor .tok-inserted { color: var(--tok-string); }
+.ide-editor .tok-number, .ide-editor .tok-bool, .ide-editor .tok-atom, .ide-editor .tok-literal { color: var(--tok-number); }
+.ide-editor .tok-comment { color: var(--tok-comment); font-style: italic; }
+.ide-editor .tok-typeName, .ide-editor .tok-className, .ide-editor .tok-namespace { color: var(--tok-type); }
+.ide-editor .tok-definition, .ide-editor .tok-macroName { color: var(--tok-fn); }
+.ide-editor .tok-propertyName, .ide-editor .tok-attributeName, .ide-editor .tok-labelName { color: var(--tok-prop); }
+.ide-editor .tok-meta, .ide-editor .tok-processingInstruction { color: var(--tok-meta); }
+.ide-editor .tok-heading { color: var(--tok-heading); font-weight: 650; }
+.ide-editor .tok-link, .ide-editor .tok-url { color: var(--tok-type); text-decoration: underline; }
+.ide-editor .tok-emphasis { font-style: italic; }
+.ide-editor .tok-strong { font-weight: 650; }
+.ide-editor .tok-deleted, .ide-editor .tok-invalid { color: var(--err); }
+@media (max-width: 760px) {
+  /* A phone: the folder's files are the way around; the open file takes the screen. */
+  .ide-side { display: none; }
+  .ide-status .ide-st-path, .ide-status .muted { display: none; }
+  .app.side-hidden .ide-tabs { padding-left: 52px; }
+}
 @media (max-width: 760px) {
   .doc-date { display: none; }
   .doc-filter { width: 100%; }

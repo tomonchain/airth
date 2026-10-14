@@ -195,7 +195,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);
 - switch between light, dark and system appearance (the sun/moon button, or your profile), and set the text size, reading width and whether ↵ or ⌘↵ sends;
 - move around from the keyboard: ⌘K searches chats, pages, realms and actions; ⌘⇧O starts a new chat; ⌘B hides the sidebar;
-- browse each realm's **Documents**: the files of its workspace, with previews (text, Markdown, images, PDF), files you drop in, what Airth wrote or edited, and **Ask Airth about it** to start a chat on one;
+- work on each realm's **Documents** like in a small code editor: the files on the left, open files in tabs, syntax colors, ⌘S to save, ⌘P to go to a file, previews for Markdown, images and PDF, files you drop in, and what Airth wrote or edited. ⌘L asks Airth about the file or the selected lines. A save never replaces a change made meanwhile (by a chat, say): you choose which to keep;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
 The link printed in the terminal contains a private key for this launch; API calls without it are rejected. Use `--port`, `--no-open` and `--max-iterations` to change the defaults.
@@ -313,6 +313,8 @@ src/
   sandbox.rs      the command sandbox (macOS sandbox-exec)
   ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
                   (mod.rs) and the page (index.html, theme.js, app.js, app.css)
+                  editor/: the Documents editor (CodeMirror), bundled into
+                  vendor/editor.js by editor/build.sh
   term.rs         terminal output for CLI runs
   cancel.rs       stop signal shared by the CLI, the app, the agent loop and tools
   agent.rs        the loop and the system prompt
