@@ -4,6 +4,7 @@ mod cli;
 mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
+mod documents;
 mod home;
 mod hub;
 #[path = "desktop/icon.rs"]

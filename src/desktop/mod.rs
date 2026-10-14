@@ -65,7 +65,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
     );
     let reload = MenuItem::new("Reload", true, "CmdOrCtrl+R".parse::<Accelerator>().ok());
     let inbox = MenuItem::new("Inbox", true, "CmdOrCtrl+I".parse::<Accelerator>().ok());
-    let new_run = MenuItem::new("New Run", true, "CmdOrCtrl+N".parse::<Accelerator>().ok());
+    let new_chat = MenuItem::new("New Chat", true, "CmdOrCtrl+N".parse::<Accelerator>().ok());
     let menu = Menu::new();
     let app_menu = Submenu::new("Airth", true);
     app_menu.append_items(&[
@@ -86,7 +86,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         &quit,
     ])?;
     let file_menu = Submenu::new("File", true);
-    file_menu.append_items(&[&new_run, &inbox])?;
+    file_menu.append_items(&[&new_chat, &inbox])?;
     let edit_menu = Submenu::new("Edit", true);
     edit_menu.append_items(&[
         &PredefinedMenuItem::undo(None),
@@ -217,7 +217,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
                     show();
                 } else if id == inbox.id() || id == tray_inbox.id() {
                     go("#/inbox");
-                } else if id == new_run.id() {
+                } else if id == new_chat.id() {
                     go("#/");
                 } else if id == reload.id() {
                     let _ = webview.reload();

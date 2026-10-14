@@ -126,7 +126,7 @@ The same page has more tabs:
 - **Catalog:** ready-made Agent Skills from [github.com/anthropics/skills](https://github.com/anthropics/skills) (PDF, Word, slides, design, MCP building…). Install one in a realm and its runs see it in their `use_skill` tool: they read its instructions when a task matches, as guidance that never outranks your boundaries. Binaries and very large files are left out, and a skill's scripts run only once copied into the workspace, with your approval.
 - **MCP servers:** add a stdio [Model Context Protocol](https://modelcontextprotocol.io) server by the command that starts it (e.g. `npx -y @modelcontextprotocol/server-memory`). Airth connects it in the realm's sandbox, with the realm's credentials (put its token under Realm settings → Access), and lists its tools. Runs get them as `mcp__<server>__<tool>`, under the realm's `skill` rule. Each call starts the server and stops it afterwards.
 
-Runs can be renamed: click a run's title, or double-click it in the sidebar. The name is only for you; the objective the agent works on does not change. What you type in a message box stays there as a draft (per run, and per realm on the new-run screen) when you switch runs or reload; you can write your next message while a run works, and send it when it stops.
+In the app, a run is a **chat**. Chats can be renamed: click a chat's title, or double-click it in the sidebar. The name is only for you; the objective the agent works on does not change. What you type in a message box stays there as a draft (per chat, and per realm on the new-chat screen) when you switch chats or reload; you can write your next message while Airth works, and send it when it stops.
 
 Changed the app's page? `node scripts/ui_smoke.js` renders every view in a fake DOM with data full of empty fields, and fails if any visible text says `null`, `false`, `undefined` or similar.
 
@@ -184,15 +184,16 @@ airth ui
 
 This opens Airth in your browser, served locally on `127.0.0.1`. From there you can:
 - switch realms;
-- start runs and watch them live: reasoning, tool calls and results;
+- start chats and watch them live: reasoning, tool calls and results;
 - approve or deny each step that needs it, with an optional reason the agent sees;
-- follow each run's plan, and resume runs that did not finish;
+- follow each chat's plan, and resume chats that did not finish;
 - set up objectives, and read your inbox and the daily summary;
 - develop, review and install skills;
 - review, adopt or discard changes;
 - see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);
 - switch between light, dark and system appearance (the sun/moon button, or your profile), and set the text size, reading width and whether ↵ or ⌘↵ sends;
-- move around from the keyboard: ⌘K searches runs, pages, realms and actions; ⌘⇧O starts a new run; ⌘B hides the sidebar;
+- move around from the keyboard: ⌘K searches chats, pages, realms and actions; ⌘⇧O starts a new chat; ⌘B hides the sidebar;
+- browse each realm's **Documents**: the files of its workspace, with previews (text, Markdown, images, PDF), files you drop in, what Airth wrote or edited, and **Ask Airth about it** to start a chat on one;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 
 The link printed in the terminal contains a private key for this launch; API calls without it are rejected. Use `--port`, `--no-open` and `--max-iterations` to change the defaults.

@@ -71,6 +71,7 @@ const ICON = {
   dots: TB("M4 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0m7 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0m7 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0"),
   // Tools
   file: TB("M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2M9 9h1m-1 4h6m-6 4h6"),
+  photo: TB("M15 8h.01M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3zm0 10l5-5c.928-.893 2.072-.893 3 0l5 5m-2-2l1-1c.928-.893 2.072-.893 3 0l3 3"),
   folder: TB("m5 19l2.757-7.351A1 1 0 0 1 8.693 11H21a1 1 0 0 1 .986 1.164l-.996 5.211A2 2 0 0 1 19.026 19za2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l3 3h7a2 2 0 0 1 2 2v2"),
   filePlus: TB("M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2m-5-10v6m-3-3h6"),
   fileEdit: TB("M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2m-7-3l5-5a1.414 1.414 0 0 0-2-2l-5 5v2z"),
@@ -291,6 +292,7 @@ function parseRoute() {
   let m;
   if ((m = h.match(/^#\/r\/([^/]+)\/run\/([^/?#]+)/))) return { view: "run", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/settings(?:\/([a-z]+))?/))) return { view: "settings", realm: decodeURIComponent(m[1]), tab: m[2] };
+  if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
   if ((m = h.match(/^#\/r\/([^/]+)\/objectives/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
@@ -324,7 +326,10 @@ function welcomed() {
 async function onRoute() {
   // On a phone, going somewhere closes the sidebar.
   if (narrow()) $("#app").classList.add("side-hidden");
+  const before = app.route;
   app.route = parseRoute();
+  closeDocPreview();
+  if (before.view !== app.route.view || before.path !== app.route.path) docsUi.filter = "";
   app.run = null;
   app.version = null;
   app.diff = null;
@@ -379,9 +384,10 @@ function renderNav() {
   const v = app.route.view;
   const r = app.realm && enc(app.realm);
   $("#side-nav").replaceChildren(
-    h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search runs, pages, realms and actions" },
+    h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search chats, pages, realms and actions" },
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
-    navLink(r ? `#/r/${r}` : null, "pencil", "New run", v === "new"),
+    navLink(r ? `#/r/${r}` : null, "pencil", "New chat", v === "new"),
+    navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
     navLink("#/inbox", "inbox", "Inbox", v === "inbox", unread > 0 && h("span", { class: "count" }, String(unread))),
     navLink(r ? `#/r/${r}/objectives` : null, "clock", "Objectives", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
@@ -415,7 +421,7 @@ function renderRunList() {
   if (app.renaming) return; // a run's name is being edited in place
   const list = $("#run-list");
   list.replaceChildren();
-  if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No runs yet."));
+  if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No chats yet."));
   const runs = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   const focus = focusOn();
   let group = null;
@@ -439,7 +445,7 @@ function renderRunList() {
 
 /** A run's display name: the name the owner gave it, else the first line of its objective. */
 function runName(r) {
-  return (r.title || "").trim() || String(r.objective || "").split("\n")[0].trim() || "(untitled run)";
+  return (r.title || "").trim() || String(r.objective || "").split("\n")[0].trim() || "(untitled chat)";
 }
 
 async function renameRun(id, title) {
@@ -458,7 +464,7 @@ async function renameRun(id, title) {
 function editInPlace(el, id, current) {
   if (!el || app.renaming) return;
   app.renaming = id;
-  const input = h("input", { type: "text", class: "title-input", value: current, "aria-label": "Run name", maxlength: "120" });
+  const input = h("input", { type: "text", class: "title-input", value: current, "aria-label": "Chat name", maxlength: "120" });
   el.replaceWith(input);
   input.focus();
   input.select();
@@ -580,6 +586,7 @@ function renderMain() {
     case "run": return renderRunShell(main);
     case "settings": return renderSettings(main);
     case "owner": return renderOwner(main);
+    case "documents": return renderDocuments(main);
     case "objectives": return renderObjectives(main);
     case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
@@ -836,7 +843,7 @@ function nsSide() {
       h("span", { class: "grow ns-side-text" }, ns.goal),
       ns.total > 0 && h("span", { class: "progress-mini" }, `${ns.done}/${ns.total}`)),
     ns.total > 0 && nsBar(ns),
-    h("label", { class: "ns-focus", title: "Shadow the runs that do not serve the North Star" },
+    h("label", { class: "ns-focus", title: "Shadow the chats that do not serve the North Star" },
       h("input", { type: "checkbox", checked: focusOn(), onchange: toggleFocus }), h("span", null, "Focus")));
 }
 
@@ -916,14 +923,14 @@ function drawNorthStar(el) {
           h("div", { class: "ns-m-title" }, m.title, m.id === ns.next && h("span", { class: "chip running" }, "next")),
           m.done_when && h("div", { class: "muted small" }, "Done when: " + m.done_when),
           m.note && h("div", { class: "muted small" }, m.note)),
-        m.runs.length > 0 && h("a", { class: "muted small ns-runs", href: `#/r/${enc(realm)}/run/${enc(m.runs[m.runs.length - 1])}`, title: "The latest run that moved it" },
-          `${m.runs.length} run${m.runs.length === 1 ? "" : "s"}`))))
+        m.runs.length > 0 && h("a", { class: "muted small ns-runs", href: `#/r/${enc(realm)}/run/${enc(m.runs[m.runs.length - 1])}`, title: "The latest chat that moved it" },
+          `${m.runs.length} chat${m.runs.length === 1 ? "" : "s"}`))))
     : h("p", { class: "muted small ns-hint" }, "No milestones yet. Define them with Airth: it asks you a few questions, proposes a sharper goal and the steps to it, and records them once you agree.");
 
   const every = h("input", { type: "text", class: "ns-every", value: s ? s.every : "weekdays 09:00", placeholder: "weekdays 09:00 · every 3h", "aria-label": "When Airth advances it", spellcheck: "false" });
   every.addEventListener("change", () => { if (s) change("/schedule", { every: every.value }, undefined, "Schedule saved"); });
   const daily = has && h("div", { class: "ns-daily" },
-    h("label", { class: "toggle small", title: "An objective: its runs may record North Star progress without asking; anything else follows this realm's rules" },
+    h("label", { class: "toggle small", title: "An objective: the chats it starts may record North Star progress without asking; anything else follows this realm's rules" },
       h("input", { type: "checkbox", checked: !!s, onchange: (e) => change("/schedule", { every: e.target.checked ? every.value : null }, undefined, e.target.checked ? "Airth will push it forward on its own" : "Stopped") }),
       h("span", null, "Airth pushes it forward on its own")),
     every,
@@ -942,7 +949,7 @@ function drawNorthStar(el) {
     milestones,
     h("div", { class: "ns-actions" },
       has
-        ? h("button", { class: "btn primary", type: "button", disabled: noModel, title: "A run on the next milestone: the most valuable step it can complete and verify now", onclick: () => startNorthStarRun("push") }, "Push it forward now")
+        ? h("button", { class: "btn primary", type: "button", disabled: noModel, title: "A chat on the next milestone: the most valuable step Airth can complete and verify now", onclick: () => startNorthStarRun("push") }, "Push it forward now")
         : h("button", { class: "btn primary", type: "button", disabled: noModel, onclick: () => startNorthStarRun("brainstorm") }, "Define it with Airth"),
       has && h("button", { class: "btn", type: "button", disabled: noModel, title: "Airth asks what changed and reworks the goal and milestones with you", onclick: () => startNorthStarRun("brainstorm") }, "Refine with Airth")),
     daily));
@@ -979,7 +986,7 @@ const CAN_DO = [
     text: "Remembers what matters in this realm, and keeps the North Star's milestones up to date.",
     examples: ["Remember that I prefer meetings in the morning", "What should I do next for the North Star?"] },
   { caps: [], icon: "clock", title: "Work on its own",
-    text: "Objectives start runs for you: on a schedule, when files change, or from a webhook. A brief every morning, a weekly review…",
+    text: "Objectives start work for you: on a schedule, when files change, or from a webhook. A brief every morning, a weekly review…",
     link: ["Set up an objective", (r) => `#/r/${enc(r)}/objectives`] },
   { caps: ["skill"], icon: "spark", title: "New skills",
     text: "When it hits a limit, it can build and test a small tool; nothing is installed until you say so. Or add ready-made skills.",
@@ -1049,7 +1056,7 @@ async function openCanDo(onExample) {
           h("ul", null,
             h("li", null, "It works only in this realm: other realms' files, memory and keys stay out of reach."),
             h("li", null, "It never sees your keys and passwords; the runtime adds them for it."),
-            h("li", null, "You can stop a run at any time, and review a change before it counts."))),
+            h("li", null, "You can stop Airth at any time, and review a change before it counts."))),
         tools)));
   document.body.append(canDo);
   document.addEventListener("keydown", onKey);
@@ -1101,7 +1108,7 @@ function renderNew(main) {
   });
   if (modelError) {
     c.errorEl.replaceChildren(
-      h("span", { title: modelError }, "Airth has no model yet, so it cannot start a run. "),
+      h("span", { title: modelError }, "Airth has no model yet, so it cannot start a chat. "),
       h("a", { href: "#/welcome", onclick: () => { welcomeUi.step = WELCOME_STEPS.indexOf("model"); welcomeUi.setup = null; } }, "Connect Claude"),
       " or ",
       h("a", { href: `#/r/${enc(app.realm)}/settings/models` }, "choose another provider"), ".");
@@ -1111,6 +1118,8 @@ function renderNew(main) {
   const ns = northStar();
   const suggestions = ns && ns.milestones.length && focusOn() ? SUGGESTIONS.northStar : isCode ? SUGGESTIONS.code : SUGGESTIONS.other;
   const fill = (text) => { c.ta.value = text; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); };
+  const prefill = app.prefill;
+  app.prefill = null;
   const tools = d
     ? h("button", { class: "cando-link", type: "button", onclick: () => openCanDo(fill) }, icon("compass"), "What can Airth do for you?")
     : null;
@@ -1128,6 +1137,7 @@ function renderNew(main) {
         c.el,
         h("div", { class: "suggestions" },
           suggestions.map((s) => h("button", { class: "suggestion", type: "button", onclick: () => { c.ta.value = s; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); } }, s))))));
+  if (prefill) fill(prefill);
   c.ta.focus();
 }
 
@@ -1236,7 +1246,7 @@ function renderRun() {
     h("span", { class: "rh-state " + statusClass }, STATUS_LABEL[status] || status),
     h("span", null, "updated " + ago(s.updated_at)),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
-    (s.north_star || (app.runs.find((r) => r.id === s.id) || {}).focus) && h("span", { class: "rh-tag ns", title: "This run serves the realm's North Star" }, "★ North Star"),
+    (s.north_star || (app.runs.find((r) => r.id === s.id) || {}).focus) && h("span", { class: "rh-tag ns", title: "This chat serves the realm's North Star" }, "★ North Star"),
     s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
   ].filter(Boolean);
   if (!app.renaming) runEls.header.replaceChildren(
@@ -1280,9 +1290,9 @@ function renderRun() {
   c.block(disabled);
   if (c.picker) c.picker.refresh();
   c.ta.placeholder = d.live
-    ? (d.elsewhere ? "This run is in progress in another Airth process…" : "Airth is working… write your next message, it can be sent when it stops.")
-    : closed ? `This run's change was ${s.change.status}. Start a new run to keep going.`
-    : status === "interrupted" ? "This run was interrupted. Send a message to resume it…" : "Send a follow-up…";
+    ? (d.elsewhere ? "This chat is in progress in another Airth process…" : "Airth is working… write your next message, it can be sent when it stops.")
+    : closed ? `This chat's change was ${s.change.status}. Start a new chat to keep going.`
+    : status === "interrupted" ? "This chat was interrupted. Send a message to resume it…" : "Send a follow-up…";
 }
 
 function transcriptNodes(d) {
@@ -1387,9 +1397,9 @@ function transcriptNodes(d) {
       || (s.north_star && s.objective.startsWith("Define my North Star") && !s.events.some((e) => e.action === "north_star" && e.status === "ok")));
     const text = {
       completed: asks ? "Your turn: Airth is waiting for your answer." : `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
-      failed: "The run failed.",
-      stopped: "The run stopped.",
-      interrupted: "The run was interrupted: the process exited before it finished.",
+      failed: "The chat failed.",
+      stopped: "The chat stopped.",
+      interrupted: "The chat was interrupted: the process exited before it finished.",
     }[status];
     const showReport = status !== "completed" && s.report;
     const closed = s.change && s.change.status !== "open";
@@ -1594,7 +1604,7 @@ function sideNodes(d, status) {
   } else {
     nodes.push(h("section", { class: "side-section" },
       h("div", { class: "side-head" }, h("span", null, "Plan")),
-      h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this run.")));
+      h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this chat.")));
   }
   const row = (k, v, title) => v != null && v !== false && h("div", { class: "kv", title: title || "" }, h("span", { class: "k" }, k), h("span", { class: "v" }, v));
   nodes.push(h("section", { class: "side-section" },
@@ -1613,7 +1623,7 @@ function sideNodes(d, status) {
     })() : null,
     s.change && row("Change", s.change.status),
     row("Updated", ago(s.updated_at)),
-    row("Run", s.id)));
+    row("Chat", s.id)));
   return nodes;
 }
 
@@ -1732,7 +1742,7 @@ function approvalCard(p) {
     ["north_star", "remember"].includes(p.tool) ? readablePreview(p.preview) : diffView(p.preview, kind),
     h("div", { class: "approval-actions" },
       h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve ", h("kbd", null, modKey + "↵")),
-      p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this run are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this run`),
+      p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this chat are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this chat`),
       h("button", { class: "btn danger", type: "button", onclick: () => answer(false) }, "Deny"),
       reason));
 }
@@ -1764,7 +1774,7 @@ function changePanel(d) {
         const [st, ...rest] = f.split("\t");
         return h("div", { class: "file-row" }, h("span", { class: "st st-" + st[0] }, st[0]), h("span", null, rest.join(" → ")));
       }))
-    : h("div", { class: "muted small pad" }, d.live ? "Changes appear here when the run finishes." : "No files changed.");
+    : h("div", { class: "muted small pad" }, d.live ? "Changes appear here when Airth finishes." : "No files changed.");
 
   let checkList = null;
   if (checks) {
@@ -1968,7 +1978,7 @@ function renderSettings(main) {
   const section = (title, sub, ...body) => [title && h("h2", null, title), sub && h("p", { class: "muted lead" }, sub), ...body];
 
   const general = () => {
-    const desc = h("textarea", { rows: 2, placeholder: "What this realm is about (Airth reads this in every run)" });
+    const desc = h("textarea", { rows: 2, placeholder: "What this realm is about (Airth reads this in every chat)" });
     desc.value = d.description;
     desc.addEventListener("change", () => save({ description: desc.value.trim() }, "Description saved"));
     return [
@@ -1978,19 +1988,19 @@ function renderSettings(main) {
         field("Description", desc),
         field("Workspace", h("span", { class: "value path", title: d.root }, tildePath(d.root)), d.own_root ? null : "A private folder in Airth's home."),
         field("Changes", h("span", { class: "value" }, d.isolation === "worktree"
-          ? "Each run works on its own copy (a git worktree); you adopt or discard what it changed."
-          : "Runs work directly in the workspace."))),
+          ? "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."
+          : "Chats work directly in the workspace."))),
       ...section("Your profile", null,
         h("div", { class: "card" },
           h("label", { class: "toggle" },
             h("input", { type: "checkbox", checked: d.share_owner_profile, onchange: (e) => save({ share_owner_profile: e.target.checked }) }),
-            h("span", null, h("span", null, "Share your profile with this realm's runs"),
+            h("span", null, h("span", null, "Share your profile with this realm's chats"),
               h("span", { class: "muted small block" }, "Your name, what you do, your preferences and boundaries, from ", h("a", { href: "#/owner" }, "your profile"), "."))))),
     ];
   };
 
   const models = () => section(null,
-    "Which models this realm's runs use. With a fast model, Airth sorts each new request: simple ones (questions, lookups, short texts) go to the fast model, which costs much less; the rest go to the main model.",
+    "Which models this realm's chats use. With a fast model, Airth sorts each new request: simple ones (questions, lookups, short texts) go to the fast model, which costs much less; the rest go to the main model.",
     modelSettings(d),
     h("p", { class: "muted small" }, "A model's API key goes under ", h("a", { href: `#/r/${enc(d.name)}/settings/access` }, "Access"), "."));
 
@@ -2016,14 +2026,14 @@ function renderSettings(main) {
       catch (e) { flash(e.message, true); }
     };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
-    return section(null, "What Airth remembers in this realm. Runs in other realms never see it.",
+    return section(null, "What Airth remembers in this realm. Chats in other realms never see it.",
       h("div", { class: "card" },
         h("div", { class: "inline-form first" }, input, h("button", { class: "btn", type: "button", onclick: add }, "Add")),
         d.memory.length ? d.memory.map((m) =>
           h("div", { class: "list-row" },
-            h("div", { class: "grow" }, m.text, h("div", { class: "muted small" }, (m.source === "owner" ? "added by you" : "learned in " + m.source.replace("run:", "run ")) + " · " + ago(m.created_at))),
+            h("div", { class: "grow" }, m.text, h("div", { class: "muted small" }, (m.source === "owner" ? "added by you" : "learned in a chat") + " · " + ago(m.created_at))),
             h("button", { class: "icon-btn", type: "button", title: "Forget", "aria-label": "Forget", onclick: () => remove(`${realmPath(d.name)}/memory/${enc(m.id)}`) }, "×")))
-          : h("div", { class: "empty-row muted small" }, "Nothing yet. Runs add what they learn; you can add facts here.")));
+          : h("div", { class: "empty-row muted small" }, "Nothing yet. Chats add what they learn; you can add facts here.")));
   };
 
   const access = () => {
@@ -2071,7 +2081,7 @@ function renderSettings(main) {
               h("button", { class: "icon-btn", type: "button", title: "Remove", "aria-label": "Remove " + s.key, onclick: () => remove(`${realmPath(d.name)}/secrets/${enc(s.key)}`) }, "×")))
             : h("div", { class: "empty-row muted small" }, "No keys yet."),
           h("div", { class: "inline-form" }, key, val, h("button", { class: "btn", type: "button", onclick: addSecret }, "Save")))),
-      ...section("Integrations", "Services this realm's runs may call. A header can carry a key as [secret:NAME]: the runtime fills it in, only for requests under the base URL, and the model never sees it. Without an integration, runs reach only public websites, with no keys.",
+      ...section("Integrations", "Services this realm's chats may call. A header can carry a key as [secret:NAME]: the runtime fills it in, only for requests under the base URL, and the model never sees it. Without an integration, runs reach only public websites, with no keys.",
         h("p", { class: "muted small" }, "For common services (Notion, Linear, GitHub, Stripe…), ",
           h("a", { href: `#/r/${enc(d.name)}/skills`, onclick: () => { skillUi.tab = "connectors"; } }, "Connectors"),
           " set this up in one step."),
@@ -2099,7 +2109,7 @@ function renderSettings(main) {
     const checks = h("textarea", { rows: 3, placeholder: "One command per line, e.g. cargo test" });
     checks.value = d.checks.join("\n");
     return [
-      ...section("Checks", "Commands the runtime runs on every change before you can adopt it, in the run's sandbox. Useful for code: tests, linters.",
+      ...section("Checks", "Commands the runtime runs on every change before you can adopt it, in the chat's sandbox. Useful for code: tests, linters.",
         h("div", { class: "card" }, checks,
           h("div", { class: "row-end" }, h("button", { class: "btn", type: "button", onclick: () => save({ checks: checks.value.split("\n") }, "Checks saved") }, "Save checks")))),
       ...section("Realm", null,
@@ -2110,7 +2120,7 @@ function renderSettings(main) {
             d.default ? h("span", { class: "chip" }, "default") : h("button", { class: "btn", type: "button", onclick: () => save({ default: true }, "Default realm set") }, "Make default")),
           h("div", { class: "policy-row" },
             h("div", null, h("div", { class: "strong" }, d.archived ? "Archived" : "Archive"),
-              h("div", { class: "muted small" }, "Hides the realm from the switcher and stops its objectives. Its runs, memory and files are kept; you can restore it.")),
+              h("div", { class: "muted small" }, "Hides the realm from the switcher and stops its objectives. Its chats, memory and files are kept; you can restore it.")),
             h("button", { class: "btn" + (d.archived ? "" : " danger"), type: "button", onclick: () => save({ archived: !d.archived }, d.archived ? "Restored" : "Archived") }, d.archived ? "Restore" : "Archive")))),
     ];
   };
@@ -2258,7 +2268,7 @@ async function renderOwner(main) {
   const picture = field("Picture", pictureEditor({ path: "owner/avatar", version: owner.avatar, text: owner.name, round: true,
     done: (o) => { app.ownerAvatar = o.avatar; renderFoot(); renderMain(); } }), "Shown in the app only.");
   inner.append(
-    h("p", { class: "muted lead" }, "What Airth knows about you. Realms that share your profile give it to every run; you can turn that off in a realm's settings."),
+    h("p", { class: "muted lead" }, "What Airth knows about you. Realms that share your profile give it to every chat; you can turn that off in a realm's settings."),
     h("div", { class: "card" }, picture, field("Name", name), field("About", about), lists.map((l) => l.el)),
     h("div", { class: "row-end" }, status));
 }
@@ -2307,9 +2317,226 @@ function grantText(g) {
 
 let confirmDelete = null;
 
+// ---------- documents ----------
+
+const docsUi = { filter: "", preview: null, confirmTrash: false };
+const DOC_TEXT = /\.(md|markdown|txt|text|csv|tsv|json|jsonl|ya?ml|toml|ini|cfg|conf|log|xml|html?|css|scss|js|mjs|ts|jsx|tsx|py|rb|rs|go|java|kt|swift|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|fish|sql|r|lua|tex|srt|vtt|ics|vcf|eml)$/i;
+const DOC_IMAGE = /\.(png|jpe?g|gif|webp|svg|heic)$/i;
+const DOC_PDF = /\.pdf$/i;
+const DOC_MAX_UPLOAD = 50 << 20;
+const DOC_MAX_TEXT = 1 << 20;
+
+const docHash = (realm, path) => `#/r/${enc(realm)}/documents` + (path ? "/" + enc(path) : "");
+const docParent = (path) => path.split("/").slice(0, -1).join("/");
+const docName = (path) => path.split("/").pop();
+const docIconName = (name, dir) => (dir ? "folder" : DOC_IMAGE.test(name) ? "photo" : "file");
+
+function fmtSize(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1 << 20) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1 << 20)).toFixed(n < 10 << 20 ? 1 : 0)} MB`;
+}
+
+/** A document's bytes, fetched with the API token. */
+async function docBlob(realm, path) {
+  const res = await fetch(`/api/${realmPath(realm)}/files/raw?path=${enc(path)}`, { headers: { "X-Airth-Token": token || "" } });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.blob();
+}
+
+/** Add files to a folder of the realm's documents; never replaces one. */
+async function uploadDocs(realm, dir, files) {
+  const list = [...files];
+  const big = list.filter((f) => f.size > DOC_MAX_UPLOAD);
+  if (big.length) flash(`${big.map((f) => f.name).join(", ")}: too large (at most 50 MB)`, true);
+  let added = 0;
+  for (const f of list.filter((f) => f.size <= DOC_MAX_UPLOAD)) {
+    try {
+      const res = await fetch(`/api/${realmPath(realm)}/files/raw?dir=${enc(dir)}&name=${enc(f.name)}`,
+        { method: "PUT", headers: { "X-Airth-Token": token || "" }, body: f });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      added++;
+    } catch (e) { flash(`${f.name}: ${e.message}`, true); }
+  }
+  if (added) flash(added === 1 ? "Added 1 file" : `Added ${added} files`);
+  return added;
+}
+
+/** Start a chat about a document: the box is filled, you finish the sentence. */
+function askAboutDoc(realm, path) {
+  closeDocPreview();
+  app.prefill = `About \`${path}\`: `;
+  go(`#/r/${enc(realm)}`);
+}
+
+async function renderDocuments(main) {
+  const realm = app.realm;
+  const path = app.route.path || "";
+  const d = app.realmDetail;
+  page(main, "Documents", null);
+  const inner = $(".page-inner", main);
+  const sub = h("p", { class: "sub" });
+  const crumbs = h("nav", { class: "doc-crumbs", "aria-label": "Folder" });
+  const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: async (e) => {
+    if (await uploadDocs(realm, path, e.target.files)) load();
+    e.target.value = "";
+  } });
+  const filter = h("input", { type: "search", class: "doc-filter", placeholder: "Filter this folder", value: docsUi.filter, "aria-label": "Filter this folder",
+    oninput: (e) => { docsUi.filter = e.target.value; draw(); } });
+  const tools = h("div", { class: "doc-tools" },
+    filter,
+    h("button", { class: "btn", type: "button", title: "Show this folder in the Finder", onclick: () => openDoc(realm, path, true) }, icon("folder"), "Finder"),
+    h("button", { class: "btn primary", type: "button", onclick: () => fileInput.click() }, icon("plus"), "Add files"),
+    fileInput);
+  const madeEl = h("div");
+  const listEl = h("div", { class: "doc-list" }, h("div", { class: "muted small pad" }, "Loading…"));
+  inner.append(sub, h("div", { class: "doc-bar" }, crumbs, tools), madeEl, listEl);
+
+  // Files dropped anywhere on the page land in this folder.
+  const pageEl = $(".page", main);
+  let depth = 0;
+  pageEl.addEventListener("dragenter", (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { depth++; pageEl.classList.add("dropping"); } });
+  pageEl.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; pageEl.classList.remove("dropping"); } });
+  pageEl.addEventListener("dragover", (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+  pageEl.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    depth = 0;
+    pageEl.classList.remove("dropping");
+    const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter((f) => f.size > 0 || f.type);
+    if (!files.length) return flash("Drop files, not folders", true);
+    if (await uploadDocs(realm, path, files)) load();
+  });
+
+  let data = null;
+  const still = () => app.route.view === "documents" && app.realm === realm && (app.route.path || "") === path;
+  const load = async () => {
+    try { data = await api(`${realmPath(realm)}/files?path=${enc(path)}`); }
+    catch (e) { listEl.replaceChildren(h("div", { class: "empty-row muted small" }, e.message)); return; }
+    if (still()) draw();
+  };
+  const draw = () => {
+    sub.replaceChildren(data.own_root
+      ? h("span", null, "The files in ", h("code", { class: "path", title: data.root }, tildePath(data.root)), ". Airth reads and works with them in this realm's chats.")
+      : "This realm's own folder. Add the files Airth should work with; what it makes appears here too.",
+      d && d.isolation === "worktree" ? " What a chat changes appears here once you adopt it." : "");
+    const parts = data.path ? data.path.split("/") : [];
+    crumbs.replaceChildren(
+      h("a", { href: docHash(realm, ""), class: parts.length ? "" : "here" }, icon("folder"), realm),
+      parts.map((p, i) => [h("span", { class: "doc-sep", "aria-hidden": "true" }, "/"),
+        h("a", { href: docHash(realm, parts.slice(0, i + 1).join("/")), class: i === parts.length - 1 ? "here" : "" }, p)]));
+    madeEl.replaceChildren(data.made.length ? h("section", { class: "doc-made" },
+      h("h2", null, "Made by Airth"),
+      h("div", { class: "doc-made-grid" }, data.made.map((m) => h("div", { class: "doc-made-card" },
+        h("button", { class: "doc-made-open", type: "button", onclick: () => openDocPreview(realm, m.path, { modified: m.at }) },
+          icon(m.edited ? "fileEdit" : "filePlus"),
+          h("span", { class: "grow" }, h("span", { class: "doc-name" }, docName(m.path)),
+            docParent(m.path) && h("span", { class: "muted small doc-in" }, docParent(m.path)))),
+        h("div", { class: "muted small doc-from" }, m.edited ? "edited in " : "written in ",
+          h("a", { href: `#/r/${enc(realm)}/run/${enc(m.run)}` }, m.run_title || "a chat"), " · ", ago(m.at)))))) : null);
+    const q = docsUi.filter.trim().toLowerCase();
+    const entries = data.entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+    listEl.replaceChildren(
+      entries.length ? entries.map((e) => {
+        const rel = data.path ? `${data.path}/${e.name}` : e.name;
+        return h("button", { class: "doc-row", type: "button",
+          onclick: () => (e.dir ? go(docHash(realm, rel)) : openDocPreview(realm, rel, e)) },
+          h("span", { class: "doc-icon" + (e.dir ? " dir" : "") }, icon(docIconName(e.name, e.dir))),
+          h("span", { class: "doc-name grow" }, e.name),
+          h("span", { class: "muted small doc-size" }, e.dir ? "" : fmtSize(e.size)),
+          h("span", { class: "muted small doc-date" }, e.modified ? ago(e.modified) : ""));
+      })
+      : h("div", { class: "doc-empty" },
+        q ? h("p", { class: "muted" }, "Nothing here matches.")
+          : [icon("folder"), h("p", { class: "strong" }, data.path ? "This folder is empty" : "No documents yet"),
+            h("p", { class: "muted small" }, "Drop files here, or ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); fileInput.click(); } }, "add files"),
+              ". Airth can read them, sum them up, compare them, and make new ones.")]));
+  };
+  docsUi.reload = load;
+  await load();
+}
+
+async function openDoc(realm, path, reveal) {
+  try { await api(`${realmPath(realm)}/files/open`, { path, reveal: !!reveal }); }
+  catch (e) { flash(e.message, true); }
+}
+
+function closeDocPreview() {
+  const p = docsUi.preview;
+  if (!p) return;
+  docsUi.preview = null;
+  document.removeEventListener("keydown", p.onKey);
+  if (p.url) setTimeout(() => URL.revokeObjectURL(p.url), 1000);
+  p.el.classList.add("closing");
+  setTimeout(() => p.el.remove(), 140);
+}
+
+async function openDocPreview(realm, path, meta) {
+  closeDocPreview();
+  docsUi.confirmTrash = false;
+  const body = h("div", { class: "doc-preview-body" }, h("div", { class: "muted small pad" }, "Loading…"));
+  const trashBtn = h("button", { class: "btn danger", type: "button", onclick: async () => {
+    if (!docsUi.confirmTrash) { docsUi.confirmTrash = true; trashBtn.textContent = "Click again to move it to the Trash"; return; }
+    try { await api(`${realmPath(realm)}/files/trash`, { path }); } catch (e) { return flash(e.message, true); }
+    closeDocPreview();
+    flash("Moved to the Trash");
+    if (docsUi.reload) docsUi.reload();
+  } }, icon("trash"), "Trash");
+  const onKey = (e) => { if (e.key === "Escape") closeDocPreview(); };
+  const el = h("div", { class: "pal-overlay doc-overlay", onmousedown: (e) => { if (e.target === el) closeDocPreview(); } },
+    h("div", { class: "pal doc-preview", role: "dialog", "aria-modal": "true", "aria-label": docName(path) },
+      h("div", { class: "doc-preview-head" },
+        h("span", { class: "doc-icon" }, icon(docIconName(path, false))),
+        h("div", { class: "grow doc-preview-title" },
+          h("div", { class: "strong" }, docName(path)),
+          h("div", { class: "muted small" }, [docParent(path) || app.realm, meta && meta.size != null ? fmtSize(meta.size) : null, meta && meta.modified ? ago(meta.modified) : null].filter(Boolean).join(" · "))),
+        h("button", { class: "icon-btn", type: "button", "aria-label": "Close", title: "Close (Esc)", onclick: closeDocPreview }, "×")),
+      body,
+      h("div", { class: "doc-preview-foot" },
+        h("button", { class: "btn primary", type: "button", onclick: () => askAboutDoc(realm, path) }, icon("spark"), "Ask Airth about it"),
+        h("button", { class: "btn", type: "button", onclick: () => openDoc(realm, path, false) }, "Open"),
+        h("button", { class: "btn", type: "button", onclick: () => openDoc(realm, path, true) }, "Show in Finder"),
+        h("span", { class: "grow" }),
+        trashBtn)));
+  docsUi.preview = { el, onKey, url: null };
+  document.addEventListener("keydown", onKey);
+  document.body.append(el);
+
+  const kind = DOC_PDF.test(path) ? "pdf" : DOC_IMAGE.test(path) ? "image" : DOC_TEXT.test(path) ? "text" : null;
+  if (kind === "pdf") {
+    // The browser's PDF viewer needs a page of its own: a short-lived link.
+    let link;
+    try { link = await api(`${realmPath(realm)}/files/preview`, { path }); }
+    catch (e) { body.replaceChildren(h("div", { class: "doc-none" }, h("p", null, e.message))); return; }
+    if (docsUi.preview && docsUi.preview.el === el) body.replaceChildren(h("iframe", { class: "doc-pdf", src: link.url, title: docName(path) }));
+    return;
+  }
+  if (!kind) {
+    body.replaceChildren(h("div", { class: "doc-none" }, icon("file"), h("p", null, "No preview for this kind of file."),
+      h("button", { class: "btn", type: "button", onclick: () => openDoc(realm, path, false) }, "Open it on your Mac")));
+    return;
+  }
+  let blob;
+  try { blob = await docBlob(realm, path); }
+  catch (e) { body.replaceChildren(h("div", { class: "doc-none" }, h("p", null, e.message))); return; }
+  if (!docsUi.preview || docsUi.preview.el !== el) return;
+  if (kind === "text") {
+    const cut = blob.size > DOC_MAX_TEXT;
+    const text = await blob.slice(0, DOC_MAX_TEXT).text();
+    const content = /\.(md|markdown)$/i.test(path)
+      ? h("div", { class: "prose doc-md", html: md(text) })
+      : h("pre", { class: "doc-text" }, text);
+    body.replaceChildren(content, cut && h("p", { class: "muted small pad" }, "Only the first megabyte is shown."));
+    return;
+  }
+  // Shown as an image only: a preview never runs as a page.
+  const url = URL.createObjectURL(blob);
+  docsUi.preview.url = url;
+  body.replaceChildren(h("div", { class: "doc-image" }, h("img", { src: url, alt: docName(path) })));
+}
+
 async function renderObjectives(main) {
   const realm = app.realm;
-  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each run may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification when a run ends.");
+  page(main, "Objectives", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification when a run ends.");
   const inner = $(".page-inner", main);
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
   inner.append(listEl);
@@ -2356,7 +2583,7 @@ async function renderObjectives(main) {
   // New objective
   const f = {
     id: h("input", { type: "text", placeholder: "name, e.g. morning-triage", autocomplete: "off", spellcheck: "false" }),
-    objective: h("textarea", { rows: 3, placeholder: "What each run should achieve, e.g. “Triage new issues in the tracker and write today's summary to triage.md”" }),
+    objective: h("textarea", { rows: 3, placeholder: "What Airth should achieve each time, e.g. “Triage new issues in the tracker and write today's summary to triage.md”" }),
     kind: h("select", null, ["schedule", "watch", "webhook", "manual"].map((k) => h("option", { value: k }, { schedule: "On a schedule", watch: "When files change", webhook: "From a webhook", manual: "Only when I start it" }[k]))),
     every: h("input", { type: "text", placeholder: "every 30m · daily 08:30 · weekdays 09:00 · mon,thu 18:00", value: "daily 08:30" }),
     path: h("input", { type: "text", placeholder: "folder or file in the realm, e.g. inbox" }),
@@ -2375,7 +2602,7 @@ async function renderObjectives(main) {
   const triggerField = h("div");
   const syncTrigger = () => triggerField.replaceChildren(
     f.kind.value === "schedule" ? f.every : f.kind.value === "watch" ? f.path
-      : h("div", { class: "muted small" }, f.kind.value === "webhook" ? "You get a private URL to POST to from this machine; the request body is given to the run as data." : "Start it from this page or with airth objective run."));
+      : h("div", { class: "muted small" }, f.kind.value === "webhook" ? "You get a private URL to POST to from this machine; the request body is given to Airth as data." : "Start it from this page or with airth objective run."));
   f.kind.addEventListener("change", syncTrigger);
   syncTrigger();
   const num = (el) => (el.value.trim() ? Number(el.value) : undefined);
@@ -2410,9 +2637,9 @@ async function renderObjectives(main) {
   const GRANT_ICONS = { write: "fileEdit", execute: "terminal", memory: "brain", network: "world" };
   const stepBody = () => {
     if (step === 0) return [
-      h("div", { class: "wiz-q" }, "What should each run achieve?"),
+      h("div", { class: "wiz-q" }, "What should Airth achieve each time?"),
       f.objective,
-      h("div", { class: "wiz-hint" }, "Write it like an instruction to a colleague: every run starts from it."),
+      h("div", { class: "wiz-hint" }, "Write it like an instruction to a colleague: every time starts from it."),
       field("Name", f.id, "Shown in the list, and used by `airth objective run`.")];
     if (step === 1) return [
       h("div", { class: "wiz-q" }, "When should it run?"),
@@ -2441,7 +2668,7 @@ async function renderObjectives(main) {
         kv("Objective", f.objective.value.trim()), kv("Name", f.id.value.trim()), kv("Runs", when),
         kv("Approved", grantOptions.filter((g) => g.box.checked).map((g) => g.label).join(", ") || "nothing beyond the realm's rules"),
         kv("Waits for you", `${f.wait.value || 10} min`)),
-      h("details", { class: "wiz-more" }, h("summary", null, "Limits per run (optional)"),
+      h("details", { class: "wiz-more" }, h("summary", null, "Limits each time (optional)"),
         h("div", { class: "inline" }, f.minutes, f.tokens, f.iterations), h("div", { class: "wiz-hint" }, "Leave empty for the defaults."))];
   };
   const valid = () => step !== 0 || (f.objective.value.trim() && f.id.value.trim());
@@ -2470,21 +2697,21 @@ async function renderObjectives(main) {
 // ---------- skills ----------
 
 const SKILL_HELP = {
-  proposed: "Proposed by a run. Nothing is built yet.",
+  proposed: "Proposed in a chat. Nothing is built yet.",
   developing: "Airth is building it in its own folder, with no access to the rest of the realm.",
   ready: "Built, and every test passed. Review it, then install it to enable it.",
   failed: "Built, but the evaluation failed.",
-  installed: "Enabled: runs in this realm can use it.",
+  installed: "Enabled: chats in this realm can use it.",
   rejected: "You declined it.",
 };
 
 const skillUi = { open: new Set(), files: {}, feedback: {}, tab: "built" };
 
 const SKILL_TABS = [
-  ["built", "Built by Airth", "spark", "Small programs with tests that become tools. Runs propose them when they hit a limit; Airth develops each one in isolation and tests it; nothing is enabled until you install it."],
-  ["connectors", "Connectors", "world", "Connect the services you use (Notion, Linear, GitHub, Stripe…) in one step: paste a token once, and runs in this realm can call the service's official API. The token never leaves for anywhere else, and the agent never sees it."],
-  ["catalog", "Catalog", "books", "Ready-made Agent Skills (instructions, scripts, references) from Anthropic's public catalog. Install one and runs in this realm read it when a task matches."],
-  ["mcp", "MCP servers", "plug", "Model Context Protocol servers give runs new tools (GitHub, databases, browsers…). Each runs in this realm's sandbox with its credentials, and every call follows the realm's skill rule."],
+  ["built", "Built by Airth", "spark", "Small programs with tests that become tools. Airth proposes them when it hits a limit; Airth develops each one in isolation and tests it; nothing is enabled until you install it."],
+  ["connectors", "Connectors", "world", "Connect the services you use (Notion, Linear, GitHub, Stripe…) in one step: paste a token once, and chats in this realm can call the service's official API. The token never leaves for anywhere else, and the agent never sees it."],
+  ["catalog", "Catalog", "books", "Ready-made Agent Skills (instructions, scripts, references) from Anthropic's public catalog. Install one and chats in this realm read it when a task matches."],
+  ["mcp", "MCP servers", "plug", "Model Context Protocol servers give chats new tools (GitHub, databases, browsers…). Each runs in this realm's sandbox with its credentials, and every call follows the realm's skill rule."],
 ];
 
 async function renderSkills(main) {
@@ -2535,8 +2762,8 @@ async function renderSkills(main) {
       h("div", { class: "muted small" }, SKILL_HELP[sk.status]),
       sk.reason && h("div", { class: "objective-meta" }, "Why: ", sk.reason),
       h("div", { class: "objective-meta" },
-        h("span", null, sk.proposed_by === "owner" ? "asked for by you" : "proposed by ", sk.proposed_by !== "owner" && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.proposed_by.replace("run:", ""))}` }, "a run")),
-        sk.dev_run && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.dev_run)}` }, "development run"),
+        h("span", null, sk.proposed_by === "owner" ? "asked for by you" : "proposed by ", sk.proposed_by !== "owner" && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.proposed_by.replace("run:", ""))}` }, "a chat")),
+        sk.dev_run && h("a", { href: `#/r/${enc(realm)}/run/${enc(sk.dev_run)}` }, "development chat"),
         sk.installed && h("span", null, "installed " + ago(sk.installed.at))),
       ev && h("div", { class: "eval" },
         h("div", { class: ev.problems.length || ev.results.some((r) => !r.ok) ? "warn small strong" : "ok small strong" }, "Evaluation: " + sk.summary + " · " + ago(ev.at)),
@@ -2561,7 +2788,7 @@ async function renderSkills(main) {
           try { list = await api(`${realmPath(realm)}/skills/${enc(sk.name)}`, undefined, "DELETE"); draw(); } catch (e) { flash(e.message, true); }
         } }, confirmDelete === "skill:" + sk.name ? "Really delete?" : "Delete")));
   };
-  const draw = () => listEl.replaceChildren(list.length ? h("div", { class: "objectives" }, list.map(card)) : h("div", { class: "card muted small pad" }, "No skills yet. Runs propose them when they need a capability; you can also ask for one below."));
+  const draw = () => listEl.replaceChildren(list.length ? h("div", { class: "objectives" }, list.map(card)) : h("div", { class: "card muted small pad" }, "No skills yet. Airth proposes them when it needs a capability; you can also ask for one below."));
   draw();
 
   const name = h("input", { type: "text", placeholder: "name, e.g. ical_events", autocomplete: "off", spellcheck: "false" });
@@ -2690,7 +2917,7 @@ async function renderConnectorsTab(inner, realm) {
   };
   const gmail = h("div", { class: "card cat-card conn-card" },
     h("div", { class: "cat-head" }, logo("gmail", "Gmail"), h("div", { class: "grow" }, h("div", { class: "strong" }, "Gmail & Google"), h("div", { class: "muted small" }, "through your Mac"))),
-    h("div", { class: "cat-desc" }, "Google offers no one-click sign-in for apps like Airth yet. Add your Google account in macOS (Internet Accounts): runs read your calendar and prepare Gmail drafts with the Mac app tools."),
+    h("div", { class: "cat-desc" }, "Google offers no one-click sign-in for apps like Airth yet. Add your Google account in macOS (Internet Accounts): chats read your calendar and prepare Gmail drafts with the Mac app tools."),
     h("div", { class: "row-end" }, h("a", { class: "btn", href: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension" }, "Open Internet Accounts")));
   const search = h("input", { type: "search", class: "conn-search", placeholder: "Search connectors, or the MCP Registry…", value: connUi.query, "aria-label": "Search connectors" });
   let timer = null;
@@ -2760,7 +2987,7 @@ async function renderConnectorsTab(inner, realm) {
     h("div", { class: "row-start pad-top" }, customEl),
     h("p", { class: "muted small pad-top" },
       "Connect opens the service's sign-in page; Airth keeps the access in this realm, out of reach of commands, and renews it on its own. ",
-      "Runs use a connector's tools under the realm's skill rule (they appear as mcp__name__tool)."),
+      "Chats use a connector's tools under the realm's skill rule (they appear as mcp__name__tool)."),
     keys);
   draw(); drawCustom();
   if (connUi.query.trim().length >= 2 && !connUi.registry) searchRegistry();
@@ -2837,7 +3064,7 @@ async function renderKeyConnectors(inner, realm) {
     body.replaceChildren(
       h("div", { class: "cat-grid" }, sorted.map(card)),
       h("p", { class: "muted small pad-top" },
-        "A token is saved as one of this realm's credentials and only ever sent to that service's official API. Runs call a connector by its name with http_request, under the realm's network rule. ",
+        "A token is saved as one of this realm's credentials and only ever sent to that service's official API. Chats call a connector by its name with http_request, under the realm's network rule. ",
         "Need something else? Add any API under Realm settings → Integrations, or an MCP server."));
   };
   draw();
@@ -2899,7 +3126,7 @@ async function renderCatalogTab(inner, realm, refresh = false) {
       ? h("div", { class: "cat-grid" }, cat.skills.map(card))
       : h("div", { class: "card muted small pad" }, cat.refreshing ? "Fetching the catalog from GitHub…" : "The catalog is empty."),
     h("p", { class: "muted small pad-top" },
-      "Runs in this realm see each installed skill's name and description in their use_skill tool, and read its instructions when a task matches. " +
+      "Chats in this realm see each installed skill's name and description in their use_skill tool, and read its instructions when a task matches. " +
       "It is third-party guidance: it never outranks your objective or boundaries, and its scripts only run once copied into the workspace, with your approval."));
   if (busy) refreshSkillsSoon(realm, "catalog");
 }
@@ -2936,7 +3163,7 @@ async function renderMcpTab(inner, realm) {
         h("div", { class: "grow" },
           h("div", null, h("span", { class: "strong mono" }, s.name), " ", status),
           s.description && h("div", { class: "muted small" }, s.description)),
-        h("label", { class: "toggle small", title: s.enabled ? "Runs can use it" : "Hidden from runs" },
+        h("label", { class: "toggle small", title: s.enabled ? "Chats can use it" : "Hidden from chats" },
           h("input", { type: "checkbox", checked: s.enabled, onchange: (e) => call(`${realmPath(realm)}/mcp/${enc(s.name)}`, { enabled: e.target.checked }, "PATCH") }),
           h("span", null, s.enabled ? "on" : "off"))),
       h("code", { class: "path small mcp-cmd" }, "$ " + s.command),
@@ -2944,7 +3171,7 @@ async function renderMcpTab(inner, realm) {
         s.server_info && h("span", null, s.server_info), s.connected_at && h("span", null, "connected " + ago(s.connected_at))),
       s.error && h("pre", { class: "out small" }, s.error),
       s.tools.length > 0 && h("details", { class: "mcp-tools" },
-        h("summary", { class: "muted small" }, `Tools runs get (${s.tools.length})`),
+        h("summary", { class: "muted small" }, `Tools chats get (${s.tools.length})`),
         s.tools.map((t) => h("div", { class: "kv mcp-tool", title: t.description },
           h("code", { class: "k" }, t.agent_name), h("span", { class: "v" }, t.description || "")))),
       h("div", { class: "row-end" },
@@ -2981,7 +3208,7 @@ async function renderMcpTab(inner, realm) {
       "Calls follow the realm's skill rule (now: ", h("strong", null, POLICY_WORDS[rule] || rule), "). ",
       "If it needs a token, add it under Realm settings → Access: the server gets it as an environment variable."),
     h("div", { class: "card" },
-      field("Name", f.name, "Lowercase; tools appear to runs as mcp__name__tool."),
+      field("Name", f.name, "Lowercase; tools appear to chats as mcp__name__tool."),
       field("Command", f.command, "e.g. npx -y @modelcontextprotocol/server-filesystem .  ·  uvx mcp-server-git"),
       field("Description", f.desc),
       h("div", { class: "row-end" }, h("button", { class: "btn primary", type: "button", onclick: add }, icon("plug"), "Add and connect"))));
@@ -2998,12 +3225,12 @@ function paletteItems() {
   const dark = window.airthTheme && window.airthTheme.current() === "dark";
   const items = [];
   const add = (group, label, lead, action, extra = {}) => items.push({ group, label, lead, action, ...extra });
-  if (r) add("Actions", "New run", icon("pencil"), () => go(`#/r/${r}`), { keys: modKey + "⇧O" });
+  if (r) add("Actions", "New chat", icon("pencil"), () => go(`#/r/${r}`), { keys: modKey + "⇧O" });
   add("Actions", dark ? "Switch to light mode" : "Switch to dark mode", icon(dark ? "sun" : "moon"),
     () => { window.airthTheme && window.airthTheme.set(dark ? "light" : "dark"); renderFoot(); });
   add("Actions", "Show or hide the sidebar", icon("sidebar"), toggleSidebar, { keys: modKey + "B" });
   if (app.route.view === "run" && runEls) add("Actions", "Show or hide plan & details", icon("panel"), toggleSide);
-  if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this run", icon("rename"),
+  if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this chat", icon("rename"),
     () => setTimeout(() => editInPlace(runEls && runEls.header.querySelector("h1"), app.route.id, runName({ title: app.run.title, objective: app.run.state.objective })), 160));
   const ns = northStar();
   if (r && ns) {
@@ -3024,6 +3251,7 @@ function paletteItems() {
   });
   add("Go to", "Welcome guide", icon("compass"), () => { welcomeUi.step = 0; welcomeUi.setup = null; go("#/welcome"); });
   if (r) {
+    add("Go to", "Documents", icon("folder"), () => go(`#/r/${r}/documents`));
     add("Go to", "Objectives", icon("clock"), () => go(`#/r/${r}/objectives`));
     add("Go to", "Skills", icon("spark"), () => go(`#/r/${r}/skills`));
     add("Go to", "Connectors (Notion, Linear, GitHub…)", icon("world"), () => { skillUi.tab = "connectors"; go(`#/r/${r}/skills`); });
@@ -3034,7 +3262,7 @@ function paletteItems() {
   const runs = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   for (const run of runs) {
     const status = run.needs_approval ? "awaiting" : run.live ? "running" : run.status;
-    add(`Runs in ${app.realm}`, runName(run), h("span", { class: "i" }, h("span", { class: "dot " + status })),
+    add(`Chats in ${app.realm}`, runName(run), h("span", { class: "i" }, h("span", { class: "dot " + status })),
       () => go(`#/r/${enc(app.realm)}/run/${enc(run.id)}`), { hint: `${run.live ? "running" : run.status} · ${ago(run.updated_at)}`, run: true });
   }
   for (const realm of app.realms) {
@@ -3047,7 +3275,7 @@ function paletteItems() {
 
 function openPalette() {
   if (palette || app.unauthorized) return;
-  const input = h("input", { type: "text", class: "pal-input", placeholder: "Search runs, pages, realms, actions…", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
+  const input = h("input", { type: "text", class: "pal-input", placeholder: "Search chats, pages, realms, actions…", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
   const list = h("div", { class: "pal-list", role: "listbox" });
   const overlay = h("div", { class: "pal-overlay", onmousedown: (e) => { if (e.target === overlay) closePalette(); } },
     h("div", { class: "pal", role: "dialog", "aria-modal": "true", "aria-label": "Command palette" },
@@ -3174,7 +3402,7 @@ const cachePct = (t) => (t.input ? Math.round((100 * t.cache_read) / t.input) : 
 const tokDetail = (t) => `${tok(t.input)} in · ${tok(t.output)} out · ${t.calls} call${t.calls === 1 ? "" : "s"}`;
 
 async function renderUsage(main) {
-  page(main, "Usage", "Tokens your runs exchanged with the model, across every realm. Input includes what the provider served from its prompt cache, which costs far less than fresh input.");
+  page(main, "Usage", "Tokens your chats exchanged with the model, across every realm. Input includes what the provider served from its prompt cache, which costs far less than fresh input.");
   const inner = $(".page-inner", main);
   const period = h("div", { class: "seg", role: "radiogroup", "aria-label": "Period" }, [7, 30, 90].map((d) =>
     h("button", { type: "button", role: "radio", "aria-checked": String(usageUi.days === d), class: usageUi.days === d ? "on" : "",
@@ -3238,7 +3466,7 @@ async function renderUsage(main) {
     }));
 
   const top = h("div", { class: "card" },
-    h("div", { class: "chart-head" }, h("span", { class: "strong" }, "Hungriest runs")),
+    h("div", { class: "chart-head" }, h("span", { class: "strong" }, "Hungriest chats")),
     r.top_runs.map((run) => h("button", { class: "list-row link", type: "button", onclick: () => go(`#/r/${enc(run.realm)}/run/${enc(run.id)}`) },
       h("div", { class: "grow" }, h("div", { class: "clamp" }, run.objective || "(no objective)"), h("div", { class: "muted small" }, `${run.realm} · ${tokDetail(run)} · ${cachePct(run)}% cached`)),
       h("span", { class: "strong" }, tok(total(run))))));
@@ -3271,7 +3499,7 @@ async function renderInbox(main) {
         (extra || l.report) && h("div", { class: "muted small" }, extra || l.report)));
     inner.append(h("div", { class: "card" },
       h("div", { class: "summary-head" }, h("span", { class: "strong" }, r.realm),
-        h("span", { class: "muted small" }, `${r.runs} run${r.runs === 1 ? "" : "s"} · ${r.completed} completed · ${r.failed} failed · ${r.stopped} stopped`)),
+        h("span", { class: "muted small" }, `${r.runs} chat${r.runs === 1 ? "" : "s"} · ${r.completed} completed · ${r.failed} failed · ${r.stopped} stopped`)),
       r.to_review.map((l) => line("⧗", l, "Change waiting for your review")),
       r.unfinished.map((l) => line("↻", l, `${l.status}: can be resumed`)),
       r.recent.map((l) => line("✓", l)),
@@ -3301,9 +3529,9 @@ function renderNewRealm(main) {
   const desc = h("input", { type: "text", placeholder: "e.g. My job at Acme Corp" });
   const root = h("input", { type: "text", placeholder: "Leave empty for a private folder, or e.g. ~/code/project", spellcheck: "false" });
   const iso = h("select", null,
-    h("option", { value: "" }, "Automatic (a worktree per run for git repositories)"),
+    h("option", { value: "" }, "Automatic (a worktree per chat for git repositories)"),
     h("option", { value: "none" }, "None: work directly in the folder"),
-    h("option", { value: "worktree" }, "Worktree per run"));
+    h("option", { value: "worktree" }, "Worktree per chat"));
   const star = h("input", { type: "text", placeholder: "Optional: the one goal of this realm, e.g. “100 kit sales by December”" });
   const err = h("div", { class: "error-banner", hidden: true });
   const create = async () => {
@@ -3370,7 +3598,7 @@ async function renderWelcome(main) {
       h("p", { class: "lead" }, "Your personal agent. It works on your Mac with your files, apps and services, and asks you before anything that matters."),
       h("div", { class: "welcome-points" },
         point("folder", "Realms", "Each area of your life (work, a project, home) gets its own files, memory, keys and rules. Nothing crosses between them."),
-        point("send", "Runs", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own."),
+        point("send", "Chats", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own."),
         point("star", "North Star", "Give a realm one goal. Airth helps you break it into milestones and keeps moving it forward.")),
       h("p", { class: "muted small" }, "Setting up takes about two minutes."),
       actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Get started")),
@@ -3454,7 +3682,7 @@ async function renderWelcome(main) {
         h("h1", null, "Your first realm"),
         h("p", { class: "lead" }, "A realm is one area of your life. Start with one; add others (work, a client, a project) whenever you like."),
         h("label", { class: "welcome-label" }, "Name", name, h("span", { class: "muted small" }, "Lowercase letters, digits and dashes.")),
-        h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every run of the realm.")),
+        h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every chat of the realm.")),
         h("label", { class: "welcome-label" }, "North Star", star, h("span", { class: "muted small" }, "The one goal of this realm. Airth will ask you a few questions to sharpen it.")),
         err,
         actions(create),
@@ -3482,11 +3710,11 @@ async function renderWelcome(main) {
       h("h1", null, "You're set"),
       h("p", { class: "lead" }, "A few things worth knowing:"),
       h("div", { class: "welcome-points" },
-        tip("pencil", "New run", "Ask for anything in plain words: “sort my downloads”, “draft a reply to Marc”, “plan my week”."),
+        tip("pencil", "New chat", "Ask for anything in plain words: “sort my downloads”, “draft a reply to Marc”, “plan my week”."),
         tip("inbox", "Inbox", "When Airth needs your OK, or finishes something, it lands here (and in a notification)."),
         tip("clock", "Objectives", "Recurring work: every morning, when a file changes, or on a webhook."),
         tip("world", "Skills & connectors", "Connect Notion, Linear, Stripe… or install skills, per realm."),
-        tip("search", modKey + "K", "Find a run, a page or an action from anywhere in the app."),
+        tip("search", modKey + "K", "Find a chat, a page or an action from anywhere in the app."),
         mac && tip("window", "⌥⇧A", "Shows or hides Airth from any app. Closing the window keeps Airth in the menu bar.")),
       err,
       actions(done),
@@ -3587,7 +3815,7 @@ async function restartToUpdate() {
   const live = app.runs.filter((r) => r.live).length;
   if (live && !app.confirmRestart) {
     app.confirmRestart = true;
-    flash(`${live} run${live === 1 ? " is" : "s are"} in progress: they will stop (and can be resumed). Click again to restart.`);
+    flash(`${live} chat${live === 1 ? " is" : "s are"} in progress: they will stop (and can be resumed). Click again to restart.`);
     return;
   }
   app.confirmRestart = false;

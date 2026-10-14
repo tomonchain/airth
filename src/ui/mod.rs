@@ -189,6 +189,9 @@ struct App {
     /// Requests run on their own threads; changes to stored settings still
     /// happen one at a time (see `route`).
     writes: Mutex<()>,
+    /// Links to PDF previews (see `files/preview`): a frame cannot send the
+    /// API token, so each preview gets its own short-lived, unguessable link.
+    previews: Mutex<HashMap<String, (std::path::PathBuf, std::time::Instant)>>,
 }
 
 impl App {
@@ -513,6 +516,7 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
             ..Default::default()
         })),
         writes: Mutex::new(()),
+        previews: Mutex::new(HashMap::new()),
     };
     let info_path = server_file(&app.hub);
     crate::realm::write_private(
@@ -661,6 +665,28 @@ impl App {
             _ => {}
         }
 
+        // A PDF preview, by the link `files/preview` gave (see `previews`).
+        if method == Method::Get
+            && let Some(ticket) = path.strip_prefix("/preview/")
+        {
+            let found = {
+                let mut previews = self.previews.lock().unwrap();
+                previews.retain(|_, (_, at)| at.elapsed() < PREVIEW_FOR);
+                previews.get(ticket).map(|(p, _)| p.clone())
+            };
+            let Some(file) = found else {
+                return Ok(json_response(
+                    404,
+                    json!({"error": "this preview has expired"}),
+                ));
+            };
+            return Ok(Response::from_data(std::fs::read(&file)?)
+                .with_header(content_type("application/pdf"))
+                .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
+                .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap())
+                .with_header(Header::from_bytes("X-Frame-Options", "SAMEORIGIN").unwrap())
+                .with_header(Header::from_bytes("Referrer-Policy", "no-referrer").unwrap()));
+        }
         if method == Method::Post
             && let Some(hook) = path.strip_prefix("/hooks/")
         {
@@ -738,6 +764,68 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.update_realm(r, &body)?;
                 json_response(200, self.realm_detail(&realm)?)
+            }
+            (Method::Get, ["realms", r, "files"]) => {
+                json_response(200, self.files(&self.realm(r)?, &param(query, "path"))?)
+            }
+            (Method::Get, ["realms", r, "files", "raw"]) => {
+                let root = self.realm(r)?.root()?;
+                let path = crate::documents::resolve(&root, &param(query, "path"))?;
+                let size = std::fs::metadata(&path)?.len();
+                if !path.is_file() || size > crate::documents::MAX_FILE as u64 {
+                    return Ok(json_response(413, json!({"error": "too large to preview"})));
+                }
+                Response::from_data(std::fs::read(&path)?)
+                    .with_header(content_type(crate::documents::mime(&path)))
+                    .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
+                    .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap())
+                    .with_header(Header::from_bytes("Content-Security-Policy", "sandbox").unwrap())
+            }
+            (Method::Post, ["realms", r, "files", "preview"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                let path = crate::documents::resolve(&root, body["path"].as_str().unwrap_or(""))?;
+                if crate::documents::mime(&path) != "application/pdf" || !path.is_file() {
+                    return Err(anyhow!("only PDF files open this way"));
+                }
+                let ticket = random_token()?;
+                self.previews
+                    .lock()
+                    .unwrap()
+                    .insert(ticket.clone(), (path, std::time::Instant::now()));
+                json_response(200, json!({ "url": format!("/preview/{ticket}") }))
+            }
+            (Method::Put, ["realms", r, "files", "raw"]) => {
+                let root = self.realm(r)?.root()?;
+                let bytes = read_body(request, crate::documents::MAX_FILE, "the file")?;
+                let path = crate::documents::add(
+                    &root,
+                    &param(query, "dir"),
+                    &param(query, "name"),
+                    &bytes,
+                )?;
+                json_response(200, json!({ "path": path }))
+            }
+            (Method::Post, ["realms", r, "files", "open"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                let path = crate::documents::resolve(&root, body["path"].as_str().unwrap_or(""))?;
+                // With the Mac's default app, or shown in the Finder.
+                let mut open = std::process::Command::new("/usr/bin/open");
+                if body["reveal"].as_bool() == Some(true) {
+                    open.arg("-R");
+                }
+                let status = open.arg(&path).status().context("cannot run open")?;
+                if !status.success() {
+                    return Err(anyhow!("macOS could not open it"));
+                }
+                ok()
+            }
+            (Method::Post, ["realms", r, "files", "trash"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                crate::documents::trash(&root, body["path"].as_str().unwrap_or(""))?;
+                ok()
             }
             (Method::Post, ["realms", r, "memory"]) => {
                 let body = read_json(request)?;
@@ -1389,6 +1477,41 @@ impl App {
         let mut owner = json!(self.hub.home().owner()?);
         owner["avatar"] = json!(images::version(self.hub.home().dir(), "avatar"));
         Ok(owner)
+    }
+
+    /// A folder of the realm's documents; at the top, also what runs made.
+    fn files(&self, realm: &Realm, rel: &str) -> Result<Value> {
+        let root = realm.root()?;
+        let dir = crate::documents::resolve(&root, rel)?;
+        if !dir.is_dir() {
+            return Err(anyhow!("{rel} is not a folder"));
+        }
+        let made = if dir == root {
+            let titles = realm.run_titles();
+            let runs = self.hub.all_runs(realm)?;
+            crate::documents::made_by_runs(&root, &runs, 8)
+                .into_iter()
+                .map(|m| {
+                    let run = runs.iter().find(|r| r.id == m.run);
+                    json!({
+                        "path": m.path,
+                        "run": m.run,
+                        "run_title": titles.get(&m.run).cloned().or_else(|| run.map(|r| r.objective.lines().next().unwrap_or("").to_string())),
+                        "at": m.at,
+                        "edited": m.edited,
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(json!({
+            "root": root.display().to_string(),
+            "own_root": realm.config.root.is_some(),
+            "path": crate::documents::relative(&root, &dir),
+            "entries": crate::documents::list(&dir)?,
+            "made": made,
+        }))
     }
 
     fn realm_detail(&self, realm: &Realm) -> Result<Value> {
@@ -2077,6 +2200,30 @@ fn read_json(request: &mut Request) -> Result<Value> {
     serde_json::from_str(&body).context("request body must be JSON")
 }
 
+/// How long a PDF preview link works.
+const PREVIEW_FOR: Duration = Duration::from_secs(30 * 60);
+
+/// One query parameter, decoded ("" when missing).
+fn param(query: &str, name: &str) -> String {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+}
+
+/// A request's raw body, refused past `max` bytes.
+fn read_body(request: &mut Request, max: usize, what: &str) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    request
+        .as_reader()
+        .take(max as u64 + 1)
+        .read_to_end(&mut body)?;
+    if body.len() > max {
+        anyhow::bail!("{what} is too large (at most {} MB)", max >> 20);
+    }
+    Ok(body)
+}
+
 /// A request's raw body, refused past `images::MAX_IMAGE`.
 fn read_bytes(request: &mut Request) -> Result<Vec<u8>> {
     let mut body = Vec::new();
@@ -2117,7 +2264,7 @@ fn static_response(body: &str, kind: &str) -> HttpResponse {
         .with_header(
             Header::from_bytes(
                 "Content-Security-Policy",
-                "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+                "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
             )
             .unwrap(),
         )
@@ -2204,6 +2351,7 @@ mod tests {
             },
             update: Arc::new(Mutex::new(UpdateState::default())),
             writes: Mutex::new(()),
+            previews: Mutex::new(HashMap::new()),
         };
         std::thread::spawn(move || serve_requests(server, app));
         let base = format!("http://127.0.0.1:{port}");
