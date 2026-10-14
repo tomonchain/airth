@@ -2,6 +2,8 @@
 
 A persistent, local-first personal agent, written in Rust. One owner, multiple realms, one intelligence. See [SPECS_V1.1.md](SPECS_V1.1.md) for the vision and roadmap, and [docs/decisions.md](docs/decisions.md) for how it is built.
 
+Free to use, fair source: see [License](#license).
+
 ```bash
 export ANTHROPIC_API_KEY=...
 cargo run -- realm create airth --root . --description "Airth's own source code"
@@ -322,3 +324,13 @@ src/
                   router.rs: fast/main/fallback connections, triage, failover
   state.rs        persisted run state, plans
 ```
+
+## License
+
+Airth is **fair source**, under the [Functional Source License 1.1, Apache 2.0 future license](LICENSE.md) (FSL-1.1-ALv2):
+
+- **Free to use**, for yourself or inside your company: install it, run it, read the code, change it, share your changes.
+- **Not for competing products:** you may not offer Airth, or something built from it with the same purpose, as a commercial product or service (for example, hosted Airth). The hosted Airth offer is ours.
+- **Becomes open source:** each version is also licensed under Apache 2.0 two years after its release.
+
+"Airth" is our name: forks must use another one.
