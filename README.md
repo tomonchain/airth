@@ -229,7 +229,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - review, adopt or discard changes;
 - see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);
 - switch between light, dark and system appearance (the sun/moon button, or your profile), and set the text size, reading width and whether ↵ or ⌘↵ sends;
-- move around from the keyboard: ⌘K searches chats, pages, realms and actions; ⌘⇧O starts a new chat; ⌘B hides the sidebar;
+- move around from the keyboard: ⌘K searches chats, pages, realms and actions; ⌘⇧O starts a new chat;
 - work on each realm's **Documents** like in a small code editor: the files on the left, open files in tabs, syntax colors, ⌘S to save, ⌘P to go to a file, previews for Markdown, images and PDF, files you drop in, and what Airth wrote or edited. ⌘L asks Airth about the file or the selected lines. A save never replaces a change made meanwhile (by a chat, say): you choose which to keep;
 - edit each realm's permissions, checks, memory, credentials and integrations, and your profile.
 

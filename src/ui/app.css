@@ -214,7 +214,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .section-label { font-size: 11.5px; font-weight: 500; color: var(--faint); padding: 14px 10px 4px; }
 .run-list { flex: 1; overflow-y: auto; min-height: 0; margin: 4px -4px 0; padding: 0 4px 8px; border-top: 1px solid var(--border); }
 .run-item {
-  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
   padding: 7px 10px; border-radius: 10px; cursor: pointer; margin-bottom: 1px;
   transition: background .15s var(--ease);
 }
@@ -222,8 +222,19 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .run-item.active { background: var(--accent-soft); }
 .run-item .obj { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; line-height: 1.45; }
 .run-item .badge { margin-left: 0; }
-.run-acts { display: none; gap: 2px; align-items: center; }
-.run-item:hover .run-acts, .run-item:focus-within .run-acts { display: inline-flex; }
+/* The hover actions float over the end of the row: nothing moves when they show. */
+.run-acts {
+  position: absolute; right: 6px; top: 50%; display: inline-flex; gap: 1px; align-items: center;
+  opacity: 0; pointer-events: none; transform: translate(6px, -50%);
+  transition: opacity .16s var(--ease), transform .2s var(--ease);
+}
+.run-item:hover .run-acts, .run-item:focus-within .run-acts { opacity: 1; pointer-events: auto; transform: translate(0, -50%); }
+.run-item > .badge, .run-item > .dot, .run-item > .run-progress { transition: opacity .12s var(--ease); }
+.run-item:has(.run-acts):hover > :is(.badge, .dot, .run-progress), .run-item:has(.run-acts):focus-within > :is(.badge, .dot, .run-progress) { opacity: 0; }
+.run-item:has(.run-acts):hover .obj, .run-item:has(.run-acts):focus-within .obj {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, transparent 30px, #000 52px);
+  mask-image: linear-gradient(to left, transparent 0, transparent 30px, #000 52px);
+}
 .run-act { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 4px; border-radius: 6px; color: var(--faint); font-size: 11.5px; }
 .run-act:hover { background: var(--hover); color: inherit; }
 .run-act .i { display: inline-flex; width: 14px; height: 14px; }
@@ -274,7 +285,9 @@ button.side-warn { cursor: pointer; }
 .nav-link:hover { background: var(--hover); }
 .nav-link.active { background: var(--accent-soft); font-weight: 550; }
 .nav-link.active .i { color: var(--text); }
-.badge { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 600; }
+.badge { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 600; display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.badge .i { display: inline-flex; }
+.badge .i svg { width: 13px; height: 13px; }
 .badge.ok { color: var(--ok); }
 .badge.err { color: var(--err); }
 .badge.warn { color: var(--warn); }
@@ -1674,3 +1687,5 @@ a.rh-tag { color: var(--brand); }
   .doc-tools { width: 100%; }
 }
 .warn-text { color: var(--warn); }
+/* The sidebar always shows on a wide window; its toggles are for phones. */
+@media (min-width: 761px) { #side-close, #side-open { display: none !important; } }

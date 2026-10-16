@@ -613,12 +613,13 @@ function navLink(hash, iconName, label, active, extra) {
 }
 
 function changeBadge(r) {
-  if (r.change === "adopted") return h("span", { class: "badge ok" }, "adopted");
-  if (r.change === "discarded") return h("span", { class: "badge" }, "discarded");
-  if (r.conflicts) return h("span", { class: "badge warn", title: "Conflicts with its base branch" }, "conflict");
-  if (r.pull_request) return h("span", { class: "badge ok", title: "Pull request open on GitHub" }, `PR #${r.pull_request.number}`);
-  if (r.checks_passed === true) return h("span", { class: "badge ok" }, "✓ checks");
-  if (r.checks_passed === false) return h("span", { class: "badge err" }, "✗ checks");
+  const badge = (cls, ic, title, text) => h("span", { class: "badge " + cls, title, "aria-label": title }, icon(ic), text);
+  if (r.change === "adopted") return badge("ok", "gitMerge", "Adopted");
+  if (r.change === "discarded") return badge("", "x", "Discarded");
+  if (r.conflicts) return badge("warn", "alert", "Conflicts with its base branch");
+  if (r.pull_request) return badge("ok", "gitPull", `Pull request #${r.pull_request.number} open on GitHub`, `#${r.pull_request.number}`);
+  if (r.checks_passed === true) return badge("ok", "check", "Checks passed: ready to adopt");
+  if (r.checks_passed === false) return badge("err", "x", "Checks failed");
   return null;
 }
 
@@ -3977,7 +3978,6 @@ function paletteItems() {
   if (r) add("Actions", "New chat", icon("pencil"), () => go(`#/r/${r}`), { keys: modKey + "⇧O" });
   add("Actions", dark ? "Switch to light mode" : "Switch to dark mode", icon(dark ? "sun" : "moon"),
     () => { window.airthTheme && window.airthTheme.set(dark ? "light" : "dark"); renderFoot(); });
-  add("Actions", "Show or hide the sidebar", icon("sidebar"), toggleSidebar, { keys: modKey + "B" });
   if (app.route.view === "run" && runEls) add("Actions", "Show or hide plan & details", icon("panel"), toggleSide);
   if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this chat", icon("rename"),
     () => setTimeout(() => editInPlace(runEls && runEls.header.querySelector("h1"), app.route.id, runName({ title: app.run.title, objective: app.run.state.objective })), 160));
@@ -4082,9 +4082,9 @@ function closePalette() {
 /** Phone-sized windows: the sidebar opens over the page, on demand. */
 const narrow = () => window.matchMedia("(max-width: 760px)").matches;
 
+/** The sidebar hides only on a phone, where it opens over the page. */
 function sidebarHidden() {
-  if (narrow()) return true;
-  try { return localStorage.getItem("airth-sidebar") === "hidden"; } catch { return false; }
+  return narrow();
 }
 
 // Crossing the phone-size boundary: closed on a phone, the owner's choice otherwise.
@@ -4120,9 +4120,7 @@ document.addEventListener("dblclick", (e) => {
 });
 
 function toggleSidebar() {
-  const hidden = !$("#app").classList.contains("side-hidden");
-  $("#app").classList.toggle("side-hidden", hidden);
-  if (!narrow()) try { localStorage.setItem("airth-sidebar", hidden ? "hidden" : "shown"); } catch {}
+  if (narrow()) $("#app").classList.toggle("side-hidden");
 }
 
 document.addEventListener("keydown", (e) => {
@@ -4130,7 +4128,6 @@ document.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   if (mod && !e.shiftKey && !e.altKey && key === "k") { e.preventDefault(); palette ? closePalette() : openPalette(); }
   else if (mod && e.shiftKey && key === "o") { e.preventDefault(); if (app.realm) go(`#/r/${enc(app.realm)}`); }
-  else if (mod && !e.shiftKey && !e.altKey && key === "b") { e.preventDefault(); toggleSidebar(); }
   else if (e.key === "Escape" && realmMenuOpen) { realmMenuOpen = false; renderRealmSwitch(); }
 });
 
