@@ -731,11 +731,13 @@ kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid c
 .st { width: 12px; text-align: center; font-weight: 700; flex: none; }
 .st-A { color: var(--ok); } .st-D { color: var(--err); } .st-M, .st-R { color: var(--warn); }
 .change-empty { padding: 8px 12px; color: var(--faint); font-size: 12px; }
-.checks { padding: 6px 12px 6px; border-top: 1px solid var(--border); display: grid; gap: 1px; }
+.checks { padding: 6px 12px 6px; border-top: 1px solid var(--border); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
 .checks .change-empty { padding: 2px 0; }
 .checks-title { font-size: 11px; color: var(--faint); font-weight: 600; margin-bottom: 2px; }
 .checks-title span { font-weight: 500; }
+details.check { min-width: 0; }
 details.check > summary { display: flex; gap: 8px; align-items: center; cursor: pointer; list-style: none; padding: 3px 0; min-width: 0; }
+details.check > summary > code { display: block; }
 details.check > summary::-webkit-details-marker { display: none; }
 details.check .mark { font-weight: 700; width: 12px; text-align: center; flex: none; }
 details.check.ok .mark { color: var(--ok); }
