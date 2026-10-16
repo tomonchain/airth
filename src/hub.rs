@@ -17,7 +17,7 @@ use crate::isolation::{
 };
 use crate::memory::MemoryStore;
 use crate::models::router::{Connections, Routed, Tier};
-use crate::models::{ContentBlock, Message, Model, Role};
+use crate::models::{ContentBlock, Message, Model, ModelRequest, Role};
 use crate::northstar;
 use crate::notify::Kind;
 use crate::objective::{self, Objective, Schedule, Trigger};
@@ -1086,11 +1086,7 @@ impl Hub {
         match change.pull_request.as_mut() {
             Some(pr) => pr.pushed = change.head.clone(),
             None => {
-                let title = realm
-                    .run_titles()
-                    .get(&state.id)
-                    .cloned()
-                    .unwrap_or_else(|| first_line(&state.objective, 72));
+                let title = self.pull_request_title(realm, state);
                 let body = pull_request_body(state);
                 let change = state.change.as_mut().expect("checked above");
                 let (number, url) = gh.open(&remote, &change.branch, &base, &title, &body)?;
@@ -1102,6 +1098,71 @@ impl Hub {
             }
         }
         state.save()
+    }
+
+    /// A pull request's title, which also becomes its line in the release
+    /// notes: the name the owner gave the chat, else one the fast model
+    /// writes from the ask and the report (counted in the run), else the
+    /// ask's first line.
+    fn pull_request_title(&self, realm: &Realm, state: &mut State) -> String {
+        if let Some(title) = realm.run_titles().get(&state.id) {
+            return title.clone();
+        }
+        let fallback = first_line(&state.objective, 72);
+        let Ok(connections) = self.connections_for(realm) else {
+            return fallback;
+        };
+        let model = connections.fast.clone().unwrap_or(connections.main);
+        let clip = |t: &str| t.chars().take(1500).collect::<String>();
+        let messages = [Message::user_text(format!(
+            "What the owner asked:\n<<<\n{}\n>>>\n\nWhat was done:\n<<<\n{}\n>>>\n\nFiles: {}",
+            clip(&state.objective),
+            clip(state.report.as_deref().unwrap_or_default()),
+            state
+                .change
+                .as_ref()
+                .map(|c| c.files.join(", "))
+                .unwrap_or_default()
+        ))];
+        let request = ModelRequest {
+            quick: true,
+            ..ModelRequest::new(TITLE_PROMPT, &messages, &[])
+        };
+        let Ok(r) = model.complete(&request) else {
+            return fallback;
+        };
+        state.input_tokens += r.input_tokens;
+        state.output_tokens += r.output_tokens;
+        state.usage.push(crate::state::Usage {
+            at: Utc::now(),
+            model: r.model.clone(),
+            input: r.input_tokens,
+            output: r.output_tokens,
+            cache_read: r.cache_read_tokens,
+            cache_write: r.cache_write_tokens,
+        });
+        let text: String = r
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let title = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or_default()
+            .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '*')
+            .trim_end_matches('.')
+            .trim()
+            .to_string();
+        if (8..=90).contains(&title.chars().count()) {
+            title
+        } else {
+            fallback
+        }
     }
 
     /// Follow a run's pull request: record it merged or closed, or keep its
@@ -1821,6 +1882,12 @@ pub enum PrEvent {
 #[cfg(test)]
 pub(crate) static TEST_GITHUB: std::sync::Mutex<Option<(String, String)>> =
     std::sync::Mutex::new(None);
+
+const TITLE_PROMPT: &str = "You write the title of a pull request, which also becomes its line in the release notes. \
+One line in English, under 72 characters, saying what changed, in this style: \
+\"Documents become a small code editor\", \"Chats can be archived or deleted from the sidebar\", \
+\"Release notes leave out the version bump commit\". No prefix, no quotes, no final period. \
+Answer with the title only.";
 
 /// A pull request's description: what the chat reported, and its checks.
 fn pull_request_body(state: &State) -> String {
@@ -2877,6 +2944,8 @@ mod tests {
                     json!({"command": "echo token=${GITHUB_TOKEN:-none}"}),
                 ),
                 done("Added b.txt."),
+                // The pull request's title.
+                done("\"Add b.txt to the shop.\""),
             ],
         );
         let state = hub
@@ -2909,7 +2978,8 @@ mod tests {
             .cloned()
             .unwrap();
         assert!(
-            opened.contains("\"title\":\"add b\"") && opened.contains("Added b.txt."),
+            opened.contains("\"title\":\"Add b.txt to the shop\"")
+                && opened.contains("Added b.txt."),
             "{opened}"
         );
         assert!(

@@ -671,10 +671,13 @@ fn finish(state: &State) -> bool {
                 }
             );
         }
-        eprintln!(
-            "\x1b[2mreview: airth review {0} · adopt: airth adopt {0} · discard: airth discard {0}\x1b[0m",
-            state.id
-        );
+        match &change.pull_request {
+            Some(pr) => eprintln!("pull request: {}", pr.url),
+            None => eprintln!(
+                "\x1b[2mreview: airth review {0} · adopt: airth adopt {0} · discard: airth discard {0}\x1b[0m",
+                state.id
+            ),
+        }
     }
     if state.status == Status::Completed {
         eprintln!("\x1b[2mcontinue: airth send {} \"...\"\x1b[0m", state.id);
