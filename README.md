@@ -301,7 +301,7 @@ airth doctor   # model provider  anthropic/claude-opus-5-5 · fast: ollama/qwen3
 
 The run's details show which tier it used; the Usage page counts the triage calls with the run.
 
-Desktop notifications are on by default on macOS; `airth inbox --desktop off` turns them off.
+No pop-ups: the Mac app shows how many notifications are unread next to its menu bar icon, and bounces its Dock icon once when a run waits for your approval (`airth inbox --desktop off` stops the bounce).
 
 ## Where things live
 
@@ -340,7 +340,7 @@ src/
   northstar.rs    a realm's North Star: goal, milestones, progress
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls
-  notify.rs       the owner's inbox and desktop notifications
+  notify.rs       the owner's inbox
   service.rs      the login service (launchd)
   skill.rs        skills: manifests, evaluation, installation
   integration.rs  integrations: base URLs with credentials bound to them

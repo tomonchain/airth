@@ -10,7 +10,7 @@
 
 use crate::agent::{Agent, AgentConfig, Briefing, Observer, run_context};
 use crate::cancel::CancelToken;
-use crate::github::{GitHub, PrState, Remote};
+use crate::github::{Checks, GitHub, PrState, PrStatus, Remote};
 use crate::home::Home;
 use crate::isolation::{
     self, ChangeStatus, CheckResult, CheckRun, Delivery, Isolation, PullRequest, Update,
@@ -1185,13 +1185,7 @@ impl Hub {
         let known_conflict = !change.conflicts.is_empty();
         let event = match gh.state(&remote, pr.number)? {
             PrState::Merged => {
-                isolation::merged_elsewhere(change);
-                let _ = gh.delete_branch(&remote, &change.branch);
-                if let Some(base) = change.base_branch.clone()
-                    && let Ok(target) = gh.fetch(&change.repo, &remote, &base)
-                {
-                    isolation::fast_forward(&change.repo, &base, &target);
-                }
+                record_merged(&gh, &remote, change);
                 PrEvent::Merged
             }
             PrState::Closed => {
@@ -1237,6 +1231,67 @@ impl Hub {
             )?;
         }
         Ok(event)
+    }
+
+    /// Where a run's pull request stands on GitHub (None without one).
+    pub fn pull_request_status(&self, realm: &Realm, run: &str) -> Result<Option<PrStatus>> {
+        let state = self.load_run(realm, run)?;
+        let Some(pr) = state.change.and_then(|c| c.pull_request) else {
+            return Ok(None);
+        };
+        let (gh, remote) = self.github(realm)?;
+        Ok(Some(gh.status(&remote, pr.number)?))
+    }
+
+    /// Squash-merge a run's pull request from Airth, once GitHub's checks
+    /// pass on what was pushed, then record the change adopted. Airth checks
+    /// this itself: the owner's token may be allowed to bypass the rules.
+    pub fn merge_pull_request(&self, realm: &Realm, run: &str) -> Result<State> {
+        let mut state = self.load_run(realm, run)?;
+        let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
+        let change = state
+            .change
+            .as_mut()
+            .context("this run has no isolated change")?;
+        let pr = change
+            .pull_request
+            .clone()
+            .context("this change has no pull request")?;
+        if change.status != ChangeStatus::Open {
+            bail!("this change was already {}", change.status.as_str());
+        }
+        let (gh, remote) = self.github(realm)?;
+        let status = gh.status(&remote, pr.number)?;
+        match status.state {
+            PrState::Merged => {}
+            PrState::Closed => bail!("pull request #{} was closed", pr.number),
+            PrState::Open => {
+                if status.head != change.head {
+                    bail!("GitHub has not received this chat's latest commit yet");
+                }
+                match status.merge_state.as_str() {
+                    "dirty" => bail!("it conflicts with its base branch: resolve it first"),
+                    "behind" => bail!(
+                        "its base branch moved on: Airth brings it in within two minutes, then the checks run again"
+                    ),
+                    _ => {}
+                }
+                if status.checks != Checks::Passing {
+                    bail!(
+                        "the checks on GitHub {}",
+                        match status.checks {
+                            Checks::Failing => "failed",
+                            Checks::Pending => "are still running",
+                            _ => "have not run",
+                        }
+                    );
+                }
+                gh.merge(&remote, pr.number, &status.title, &status.head)?;
+            }
+        }
+        record_merged(&gh, &remote, change);
+        state.save()?;
+        Ok(state)
     }
 
     /// Close a change's pull request and delete its branch on GitHub (best
@@ -1865,6 +1920,18 @@ pub enum Adoption {
     NeedsChecks,
     /// Merging its base conflicts in these files: the chat must resolve them.
     Conflict(Vec<String>),
+}
+
+/// A change's pull request was merged: the change is adopted, its branches
+/// go, and the owner's checkout moves forward when it can.
+fn record_merged(gh: &GitHub, remote: &Remote, change: &mut isolation::Change) {
+    isolation::merged_elsewhere(change);
+    let _ = gh.delete_branch(remote, &change.branch);
+    if let Some(base) = change.base_branch.clone()
+        && let Ok(target) = gh.fetch(&change.repo, remote, &base)
+    {
+        isolation::fast_forward(&change.repo, &base, &target);
+    }
 }
 
 /// What following a pull request found.
@@ -2846,10 +2913,10 @@ mod tests {
         );
     }
 
-    /// A GitHub API that knows one pull request (#7), merged once `merged` is set.
-    fn fake_github(
-        merged: Arc<std::sync::atomic::AtomicBool>,
-    ) -> (String, Arc<Mutex<Vec<String>>>) {
+    /// A GitHub API that knows one pull request (#7), as `pr` describes it:
+    /// merged, head (its latest commit), checks (a check run's conclusion,
+    /// or "in_progress") and merge_state. Merging it sets `merged`.
+    fn fake_github(pr: Arc<Mutex<serde_json::Value>>) -> (String, Arc<Mutex<Vec<String>>>) {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let port = server.server_addr().to_ip().unwrap().port();
         let calls = Arc::new(Mutex::new(Vec::new()));
@@ -2864,8 +2931,11 @@ mod tests {
                 seen.lock()
                     .unwrap()
                     .push(format!("{} {} {body}", req.method(), req.url()));
-                let merged = merged.load(std::sync::atomic::Ordering::SeqCst);
-                let (code, answer) = match (req.method().as_str(), req.url()) {
+                let mut pr = pr.lock().unwrap();
+                let merged = pr["merged"].as_bool().unwrap_or(false);
+                let head = pr["head"].as_str().unwrap_or_default().to_string();
+                let url = req.url().to_string();
+                let (code, answer) = match (req.method().as_str(), url.as_str()) {
                     _ if !auth => (401, json!({"message": "Bad credentials"})),
                     ("POST", "/repos/o/r/pulls") => (
                         201,
@@ -2873,8 +2943,28 @@ mod tests {
                     ),
                     ("GET", "/repos/o/r/pulls/7") => (
                         200,
-                        json!({"state": if merged { "closed" } else { "open" }, "merged": merged}),
+                        json!({
+                            "state": if merged { "closed" } else { "open" },
+                            "merged": merged,
+                            "title": "Add c.txt",
+                            "html_url": "https://github.com/o/r/pull/7",
+                            "head": {"sha": head},
+                            "mergeable_state": pr["merge_state"].as_str().unwrap_or("clean"),
+                        }),
                     ),
+                    ("GET", u) if u.starts_with("/repos/o/r/commits/") => {
+                        let checks = pr["checks"].as_str().unwrap_or("success");
+                        let run = if checks == "in_progress" {
+                            json!({"name": "check", "status": "in_progress", "conclusion": null})
+                        } else {
+                            json!({"name": "check", "status": "completed", "conclusion": checks})
+                        };
+                        (200, json!({"total_count": 1, "check_runs": [run]}))
+                    }
+                    ("PUT", "/repos/o/r/pulls/7/merge") => {
+                        pr["merged"] = json!(true);
+                        (200, json!({"merged": true}))
+                    }
                     _ => (200, json!({})),
                 };
                 let _ = req.respond(
@@ -2911,8 +3001,8 @@ mod tests {
             repo.path(),
             &["remote", "add", "origin", "https://github.com/o/r.git"],
         );
-        let merged = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (api, calls) = fake_github(merged.clone());
+        let fake = Arc::new(Mutex::new(json!({"merged": false})));
+        let (api, calls) = fake_github(fake.clone());
         *TEST_GITHUB.lock().unwrap() = Some((api, format!("file://{}", remotes.path().display())));
 
         let mut realm = home
@@ -3051,7 +3141,7 @@ mod tests {
         assert_eq!(pushed.trim(), change.head);
 
         // Merged on GitHub: the chat's change is adopted and its copy removed.
-        merged.store(true, std::sync::atomic::Ordering::SeqCst);
+        fake.lock().unwrap()["merged"] = json!(true);
         assert_eq!(
             hub.follow_pull_request(&realm, &state.id).unwrap(),
             PrEvent::Merged
@@ -3066,6 +3156,59 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|c| c.starts_with("DELETE /repos/o/r/git/refs/heads/airth/"))
+        );
+
+        // Another chat, merged from Airth once GitHub's checks pass on what it pushed.
+        *fake.lock().unwrap() = json!({"merged": false, "checks": "in_progress"});
+        let (hub, _, _) = make_hub(
+            &home,
+            vec![
+                call(
+                    "1",
+                    "write_file",
+                    json!({"path": "d.txt", "content": "d\n"}),
+                ),
+                done("Added d.txt."),
+                done("Add d.txt"),
+            ],
+        );
+        let state = hub
+            .dispatch(&realm, "add d", config(10), hooks(&mut NoObserver, true))
+            .unwrap();
+        let head = state.change.as_ref().unwrap().head.clone();
+        let refused = |hub: &Hub| {
+            hub.merge_pull_request(&realm, &state.id)
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(refused(&hub).contains("not received"));
+        fake.lock().unwrap()["head"] = json!(head);
+        assert!(refused(&hub).contains("still running"));
+        fake.lock().unwrap()["checks"] = json!("failure");
+        assert!(refused(&hub).contains("failed"));
+        let status = hub.pull_request_status(&realm, &state.id).unwrap().unwrap();
+        assert_eq!(
+            (status.checks, status.failed.clone()),
+            (Checks::Failing, vec!["check".to_string()])
+        );
+        fake.lock().unwrap()["checks"] = json!("success");
+        fake.lock().unwrap()["merge_state"] = json!("behind");
+        assert!(refused(&hub).contains("moved on"));
+        fake.lock().unwrap()["merge_state"] = json!("clean");
+        let merged = hub.merge_pull_request(&realm, &state.id).unwrap();
+        let change = merged.change.unwrap();
+        assert_eq!(change.status, ChangeStatus::Adopted);
+        assert!(!change.path.exists());
+        let put = calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.starts_with("PUT"))
+            .cloned()
+            .unwrap();
+        assert!(
+            put.contains("\"squash\"") && put.contains("Add c.txt (#7)") && put.contains(&head),
+            "{put}"
         );
         *TEST_GITHUB.lock().unwrap() = None;
     }

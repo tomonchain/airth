@@ -67,11 +67,39 @@ impl Remote {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PrState {
     Open,
     Merged,
     Closed,
+}
+
+/// The checks (CI) on a pull request's latest commit.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Checks {
+    /// No check ran on it.
+    None,
+    Pending,
+    Passing,
+    Failing,
+}
+
+/// Where a pull request stands, for the app.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrStatus {
+    pub state: PrState,
+    pub title: String,
+    pub url: String,
+    /// Its latest commit.
+    pub head: String,
+    /// GitHub's word on merging it: clean, behind, dirty (conflicts),
+    /// blocked (a rule not met yet), unstable, unknown (still computing).
+    pub merge_state: String,
+    pub checks: Checks,
+    /// The checks that failed.
+    pub failed: Vec<String>,
 }
 
 pub struct GitHub {
@@ -242,6 +270,75 @@ impl GitHub {
         } else {
             PrState::Open
         })
+    }
+
+    /// The pull request and the checks on its latest commit.
+    pub fn status(&self, r: &Remote, number: u64) -> Result<PrStatus> {
+        let pr = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{}/pulls/{number}", r.slug()),
+            None,
+        )?;
+        let head = pr["head"]["sha"].as_str().unwrap_or_default().to_string();
+        let runs = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{}/commits/{head}/check-runs?per_page=100", r.slug()),
+            None,
+        )?;
+        let runs = runs["check_runs"].as_array().cloned().unwrap_or_default();
+        let failed: Vec<String> = runs
+            .iter()
+            .filter(|c| {
+                c["status"] == "completed"
+                    && !matches!(
+                        c["conclusion"].as_str(),
+                        Some("success" | "neutral" | "skipped")
+                    )
+            })
+            .filter_map(|c| c["name"].as_str().map(String::from))
+            .collect();
+        let checks = if runs.is_empty() {
+            Checks::None
+        } else if !failed.is_empty() {
+            Checks::Failing
+        } else if runs.iter().any(|c| c["status"] != "completed") {
+            Checks::Pending
+        } else {
+            Checks::Passing
+        };
+        Ok(PrStatus {
+            state: if pr["merged"].as_bool() == Some(true) {
+                PrState::Merged
+            } else if pr["state"] == "closed" {
+                PrState::Closed
+            } else {
+                PrState::Open
+            },
+            title: pr["title"].as_str().unwrap_or_default().to_string(),
+            url: pr["html_url"].as_str().unwrap_or_default().to_string(),
+            head,
+            merge_state: pr["mergeable_state"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+            checks,
+            failed,
+        })
+    }
+
+    /// Squash-merge the pull request, if its head is still `sha`. The
+    /// commit is titled like the pull request, so the release notes read well.
+    pub fn merge(&self, r: &Remote, number: u64, title: &str, sha: &str) -> Result<()> {
+        self.call(
+            reqwest::Method::PUT,
+            &format!("/repos/{}/pulls/{number}/merge", r.slug()),
+            Some(json!({
+                "merge_method": "squash",
+                "commit_title": format!("{title} (#{number})"),
+                "sha": sha,
+            })),
+        )?;
+        Ok(())
     }
 
     pub fn close(&self, r: &Remote, number: u64) -> Result<()> {

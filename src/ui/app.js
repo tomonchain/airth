@@ -66,6 +66,8 @@ const ICON = {
   books: TB("M5 5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zm4 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zM5 8h4m0 8h4m.803-11.44l2.184-.53c.562-.135 1.133.19 1.282.732l3.695 13.418a1.02 1.02 0 0 1-.634 1.219l-.133.041l-2.184.53c-.562.135-1.133-.19-1.282-.732L13.036 5.82a1.02 1.02 0 0 1 .634-1.219zM14 9l4-1m-2 8l3.923-.98"),
   download: TB("M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5l5-5m-5-7v12"),
   trash: TB("M4 7h16m-10 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"),
+  code: TB("M7 8l-4 4l4 4m10-8l4 4l-4 4M14 4l-4 16"),
+  external: TB("M12 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6m-7 1l9-9m-5 0h5v5"),
   gitMerge: TB("M5 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M5 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M15 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 8v8m0-8a4 4 0 0 0 4 4h4"),
   gitPull: TB("M4 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M6 8v8m5-10h5a2 2 0 0 1 2 2v8m-4-7l-3-3l3-3"),
   alert: TB("M12 9v4m-1.637-9.409L2.257 17.125a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636-2.87L13.637 3.59a1.914 1.914 0 0 0-3.274 0zM12 16h.01"),
@@ -1274,9 +1276,44 @@ function renderRunShell(main) {
   scroller.addEventListener("scroll", () => syncToBottom(), { passive: true });
   const side = h("aside", { class: "run-side", "aria-label": "Plan and details" });
   const layout = h("div", { class: "run-layout" + (sideOpen() ? "" : " side-closed") },
-    h("div", { class: "run-center" }, header, scroller, wrap), side);
+    h("div", { class: "run-center" }, header, scroller, wrap), sideResizer(), side);
+  const width = sideWidth();
+  if (width) layout.style.setProperty("--side-w", width + "px");
   main.append(layout);
   runEls = { header, transcript, scroller, composer: c, wrap, side, layout, toBottom, seen: null, steps: null };
+}
+
+/** The right column's width the owner chose by dragging its edge (none: the default). */
+function sideWidth() {
+  try { return Number(localStorage.getItem("airth.sideWidth")) || 0; } catch { return 0; }
+}
+
+/** The right column's left edge: drag it to make the column wider or narrower. */
+function sideResizer() {
+  const el = h("div", { class: "side-resize", role: "separator", "aria-orientation": "vertical", title: "Drag to resize, double-click to reset" });
+  el.addEventListener("pointerdown", (e) => {
+    const layout = el.parentElement;
+    el.setPointerCapture(e.pointerId);
+    layout.classList.add("resizing");
+    const right = layout.getBoundingClientRect().right;
+    const move = (ev) => {
+      const w = Math.round(Math.min(640, Math.max(260, right - ev.clientX)));
+      layout.style.setProperty("--side-w", w + "px");
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      layout.classList.remove("resizing");
+      const w = parseInt(layout.style.getPropertyValue("--side-w"), 10);
+      try { if (w) localStorage.setItem("airth.sideWidth", String(w)); } catch { /* not kept */ }
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up, { once: true });
+  });
+  el.addEventListener("dblclick", () => {
+    el.parentElement.style.removeProperty("--side-w");
+    try { localStorage.removeItem("airth.sideWidth"); } catch { /* nothing kept */ }
+  });
+  return el;
 }
 
 /** Show the "↓" button when the latest messages are out of sight. */
@@ -1713,7 +1750,12 @@ function sideNodes(d, status) {
       h("div", { class: "side-head" }, h("span", null, "Plan")),
       h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this chat.")));
   }
-  if (s.change) nodes.push(h("section", { class: "side-section" }, changePanel(d)));
+  // A finished chat's open change is what needs the owner: it goes first.
+  if (s.change) {
+    const section = h("section", { class: "side-section" }, changePanel(d));
+    if (s.change.status === "open" && !d.live) nodes.unshift(section);
+    else nodes.push(section);
+  }
   const row = (k, v, title) => v != null && v !== false && h("div", { class: "kv", title: title || "" }, h("span", { class: "k" }, k), h("span", { class: "v" }, v));
   nodes.push(h("section", { class: "side-section" },
     h("div", { class: "side-head" }, h("span", null, "Details")),
@@ -1868,102 +1910,151 @@ function changePanel(d) {
   const checksRunning = checks && !checks.finished && d.live;
   const passed = checksCurrent && checks.finished && checks.results.every((r) => r.ok);
   const failed = checks && checks.results.find((r) => !r.ok);
+  const failedNow = checksCurrent && checks.finished && !passed;
   const open = c.status === "open";
   const viaPr = app.realmDetail && app.realmDetail.delivery === "pull_request";
   const pr = c.pull_request;
   const conflicts = c.conflicts || [];
   const resolving = !!c.merging;
+  const idle = open && hasChanges && !d.live && !resolving;
+  const base = c.base_branch || "main";
+  const tool = (ic, label, onclick, cls = "") => h("button", { class: "c-act " + cls, type: "button", title: label, "aria-label": label, onclick }, icon(ic));
 
+  // Head: what this is, where it stands, and the secondary actions as icons.
+  const discard = idle && (confirmDiscard
+    ? h("button", { class: "c-act sure", type: "button", title: pr ? "Closes the pull request too" : "Throw this change away",
+        onclick: () => { confirmDiscard = false; changeAction("discard"); } }, pr ? "Close & discard?" : "Discard?")
+    : tool("trash", pr ? "Discard: close the pull request and throw the change away" : "Discard this change", () => {
+        confirmDiscard = true; renderRun();
+        setTimeout(() => { if (confirmDiscard) { confirmDiscard = false; renderRun(); } }, 3000);
+      }, "danger"));
   const head = h("div", { class: "change-head" },
     h("div", { class: "grow" },
-      h("h3", null, "Change"),
-      h("div", { class: "muted small" }, `branch ${c.branch} · from ${c.base.slice(0, 8)}`)),
-    h("span", { class: "chip " + (c.status === "adopted" ? "completed" : c.status === "discarded" ? "stopped" : "running") }, c.status));
+      h("div", { class: "change-title" }, h("h3", null, "Change"),
+        h("span", { class: "chip " + (c.status === "adopted" ? "completed" : c.status === "discarded" ? "stopped" : "running") }, c.status)),
+      h("div", { class: "change-sub", title: `${c.branch}, from ${c.base}` }, `${base} ← `, h("code", null, c.branch.replace(/^airth\//, "")))),
+    h("div", { class: "change-tools" },
+      hasChanges && tool("code", "View the diff", () => openDiff(s.id, runName({ ...s, title: d.title }))),
+      idle && tool("refresh", checks ? "Run the checks again" : "Run the checks", () => changeAction("checks")),
+      idle && failed && tool("tool", "Ask Airth to fix the failed check", () => askToFix(failed)),
+      discard));
 
   const files = hasChanges
     ? h("div", { class: "files" }, c.files.map((f) => {
         const [st, ...rest] = f.split("\t");
-        return h("div", { class: "file-row" }, h("span", { class: "st st-" + st[0] }, st[0]), h("span", null, rest.join(" → ")));
+        const path = rest.join(" → ");
+        return h("div", { class: "file-row", title: path }, h("span", { class: "st st-" + st[0] }, st[0]), h("span", { class: "file-path" }, path));
       }))
-    : h("div", { class: "muted small pad" }, d.live ? "Changes appear here when Airth finishes." : "No files changed.");
+    : h("div", { class: "change-empty" }, d.live ? "Changes appear here when Airth finishes." : "No files changed.");
 
   let checkList = null;
   if (checks) {
     checkList = h("div", { class: "checks" },
-      h("div", { class: "checks-title" }, "Checks", !checksCurrent && h("span", { class: "muted small" }, " · ran on an older commit")),
+      h("div", { class: "checks-title" }, "Checks", !checksCurrent && h("span", null, " · on an older commit")),
       checks.results.map((r, i) =>
         keyedDetails(`check:${checks.started_at}:${i}`, { class: "check " + (r.ok ? "ok" : "err") },
-          h("summary", null, h("span", { class: "mark" }, r.ok ? "✓" : "✗"), h("code", null, r.command), h("span", { class: "muted small" }, (r.duration_ms / 1000).toFixed(1) + "s")),
+          h("summary", null, h("span", { class: "mark" }, r.ok ? "✓" : "✗"), h("code", { title: r.command }, r.command), h("span", { class: "dur" }, (r.duration_ms / 1000).toFixed(1) + "s")),
           h("pre", { class: "out" }, r.output || "(no output)"))),
       checksRunning && h("div", { class: "working small" }, h("span", { class: "spinner" }), "Running checks…"),
-      !checksRunning && !checks.finished && h("div", { class: "muted small" }, "The checks did not finish."));
+      !checksRunning && !checks.finished && h("div", { class: "change-empty" }, "The checks did not finish."));
   } else if (open && hasChanges && d.checks_required && !d.live) {
-    checkList = h("div", { class: "muted small pad" }, "Checks have not run on this change.");
+    checkList = h("div", { class: "checks" }, h("div", { class: "change-empty" }, "Checks have not run on this change."));
   }
 
-  // Where the change stands against its base branch, and other open chats on the same files.
-  const base = c.base_branch || "main";
+  // Where the change stands against its base branch.
   let standing = null;
   if (open && resolving) {
     standing = h("div", { class: "change-note warn" }, icon("gitMerge"),
-      h("div", null, h("div", { class: "strong" }, d.live ? `Resolving the conflict with ${base}…` : `The conflict with ${base} is not resolved yet`),
-        h("div", { class: "muted small" }, conflicts.join(", "))));
+      h("div", { class: "grow" }, h("div", { class: "strong" }, d.live ? `Resolving the conflict with ${base}…` : `The conflict with ${base} is not resolved yet`),
+        h("div", null, conflicts.join(", "))));
   } else if (open && conflicts.length) {
     standing = h("div", { class: "change-note warn" }, icon("gitMerge"),
       h("div", { class: "grow" }, h("div", { class: "strong" }, `Conflicts with ${base}`),
-        h("div", { class: "muted small" }, `${base} changed since this chat started, in the same places: `, conflicts.join(", "))),
+        h("div", null, `${base} changed in the same places: `, conflicts.join(", "))),
       !d.live && h("button", { class: "btn primary small", type: "button", onclick: () => changeAction("resolve") }, "Resolve with Airth"));
-  } else if (open && pr) {
-    standing = h("div", { class: "change-note" }, icon("gitPull"),
-      h("div", { class: "grow" }, h("div", { class: "strong" }, `Pull request #${pr.number}`),
-        h("div", { class: "muted small" }, pr.pushed === c.head ? "Up to date on GitHub. Merge it there: Airth follows it." : "New commits are pushed once the checks pass.")),
-      h("a", { class: "btn small", href: pr.url, target: "_blank", rel: "noopener noreferrer" }, "Open ↗"));
+  } else if (pr && open) {
+    standing = pullRequestBox(d, pr, idle);
   }
   const mine = new Set((c.files || []).map((f) => f.split("\t").pop()));
   const overlap = open && !d.live ? app.runs.filter((r) => r.id !== s.id && r.change === "open" && (r.touches || []).some((f) => mine.has(f))) : [];
   const overlapNote = overlap.length > 0 && h("div", { class: "change-note subtle" }, icon("alert"),
-    h("div", null, "Also changed by ", overlap.map((r, i) => [i > 0 && ", ", h("a", { href: `#/r/${enc(app.realm)}/run/${enc(r.id)}` }, runName(r))]),
+    h("div", { class: "grow" }, "Also changed by ", overlap.map((r, i) => [i > 0 && ", ", h("a", { href: `#/r/${enc(app.realm)}/run/${enc(r.id)}` }, runName(r))]),
       ": ", [...new Set(overlap.flatMap((r) => r.touches.filter((f) => mine.has(f))))].join(", "),
       viaPr ? "." : ". Adopt one first; the other is then updated with it."));
 
-  const actions = h("div", { class: "change-actions" });
-  const failedNow = checksCurrent && checks.finished && !passed;
-  if (open && hasChanges && !d.live && !resolving) {
-    const settled = !conflicts.length;
-    actions.append(
-      settled && viaPr && !pr && h("button", { class: "btn primary", type: "button",
-        title: passed || !d.checks_required ? "Push the branch and open its pull request" : "The checks did not pass: open it anyway, as work in progress",
-        onclick: () => changeAction("pull-request") }, "Open pull request"),
-      settled && !viaPr && h("button", { class: "btn primary", type: "button", disabled: failedNow,
-        title: failedNow ? "The checks must pass first" : `Brings in what changed on ${base}, checks again if needed, then merges into your checkout`,
-        onclick: () => changeAction("adopt") }, "Adopt into checkout"),
-      h("button", { class: "btn", type: "button", onclick: () => changeAction("checks") }, checks ? "Re-run checks" : "Run checks"),
-      failed && h("button", { class: "btn", type: "button", onclick: () => askToFix(failed) }, "Ask Airth to fix"),
-      confirmDiscard
-        ? h("span", { class: "confirm" }, "Discard this change? ",
-            h("button", { class: "btn danger", type: "button", onclick: () => { confirmDiscard = false; changeAction("discard"); } }, "Discard"),
-            h("button", { class: "btn ghost", type: "button", onclick: () => { confirmDiscard = false; renderRun(); } }, "Keep"))
-        : h("button", { class: "btn danger ghost", type: "button", onclick: () => { confirmDiscard = true; renderRun(); } }, "Discard…"));
-  }
-  if (hasChanges) {
-    const shown = app.diff && app.diff.runId === s.id;
-    actions.append(h("button", { class: "btn ghost", type: "button", onclick: toggleDiff }, shown ? "Hide diff" : "View diff"));
+  // The one main action, full width at the bottom.
+  let main = null;
+  if (idle && !conflicts.length && viaPr && !pr) {
+    main = h("button", { class: "btn primary small block", type: "button",
+      title: passed || !d.checks_required ? "Push the branch and open its pull request" : "The checks did not pass: open it anyway, as work in progress",
+      onclick: () => changeAction("pull-request") }, icon("gitPull"), "Open pull request");
+  } else if (idle && !conflicts.length && !viaPr) {
+    main = h("button", { class: "btn primary small block", type: "button", disabled: failedNow,
+      title: failedNow ? "The checks must pass first" : `Brings in what changed on ${base}, checks again if needed, then merges into your checkout`,
+      onclick: () => changeAction("adopt") }, icon("check"), "Adopt into checkout");
   }
   const err = app.changeError ? h("div", { class: "error-banner" }, app.changeError) : null;
-  const diff = app.diff && app.diff.runId === s.id ? diffView(app.diff.text || "(empty diff)", "diff") : null;
 
-  return h("div", { class: "change" }, head, standing, overlapNote, files, checkList, err, actions.childNodes.length ? actions : null, diff);
+  return h("div", { class: "change" }, head, standing, overlapNote, err, files, checkList, main && h("div", { class: "change-actions" }, main));
 }
 
-async function toggleDiff() {
-  if (app.diff && app.diff.runId === app.route.id) app.diff = null;
-  else {
-    try {
-      const { diff } = await api(`${runPath(app.realm, app.route.id)}/diff`);
-      app.diff = { runId: app.route.id, text: diff };
-    } catch (e) { app.changeError = e.message; }
+/** A run's pull request: its state on GitHub (refreshed every 30 seconds while shown), merge and open. */
+function pullRequestBox(d, pr, idle) {
+  const s = d.state;
+  const st = app.prStatus && app.prStatus.runId === s.id ? app.prStatus : null;
+  if (!st || (!st.loading && Date.now() - st.at > 30000)) refreshPrStatus(s.id);
+  const g = st && st.status;
+  const pushed = pr.pushed === s.change.head;
+  const ci = !g ? null
+    : g.checks === "passing" ? h("span", { class: "pr-ci ok" }, icon("check"), "CI passed")
+    : g.checks === "failing" ? h("span", { class: "pr-ci err", title: g.failed.join(", ") }, icon("x"), "CI failed")
+    : g.checks === "pending" ? h("span", { class: "pr-ci run" }, h("span", { class: "spinner" }), "CI running")
+    : h("span", { class: "pr-ci" }, "No CI yet");
+  const MERGE = { clean: "Ready to merge", unstable: "Ready to merge", has_hooks: "Ready to merge", behind: `Behind ${s.change.base_branch || "main"}: Airth updates it`,
+    dirty: "Conflicts", blocked: "Waiting for its rules", draft: "Draft", unknown: "GitHub is checking it" };
+  const ready = g && g.state === "open" && g.checks === "passing" && pushed && g.head === s.change.head && !["dirty", "behind"].includes(g.merge_state);
+  return h("div", { class: "pr-box" },
+    h("div", { class: "pr-top" }, icon("gitPull"),
+      h("a", { class: "pr-title", href: pr.url, target: "_blank", rel: "noopener noreferrer", title: "Open on GitHub" },
+        h("span", { class: "pr-num" }, `#${pr.number}`), " ", (g && g.title) || "Pull request"),
+      h("a", { class: "c-act", href: pr.url, target: "_blank", rel: "noopener noreferrer", title: "Open on GitHub", "aria-label": "Open on GitHub" }, icon("external"))),
+    h("div", { class: "pr-state" },
+      !pushed ? h("span", { class: "pr-ci" }, "New commits are pushed once the checks pass")
+        : [ci, g && g.state === "open" && h("span", { class: "pr-merge" }, MERGE[g.merge_state] || g.merge_state)],
+      !g && st && st.error && h("span", { class: "pr-ci err", title: st.error }, "GitHub unreachable")),
+    idle && h("button", { class: "btn primary small block", type: "button", disabled: !ready,
+      title: ready ? "Squash-merge it on GitHub, titled like the pull request" : "Once GitHub's checks pass on the latest commit",
+      onclick: () => changeAction("merge") }, icon("gitMerge"), "Squash and merge"));
+}
+
+async function refreshPrStatus(runId) {
+  app.prStatus = { ...(app.prStatus && app.prStatus.runId === runId ? app.prStatus : { runId, at: 0 }), loading: true };
+  let next;
+  try {
+    const { status } = await api(`${runPath(app.realm, runId)}/pull-request`);
+    next = { runId, status, at: Date.now(), loading: false };
+  } catch (e) {
+    next = { runId, status: null, error: e.message, at: Date.now(), loading: false };
   }
-  renderRun();
+  if (app.prStatus && app.prStatus.runId === runId) app.prStatus = next;
+  if (app.route.view === "run" && app.route.id === runId) renderRun();
+}
+
+/** The change's full diff, in a wide sheet over the page. */
+async function openDiff(runId, name) {
+  let text;
+  try { text = (await api(`${runPath(app.realm, runId)}/diff`)).diff; } catch (e) { return flash(e.message, true); }
+  const files = (text.match(/^diff --git /gm) || []).length;
+  const close = () => { sheet.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const sheet = h("div", { class: "sheet-back", onclick: (e) => { if (e.target === sheet) close(); } },
+    h("div", { class: "sheet", role: "dialog", "aria-label": "Diff" },
+      h("div", { class: "sheet-head" },
+        h("div", { class: "grow" }, h("div", { class: "strong" }, name), h("div", { class: "muted small" }, `${files} file${files === 1 ? "" : "s"} changed`)),
+        h("button", { class: "c-act", type: "button", title: "Close (Esc)", "aria-label": "Close", onclick: close }, icon("x"))),
+      h("div", { class: "sheet-body" }, diffView(text || "(empty diff)", "diff"))));
+  document.addEventListener("keydown", onKey);
+  document.body.append(sheet);
 }
 
 async function changeAction(action) {

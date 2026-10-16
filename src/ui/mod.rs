@@ -1517,6 +1517,15 @@ impl App {
                     }
                 }
             }
+            (Method::Get, ["realms", r, "runs", id, "pull-request"]) => {
+                let status = self.hub.pull_request_status(&self.realm(r)?, id)?;
+                json_response(200, json!({"status": status}))
+            }
+            (Method::Post, ["realms", r, "runs", id, "merge"]) => {
+                self.ensure_idle(r, id)?;
+                self.hub.merge_pull_request(&self.realm(r)?, id)?;
+                json_response(200, json!({"merged": true}))
+            }
             (Method::Post, ["realms", r, "runs", id, "pull-request"]) => {
                 self.ensure_idle(r, id)?;
                 let realm = self.realm(r)?;

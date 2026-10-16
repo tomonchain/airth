@@ -419,7 +419,7 @@ pub struct InboxArgs {
     /// Show read notifications too
     #[arg(long)]
     all: bool,
-    /// Turn desktop notifications on or off
+    /// Whether the Mac app bounces its Dock icon when a run waits for you
     #[arg(long, value_parser = ["on", "off"])]
     desktop: Option<String>,
 }
@@ -428,7 +428,7 @@ pub fn inbox(ctx: &Ctx, args: InboxArgs) -> Result<bool> {
     let home = ctx.home();
     if let Some(d) = args.desktop {
         home.set_desktop_notifications(d == "on")?;
-        eprintln!("desktop notifications {d}");
+        eprintln!("Dock alerts {d}");
         return Ok(true);
     }
     let inbox = home.inbox();

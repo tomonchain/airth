@@ -123,6 +123,7 @@ impl Home {
         )
     }
 
+    /// Whether the Mac app bounces its Dock icon when a run waits for the owner.
     pub fn desktop_notifications(&self) -> bool {
         self.config().desktop_notifications.unwrap_or(true)
     }
@@ -156,7 +157,7 @@ impl Home {
 
     /// The owner's notifications.
     pub fn inbox(&self) -> Inbox {
-        Inbox::new(self.dir.join("notifications.json")).with_desktop(self.desktop_notifications())
+        Inbox::new(self.dir.join("notifications.json"))
     }
 
     /// All realms, archived ones included, by name.

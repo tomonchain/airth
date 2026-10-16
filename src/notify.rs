@@ -2,9 +2,9 @@
 //! (an objective's run finished, failed, or is waiting for approval).
 //!
 //! They are kept in the home's `notifications.json`, shown in the app's inbox
-//! and by `airth inbox`. On macOS a desktop notification is shown too; it
-//! names only the realm and the event, never a run's content, since the
-//! screen may be visible to others.
+//! and by `airth inbox`. No pop-up: the Mac app shows the unread count next
+//! to its menu bar icon, and bounces its Dock icon once when a run waits for
+//! the owner (see desktop/).
 
 use crate::realm::write_atomic;
 use anyhow::{Context, Result};
@@ -46,21 +46,13 @@ pub struct Notification {
 #[derive(Debug, Clone)]
 pub struct Inbox {
     path: PathBuf,
-    desktop: bool,
 }
 
 impl Inbox {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
-            desktop: false,
         }
-    }
-
-    /// Also show each notification on the desktop (macOS).
-    pub fn with_desktop(mut self, desktop: bool) -> Self {
-        self.desktop = desktop;
-        self
     }
 
     pub fn list(&self) -> Result<Vec<Notification>> {
@@ -70,6 +62,19 @@ impl Inbox {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// How many notifications are unread, and the newest unread one that
+    /// waits for the owner (an approval), for the menu bar and the Dock.
+    pub fn attention(&self) -> (usize, Option<u64>) {
+        let list = self.list().unwrap_or_default();
+        let unread = list.iter().filter(|n| !n.read).count();
+        let waiting = list
+            .iter()
+            .filter(|n| !n.read && n.kind == Kind::Approval)
+            .map(|n| n.id)
+            .max();
+        (unread, waiting)
     }
 
     pub fn unread(&self) -> usize {
@@ -102,9 +107,6 @@ impl Inbox {
         all.drain(..excess);
         write_atomic(&self.path, &serde_json::to_string_pretty(&all)?)?;
         drop(_guard);
-        if self.desktop {
-            desktop(&format!("Airth · {realm}"), title);
-        }
         Ok(n)
     }
 
@@ -119,28 +121,6 @@ impl Inbox {
         }
         write_atomic(&self.path, &serde_json::to_string_pretty(&all)?)
     }
-}
-
-/// Best effort; a missing notifier is not an error.
-fn desktop(title: &str, message: &str) {
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    // Text goes in as arguments, never into the script source.
-    let _ = std::process::Command::new("/usr/bin/osascript")
-        .args([
-            "-e",
-            "on run argv",
-            "-e",
-            "display notification (item 2 of argv) with title (item 1 of argv)",
-            "-e",
-            "end run",
-            title,
-            message,
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
 }
 
 #[cfg(test)]

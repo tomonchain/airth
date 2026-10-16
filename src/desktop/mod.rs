@@ -16,7 +16,7 @@ use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::macos::WindowBuilderExtMacOS;
-use tao::window::WindowBuilder;
+use tao::window::{UserAttentionType, WindowBuilder};
 use tray_icon::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, accelerator::Accelerator,
 };
@@ -30,6 +30,8 @@ enum UserEvent {
     Drag,
     /// A double click on the title bar area.
     Zoom,
+    /// The inbox: unread notifications, and the newest one waiting for the owner.
+    Inbox(usize, Option<u64>),
 }
 
 /// The page draws its own title bar: it knows it runs in the app window, and
@@ -45,6 +47,7 @@ fn open_outside(url: &str) {
 }
 
 pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
+    let home = hub.home().clone();
     // The background service serves the app when it runs; otherwise we do.
     let (url, own) = match ui::running_url(&hub) {
         Some(url) => (url, None),
@@ -175,6 +178,25 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
     GlobalHotKeyEvent::set_event_handler(Some(move |e| {
         let _ = proxy.send_event(UserEvent::HotKey(e));
     }));
+    // Instead of pop-ups: the unread count next to the menu bar icon, and one
+    // Dock bounce when a run waits for the owner.
+    let proxy = event_loop.create_proxy();
+    let inbox_home = home.clone();
+    std::thread::spawn(move || {
+        let mut last = None;
+        loop {
+            let now = inbox_home.inbox().attention();
+            if last != Some(now) {
+                last = Some(now);
+                if proxy.send_event(UserEvent::Inbox(now.0, now.1)).is_err() {
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+    });
+    let mut seen_waiting: Option<u64> = None;
+    let mut first_inbox = true;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -227,6 +249,24 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
                 let _ = window.drag_window();
             }
             Event::UserEvent(UserEvent::Zoom) => window.set_maximized(!window.is_maximized()),
+            Event::UserEvent(UserEvent::Inbox(unread, waiting)) => {
+                if let Some(t) = &tray {
+                    t.set_title((unread > 0).then(|| unread.to_string()));
+                }
+                tray_inbox.set_text(if unread > 0 {
+                    format!("Inbox ({unread})")
+                } else {
+                    "Inbox".into()
+                });
+                // Bounce once for a new approval, not for those already waiting at launch.
+                if waiting > seen_waiting {
+                    if !first_inbox && home.desktop_notifications() && !window.is_focused() {
+                        window.request_user_attention(Some(UserAttentionType::Informational));
+                    }
+                    seen_waiting = waiting;
+                }
+                first_inbox = false;
+            }
             Event::UserEvent(UserEvent::HotKey(e))
                 if e.id == hotkey.id() && e.state == HotKeyState::Pressed =>
             {
