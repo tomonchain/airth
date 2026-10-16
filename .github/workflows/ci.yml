@@ -1,0 +1,40 @@
+# Check every pull request (and main) the way chats are checked locally:
+# formatting, lints and tests. Releases are built by release.yml.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Lints
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: |
+          git config --global user.name "Airth CI"
+          git config --global user.email "ci@airth.invalid"
+          cargo test --locked

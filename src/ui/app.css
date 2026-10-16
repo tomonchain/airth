@@ -277,6 +277,7 @@ button.side-warn { cursor: pointer; }
 .badge { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 600; }
 .badge.ok { color: var(--ok); }
 .badge.err { color: var(--err); }
+.badge.warn { color: var(--warn); }
 
 /* ---------- Main ---------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
@@ -726,6 +727,17 @@ details.check code { flex: 1; }
 details.check pre.out { margin: 4px 0 8px; max-height: 320px; }
 .change-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px 12px; border-top: 1px solid var(--border); }
 .change .error-banner { margin: 8px 12px 0; }
+.change-note { display: flex; gap: 10px; align-items: flex-start; margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px; background: var(--hover); font-size: 13px; line-height: 1.45; }
+.change-note > .i { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--muted); }
+.change-note > .i svg { width: 16px; height: 16px; }
+.change-note .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.change-note .btn { flex: none; align-self: center; }
+.change-note.warn { background: var(--warn-soft); }
+.change-note.warn > .i { color: var(--warn); }
+.change-note.subtle { background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: 12.5px; }
+.change-note:has(.btn) { flex-wrap: wrap; }
+.change-note:has(.btn) .grow { flex-basis: calc(100% - 26px); }
+.change-note > .btn { margin-left: 26px; }
 .confirm { display: inline-flex; gap: 6px; align-items: center; color: var(--err); font-weight: 600; font-size: 13px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -870,6 +882,7 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 .objective-head .toggle { padding: 0; flex: none; }
 .objective-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 12.5px; color: var(--muted); }
 .objective .row-end { padding: 0; }
+
 .toggle.small { font-size: 13px; padding: 4px 0; }
 .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .inline input[type=number] { width: 120px; }
@@ -1560,3 +1573,4 @@ a.rh-tag { color: var(--brand); }
   .doc-filter { width: 100%; }
   .doc-tools { width: 100%; }
 }
+.warn-text { color: var(--warn); }

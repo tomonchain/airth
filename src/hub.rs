@@ -10,8 +10,11 @@
 
 use crate::agent::{Agent, AgentConfig, Briefing, Observer, run_context};
 use crate::cancel::CancelToken;
+use crate::github::{GitHub, PrState, Remote};
 use crate::home::Home;
-use crate::isolation::{self, ChangeStatus, CheckResult, CheckRun, Isolation};
+use crate::isolation::{
+    self, ChangeStatus, CheckResult, CheckRun, Delivery, Isolation, PullRequest, Update,
+};
 use crate::memory::MemoryStore;
 use crate::models::router::{Connections, Routed, Tier};
 use crate::models::{ContentBlock, Message, Model, Role};
@@ -72,6 +75,12 @@ pub struct RunSummary {
     pub plan_total: usize,
     /// The run served the realm's North Star (see `is_focus`).
     pub focus: bool,
+    /// For open changes: the files they touch, to spot chats that overlap.
+    pub touches: Vec<String>,
+    /// For open changes: merging their base conflicts.
+    pub conflicts: bool,
+    /// For open changes delivered as pull requests: the pull request.
+    pub pull_request: Option<PullRequest>,
 }
 
 impl RunSummary {
@@ -432,8 +441,9 @@ impl Hub {
         state.realm = realm.name().to_string();
         if realm.config.isolation == Isolation::Worktree {
             let root = realm.root()?;
+            let start = self.start_point(realm, &root);
             state.change = Some(
-                isolation::create(&root, &realm.worktrees_dir(), &state.id)
+                isolation::create_from(&root, &realm.worktrees_dir(), &state.id, &start)
                     .context("cannot create the run's isolated worktree")?,
             );
         }
@@ -590,6 +600,16 @@ impl Hub {
             && !realm.config.checks.is_empty();
         if wants_checks && !hooks.cancel.is_cancelled() {
             self.run_checks(realm, state, &workspace, observer, &hooks.cancel)?;
+        }
+        if state.status == Status::Completed
+            && let Err(e) = self.deliver(realm, state, false)
+        {
+            state.report = Some(format!(
+                "{}\n\nCould not open the pull request: {e:#}",
+                state.report.as_deref().unwrap_or_default()
+            ));
+            state.save()?;
+            observer.changed(state);
         }
         if state.skill.is_some()
             && let Err(e) = self.skill_run_ended(realm, state, &hooks.cancel)
@@ -833,30 +853,136 @@ impl Hub {
         isolation::diff(change)
     }
 
-    /// Merge a run's change into the realm's checkout. Its checks must have
-    /// passed on the latest commit, if the realm has checks.
-    pub fn adopt(&self, realm: &Realm, run: &str) -> Result<State> {
+    /// Get a run's change ready to adopt: merge in what its base branch got
+    /// since, so it is checked and adopted against the checkout as it is now.
+    pub fn prepare_adoption(&self, realm: &Realm, run: &str) -> Result<Adoption> {
+        if realm.config.delivery == Delivery::PullRequest {
+            bail!("this realm delivers changes as pull requests: merge it on GitHub");
+        }
         let mut state = self.load_run(realm, run)?;
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
-        let checks_needed = !realm.config.checks.is_empty();
         let change = state
             .change
             .as_mut()
             .context("this run has no isolated change")?;
-        if checks_needed && !change.checks_passed() {
-            bail!("the checks have not passed on this change's latest commit (run `airth check`)");
+        if !change.has_changes() {
+            bail!("there is nothing to adopt: the run changed no files");
         }
-        let message = format!(
-            "Adopt Airth run {}: {}",
-            state.id,
-            first_line(&state.objective, 60)
-        );
-        isolation::adopt(change, &message)?;
+        let target = self.base_target(realm, change)?;
+        let outcome = isolation::update(change, &target)?;
+        let checks_passed = change.checks_passed();
         state.save()?;
+        Ok(match outcome {
+            Update::Conflict(files) => Adoption::Conflict(files),
+            _ if !realm.config.checks.is_empty() && !checks_passed => Adoption::NeedsChecks,
+            _ => Adoption::Ready,
+        })
+    }
+
+    /// Merge a run's change into the realm's checkout. It must contain the
+    /// base branch as it is now (see `prepare_adoption`), and its checks must
+    /// have passed on the latest commit, if the realm has checks. The realm's
+    /// other open changes are then updated with it.
+    pub fn adopt(&self, realm: &Realm, run: &str) -> Result<State> {
+        if realm.config.delivery == Delivery::PullRequest {
+            bail!("this realm delivers changes as pull requests: merge it on GitHub");
+        }
+        let mut state = self.load_run(realm, run)?;
+        {
+            let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
+            let checks_needed = !realm.config.checks.is_empty();
+            let change = state
+                .change
+                .as_mut()
+                .context("this run has no isolated change")?;
+            if checks_needed && !change.checks_passed() {
+                bail!(
+                    "the checks have not passed on this change's latest commit (run `airth check`)"
+                );
+            }
+            let message = format!(
+                "Adopt Airth run {}: {}",
+                state.id,
+                first_line(&state.objective, 60)
+            );
+            isolation::adopt(change, &message)?;
+            state.save()?;
+        }
+        self.update_open_changes(realm, &state.id);
         Ok(state)
     }
 
-    /// Throw a run's change away.
+    /// Merge the base branch into every other open change of the realm that
+    /// no one is driving: they stay current, and conflicts show early.
+    pub fn update_open_changes(&self, realm: &Realm, except: &str) {
+        let Ok(runs) = self.load_all(realm) else {
+            return;
+        };
+        for mut state in runs {
+            let open = state
+                .change
+                .as_ref()
+                .is_some_and(|c| c.status == ChangeStatus::Open && c.merging.is_none());
+            if state.id == except || !open {
+                continue;
+            }
+            let Ok(_lock) = RunLock::acquire(&realm.runs_dir(), &state.id) else {
+                continue;
+            };
+            let change = state.change.as_mut().expect("checked above");
+            let updated = self
+                .base_target(realm, change)
+                .and_then(|target| isolation::update(change, &target));
+            match updated {
+                Ok(Update::UpToDate) => {}
+                Ok(_) => {
+                    let _ = state.save();
+                }
+                Err(e) => eprintln!("could not update the change of run {}: {e:#}", state.id),
+            }
+        }
+    }
+
+    /// Start merging the base branch into a run's change and leave the
+    /// conflicts for the chat to resolve. Returns the run, ready to drive, or
+    /// None when the base merged cleanly after all (nothing to resolve).
+    pub fn resolve(&self, realm: &Realm, run: &str) -> Result<Option<State>> {
+        let mut state = self.reopen(realm, run)?;
+        let change = state
+            .change
+            .as_mut()
+            .context("this run has no isolated change")?;
+        let base = change.base_branch.clone().unwrap_or_else(|| "main".into());
+        let target = self.base_target(realm, change)?;
+        let files = isolation::start_resolving(change, &target)?;
+        if files.is_empty() {
+            state.save()?;
+            return Ok(None);
+        }
+        let list = files
+            .iter()
+            .map(|f| format!("- {f}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        append_user_text(
+            &mut state.messages,
+            &format!(
+                "`{base}` changed since this chat started, and merging it into your working copy conflicts in:\n{list}\n\n\
+                 The merge is in progress in your working copy. Resolve every conflict: \
+                 keep what this chat set out to do and what changed on `{base}`, \
+                 and remove all the conflict markers (<<<<<<<, =======, >>>>>>>). \
+                 Then make sure the code still builds and the tests pass. \
+                 Do not commit, abort the merge or run other git commands: \
+                 the runtime commits the merge when you finish."
+            ),
+        );
+        state.status = Status::Running;
+        state.report = None;
+        state.save()?;
+        Ok(Some(state))
+    }
+
+    /// Throw a run's change away (and close its pull request, if any).
     pub fn discard(&self, realm: &Realm, run: &str) -> Result<State> {
         let mut state = self.load_run(realm, run)?;
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
@@ -864,9 +990,209 @@ impl Hub {
             .change
             .as_mut()
             .context("this run has no isolated change")?;
+        self.close_pull_request(realm, change);
         isolation::discard(change)?;
         state.save()?;
         Ok(state)
+    }
+
+    /// Where a new chat's worktree starts: the checkout's HEAD, or, in a
+    /// realm that opens pull requests, its branch as it is on GitHub.
+    fn start_point(&self, realm: &Realm, root: &Path) -> String {
+        if realm.config.delivery == Delivery::PullRequest
+            && let Ok((gh, remote)) = self.github(realm)
+            && let Ok(branch) = isolation::current_branch(root).context("no branch")
+        {
+            match gh.fetch(root, &remote, &branch) {
+                Ok(target) => return target,
+                Err(e) => eprintln!("starting from the local checkout: {e:#}"),
+            }
+        }
+        "HEAD".into()
+    }
+
+    /// The ref holding a change's base branch as it is now: in the checkout,
+    /// or fetched from GitHub in a realm that opens pull requests.
+    fn base_target(&self, realm: &Realm, change: &isolation::Change) -> Result<String> {
+        let base = change
+            .base_branch
+            .as_deref()
+            .context("this chat did not start from a branch")?;
+        if realm.config.delivery == Delivery::PullRequest {
+            let (gh, remote) = self.github(realm)?;
+            return gh.fetch(&change.repo, &remote, base);
+        }
+        Ok(format!("refs/heads/{base}"))
+    }
+
+    /// The realm's GitHub access, for realms that open pull requests.
+    fn github(&self, realm: &Realm) -> Result<(GitHub, Remote)> {
+        let token = realm.secret(crate::github::TOKEN).with_context(|| {
+            format!(
+                "add a GitHub token to the realm's secrets as {}",
+                crate::github::TOKEN
+            )
+        })?;
+        let remote = Remote::of(&realm.root()?)?;
+        Ok((self.github_client(&token), remote))
+    }
+
+    #[cfg(not(test))]
+    fn github_client(&self, token: &str) -> GitHub {
+        GitHub::new(token)
+    }
+
+    /// Tests point GitHub at a local API and folder of repositories.
+    #[cfg(test)]
+    fn github_client(&self, token: &str) -> GitHub {
+        match TEST_GITHUB.lock().unwrap().as_ref() {
+            Some((api, git)) => GitHub::at(token, api, git),
+            None => GitHub::new(token),
+        }
+    }
+
+    /// Push a run's change and open its pull request (or push to the one it
+    /// has), in a realm that delivers changes that way. A change opens its
+    /// pull request once its checks pass, unless `anyway`.
+    pub fn deliver(&self, realm: &Realm, state: &mut State, anyway: bool) -> Result<()> {
+        if realm.config.delivery != Delivery::PullRequest {
+            return Ok(());
+        }
+        let Some(change) = state.change.as_mut() else {
+            return Ok(());
+        };
+        let ready = change.status == ChangeStatus::Open
+            && change.has_changes()
+            && !change.files.is_empty()
+            && change.merging.is_none()
+            && change.conflicts.is_empty();
+        let passed = realm.config.checks.is_empty() || change.checks_passed();
+        if !ready || (change.pull_request.is_none() && !passed && !anyway) {
+            return Ok(());
+        }
+        if change
+            .pull_request
+            .as_ref()
+            .is_some_and(|p| p.pushed == change.head)
+        {
+            return Ok(());
+        }
+        let (gh, remote) = self.github(realm)?;
+        let base = change
+            .base_branch
+            .clone()
+            .context("this chat did not start from a branch")?;
+        gh.push(&change.path, &remote, &change.branch)?;
+        match change.pull_request.as_mut() {
+            Some(pr) => pr.pushed = change.head.clone(),
+            None => {
+                let title = realm
+                    .run_titles()
+                    .get(&state.id)
+                    .cloned()
+                    .unwrap_or_else(|| first_line(&state.objective, 72));
+                let body = pull_request_body(state);
+                let change = state.change.as_mut().expect("checked above");
+                let (number, url) = gh.open(&remote, &change.branch, &base, &title, &body)?;
+                change.pull_request = Some(PullRequest {
+                    number,
+                    url,
+                    pushed: change.head.clone(),
+                });
+            }
+        }
+        state.save()
+    }
+
+    /// Follow a run's pull request: record it merged or closed, or keep its
+    /// branch current with the base. Skips runs someone is driving.
+    pub fn follow_pull_request(&self, realm: &Realm, run: &str) -> Result<PrEvent> {
+        let mut state = self.load_run(realm, run)?;
+        let Ok(_lock) = RunLock::acquire(&realm.runs_dir(), &state.id) else {
+            return Ok(PrEvent::Nothing);
+        };
+        let Some(change) = state.change.as_mut() else {
+            return Ok(PrEvent::Nothing);
+        };
+        let Some(pr) = change.pull_request.clone() else {
+            return Ok(PrEvent::Nothing);
+        };
+        if change.status != ChangeStatus::Open || change.merging.is_some() {
+            return Ok(PrEvent::Nothing);
+        }
+        let (gh, remote) = self.github(realm)?;
+        let known_conflict = !change.conflicts.is_empty();
+        let event = match gh.state(&remote, pr.number)? {
+            PrState::Merged => {
+                isolation::merged_elsewhere(change);
+                let _ = gh.delete_branch(&remote, &change.branch);
+                if let Some(base) = change.base_branch.clone()
+                    && let Ok(target) = gh.fetch(&change.repo, &remote, &base)
+                {
+                    isolation::fast_forward(&change.repo, &base, &target);
+                }
+                PrEvent::Merged
+            }
+            PrState::Closed => {
+                isolation::discard(change)?;
+                let _ = gh.delete_branch(&remote, &change.branch);
+                PrEvent::Closed
+            }
+            PrState::Open => {
+                let base = change
+                    .base_branch
+                    .clone()
+                    .context("this chat did not start from a branch")?;
+                let target = gh.fetch(&change.repo, &remote, &base)?;
+                match isolation::update(change, &target)? {
+                    Update::UpToDate => PrEvent::Nothing,
+                    Update::Updated => {
+                        gh.push(&change.path, &remote, &change.branch)?;
+                        if let Some(pr) = change.pull_request.as_mut() {
+                            pr.pushed = change.head.clone();
+                        }
+                        PrEvent::Updated
+                    }
+                    Update::Conflict(_) => PrEvent::Conflict,
+                }
+            }
+        };
+        state.save()?;
+        let title = match &event {
+            PrEvent::Merged => Some((Kind::Completed, "merged")),
+            PrEvent::Closed => Some((Kind::Stopped, "closed without merging")),
+            PrEvent::Conflict if !known_conflict => {
+                Some((Kind::Review, "conflicts with its base: Airth resolves them"))
+            }
+            _ => None,
+        };
+        if let Some((kind, what)) = title {
+            self.home.inbox().push(
+                kind,
+                realm.name(),
+                Some(&state.id),
+                &format!("Pull request #{} {what}", pr.number),
+                &first_line(&state.objective, 120),
+            )?;
+        }
+        Ok(event)
+    }
+
+    /// Close a change's pull request and delete its branch on GitHub (best
+    /// effort: the change is thrown away locally either way).
+    fn close_pull_request(&self, realm: &Realm, change: &isolation::Change) {
+        let Some(pr) = &change.pull_request else {
+            return;
+        };
+        if change.status != ChangeStatus::Open {
+            return;
+        }
+        if let Ok((gh, remote)) = self.github(realm) {
+            if let Err(e) = gh.close(&remote, pr.number) {
+                eprintln!("could not close pull request #{}: {e:#}", pr.number);
+            }
+            let _ = gh.delete_branch(&remote, &change.branch);
+        }
     }
 
     /// Delete a chat for good: its file, its name and archive mark, and its
@@ -877,6 +1203,7 @@ impl Hub {
         if let Some(change) = state.change.as_mut()
             && change.status == ChangeStatus::Open
         {
+            self.close_pull_request(realm, change);
             isolation::discard(change)?;
         }
         let path = state.path().context("this run is not saved")?.to_path_buf();
@@ -1202,6 +1529,7 @@ impl Hub {
             owner,
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
+            pull_requests: state.change.is_some() && realm.config.delivery == Delivery::PullRequest,
             checks: realm.config.checks.clone(),
             north_star: match &state.skill {
                 Some(_) => None,
@@ -1225,6 +1553,27 @@ impl Hub {
                     .as_ref()
                     .filter(|c| c.has_changes() && c.checks.as_ref().is_some_and(|k| k.finished))
                     .map(|c| c.checks_passed()),
+                touches: s
+                    .change
+                    .as_ref()
+                    .filter(|c| c.status == ChangeStatus::Open)
+                    .map(|c| {
+                        c.files
+                            .iter()
+                            .filter_map(|f| f.split('\t').next_back())
+                            .map(String::from)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                conflicts: s
+                    .change
+                    .as_ref()
+                    .is_some_and(|c| c.status == ChangeStatus::Open && !c.conflicts.is_empty()),
+                pull_request: s
+                    .change
+                    .as_ref()
+                    .filter(|c| c.status == ChangeStatus::Open)
+                    .and_then(|c| c.pull_request.clone()),
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
                 id: s.id,
@@ -1444,6 +1793,53 @@ fn resume_message(state: &State) -> String {
     }
     out.push_str("Before continuing, check the current state of the workspace and of any system you changed: the step in progress, or the last action before the interruption, may have taken effect fully, partly or not at all. Do not repeat what already took effect. Then continue toward the objective, keeping your plan up to date.");
     out
+}
+
+/// Where a change stands on the way to adoption.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Adoption {
+    /// Up to date with its base and checked: it can be adopted.
+    Ready,
+    /// Up to date, but its checks must run (again) first.
+    NeedsChecks,
+    /// Merging its base conflicts in these files: the chat must resolve them.
+    Conflict(Vec<String>),
+}
+
+/// What following a pull request found.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PrEvent {
+    Nothing,
+    Merged,
+    Closed,
+    /// The base moved on: merged in and pushed.
+    Updated,
+    /// The base moved on and conflicts: the chat must resolve it.
+    Conflict,
+}
+
+#[cfg(test)]
+pub(crate) static TEST_GITHUB: std::sync::Mutex<Option<(String, String)>> =
+    std::sync::Mutex::new(None);
+
+/// A pull request's description: what the chat reported, and its checks.
+fn pull_request_body(state: &State) -> String {
+    let mut body = state.report.clone().unwrap_or_default().trim().to_string();
+    if let Some(checks) = state.change.as_ref().and_then(|c| c.checks.as_ref()) {
+        body.push_str("\n\n**Checks**\n");
+        for r in &checks.results {
+            body.push_str(&format!(
+                "- {} `{}`\n",
+                if r.ok { "✓" } else { "✗" },
+                r.command
+            ));
+        }
+    }
+    body.push_str(&format!(
+        "\n---\nOpened by Airth from chat `{}` in realm `{}`.",
+        state.id, state.realm
+    ));
+    body
 }
 
 fn first_line(text: &str, max: usize) -> String {
@@ -2366,6 +2762,314 @@ mod tests {
             "improved\n"
         );
         assert!(hub.follow_up(&realm, &state.id, "more").is_err());
+    }
+
+    fn git_in(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A GitHub API that knows one pull request (#7), merged once `merged` is set.
+    fn fake_github(
+        merged: Arc<std::sync::atomic::AtomicBool>,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let seen = calls.clone();
+        std::thread::spawn(move || {
+            for mut req in server.incoming_requests() {
+                let mut body = String::new();
+                let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+                let auth = req.headers().iter().any(|h| {
+                    h.field.equiv("Authorization") && h.value.as_str() == "Bearer gh-test-token"
+                });
+                seen.lock()
+                    .unwrap()
+                    .push(format!("{} {} {body}", req.method(), req.url()));
+                let merged = merged.load(std::sync::atomic::Ordering::SeqCst);
+                let (code, answer) = match (req.method().as_str(), req.url()) {
+                    _ if !auth => (401, json!({"message": "Bad credentials"})),
+                    ("POST", "/repos/o/r/pulls") => (
+                        201,
+                        json!({"number": 7, "html_url": "https://github.com/o/r/pull/7"}),
+                    ),
+                    ("GET", "/repos/o/r/pulls/7") => (
+                        200,
+                        json!({"state": if merged { "closed" } else { "open" }, "merged": merged}),
+                    ),
+                    _ => (200, json!({})),
+                };
+                let _ = req.respond(
+                    tiny_http::Response::from_string(answer.to_string()).with_status_code(code),
+                );
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), calls)
+    }
+
+    /// A realm that delivers pull requests: changes are pushed and opened as
+    /// pull requests once checked, kept current with the base, their
+    /// conflicts resolved by the chat, and recorded merged.
+    #[test]
+    fn pull_requests_are_opened_followed_and_merged() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = Home::at(home_dir.path()).unwrap();
+        let repo = crate::isolation::tests::repo();
+        // GitHub's copy of the repository: a bare repo in a folder of remotes.
+        let remotes = tempfile::tempdir().unwrap();
+        let bare = remotes.path().join("o/r.git");
+        std::fs::create_dir_all(bare.parent().unwrap()).unwrap();
+        git_in(
+            remotes.path(),
+            &[
+                "clone",
+                "-q",
+                "--bare",
+                repo.path().to_str().unwrap(),
+                bare.to_str().unwrap(),
+            ],
+        );
+        git_in(
+            repo.path(),
+            &["remote", "add", "origin", "https://github.com/o/r.git"],
+        );
+        let merged = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (api, calls) = fake_github(merged.clone());
+        *TEST_GITHUB.lock().unwrap() = Some((api, format!("file://{}", remotes.path().display())));
+
+        let mut realm = home
+            .create_realm(NewRealm {
+                name: "code".into(),
+                description: String::new(),
+                root: Some(repo.path().to_path_buf()),
+                isolation: None,
+            })
+            .unwrap();
+        realm.config.checks = vec!["test -f b.txt".into()];
+        realm.config.delivery = Delivery::PullRequest;
+        realm.save().unwrap();
+        realm
+            .set_secret(crate::github::TOKEN, "gh-test-token")
+            .unwrap();
+
+        let (hub, _, _) = make_hub(
+            &home,
+            vec![
+                call(
+                    "1",
+                    "write_file",
+                    json!({"path": "b.txt", "content": "mine\n"}),
+                ),
+                call(
+                    "2",
+                    "execute_command",
+                    json!({"command": "echo token=${GITHUB_TOKEN:-none}"}),
+                ),
+                done("Added b.txt."),
+            ],
+        );
+        let state = hub
+            .dispatch(&realm, "add b", config(10), hooks(&mut NoObserver, true))
+            .unwrap();
+        // Chats never get the token the runtime pushes with.
+        assert!(
+            state.events[1].result.contains("token=none"),
+            "{}",
+            state.events[1].result
+        );
+        let change = state.change.clone().unwrap();
+        let pr = change.pull_request.clone().expect("a pull request");
+        assert_eq!(pr.number, 7);
+        assert_eq!(pr.pushed, change.head);
+        let branch_on_github = |b: &str| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&bare)
+                .args(["rev-parse", &format!("refs/heads/{b}")])
+                .output()
+                .unwrap()
+        };
+        assert!(branch_on_github(&change.branch).status.success());
+        let opened = calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.starts_with("POST"))
+            .cloned()
+            .unwrap();
+        assert!(
+            opened.contains("\"title\":\"add b\"") && opened.contains("Added b.txt."),
+            "{opened}"
+        );
+        assert!(
+            hub.adopt(&realm, &state.id).is_err(),
+            "merged on GitHub, not here"
+        );
+
+        // Nothing new on GitHub: nothing to do.
+        assert_eq!(
+            hub.follow_pull_request(&realm, &state.id).unwrap(),
+            PrEvent::Nothing
+        );
+
+        // Someone else's work lands on main: the branch takes it in and is pushed.
+        let other = tempfile::tempdir().unwrap();
+        git_in(other.path(), &["clone", "-q", bare.to_str().unwrap(), "."]);
+        std::fs::write(other.path().join("c.txt"), "theirs\n").unwrap();
+        git_in(other.path(), &["add", "."]);
+        git_in(other.path(), &["commit", "-q", "-m", "c"]);
+        git_in(other.path(), &["push", "-q", "origin", "HEAD:main"]);
+        assert_eq!(
+            hub.follow_pull_request(&realm, &state.id).unwrap(),
+            PrEvent::Updated
+        );
+        let state = hub.load_run(&realm, &state.id).unwrap();
+        let change = state.change.clone().unwrap();
+        assert!(change.path.join("c.txt").exists());
+        assert_eq!(change.files, vec!["A\tb.txt"]);
+        let pushed = String::from_utf8(branch_on_github(&change.branch).stdout).unwrap();
+        assert_eq!(pushed.trim(), change.head);
+
+        // Then main gets a b.txt of its own: a conflict, which the chat resolves.
+        std::fs::write(other.path().join("b.txt"), "theirs\n").unwrap();
+        git_in(other.path(), &["add", "."]);
+        git_in(other.path(), &["commit", "-q", "-m", "b"]);
+        git_in(other.path(), &["push", "-q", "origin", "HEAD:main"]);
+        assert_eq!(
+            hub.follow_pull_request(&realm, &state.id).unwrap(),
+            PrEvent::Conflict
+        );
+        let inbox = home.inbox().list().unwrap();
+        assert!(
+            inbox.iter().any(|n| n.title.contains("#7 conflicts")),
+            "{inbox:?}"
+        );
+        let mut state = hub.resolve(&realm, &state.id).unwrap().expect("a conflict");
+        assert!(format!("{:?}", state.messages.last()).contains("b.txt"));
+        let (hub, _, _) = make_hub(
+            &home,
+            vec![
+                call(
+                    "1",
+                    "write_file",
+                    json!({"path": "b.txt", "content": "mine and theirs\n"}),
+                ),
+                done("Kept both."),
+            ],
+        );
+        hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true))
+            .unwrap();
+        let change = state.change.clone().unwrap();
+        assert!(
+            change.conflicts.is_empty() && change.merging.is_none(),
+            "{change:?}"
+        );
+        assert!(change.checks_passed());
+        assert_eq!(change.pull_request.as_ref().unwrap().pushed, change.head);
+        let pushed = String::from_utf8(branch_on_github(&change.branch).stdout).unwrap();
+        assert_eq!(pushed.trim(), change.head);
+
+        // Merged on GitHub: the chat's change is adopted and its copy removed.
+        merged.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            hub.follow_pull_request(&realm, &state.id).unwrap(),
+            PrEvent::Merged
+        );
+        let state = hub.load_run(&realm, &state.id).unwrap();
+        let change = state.change.unwrap();
+        assert_eq!(change.status, ChangeStatus::Adopted);
+        assert!(!change.path.exists());
+        assert!(
+            calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.starts_with("DELETE /repos/o/r/git/refs/heads/airth/"))
+        );
+        *TEST_GITHUB.lock().unwrap() = None;
+    }
+
+    /// Adopting a change that missed new commits on its base updates it,
+    /// checks it again, and the realm's other open changes follow.
+    #[test]
+    fn adoption_updates_the_change_and_the_others() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = Home::at(home_dir.path()).unwrap();
+        let repo = crate::isolation::tests::repo();
+        git_in(repo.path(), &["config", "user.name", "t"]);
+        git_in(repo.path(), &["config", "user.email", "t@t"]);
+        let mut realm = home
+            .create_realm(NewRealm {
+                name: "code".into(),
+                description: String::new(),
+                root: Some(repo.path().to_path_buf()),
+                isolation: None,
+            })
+            .unwrap();
+        realm.config.checks = vec!["true".into()];
+        realm.save().unwrap();
+        let chat = |file: &str, text: &str| {
+            let (hub, _, _) = make_hub(
+                &home,
+                vec![
+                    call("1", "write_file", json!({"path": file, "content": text})),
+                    done("Done."),
+                ],
+            );
+            hub.dispatch(
+                &realm,
+                &format!("write {file}"),
+                config(10),
+                hooks(&mut NoObserver, true),
+            )
+            .unwrap()
+        };
+        let first = chat("b.txt", "first\n");
+        let second = chat("c.txt", "second\n");
+        let third = chat("b.txt", "third\n");
+        let (hub, _, _) = make_hub(&home, vec![]);
+
+        assert_eq!(
+            hub.prepare_adoption(&realm, &first.id).unwrap(),
+            Adoption::Ready
+        );
+        hub.adopt(&realm, &first.id).unwrap();
+        // The others were updated with it: the second merged cleanly, the
+        // third conflicts on b.txt.
+        let second = hub.load_run(&realm, &second.id).unwrap();
+        assert!(second.change.as_ref().unwrap().path.join("b.txt").exists());
+        let third = hub.load_run(&realm, &third.id).unwrap();
+        assert_eq!(third.change.as_ref().unwrap().conflicts, vec!["b.txt"]);
+        assert!(hub.runs(&realm).unwrap().iter().any(|r| r.conflicts));
+
+        // The second's checks ran on its old head: they run again first.
+        assert_eq!(
+            hub.prepare_adoption(&realm, &second.id).unwrap(),
+            Adoption::NeedsChecks
+        );
+        hub.check(&realm, &second.id, &mut NoObserver, &CancelToken::default())
+            .unwrap();
+        assert_eq!(
+            hub.prepare_adoption(&realm, &second.id).unwrap(),
+            Adoption::Ready
+        );
+        hub.adopt(&realm, &second.id).unwrap();
+        assert!(repo.path().join("c.txt").exists());
+        assert_eq!(
+            hub.prepare_adoption(&realm, &third.id).unwrap(),
+            Adoption::Conflict(vec!["b.txt".into()])
+        );
     }
 
     #[test]

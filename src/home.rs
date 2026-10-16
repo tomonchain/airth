@@ -240,6 +240,7 @@ impl Home {
                 policy: Policy::default(),
                 isolation,
                 checks,
+                delivery: Default::default(),
                 share_owner_profile: true,
                 integrations: Vec::new(),
                 archived: false,

@@ -5,6 +5,7 @@ mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
 mod documents;
+mod github;
 mod home;
 mod hub;
 #[path = "desktop/icon.rs"]
@@ -34,11 +35,11 @@ mod update;
 mod usage;
 
 use agent::AgentConfig;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use cancel::CancelToken;
 use clap::{Parser, Subcommand};
 use home::Home;
-use hub::{Hub, RunHooks};
+use hub::{Adoption, Hub, RunHooks};
 use permissions::TerminalApprover;
 use realm::Realm;
 use state::{State, Status};
@@ -77,6 +78,14 @@ enum Cmd {
     },
     /// Resume a run that was interrupted, stopped or failed
     Resume {
+        /// Run id, or "last"
+        #[arg(default_value = "last")]
+        run: String,
+        #[command(flatten)]
+        opts: RunOpts,
+    },
+    /// Have a run resolve the conflicts between its change and its base branch
+    Resolve {
         /// Run id, or "last"
         #[arg(default_value = "last")]
         run: String,
@@ -303,9 +312,24 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Runs) => runs(ctx),
         Some(Cmd::Review { run }) => review(ctx, &run),
         Some(Cmd::Check { run }) => check(ctx, &run),
+        Some(Cmd::Resolve { run, opts }) => resolve(ctx, &run, opts),
         Some(Cmd::Adopt { run }) => {
             let realm = ctx.realm()?;
-            let state = ctx.hub().adopt(&realm, &run)?;
+            let hub = ctx.hub();
+            match hub.prepare_adoption(&realm, &run)? {
+                Adoption::Ready => {}
+                Adoption::NeedsChecks => {
+                    eprintln!("running the checks on the change, up to date with its base…");
+                    if !check(ctx, &run)? {
+                        bail!("the checks failed: fix them in the chat, then adopt again");
+                    }
+                }
+                Adoption::Conflict(files) => bail!(
+                    "merging the base branch conflicts in {}: run `airth resolve {run}` to have the chat resolve it",
+                    files.join(", ")
+                ),
+            }
+            let state = hub.adopt(&realm, &run)?;
             let repo = state.change.as_ref().map(|c| c.repo.display().to_string());
             eprintln!(
                 "\x1b[32m✓\x1b[0m adopted run {} into {}",
@@ -481,6 +505,26 @@ fn resume(ctx: &Ctx, run: &str, opts: RunOpts) -> Result<bool> {
         cancel: cancel_on_ctrl_c()?,
     };
     let state = hub.resume_and_drive(&realm, &state.id, opts.config(), hooks)?;
+    Ok(finish(&state))
+}
+
+fn resolve(ctx: &Ctx, run: &str, opts: RunOpts) -> Result<bool> {
+    let realm = ctx.realm()?;
+    let hub = ctx.hub();
+    let run = hub.load_run(&realm, run)?.id;
+    let Some(mut state) = hub.resolve(&realm, &run)? else {
+        eprintln!("the base branch merged cleanly: nothing to resolve (run `airth check {run}`)");
+        return Ok(true);
+    };
+    banner(&hub, &realm);
+    eprintln!("resolving the conflicts of {}", state.id);
+    let mut observer = term::TerminalObserver::new(opts.verbose);
+    let hooks = RunHooks {
+        approver: Box::new(TerminalApprover),
+        observer: &mut observer,
+        cancel: cancel_on_ctrl_c()?,
+    };
+    hub.drive(&realm, &mut state, opts.config(), hooks)?;
     Ok(finish(&state))
 }
 
