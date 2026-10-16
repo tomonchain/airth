@@ -515,6 +515,8 @@ pub struct Briefing {
     pub memory: Vec<String>,
     /// The run works in its own git worktree, adopted only after review.
     pub isolated: bool,
+    /// Isolated changes become pull requests the owner merges on GitHub.
+    pub pull_requests: bool,
     /// Commands the runtime runs to verify the change.
     pub checks: Vec<String>,
     /// The realm's North Star and milestones, if the owner set one.
@@ -530,6 +532,7 @@ impl Briefing {
             owner: None,
             memory: Vec::new(),
             isolated: false,
+            pull_requests: false,
             checks: Vec::new(),
             north_star: None,
         }
@@ -588,6 +591,9 @@ pub fn run_context(b: &Briefing) -> String {
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
+        }
+        if b.pull_requests {
+            out.push_str(" The runtime then pushes your change as a pull request, which the owner reviews and merges on GitHub: never push, tag or open pull requests yourself.");
         }
     }
     out.push_str("\n\n");

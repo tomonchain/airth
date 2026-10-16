@@ -49,6 +49,12 @@ pub enum RealmCmd {
     },
     /// Set the commands that verify a run's change (none to clear)
     Checks { commands: Vec<String> },
+    /// How chats' changes reach the repository: adopt (merged here by you)
+    /// or pr (pull requests on GitHub, opened with the realm's GITHUB_TOKEN)
+    Delivery {
+        #[arg(value_parser = ["adopt", "pr"])]
+        mode: String,
+    },
     /// Whether this realm's runs see your owner profile
     ShareProfile {
         #[arg(value_parser = ["on", "off"])]
@@ -848,6 +854,26 @@ pub fn realm(ctx: &Ctx, command: RealmCmd) -> Result<bool> {
             realm.save()?;
             print_realm(ctx, &realm)?;
         }
+        RealmCmd::Delivery { mode } => {
+            let mut realm = ctx.realm()?;
+            let delivery = crate::isolation::Delivery::parse(&mode)?;
+            if delivery == crate::isolation::Delivery::PullRequest {
+                if realm.config.isolation != Isolation::Worktree {
+                    bail!("pull requests need a realm whose chats work in their own worktree");
+                }
+                crate::github::Remote::of(&realm.root()?)?;
+                if realm.secret(crate::github::TOKEN).is_none() {
+                    eprintln!(
+                        "\x1b[33mnote:\x1b[0m add the token: airth secret set {} --realm {}",
+                        crate::github::TOKEN,
+                        realm.name()
+                    );
+                }
+            }
+            realm.config.delivery = delivery;
+            realm.save()?;
+            print_realm(ctx, &realm)?;
+        }
         RealmCmd::ShareProfile { value } => {
             let mut realm = ctx.realm()?;
             realm.config.share_owner_profile = value == "on";
@@ -871,6 +897,9 @@ fn print_realm(ctx: &Ctx, realm: &crate::realm::Realm) -> Result<()> {
     }
     println!("root         {}", realm.root()?.display());
     println!("isolation    {}", c.isolation.as_str());
+    if c.isolation == Isolation::Worktree {
+        println!("delivery     {}", c.delivery.as_str());
+    }
     let policy: Vec<String> = Capability::ALL
         .iter()
         .map(|cap| format!("{} {}", cap.as_str(), c.policy.rule(*cap).as_str()))

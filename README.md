@@ -9,7 +9,7 @@ Free to use, fair source: see [License](#license).
 ## Why Airth
 
 - **Realms keep your life apart.** Your job, your company and a side project each get their own folder, permissions, memory and credentials. Nothing crosses between them, and the runtime enforces it (on macOS, commands run in a sandbox).
-- **You review before anything lands.** Each chat works in its own git worktree. You read the diff and the test results, then adopt or discard.
+- **You review before anything lands.** Each chat works in its own git worktree. You read the diff and the test results, then adopt or discard, or merge its pull request on GitHub.
 - **It works on its own, within bounds.** Schedules, file watches and webhooks start work for you. What a run may do is decided in advance, and anything else waits for your approval.
 - **One goal at a time.** Set a North Star and Airth picks the next step toward it every day.
 - **Your keys, your models.** Claude, GPT, Grok, DeepSeek, Mistral, OpenRouter, or a fully local model with Ollama. Credentials are never shown to the model.
@@ -199,6 +199,20 @@ airth check <run>   # re-run the checks
 
 The app shows the same: a change panel with the files, the checks, the diff, and Adopt or Discard. If the checks fail, an "Ask Airth to fix" button sends their output back to the agent.
 
+**Several chats at once.** Each chat starts from your branch as it was. Before a change is adopted, Airth merges in what your branch got since, runs the checks again on the result, and only then merges: what lands is what was checked. After an adoption, the realm's other open changes are updated the same way, so a conflict shows early, in the chat it concerns, with a "Resolve with Airth" button: the chat resolves it itself, keeping its own intent and what changed meanwhile, then the checks run again. The panel also tells when two open chats touch the same files. Adoption refuses to overwrite edits you have not committed (it names the files).
+
+```bash
+airth resolve <run>  # have the chat resolve its conflict with the base branch
+```
+
+**Pull requests.** A realm whose repository is on GitHub can deliver changes as pull requests instead (Settings → Changes, or `airth realm delivery pr`):
+
+1. Add a [fine-grained token](https://github.com/settings/personal-access-tokens) for the repository only, with *Contents* and *Pull requests* read and write: `airth secret set GITHUB_TOKEN`. The runtime pushes with it; chats never see it.
+2. When a chat's checks pass, Airth pushes its branch and opens the pull request, with the chat's report and the check results.
+3. You review and merge on GitHub (CI runs there too: `.github/workflows/ci.yml`). Airth follows each pull request: when the base branch moves it merges it in and pushes, a conflict goes back to the chat to resolve, and once merged the chat is marked adopted and its copy removed. Closing a pull request discards the change.
+
+Protect the base branch on GitHub (require a pull request and passing checks): then nothing reaches it without your review, whatever a chat tries.
+
 ## The app
 
 ```bash
@@ -315,7 +329,7 @@ Desktop notifications are on by default on macOS; `airth inbox --desktop off` tu
 
 ```text
 src/
-  main.rs         CLI: run, send, resume, runs, review, check, adopt, discard, ui, serve, doctor
+  main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
   cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
@@ -330,7 +344,8 @@ src/
   service.rs      the login service (launchd)
   skill.rs        skills: manifests, evaluation, installation
   integration.rs  integrations: base URLs with credentials bound to them
-  isolation.rs    git worktrees per run: create, commit, diff, adopt, discard
+  isolation.rs    git worktrees per run: create, commit, diff, update with the base, conflicts, adopt, discard
+  github.rs       pull requests on GitHub: push, open, follow, close
   sandbox.rs      the command sandbox (macOS sandbox-exec)
   ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
                   (mod.rs) and the page (index.html, theme.js, app.js, app.css)

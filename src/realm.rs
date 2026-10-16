@@ -18,7 +18,7 @@
 //! every run access to the Airth home and to other realms' roots.
 
 use crate::integration::Integration;
-use crate::isolation::Isolation;
+use crate::isolation::{Delivery, Isolation};
 use crate::memory::MemoryStore;
 use crate::objective::ObjectiveStore;
 use crate::permissions::Policy;
@@ -70,6 +70,9 @@ pub struct RealmConfig {
     /// Commands the runtime runs to verify a run's change before adoption.
     #[serde(default)]
     pub checks: Vec<String>,
+    /// How isolated changes reach the repository: adopted here, or as pull requests.
+    #[serde(default)]
+    pub delivery: Delivery,
     /// Whether runs in this realm see the owner profile.
     #[serde(default = "yes")]
     pub share_owner_profile: bool,
@@ -240,12 +243,18 @@ impl Realm {
             .filter(|v| !v.is_empty())
     }
 
-    /// Credentials given to this realm's commands (provider keys excluded).
+    /// Credentials given to this realm's commands (provider keys excluded,
+    /// and the GitHub token when the runtime uses it to open pull requests:
+    /// chats never push themselves).
     pub fn command_env(&self) -> Result<Vec<(String, String)>> {
+        let runtime_only = |k: &str| {
+            PROVIDER_KEYS.contains(&k)
+                || (self.config.delivery == Delivery::PullRequest && k == crate::github::TOKEN)
+        };
         Ok(self
             .secrets()?
             .into_iter()
-            .filter(|(k, _)| !PROVIDER_KEYS.contains(&k.as_str()))
+            .filter(|(k, _)| !runtime_only(k))
             .collect())
     }
 
@@ -396,6 +405,7 @@ mod tests {
                 policy: Policy::default(),
                 isolation: Isolation::None,
                 checks: vec![],
+                delivery: Default::default(),
                 share_owner_profile: true,
                 integrations: vec![],
                 archived: false,

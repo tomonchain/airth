@@ -14,10 +14,10 @@ use crate::agent::{AgentConfig, Observer};
 use crate::cancel::CancelToken;
 use crate::connectors;
 use crate::home::NewRealm;
-use crate::hub::{Hub, RunHooks, away_reason};
+use crate::hub::{Adoption, Hub, PrEvent, RunHooks, away_reason};
 use crate::images;
 use crate::integration::Integration;
-use crate::isolation::Isolation;
+use crate::isolation::{Delivery, Isolation};
 use crate::notify::{Inbox, Kind};
 use crate::objective::{Objective, Trigger};
 use crate::owner::Owner;
@@ -29,7 +29,7 @@ use crate::skill::SkillStatus;
 use crate::state::{State, Status};
 use crate::tools::catalog;
 use crate::tools::mcp::McpStore;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::Read;
@@ -169,6 +169,8 @@ enum Job {
     },
     /// Run the realm's checks on the run's change.
     Check,
+    /// Run the checks, and adopt the change if they pass.
+    CheckThenAdopt,
 }
 
 /// Starts runs on background threads and keeps them in the registry. Shared
@@ -441,6 +443,43 @@ fn run_scheduler(runner: Runner) {
     }
 }
 
+/// Every two minutes, follow the open pull requests of realms that deliver
+/// changes that way: record them merged or closed, keep their branches
+/// current with the base, and have a chat resolve a conflict.
+fn follow_pull_requests(runner: Runner) {
+    loop {
+        std::thread::sleep(Duration::from_secs(120));
+        let Ok(realms) = runner.hub.home().realms() else {
+            continue;
+        };
+        for realm in realms {
+            if realm.config.delivery != Delivery::PullRequest || realm.config.archived {
+                continue;
+            }
+            let Ok(runs) = runner.hub.runs(&realm) else {
+                continue;
+            };
+            for run in runs.iter().filter(|r| r.pull_request.is_some() && !r.live) {
+                if runner.is_running(realm.name(), &run.id) {
+                    continue;
+                }
+                match runner.hub.follow_pull_request(&realm, &run.id) {
+                    Ok(PrEvent::Conflict) => match runner.hub.resolve(&realm, &run.id) {
+                        Ok(Some(state)) => {
+                            eprintln!("run {} resolves a conflict with its base", run.id);
+                            runner.spawn(realm.clone(), state, Job::Drive);
+                        }
+                        Ok(None) => {}
+                        Err(e) => eprintln!("run {} cannot resolve its conflict: {e:#}", run.id),
+                    },
+                    Ok(_) => {}
+                    Err(e) => eprintln!("pull request of run {}: {e:#}", run.id),
+                }
+            }
+        }
+    }
+}
+
 type HttpResponse = Response<std::io::Cursor<Vec<u8>>>;
 
 pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
@@ -537,6 +576,8 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
 
     let runner = app.runner.clone();
     std::thread::spawn(move || run_scheduler(runner));
+    let runner = app.runner.clone();
+    std::thread::spawn(move || follow_pull_requests(runner));
     let (hub, update) = (app.hub.clone(), app.update.clone());
     std::thread::spawn(move || run_updater(hub, update));
 
@@ -1444,8 +1485,45 @@ impl App {
             }
             (Method::Post, ["realms", r, "runs", id, "adopt"]) => {
                 self.ensure_idle(r, id)?;
-                self.hub.adopt(&self.realm(r)?, id)?;
-                ok()
+                let realm = self.realm(r)?;
+                match self.hub.prepare_adoption(&realm, id)? {
+                    Adoption::Ready => {
+                        self.hub.adopt(&realm, id)?;
+                        json_response(200, json!({"adopted": true}))
+                    }
+                    Adoption::NeedsChecks => {
+                        let state = self.hub.load_run(&realm, id)?;
+                        self.spawn(realm, state, Job::CheckThenAdopt);
+                        json_response(200, json!({"checking": true}))
+                    }
+                    Adoption::Conflict(files) => json_response(200, json!({"conflicts": files})),
+                }
+            }
+            (Method::Post, ["realms", r, "runs", id, "resolve"]) => {
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                self.ensure_idle(r, id)?;
+                match self.hub.resolve(&realm, id)? {
+                    Some(state) => {
+                        self.spawn(realm, state, Job::Drive);
+                        json_response(200, json!({"resolving": true}))
+                    }
+                    None => {
+                        let state = self.hub.load_run(&realm, id)?;
+                        if !realm.config.checks.is_empty() {
+                            self.spawn(realm, state, Job::Check);
+                        }
+                        json_response(200, json!({"resolving": false}))
+                    }
+                }
+            }
+            (Method::Post, ["realms", r, "runs", id, "pull-request"]) => {
+                self.ensure_idle(r, id)?;
+                let realm = self.realm(r)?;
+                let mut state = self.hub.load_run(&realm, id)?;
+                self.hub.deliver(&realm, &mut state, true)?;
+                let pr = state.change.and_then(|c| c.pull_request);
+                json_response(200, json!({"pull_request": pr}))
             }
             (Method::Post, ["realms", r, "runs", id, "discard"]) => {
                 self.ensure_idle(r, id)?;
@@ -1605,6 +1683,12 @@ impl App {
             "root": realm.root().map(|p| p.display().to_string()).unwrap_or_default(),
             "own_root": c.root.is_some(),
             "isolation": c.isolation.as_str(),
+            "delivery": c.delivery.as_str(),
+            "github": (c.isolation == Isolation::Worktree)
+                .then(|| realm.root().ok().and_then(|r| crate::github::Remote::of(&r).ok()))
+                .flatten()
+                .map(|r| r.slug()),
+            "github_token": realm.secret(crate::github::TOKEN).is_some(),
             "policy": c.policy,
             "checks": c.checks,
             "share_owner_profile": c.share_owner_profile,
@@ -1717,6 +1801,16 @@ impl App {
         if let Some(archived) = body["archived"].as_bool() {
             c.archived = archived;
         }
+        if let Some(delivery) = body["delivery"].as_str() {
+            let delivery = Delivery::parse(delivery)?;
+            if delivery == Delivery::PullRequest {
+                if c.isolation != Isolation::Worktree {
+                    bail!("pull requests need a realm whose chats work in their own worktree");
+                }
+                crate::github::Remote::of(&realm.root()?)?;
+            }
+            realm.config.delivery = delivery;
+        }
         realm.save()?;
         if body["default"].as_bool() == Some(true) {
             self.hub.home().set_default_realm(name)?;
@@ -1748,6 +1842,9 @@ impl App {
                     "needs_approval": needs_approval,
                     "change": r.change.map(|c| c.as_str()),
                     "checks_passed": r.checks_passed,
+                    "touches": r.touches,
+                    "conflicts": r.conflicts,
+                    "pull_request": r.pull_request,
                     "plan_done": r.plan_done,
                     "plan_total": r.plan_total,
                     "focus": r.focus,
@@ -2096,6 +2193,10 @@ impl App {
 }
 
 impl Runner {
+    fn is_running(&self, realm: &str, id: &str) -> bool {
+        self.registry.lock().unwrap().contains_key(&key(realm, id))
+    }
+
     fn spawn(&self, realm: Realm, state: State, job: Job) {
         let k = key(realm.name(), &state.id);
         let live = Arc::new(Live {
@@ -2152,6 +2253,26 @@ impl Runner {
                     Ok(checked) => state = checked,
                     Err(e) => eprintln!("checks of run {} failed to start: {e:#}", state.id),
                 },
+                Job::CheckThenAdopt => {
+                    match hub.check(&realm, &state.id, &mut observer, &live.cancel) {
+                        Ok(checked) => state = checked,
+                        Err(e) => eprintln!("checks of run {} failed to start: {e:#}", state.id),
+                    }
+                    let passed = state.change.as_ref().is_some_and(|c| c.checks_passed());
+                    if passed && !live.cancel.is_cancelled() {
+                        // The registry entry stays until the end of this
+                        // thread: adopt as if idle, under the run's lock.
+                        match hub
+                            .prepare_adoption(&realm, &state.id)
+                            .and_then(|a| match a {
+                                Adoption::Ready => hub.adopt(&realm, &state.id),
+                                _ => bail!("its base branch moved again while the checks ran"),
+                            }) {
+                            Ok(adopted) => state = adopted,
+                            Err(e) => eprintln!("could not adopt run {}: {e:#}", state.id),
+                        }
+                    }
+                }
             }
             *live.snapshot.lock().unwrap() = state;
             live.bump();

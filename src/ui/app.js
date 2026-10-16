@@ -66,6 +66,10 @@ const ICON = {
   books: TB("M5 5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zm4 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zM5 8h4m0 8h4m.803-11.44l2.184-.53c.562-.135 1.133.19 1.282.732l3.695 13.418a1.02 1.02 0 0 1-.634 1.219l-.133.041l-2.184.53c-.562.135-1.133-.19-1.282-.732L13.036 5.82a1.02 1.02 0 0 1 .634-1.219zM14 9l4-1m-2 8l3.923-.98"),
   download: TB("M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5l5-5m-5-7v12"),
   trash: TB("M4 7h16m-10 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"),
+  gitMerge: TB("M5 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M5 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M15 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 8v8m0-8a4 4 0 0 0 4 4h4"),
+  gitPull: TB("M4 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 18a2 2 0 1 0 4 0a2 2 0 1 0-4 0M6 8v8m5-10h5a2 2 0 0 1 2 2v8m-4-7l-3-3l3-3"),
+  alert: TB("M12 9v4m-1.637-9.409L2.257 17.125a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636-2.87L13.637 3.59a1.914 1.914 0 0 0-3.274 0zM12 16h.01"),
+  play: TB("M7 4v16l13-8z"),
   archive: TB("M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"),
   refresh: TB("M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4m-4 4a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"),
   check: TB("m5 12l5 5L20 7"),
@@ -609,6 +613,8 @@ function navLink(hash, iconName, label, active, extra) {
 function changeBadge(r) {
   if (r.change === "adopted") return h("span", { class: "badge ok" }, "adopted");
   if (r.change === "discarded") return h("span", { class: "badge" }, "discarded");
+  if (r.conflicts) return h("span", { class: "badge warn", title: "Conflicts with its base branch" }, "conflict");
+  if (r.pull_request) return h("span", { class: "badge ok", title: "Pull request open on GitHub" }, `PR #${r.pull_request.number}`);
   if (r.checks_passed === true) return h("span", { class: "badge ok" }, "✓ checks");
   if (r.checks_passed === false) return h("span", { class: "badge err" }, "✗ checks");
   return null;
@@ -1863,7 +1869,10 @@ function changePanel(d) {
   const passed = checksCurrent && checks.finished && checks.results.every((r) => r.ok);
   const failed = checks && checks.results.find((r) => !r.ok);
   const open = c.status === "open";
-  const canAdopt = open && hasChanges && !d.live && (passed || !d.checks_required);
+  const viaPr = app.realmDetail && app.realmDetail.delivery === "pull_request";
+  const pr = c.pull_request;
+  const conflicts = c.conflicts || [];
+  const resolving = !!c.merging;
 
   const head = h("div", { class: "change-head" },
     h("div", { class: "grow" },
@@ -1892,10 +1901,41 @@ function changePanel(d) {
     checkList = h("div", { class: "muted small pad" }, "Checks have not run on this change.");
   }
 
+  // Where the change stands against its base branch, and other open chats on the same files.
+  const base = c.base_branch || "main";
+  let standing = null;
+  if (open && resolving) {
+    standing = h("div", { class: "change-note warn" }, icon("gitMerge"),
+      h("div", null, h("div", { class: "strong" }, d.live ? `Resolving the conflict with ${base}…` : `The conflict with ${base} is not resolved yet`),
+        h("div", { class: "muted small" }, conflicts.join(", "))));
+  } else if (open && conflicts.length) {
+    standing = h("div", { class: "change-note warn" }, icon("gitMerge"),
+      h("div", { class: "grow" }, h("div", { class: "strong" }, `Conflicts with ${base}`),
+        h("div", { class: "muted small" }, `${base} changed since this chat started, in the same places: `, conflicts.join(", "))),
+      !d.live && h("button", { class: "btn primary small", type: "button", onclick: () => changeAction("resolve") }, "Resolve with Airth"));
+  } else if (open && pr) {
+    standing = h("div", { class: "change-note" }, icon("gitPull"),
+      h("div", { class: "grow" }, h("div", { class: "strong" }, `Pull request #${pr.number}`),
+        h("div", { class: "muted small" }, pr.pushed === c.head ? "Up to date on GitHub. Merge it there: Airth follows it." : "New commits are pushed once the checks pass.")),
+      h("a", { class: "btn small", href: pr.url, target: "_blank", rel: "noopener noreferrer" }, "Open ↗"));
+  }
+  const mine = new Set((c.files || []).map((f) => f.split("\t").pop()));
+  const overlap = open && !d.live ? app.runs.filter((r) => r.id !== s.id && r.change === "open" && (r.touches || []).some((f) => mine.has(f))) : [];
+  const overlapNote = overlap.length > 0 && h("div", { class: "change-note subtle" }, icon("alert"),
+    h("div", null, "Also changed by ", overlap.map((r, i) => [i > 0 && ", ", h("a", { href: `#/r/${enc(app.realm)}/run/${enc(r.id)}` }, runName(r))]),
+      ": ", [...new Set(overlap.flatMap((r) => r.touches.filter((f) => mine.has(f))))].join(", "),
+      viaPr ? "." : ". Adopt one first; the other is then updated with it."));
+
   const actions = h("div", { class: "change-actions" });
-  if (open && hasChanges && !d.live) {
+  const failedNow = checksCurrent && checks.finished && !passed;
+  if (open && hasChanges && !d.live && !resolving) {
+    const settled = !conflicts.length;
     actions.append(
-      h("button", { class: "btn primary", type: "button", disabled: !canAdopt, title: canAdopt ? "Merge into your checkout" : "The checks must pass first",
+      settled && viaPr && !pr && h("button", { class: "btn primary", type: "button",
+        title: passed || !d.checks_required ? "Push the branch and open its pull request" : "The checks did not pass: open it anyway, as work in progress",
+        onclick: () => changeAction("pull-request") }, "Open pull request"),
+      settled && !viaPr && h("button", { class: "btn primary", type: "button", disabled: failedNow,
+        title: failedNow ? "The checks must pass first" : `Brings in what changed on ${base}, checks again if needed, then merges into your checkout`,
         onclick: () => changeAction("adopt") }, "Adopt into checkout"),
       h("button", { class: "btn", type: "button", onclick: () => changeAction("checks") }, checks ? "Re-run checks" : "Run checks"),
       failed && h("button", { class: "btn", type: "button", onclick: () => askToFix(failed) }, "Ask Airth to fix"),
@@ -1912,7 +1952,7 @@ function changePanel(d) {
   const err = app.changeError ? h("div", { class: "error-banner" }, app.changeError) : null;
   const diff = app.diff && app.diff.runId === s.id ? diffView(app.diff.text || "(empty diff)", "diff") : null;
 
-  return h("div", { class: "change" }, head, files, checkList, err, actions.childNodes.length ? actions : null, diff);
+  return h("div", { class: "change" }, head, standing, overlapNote, files, checkList, err, actions.childNodes.length ? actions : null, diff);
 }
 
 async function toggleDiff() {
@@ -1929,7 +1969,11 @@ async function toggleDiff() {
 async function changeAction(action) {
   app.changeError = null;
   try {
-    await api(`${runPath(app.realm, app.route.id)}/${action}`, {});
+    const r = await api(`${runPath(app.realm, app.route.id)}/${action}`, {});
+    if (r && r.checking) flash("Checking the change with the latest main, then adopting it");
+    if (r && r.adopted) flash("Adopted");
+    if (r && r.resolving) flash("Airth is resolving the conflict");
+    if (r && r.pull_request) flash(`Pull request #${r.pull_request.number} opened`);
     app.version = null;
     if (action !== "checks") app.diff = null;
     await Promise.all([pollRun(), refreshRuns()]);
@@ -2089,9 +2133,17 @@ function renderSettings(main) {
           done: async (detail) => { app.realmDetail = detail; await refreshRealms(); renderMain(); renderSidebar(); } }), "Shown in the app only."),
         field("Description", desc),
         field("Workspace", h("span", { class: "value path", title: d.root }, tildePath(d.root)), d.own_root ? null : "A private folder in Airth's home."),
-        field("Changes", h("span", { class: "value" }, d.isolation === "worktree"
-          ? "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."
-          : "Chats work directly in the workspace."))),
+        field("Changes", d.isolation === "worktree" && d.github
+          ? h("div", { class: "seg" },
+              [["adopt", "Adopt here"], ["pull_request", "Pull requests"]].map(([v, label]) =>
+                h("button", { type: "button", class: d.delivery === v ? "on" : "", onclick: () => d.delivery !== v && save({ delivery: v }, v === "adopt" ? "You adopt changes here" : "Changes become pull requests") }, label)))
+          : h("span", { class: "value" }, d.isolation === "worktree"
+            ? "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."
+            : "Chats work directly in the workspace."),
+          d.isolation === "worktree" && d.github && (d.delivery === "pull_request"
+            ? h("span", null, `Each chat's change becomes a pull request on ${d.github} once its checks pass. Merge it on GitHub: Airth keeps it up to date with the base branch, resolves conflicts, and marks the chat adopted. `,
+                !d.github_token && h("span", { class: "warn-text" }, "Add a GitHub token as GITHUB_TOKEN under Access (a fine-grained token for this repository, with Contents and Pull requests)."))
+            : "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."))),
       ...section("Your profile", null,
         h("div", { class: "card" },
           h("label", { class: "toggle" },
@@ -3060,48 +3112,87 @@ document.addEventListener("keydown", (e) => {
 
 async function renderObjectives(main) {
   const realm = app.realm;
-  page(main, "Routines", "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, Airth may do what this realm allows plus what you approve here; anything else waits for you, then is denied. You get a notification each time it finishes.");
+  const openBtn = h("button", { class: "btn primary", type: "button", onclick: () => openWiz() }, icon("plus"), "New routine");
+  main.append(h("div", { class: "page" }, h("div", { class: "page-inner" },
+    h("div", { class: "page-head" }, h("h1", null, "Routines"), openBtn),
+    h("p", { class: "sub" }, "Work Airth starts on its own: on a schedule, when files change, or from a local webhook. Each time, it may do what this realm allows plus what you approve for the routine; anything else waits for you. You get a notification when it finishes."))));
   const inner = $(".page-inner", main);
+  const wizSlot = h("div");
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
-  inner.append(listEl);
+  inner.append(wizSlot, listEl);
   let list;
   try { list = await api(`${realmPath(realm)}/objectives`); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "objectives" || app.realm !== realm) return;
   const d = app.realmDetail;
-
   const refresh = (l) => { list = l; draw(); };
-  const draw = () => listEl.replaceChildren(
-    list.length ? h("div", { class: "objectives" }, list.map((o) => h("div", { class: "card objective" + (o.enabled ? "" : " off") + (focusOn() && o.id !== "north-star" ? " shadowed" : "") },
-      h("div", { class: "objective-head" },
-        h("div", { class: "grow" },
-          h("div", { class: "strong" }, o.id),
-          h("div", null, o.objective)),
-        h("label", { class: "toggle small", title: o.enabled ? "Turn off" : "Turn on" },
-          h("input", { type: "checkbox", checked: o.enabled, onchange: async (e) => {
-            try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, { enabled: e.target.checked }, "PATCH")); } catch (err) { flash(err.message, true); }
-          } }), h("span", null, o.enabled ? "on" : "off"))),
-      h("div", { class: "objective-meta" },
-        h("span", { class: "chip" }, "◷ " + o.trigger_label),
-        o.enabled && o.next_at && h("span", null, "next " + when(o.next_at)),
-        o.running ? h("span", { class: "chip running" }, "running")
-          : o.last_status && h("span", null, "last: ", o.last_run
-            ? h("a", { href: `#/r/${enc(realm)}/run/${enc(o.last_run)}` }, o.last_status)
-            : o.last_status, o.last_at && " · " + ago(o.last_at))),
-      h("div", { class: "objective-meta muted small" },
-        "Approved in advance: ", o.approvals.length ? o.approvals.map(grantText).join(", ") : "nothing beyond the realm's rules",
-        " · waits ", String(o.approval_wait_minutes), " min for you",
-        Object.keys(o.budget || {}).length ? " · budget: " + Object.entries(o.budget).map(([k, v]) => `${v} ${k.replace("max_", "")}`).join(", ") : ""),
-      o.webhook_url && h("div", { class: "objective-meta" }, h("code", { class: "path small" }, "curl -X POST --data @payload.json " + o.webhook_url)),
-      h("div", { class: "row-end" },
-        h("button", { class: "btn", type: "button", disabled: o.running || !!(d && d.model_error), onclick: async () => {
-          try { const r = await api(`${realmPath(realm)}/objectives/${enc(o.id)}/run`, {}); go(`#/r/${enc(realm)}/run/${enc(r.id)}`); } catch (e) { flash(e.message, true); }
-        } }, "Run now"),
-        h("button", { class: "btn danger", type: "button", onclick: async () => {
-          if (confirmDelete !== o.id) { confirmDelete = o.id; return draw(); }
-          confirmDelete = null;
-          try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, undefined, "DELETE")); } catch (e) { flash(e.message, true); }
-        } }, confirmDelete === o.id ? "Really delete?" : "Delete")))))
-      : h("div", { class: "card muted small pad" }, "No routines yet."));
+  const patch = async (o, body) => {
+    try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, body, "PATCH")); } catch (err) { flash(err.message, true); draw(); }
+  };
+  const runNow = async (o) => {
+    try { const r = await api(`${realmPath(realm)}/objectives/${enc(o.id)}/run`, {}); go(`#/r/${enc(realm)}/run/${enc(r.id)}`); } catch (e) { flash(e.message, true); }
+  };
+  const remove = async (o) => {
+    try { refresh(await api(`${realmPath(realm)}/objectives/${enc(o.id)}`, undefined, "DELETE")); flash("Routine deleted"); } catch (e) { flash(e.message, true); }
+  };
+  const KIND_ICON = { schedule: "clock", watch: "folder", webhook: "world", manual: "play" };
+  const GRANT = { write: ["fileEdit", "Files"], execute: ["terminal", "Commands"], memory: ["brain", "Memory"], network: ["world", "Web"] };
+  const whenText = (t) => t.kind === "schedule" ? scheduleText(t.every) : t.kind === "watch" ? `When ${t.path ? `“${t.path}”` : "files"} change${t.path ? "s" : ""}` : t.kind === "webhook" ? "From a webhook" : "When you start it";
+  const act = (ic, label, onclick, extra = {}) => h("button", { class: "r-act", type: "button", title: label, "aria-label": label, onclick, ...extra }, icon(ic));
+
+  const card = (o) => {
+    const busy = o.running;
+    const del = act("trash", "Delete this routine", () => {
+      if (confirmDelete === o.id) { confirmDelete = null; return remove(o); }
+      confirmDelete = o.id;
+      draw();
+      setTimeout(() => { if (confirmDelete === o.id) { confirmDelete = null; draw(); } }, 3000);
+    });
+    if (confirmDelete === o.id) { del.classList.add("sure"); del.replaceChildren("Delete?"); del.title = "Click again to delete"; }
+    else del.classList.add("danger");
+    const sw = h("label", { class: "switch", title: o.enabled ? "On: click to pause" : "Off: click to turn on" },
+      h("input", { type: "checkbox", role: "switch", checked: o.enabled, "aria-label": `${o.id} on`, onchange: (e) => patch(o, { enabled: e.target.checked }) }),
+      h("span", { class: "track", "aria-hidden": "true" }));
+    const grants = o.approvals.length
+      ? h("span", { class: "r-grants", title: "Approved in advance, on top of the realm's rules" },
+          o.approvals.map((g) => {
+            const [ic, label] = GRANT[g.capability] || ["plug", g.capability];
+            const scope = g.scope && g.scope.replace(/^integration /, "");
+            return h("span", { class: "r-grant", title: `May ${grantText(g)} without asking` }, icon(ic), scope || label);
+          }))
+      : h("span", { class: "r-faint", title: "Nothing approved in advance: what the realm does not allow waits for you" }, "Asks first");
+    const last = o.last_status && h("span", null, "Last ",
+      o.last_run ? h("a", { href: `#/r/${enc(realm)}/run/${enc(o.last_run)}` }, o.last_status) : o.last_status,
+      o.last_at && h("span", { class: "r-faint" }, " · " + ago(o.last_at)));
+    return h("div", { class: "card routine" + (o.enabled ? "" : " off") + (focusOn() && o.id !== "north-star" ? " shadowed" : "") },
+      h("div", { class: "routine-icon", "aria-hidden": "true" }, icon(KIND_ICON[o.trigger.kind] || "clock")),
+      h("div", { class: "routine-main" },
+        h("div", { class: "routine-top" },
+          h("div", { class: "routine-title" },
+            h("span", { class: "routine-name" }, o.id),
+            h("span", { class: "routine-when" }, whenText(o.trigger))),
+          h("div", { class: "routine-actions" },
+            busy ? h("span", { class: "chip running" }, "Running")
+              : act("play", "Run now", () => runNow(o), { disabled: !!(d && d.model_error) }),
+            act("pencil", "Edit", () => openWiz(o)),
+            del, sw)),
+        h("div", { class: "routine-task", title: o.objective }, o.objective),
+        h("div", { class: "routine-meta" },
+          o.enabled && o.next_at && !busy && h("span", null, "Next ", h("strong", null, when(o.next_at))),
+          !o.enabled && h("span", { class: "r-faint" }, "Paused"),
+          last,
+          grants,
+          h("span", { class: "r-faint", title: "How long a step that needs you waits before it is denied" }, `waits ${o.approval_wait_minutes} min`)),
+        o.webhook_url && h("div", { class: "routine-hook" },
+          h("code", null, "curl -X POST --data @payload.json " + o.webhook_url),
+          copyButton(() => "curl -X POST --data @payload.json " + o.webhook_url, "Copy the command"))));
+  };
+  const draw = () => listEl.replaceChildren(list.length
+    ? h("div", { class: "routines" }, list.map(card))
+    : h("div", { class: "routine-empty" },
+        h("div", { class: "routine-icon big", "aria-hidden": "true" }, icon("clock")),
+        h("div", { class: "strong" }, "No routines yet"),
+        h("p", { class: "muted small" }, "A morning brief, a weekly review, triage when a folder changes… Airth starts them for you."),
+        h("button", { class: "btn", type: "button", onclick: () => openWiz() }, icon("plus"), "New routine")));
   draw();
 
   // New objective
@@ -3133,6 +3224,7 @@ async function renderObjectives(main) {
   const save = async () => {
     const body = {
       id: f.id.value.trim(), objective: f.objective.value.trim(),
+      enabled: editing ? editing.enabled : true,
       trigger: { kind: f.kind.value, every: f.every.value, path: f.path.value },
       approvals: grantOptions.filter((g) => g.box.checked).map((g) => ({ capability: g.capability, scope: g.scope || null })),
       approval_wait_minutes: num(f.wait) ?? 10,
@@ -3140,9 +3232,8 @@ async function renderObjectives(main) {
     };
     try {
       refresh(await api(`${realmPath(realm)}/objectives`, body));
-      f.id.value = ""; f.objective.value = ""; delete f.id.dataset.touched;
+      flash(editing ? "Routine saved" : "Routine created");
       closeWiz();
-      flash("Routine created");
     } catch (e) { flash(e.message, true); }
   };
 
@@ -3209,13 +3300,56 @@ async function renderObjectives(main) {
           : h("button", { class: "btn ghost", type: "button", onclick: () => closeWiz() }, "Cancel"),
         step < STEPS.length - 1
           ? h("button", { class: "btn primary", type: "button", onclick: () => { if (!valid()) return flash("Describe the routine first", true); step++; drawWiz(1); } }, "Next")
-          : h("button", { class: "btn primary", type: "button", onclick: save }, icon("check"), "Create routine")));
+          : h("button", { class: "btn primary", type: "button", onclick: save }, icon("check"), editing ? "Save changes" : "Create routine")));
     if (step === 0 && d >= 0) setTimeout(() => f.objective.focus && f.objective.focus(), 60);
   };
-  const wizWrap = h("div", { class: "wizard-wrap", hidden: true }, wiz);
-  const openBtn = h("button", { class: "btn primary", type: "button", onclick: () => { step = 0; wizWrap.hidden = false; openBtn.hidden = true; drawWiz(1); } }, icon("plus"), "New routine");
-  const closeWiz = () => { wizWrap.hidden = true; openBtn.hidden = false; };
-  inner.append(h("div", { class: "row-start pad-top" }, openBtn), wizWrap);
+  const wizTitle = h("h2", { class: "wiz-title" });
+  const wizWrap = h("div", { class: "wizard-wrap", hidden: true }, wizTitle, wiz);
+  wizSlot.append(wizWrap);
+  let editing = null;
+  // Fill the wizard from a routine to edit it (its name stays), or empty it for a new one.
+  const fill = (o) => {
+    const t = o ? o.trigger : { kind: "schedule", every: "daily 08:30" };
+    f.objective.value = o ? o.objective : "";
+    f.id.value = o ? o.id : "";
+    f.id.disabled = !!o;
+    if (o) f.id.dataset.touched = "1"; else delete f.id.dataset.touched;
+    f.kind.value = t.kind;
+    f.every.value = t.every || "daily 08:30";
+    f.path.value = t.path || "";
+    for (const g of grantOptions) g.box.checked = !!o && o.approvals.some((a) => a.capability === g.capability && (a.scope || null) === (g.scope || null));
+    f.wait.value = o ? o.approval_wait_minutes : 10;
+    const b = (o && o.budget) || {};
+    f.minutes.value = b.max_minutes ?? ""; f.tokens.value = b.max_tokens ?? ""; f.iterations.value = b.max_iterations ?? "";
+    syncTrigger();
+  };
+  function openWiz(o) {
+    editing = o || null;
+    fill(editing);
+    step = 0;
+    wizWrap.hidden = false;
+    openBtn.hidden = true;
+    wizTitle.textContent = editing ? `Edit ${editing.id}` : "New routine";
+    drawWiz(1);
+    wizWrap.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  const closeWiz = () => { wizWrap.hidden = true; openBtn.hidden = false; editing = null; };
+}
+
+/** A schedule in words: "weekdays 09:00" → "Weekdays at 09:00". */
+function scheduleText(every) {
+  const t = (every || "").trim().toLowerCase();
+  const m = t.match(/^every (\d+)\s*(m|min|mins|h|hr|hrs|d|day|days)$/);
+  if (m) {
+    const n = Number(m[1]);
+    const unit = m[2][0] === "m" ? "min" : m[2][0] === "h" ? (n === 1 ? "hour" : "hours") : (n === 1 ? "day" : "days");
+    return n === 1 && unit !== "min" ? `Every ${unit}` : `Every ${n} ${unit}`;
+  }
+  const at = t.match(/^(\S+) (\d{1,2}:\d{2})$/);
+  if (!at) return every;
+  const days = { daily: "Every day", weekdays: "Weekdays", weekends: "Weekends" }[at[1]]
+    || at[1].split(",").map((d) => d.slice(0, 1).toUpperCase() + d.slice(1, 3)).join(", ");
+  return `${days} at ${at[2]}`;
 }
 
 // ---------- skills ----------
