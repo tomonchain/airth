@@ -77,6 +77,9 @@ pub struct Objective {
     pub enabled: bool,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
+    /// The realm repository its runs work in (None: the realm's root).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// When the schedule fires next.
     #[serde(default)]
     pub next_at: Option<DateTime<Utc>>,
@@ -399,6 +402,7 @@ mod tests {
             approval_wait_minutes: 0,
             enabled: true,
             created_at: Utc::now(),
+            repo: None,
             next_at: None,
             fingerprint: None,
             last_run: None,

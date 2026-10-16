@@ -12,9 +12,7 @@ use crate::agent::{Agent, AgentConfig, Briefing, Observer, run_context};
 use crate::cancel::CancelToken;
 use crate::github::{Checks, GitHub, PrState, PrStatus, Remote};
 use crate::home::Home;
-use crate::isolation::{
-    self, ChangeStatus, CheckResult, CheckRun, Delivery, Isolation, PullRequest, Update,
-};
+use crate::isolation::{self, ChangeStatus, CheckResult, CheckRun, Delivery, PullRequest, Update};
 use crate::memory::MemoryStore;
 use crate::models::router::{Connections, Routed, Tier};
 use crate::models::{ContentBlock, Message, Model, ModelRequest, Role};
@@ -22,7 +20,7 @@ use crate::northstar;
 use crate::notify::Kind;
 use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
-use crate::realm::{PROVIDER_KEYS, Realm};
+use crate::realm::{PROVIDER_KEYS, Realm, Repo};
 use crate::runtime::Runtime;
 use crate::skill::{self, SkillRecord, SkillStatus, SkillStore};
 use crate::state::{Origin, State, Status, render_plan};
@@ -430,6 +428,17 @@ impl Hub {
     /// Create and save a new run, without starting it. In an isolated realm
     /// this also creates the run's worktree.
     pub fn create_run(&self, realm: &Realm, objective: &str) -> Result<State> {
+        self.create_run_in(realm, objective, None)
+    }
+
+    /// Create a run that works in one of the realm's repositories (None:
+    /// its root, isolated if the root is a repository).
+    pub fn create_run_in(
+        &self,
+        realm: &Realm,
+        objective: &str,
+        repo: Option<&str>,
+    ) -> Result<State> {
         let objective = objective.trim();
         if objective.is_empty() {
             bail!("the objective is empty");
@@ -439,11 +448,10 @@ impl Hub {
         }
         let mut state = State::new(objective, Some(&realm.runs_dir()));
         state.realm = realm.name().to_string();
-        if realm.config.isolation == Isolation::Worktree {
-            let root = realm.root()?;
-            let start = self.start_point(realm, &root);
+        if let Some(repo) = realm.repo(repo)? {
+            let start = self.start_point(realm, &repo);
             state.change = Some(
-                isolation::create_from(&root, &realm.worktrees_dir(), &state.id, &start)
+                isolation::create_from(&repo.path, &realm.worktrees_dir(), &state.id, &start)
                     .context("cannot create the run's isolated worktree")?,
             );
         }
@@ -597,7 +605,7 @@ impl Hub {
         }
         let wants_checks = state.status == Status::Completed
             && state.change.as_ref().is_some_and(|c| c.has_changes())
-            && !realm.config.checks.is_empty();
+            && !self.repo_of(realm, state).checks.is_empty();
         if wants_checks && !hooks.cancel.is_cancelled() {
             self.run_checks(realm, state, &workspace, observer, &hooks.cancel)?;
         }
@@ -649,7 +657,8 @@ impl Hub {
         {
             bail!("objective '{id}' is already running (run {last})");
         }
-        let mut state = self.create_run(realm, &objective.objective)?;
+        let mut state =
+            self.create_run_in(realm, &objective.objective, objective.repo.as_deref())?;
         append_user_text(
             &mut state.messages,
             &objective_brief(realm, &objective, trigger, payload),
@@ -778,10 +787,11 @@ impl Hub {
             Some(c) => bail!("this run's change was {}", c.status.as_str()),
             None => bail!("this run has no isolated change to check"),
         }
-        if realm.config.checks.is_empty() {
+        let repo = self.repo_of(realm, &state);
+        if repo.checks.is_empty() {
             bail!(
-                "realm '{}' has no checks configured (airth realm checks ...)",
-                realm.name()
+                "repository '{}' has no checks configured (airth realm repo checks ...)",
+                repo.name
             );
         }
         let workspace = self.workspace_for(realm, &state)?;
@@ -797,6 +807,7 @@ impl Hub {
         observer: &mut dyn Observer,
         cancel: &CancelToken,
     ) -> Result<()> {
+        let commands = self.repo_of(realm, state).checks;
         let Some(change) = &mut state.change else {
             return Ok(());
         };
@@ -808,7 +819,7 @@ impl Hub {
         });
         state.save()?;
         observer.changed(state);
-        for command in &realm.config.checks {
+        for command in &commands {
             if cancel.is_cancelled() {
                 break;
             }
@@ -856,10 +867,14 @@ impl Hub {
     /// Get a run's change ready to adopt: merge in what its base branch got
     /// since, so it is checked and adopted against the checkout as it is now.
     pub fn prepare_adoption(&self, realm: &Realm, run: &str) -> Result<Adoption> {
-        if realm.config.delivery == Delivery::PullRequest {
-            bail!("this realm delivers changes as pull requests: merge it on GitHub");
-        }
         let mut state = self.load_run(realm, run)?;
+        let repo = self.repo_of(realm, &state);
+        if repo.delivery == Delivery::PullRequest {
+            bail!(
+                "'{}' delivers changes as pull requests: merge it on GitHub",
+                repo.name
+            );
+        }
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
         let change = state
             .change
@@ -874,7 +889,7 @@ impl Hub {
         state.save()?;
         Ok(match outcome {
             Update::Conflict(files) => Adoption::Conflict(files),
-            _ if !realm.config.checks.is_empty() && !checks_passed => Adoption::NeedsChecks,
+            _ if !repo.checks.is_empty() && !checks_passed => Adoption::NeedsChecks,
             _ => Adoption::Ready,
         })
     }
@@ -884,13 +899,17 @@ impl Hub {
     /// have passed on the latest commit, if the realm has checks. The realm's
     /// other open changes are then updated with it.
     pub fn adopt(&self, realm: &Realm, run: &str) -> Result<State> {
-        if realm.config.delivery == Delivery::PullRequest {
-            bail!("this realm delivers changes as pull requests: merge it on GitHub");
-        }
         let mut state = self.load_run(realm, run)?;
+        let repo = self.repo_of(realm, &state);
+        if repo.delivery == Delivery::PullRequest {
+            bail!(
+                "'{}' delivers changes as pull requests: merge it on GitHub",
+                repo.name
+            );
+        }
         {
             let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
-            let checks_needed = !realm.config.checks.is_empty();
+            let checks_needed = !repo.checks.is_empty();
             let change = state
                 .change
                 .as_mut()
@@ -998,9 +1017,10 @@ impl Hub {
 
     /// Where a new chat's worktree starts: the checkout's HEAD, or, in a
     /// realm that opens pull requests, its branch as it is on GitHub.
-    fn start_point(&self, realm: &Realm, root: &Path) -> String {
-        if realm.config.delivery == Delivery::PullRequest
-            && let Ok((gh, remote)) = self.github(realm)
+    fn start_point(&self, realm: &Realm, repo: &Repo) -> String {
+        let root = &repo.path;
+        if repo.delivery == Delivery::PullRequest
+            && let Ok((gh, remote)) = self.github(realm, root)
             && let Ok(branch) = isolation::current_branch(root).context("no branch")
         {
             match gh.fetch(root, &remote, &branch) {
@@ -1011,6 +1031,121 @@ impl Hub {
         "HEAD".into()
     }
 
+    /// Connect a repository to the realm: clone `source` (a URL) into
+    /// `dest` (default: next to the realm's root, see `clone_dir`), or take
+    /// `source` as an existing checkout on this machine.
+    pub fn connect_repo(
+        &self,
+        realm: &mut Realm,
+        source: &str,
+        name: Option<&str>,
+        dest: Option<&Path>,
+    ) -> Result<Repo> {
+        let source = source.trim();
+        if source.is_empty() {
+            bail!("give a repository URL or a folder");
+        }
+        let is_url = source.contains("://") || source.starts_with("git@");
+        let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => n.to_string(),
+            None => crate::realm::repo_name_from(source),
+        };
+        let path = if is_url {
+            let dest = match dest {
+                Some(d) => d.to_path_buf(),
+                None => self.clone_dir(realm, &name)?,
+            };
+            if dest.exists() && std::fs::read_dir(&dest)?.next().is_some() {
+                bail!("{} already exists and is not empty", dest.display());
+            }
+            self.check_repo_place(realm, &dest)?;
+            match (Remote::parse(source), realm.secret(crate::github::TOKEN)) {
+                (Some(remote), Some(token)) => {
+                    self.github_client(&token).clone_into(&remote, &dest)?
+                }
+                _ => isolation::clone(source, &dest)?,
+            }
+            dest
+        } else {
+            let path = match (source.strip_prefix("~/"), std::env::var_os("HOME")) {
+                (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+                _ => PathBuf::from(source),
+            };
+            self.check_repo_place(realm, &path)?;
+            path
+        };
+        realm.add_repo(&name, &path, is_url.then(|| source.to_string()))
+    }
+
+    /// Where a cloned repository goes by default: next to the realm's root
+    /// when the root is a repository itself, inside it otherwise, and under
+    /// ~/Airth/<realm> for a realm without a folder of its own.
+    fn clone_dir(&self, realm: &Realm, name: &str) -> Result<PathBuf> {
+        let root = realm.root()?;
+        Ok(if realm.config.root.is_none() {
+            let home = std::env::var_os("HOME").context("no home folder")?;
+            PathBuf::from(home)
+                .join("Airth")
+                .join(realm.name())
+                .join(name)
+        } else if isolation::is_repo_root(&root) {
+            root.parent().unwrap_or(&root).join(name)
+        } else {
+            root.join(name)
+        })
+    }
+
+    /// A repository may not live in Airth's home, nor in another realm.
+    fn check_repo_place(&self, realm: &Realm, path: &Path) -> Result<()> {
+        let abs = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        let path = abs(path);
+        if path.starts_with(abs(self.home.dir())) {
+            bail!("a repository cannot live inside the Airth home");
+        }
+        for other in self.home.realms()? {
+            if other.name() == realm.name() {
+                continue;
+            }
+            let theirs = other
+                .config
+                .root
+                .iter()
+                .cloned()
+                .chain(other.config.repos.iter().map(|r| r.path.clone()));
+            for p in theirs {
+                let p = abs(&p);
+                if path.starts_with(&p) || p.starts_with(&path) {
+                    bail!("{} belongs to realm '{}'", path.display(), other.name());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The repository a run works in, with its settings: found by its
+    /// change's checkout, else the realm's own settings.
+    pub fn repo_of(&self, realm: &Realm, state: &State) -> Repo {
+        let found = state.change.as_ref().and_then(|c| realm.repo_at(&c.repo));
+        found.unwrap_or_else(|| Repo {
+            name: realm.name().to_string(),
+            path: state
+                .change
+                .as_ref()
+                .map(|c| c.repo.clone())
+                .unwrap_or_default(),
+            url: None,
+            checks: realm.config.checks.clone(),
+            delivery: realm.config.delivery,
+            main: true,
+        })
+    }
+
+    fn delivery_of(&self, realm: &Realm, change: &isolation::Change) -> Delivery {
+        realm
+            .repo_at(&change.repo)
+            .map_or(realm.config.delivery, |r| r.delivery)
+    }
+
     /// The ref holding a change's base branch as it is now: in the checkout,
     /// or fetched from GitHub in a realm that opens pull requests.
     fn base_target(&self, realm: &Realm, change: &isolation::Change) -> Result<String> {
@@ -1018,22 +1153,22 @@ impl Hub {
             .base_branch
             .as_deref()
             .context("this chat did not start from a branch")?;
-        if realm.config.delivery == Delivery::PullRequest {
-            let (gh, remote) = self.github(realm)?;
+        if self.delivery_of(realm, change) == Delivery::PullRequest {
+            let (gh, remote) = self.github(realm, &change.repo)?;
             return gh.fetch(&change.repo, &remote, base);
         }
         Ok(format!("refs/heads/{base}"))
     }
 
     /// The realm's GitHub access, for realms that open pull requests.
-    fn github(&self, realm: &Realm) -> Result<(GitHub, Remote)> {
+    fn github(&self, realm: &Realm, repo: &Path) -> Result<(GitHub, Remote)> {
         let token = realm.secret(crate::github::TOKEN).with_context(|| {
             format!(
                 "add a GitHub token to the realm's secrets as {}",
                 crate::github::TOKEN
             )
         })?;
-        let remote = Remote::of(&realm.root()?)?;
+        let remote = Remote::of(repo)?;
         Ok((self.github_client(&token), remote))
     }
 
@@ -1055,7 +1190,8 @@ impl Hub {
     /// has), in a realm that delivers changes that way. A change opens its
     /// pull request once its checks pass, unless `anyway`.
     pub fn deliver(&self, realm: &Realm, state: &mut State, anyway: bool) -> Result<()> {
-        if realm.config.delivery != Delivery::PullRequest {
+        let repo = self.repo_of(realm, state);
+        if repo.delivery != Delivery::PullRequest {
             return Ok(());
         }
         let Some(change) = state.change.as_mut() else {
@@ -1066,7 +1202,7 @@ impl Hub {
             && !change.files.is_empty()
             && change.merging.is_none()
             && change.conflicts.is_empty();
-        let passed = realm.config.checks.is_empty() || change.checks_passed();
+        let passed = repo.checks.is_empty() || change.checks_passed();
         if !ready || (change.pull_request.is_none() && !passed && !anyway) {
             return Ok(());
         }
@@ -1077,7 +1213,7 @@ impl Hub {
         {
             return Ok(());
         }
-        let (gh, remote) = self.github(realm)?;
+        let (gh, remote) = self.github(realm, &change.repo)?;
         let base = change
             .base_branch
             .clone()
@@ -1181,7 +1317,7 @@ impl Hub {
         if change.status != ChangeStatus::Open || change.merging.is_some() {
             return Ok(PrEvent::Nothing);
         }
-        let (gh, remote) = self.github(realm)?;
+        let (gh, remote) = self.github(realm, &change.repo)?;
         let known_conflict = !change.conflicts.is_empty();
         let event = match gh.state(&remote, pr.number)? {
             PrState::Merged => {
@@ -1236,10 +1372,13 @@ impl Hub {
     /// Where a run's pull request stands on GitHub (None without one).
     pub fn pull_request_status(&self, realm: &Realm, run: &str) -> Result<Option<PrStatus>> {
         let state = self.load_run(realm, run)?;
-        let Some(pr) = state.change.and_then(|c| c.pull_request) else {
+        let Some(change) = state.change else {
             return Ok(None);
         };
-        let (gh, remote) = self.github(realm)?;
+        let Some(pr) = change.pull_request else {
+            return Ok(None);
+        };
+        let (gh, remote) = self.github(realm, &change.repo)?;
         Ok(Some(gh.status(&remote, pr.number)?))
     }
 
@@ -1260,7 +1399,7 @@ impl Hub {
         if change.status != ChangeStatus::Open {
             bail!("this change was already {}", change.status.as_str());
         }
-        let (gh, remote) = self.github(realm)?;
+        let (gh, remote) = self.github(realm, &change.repo)?;
         let status = gh.status(&remote, pr.number)?;
         match status.state {
             PrState::Merged => {}
@@ -1303,7 +1442,7 @@ impl Hub {
         if change.status != ChangeStatus::Open {
             return;
         }
-        if let Ok((gh, remote)) = self.github(realm) {
+        if let Ok((gh, remote)) = self.github(realm, &change.repo) {
             if let Err(e) = gh.close(&remote, pr.number) {
                 eprintln!("could not close pull request #{}: {e:#}", pr.number);
             }
@@ -1358,6 +1497,12 @@ impl Hub {
         }
         // Installed skills run from the home: readable, never writable.
         ws = ws.with_rule(realm.skills().installed_root(), Access::Read);
+        // The realm's other repositories can be read, to work across them.
+        for repo in &realm.config.repos {
+            if repo.path != root {
+                ws = ws.with_rule(&repo.path, Access::Read);
+            }
+        }
         let mut env = realm.command_env()?;
         if let Some(change) = &state.change {
             ws = ws.with_rule(&change.repo, Access::Read);
@@ -1383,10 +1528,11 @@ impl Hub {
     fn denied_to(&self, realm: &Realm) -> Result<Vec<PathBuf>> {
         let mut out = vec![self.home.dir().to_path_buf()];
         for other in self.home.realms()? {
-            if other.name() != realm.name()
-                && let Some(root) = &other.config.root
-            {
-                out.push(root.clone());
+            if other.name() != realm.name() {
+                if let Some(root) = &other.config.root {
+                    out.push(root.clone());
+                }
+                out.extend(other.config.repos.iter().map(|r| r.path.clone()));
             }
         }
         Ok(out)
@@ -1624,6 +1770,7 @@ impl Hub {
             approval_wait_minutes: existing.as_ref().map_or(30, |o| o.approval_wait_minutes),
             enabled: true,
             created_at: existing.as_ref().map_or_else(Utc::now, |o| o.created_at),
+            repo: existing.as_ref().and_then(|o| o.repo.clone()),
             next_at: same.and_then(|o| o.next_at),
             fingerprint: None,
             last_run: existing.as_ref().and_then(|o| o.last_run.clone()),
@@ -1645,8 +1792,9 @@ impl Hub {
             owner,
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
-            pull_requests: state.change.is_some() && realm.config.delivery == Delivery::PullRequest,
-            checks: realm.config.checks.clone(),
+            pull_requests: state.change.is_some()
+                && self.repo_of(realm, state).delivery == Delivery::PullRequest,
+            checks: self.repo_of(realm, state).checks,
             north_star: match &state.skill {
                 Some(_) => None,
                 None => realm.north_star().get()?.map(|s| s.prompt_section()),
@@ -2127,6 +2275,7 @@ mod tests {
     use super::*;
     use crate::agent::NoObserver;
     use crate::home::NewRealm;
+    use crate::isolation::Isolation;
     use crate::models::{ModelRequest, ModelResponse, StopReason};
     use crate::permissions::{Answer, PermissionRequest, Rule};
     use serde_json::json;
@@ -3285,6 +3434,113 @@ mod tests {
         );
     }
 
+    /// A realm whose folder is not a repository works in repositories added
+    /// to it: cloned or existing, each with its own checks, in isolation.
+    #[test]
+    fn chats_work_in_the_realms_repositories() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = Home::at(home_dir.path()).unwrap();
+        let mut realm = home
+            .create_realm(NewRealm {
+                name: "company".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let (hub, _, _) = make_hub(&home, vec![]);
+        // One cloned from a URL, one already on this machine.
+        let upstream = crate::isolation::tests::repo();
+        let place = tempfile::tempdir().unwrap();
+        let url = format!("file://{}", upstream.path().display());
+        let lib = hub
+            .connect_repo(&mut realm, &url, None, Some(&place.path().join("lib")))
+            .unwrap();
+        assert_eq!(lib.url.as_deref(), Some(url.as_str()));
+        assert!(lib.path.join("a.txt").exists());
+        let site = crate::isolation::tests::repo();
+        hub.connect_repo(
+            &mut realm,
+            site.path().to_str().unwrap(),
+            Some("site"),
+            None,
+        )
+        .unwrap();
+        assert!(
+            hub.connect_repo(
+                &mut realm,
+                &url,
+                Some("again"),
+                Some(&place.path().join("lib"))
+            )
+            .is_err(),
+            "a clone never lands in a folder that has files"
+        );
+        assert!(
+            hub.connect_repo(
+                &mut realm,
+                home_dir.path().to_str().unwrap(),
+                Some("h"),
+                None
+            )
+            .is_err(),
+            "nor in Airth's home"
+        );
+        let name = lib.name.clone();
+        realm
+            .update_repo(&name, Some(vec!["test -f new.txt".into()]), None)
+            .unwrap();
+
+        let (hub, _, _) = make_hub(
+            &home,
+            vec![
+                call(
+                    "1",
+                    "write_file",
+                    json!({"path": "new.txt", "content": "x\n"}),
+                ),
+                done("Added new.txt."),
+            ],
+        );
+        let mut state = hub
+            .create_run_in(&realm, "add new.txt", Some(&name))
+            .unwrap();
+        hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true))
+            .unwrap();
+        let change = state.change.clone().unwrap();
+        assert_eq!(change.files, vec!["A\tnew.txt"]);
+        assert!(change.checks_passed(), "{:?}", change.checks);
+        assert!(!lib.path.join("new.txt").exists(), "isolated until adopted");
+        assert_eq!(hub.repo_of(&realm, &state).name, name);
+        git_in(&lib.path, &["config", "user.name", "t"]);
+        git_in(&lib.path, &["config", "user.email", "t@t"]);
+        assert_eq!(
+            hub.prepare_adoption(&realm, &state.id).unwrap(),
+            Adoption::Ready
+        );
+        hub.adopt(&realm, &state.id).unwrap();
+        assert!(lib.path.join("new.txt").exists());
+        assert!(!site.path().join("new.txt").exists());
+
+        // Other realms' chats cannot reach these repositories.
+        let other = home
+            .create_realm(NewRealm {
+                name: "personal".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let denied = hub.denied_to(&other).unwrap();
+        assert!(
+            denied.contains(&lib.path)
+                && denied
+                    .iter()
+                    .any(|p| p.ends_with(site.path().file_name().unwrap()))
+        );
+        assert!(hub.create_run_in(&realm, "x", Some("nope")).is_err());
+    }
+
     #[test]
     fn failed_checks_block_adoption() {
         let home_dir = tempfile::tempdir().unwrap();
@@ -3587,6 +3843,7 @@ mod tests {
                 approval_wait_minutes: 0,
                 enabled: true,
                 created_at: Utc::now(),
+                repo: None,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,
@@ -3698,6 +3955,7 @@ mod tests {
                 approval_wait_minutes: 0,
                 enabled: true,
                 created_at: Utc::now(),
+                repo: None,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,

@@ -226,12 +226,11 @@ impl Home {
             None if is_repo => Isolation::Worktree,
             None => Isolation::None,
         };
-        let checks = match &root {
-            Some(r) if r.join("Cargo.toml").exists() => {
-                vec!["cargo check --all-targets".into(), "cargo test".into()]
-            }
-            _ => Vec::new(),
-        };
+        let checks = root
+            .as_deref()
+            .filter(|_| is_repo)
+            .map(crate::realm::detect_checks)
+            .unwrap_or_default();
         let realm = Realm::create(
             &dir,
             RealmConfig {
@@ -242,6 +241,7 @@ impl Home {
                 isolation,
                 checks,
                 delivery: Default::default(),
+                repos: Vec::new(),
                 share_owner_profile: true,
                 integrations: Vec::new(),
                 archived: false,

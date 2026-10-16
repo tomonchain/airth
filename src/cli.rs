@@ -13,6 +13,33 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 #[derive(Subcommand)]
+pub enum RepoCmd {
+    /// List the realm's repositories
+    List,
+    /// Connect a repository: a URL to clone, or a folder on this machine
+    Add {
+        /// https://github.com/owner/name, git@…, or a path
+        source: String,
+        /// Its name in the realm (default: from the URL or folder)
+        #[arg(long)]
+        name: Option<String>,
+        /// Where to clone it (default: next to the realm's folder)
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
+    /// Forget a repository (its files stay)
+    Remove { name: String },
+    /// Set the commands that verify a change in this repository (none to clear)
+    Checks { name: String, commands: Vec<String> },
+    /// How changes in this repository are delivered: adopt or pr
+    Delivery {
+        name: String,
+        #[arg(value_parser = ["adopt", "pr"])]
+        mode: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum RealmCmd {
     /// List realms
     List,
@@ -49,6 +76,9 @@ pub enum RealmCmd {
     },
     /// Set the commands that verify a run's change (none to clear)
     Checks { commands: Vec<String> },
+    /// The git repositories the realm's chats work in
+    #[command(subcommand)]
+    Repo(RepoCmd),
     /// How chats' changes reach the repository: adopt (merged here by you)
     /// or pr (pull requests on GitHub, opened with the realm's GITHUB_TOKEN)
     Delivery {
@@ -199,6 +229,9 @@ pub enum ObjectiveCmd {
         max_tokens: Option<u64>,
         #[arg(long)]
         max_minutes: Option<u32>,
+        /// The realm repository its runs work in (default: the realm's root)
+        #[arg(long)]
+        repo: Option<String>,
     },
     /// Show an objective, with its webhook URL if it has one
     Show {
@@ -265,7 +298,11 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
             max_iterations,
             max_tokens,
             max_minutes,
+            repo,
         } => {
+            if let Some(name) = &repo {
+                realm.repo(Some(name))?;
+            }
             let trigger = match (every, watch, webhook) {
                 (Some(every), _, _) => Trigger::Schedule { every },
                 (_, Some(path), _) => Trigger::Watch { path },
@@ -291,6 +328,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                 approval_wait_minutes: wait,
                 enabled: true,
                 created_at: chrono::Utc::now(),
+                repo,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,
@@ -853,6 +891,53 @@ pub fn realm(ctx: &Ctx, command: RealmCmd) -> Result<bool> {
             };
             realm.save()?;
             print_realm(ctx, &realm)?;
+        }
+        RealmCmd::Repo(cmd) => {
+            let mut realm = ctx.realm()?;
+            match cmd {
+                RepoCmd::List => {}
+                RepoCmd::Add { source, name, path } => {
+                    let repo = ctx.hub().connect_repo(
+                        &mut realm,
+                        &source,
+                        name.as_deref(),
+                        path.as_deref(),
+                    )?;
+                    eprintln!(
+                        "\x1b[32m✓\x1b[0m connected {} ({})",
+                        repo.name,
+                        repo.path.display()
+                    );
+                }
+                RepoCmd::Remove { name } => realm.remove_repo(&name)?,
+                RepoCmd::Checks { name, commands } => {
+                    let commands = if commands == ["none"] {
+                        Vec::new()
+                    } else {
+                        commands
+                    };
+                    realm.update_repo(&name, Some(commands), None)?;
+                }
+                RepoCmd::Delivery { name, mode } => {
+                    realm.update_repo(
+                        &name,
+                        None,
+                        Some(crate::isolation::Delivery::parse(&mode)?),
+                    )?;
+                }
+            }
+            for r in realm.repos() {
+                println!(
+                    "{:<16} {:<13} {}{}",
+                    r.name,
+                    r.delivery.as_str(),
+                    r.path.display(),
+                    if r.main { "  (the realm's folder)" } else { "" }
+                );
+                if !r.checks.is_empty() {
+                    println!("{:<16} checks: {}", "", r.checks.join(" · "));
+                }
+            }
         }
         RealmCmd::Delivery { mode } => {
             let mut realm = ctx.realm()?;

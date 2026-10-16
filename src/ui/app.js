@@ -762,6 +762,47 @@ document.addEventListener("mousedown", (e) => {
 
 /** "Auto ▾": which model answers this request. get/set read and store the choice.
  *  `auto` renames the first entry ({label, sub}), e.g. "None" for an optional model. */
+/** The realm's repositories a new chat can work in ("" is the realm's folder, when it is not one). */
+function repoChoices() {
+  const repos = (app.realmDetail && app.realmDetail.repos) || [];
+  const choices = repos.map((r) => ({ value: r.name, label: r.name, sub: r.main ? "this realm's folder" : tildePath(r.path) }));
+  if (!repos.some((r) => r.main)) choices.unshift({ value: "", label: "Folder", sub: "the realm's files, no repository" });
+  return choices;
+}
+
+/** The repository a new chat in this realm works in: the last one picked, else the first. */
+function chosenRepo() {
+  const choices = repoChoices();
+  let saved = null;
+  try { saved = localStorage.getItem("airth-repo:" + app.realm); } catch {}
+  return (choices.find((c) => c.value === saved) || choices[0] || { value: "" }).value;
+}
+
+/** Which repository a new chat works in, next to the model pill (only with a choice to make). */
+function repoPicker({ onChange }) {
+  const choices = repoChoices();
+  if (choices.length < 2) return null;
+  const label = h("span", { class: "mp-label" });
+  const btn = h("button", { class: "model-pill", type: "button", title: "Which repository the chat works in", "aria-haspopup": "true" }, icon("code"), label, h("span", { class: "mp-chev" }, "▾"));
+  const refresh = () => { const c = choices.find((x) => x.value === chosenRepo()); label.textContent = c ? c.label : "Folder"; };
+  const wrap = h("span", { class: "mp" }, btn);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (modelUi.open) { modelUi.open.remove(); modelUi.open = null; return; }
+    const menu = h("div", { class: "mp-menu", role: "menu" },
+      h("div", { class: "mp-list" }, choices.map((c) => h("button", { type: "button", class: "mp-item" + (c.value === chosenRepo() ? " on" : ""), role: "menuitem",
+        onclick: () => {
+          try { localStorage.setItem("airth-repo:" + app.realm, c.value); } catch { /* per window only */ }
+          refresh(); menu.remove(); modelUi.open = null;
+          if (onChange) onChange(c.value);
+        } }, h("span", { class: "grow" }, c.label, h("span", { class: "mp-sub" }, c.sub)), c.value === chosenRepo() && icon("check")))));
+    wrap.append(menu);
+    modelUi.open = menu;
+  });
+  refresh();
+  return wrap;
+}
+
 function modelPicker({ get, set, auto }) {
   const label = h("span", { class: "mp-label" });
   const btn = h("button", { class: "model-pill", type: "button", title: "Which model answers", "aria-haspopup": "true" }, icon("brain"), label, h("span", { class: "mp-chev" }, "▾"));
@@ -853,7 +894,7 @@ function saveDraft(key, text) {
   drafts.set(key, text.trim() ? text : "");
 }
 
-function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model }) {
+function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model, repo }) {
   const ta = h("textarea", { rows, placeholder, disabled, "aria-label": placeholder });
   if (draftKey && drafts.get(draftKey)) {
     ta.value = drafts.get(draftKey);
@@ -898,7 +939,8 @@ function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = fal
   btn.disabled = disabled || !ta.value.trim();
   btn.addEventListener("click", submit);
   const picker = model ? modelPicker(model) : null;
-  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
+  const repoEl = repo ? repoPicker(repo) : null;
+  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, repoEl, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
   return { el, ta, btn, errorEl, picker, block: (b) => { blocked = b; sync(); } };
 }
 
@@ -1202,16 +1244,17 @@ function renderNew(main) {
       get: () => storedModel(`new:${app.realm}`) || "auto",
       set: (v) => storeModel(`new:${app.realm}`, v),
     },
+    repo: {},
     buttonLabel: "Start",
     rows: 3,
     // Without a realm model you can still pick one in the model menu.
     disabled: !!(realm && realm.archived),
-    note: d && d.isolation === "worktree"
-      ? "Airth works in its own copy of the repository. You review the change, and it reaches your checkout only when you adopt it."
+    note: d && (d.isolation === "worktree" || (d.repos || []).length)
+      ? "In a repository, Airth works in its own copy. You review the change before it reaches your checkout."
       : "Every step that needs approval waits for you.",
     onSubmit: async (objective) => {
       const model = storedModel(`new:${app.realm}`) || "auto";
-      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model });
+      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model, repo: chosenRepo() || null });
       storeModel(`run:${app.realm}/${id}`, model);
       await refreshRuns();
       go(`#/r/${enc(app.realm)}/run/${enc(id)}`);
@@ -1390,6 +1433,7 @@ function renderRun() {
   const ctx = [
     h("span", { class: "rh-state " + statusClass }, STATUS_LABEL[status] || status),
     h("span", null, "updated " + ago(s.updated_at)),
+    d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this chat works in" }, icon("code"), d.repo),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
     (s.north_star || (app.runs.find((r) => r.id === s.id) || {}).focus) && h("span", { class: "rh-tag ns", title: "This chat serves the realm's North Star" }, "★ North Star"),
     s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
@@ -2188,9 +2232,9 @@ const SETTINGS_TABS = [
   ["general", "General", "gear"],
   ["models", "Models", "brain"],
   ["permissions", "Permissions", "check"],
+  ["repos", "Repositories", "code"],
   ["memory", "Memory", "notes"],
   ["access", "Access", "plug"],
-  ["advanced", "Advanced", "terminal"],
 ];
 const settingsUi = { addIntegration: false };
 
@@ -2225,17 +2269,10 @@ function renderSettings(main) {
           done: async (detail) => { app.realmDetail = detail; await refreshRealms(); renderMain(); renderSidebar(); } }), "Shown in the app only."),
         field("Description", desc),
         field("Workspace", h("span", { class: "value path", title: d.root }, tildePath(d.root)), d.own_root ? null : "A private folder in Airth's home."),
-        field("Changes", d.isolation === "worktree" && d.github
-          ? h("div", { class: "seg" },
-              [["adopt", "Adopt here"], ["pull_request", "Pull requests"]].map(([v, label]) =>
-                h("button", { type: "button", class: d.delivery === v ? "on" : "", onclick: () => d.delivery !== v && save({ delivery: v }, v === "adopt" ? "You adopt changes here" : "Changes become pull requests") }, label)))
-          : h("span", { class: "value" }, d.isolation === "worktree"
-            ? "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."
-            : "Chats work directly in the workspace."),
-          d.isolation === "worktree" && d.github && (d.delivery === "pull_request"
-            ? h("span", null, `Each chat's change becomes a pull request on ${d.github} once its checks pass. Merge it on GitHub: Airth keeps it up to date with the base branch, resolves conflicts, and marks the chat adopted. `,
-                !d.github_token && h("span", { class: "warn-text" }, "Add a GitHub token as GITHUB_TOKEN under Access (a fine-grained token for this repository, with Contents and Pull requests)."))
-            : "Each chat works on its own copy (a git worktree); you adopt or discard what it changed."))),
+        field("Changes", h("span", { class: "value" }, (d.repos || []).length
+          ? `${d.repos.length} ${d.repos.length === 1 ? "repository" : "repositories"}: each chat works on its own copy, and you review what it changed.`
+          : "Chats work directly in the workspace."),
+          h("a", { href: `#/r/${enc(d.name)}/settings/repos` }, "Repositories"))),
       ...section("Your profile", null,
         h("div", { class: "card" },
           h("label", { class: "toggle" },
@@ -2352,12 +2389,7 @@ function renderSettings(main) {
   };
 
   const advanced = () => {
-    const checks = h("textarea", { rows: 3, placeholder: "One command per line, e.g. cargo test" });
-    checks.value = d.checks.join("\n");
     return [
-      ...section("Checks", "Commands the runtime runs on every change before you can adopt it, in the chat's sandbox. Useful for code: tests, linters.",
-        h("div", { class: "card" }, checks,
-          h("div", { class: "row-end" }, h("button", { class: "btn", type: "button", onclick: () => save({ checks: checks.value.split("\n") }, "Checks saved") }, "Save checks")))),
       ...section("Realm", null,
         h("div", { class: "card" },
           h("div", { class: "policy-row" },
@@ -2371,7 +2403,8 @@ function renderSettings(main) {
     ];
   };
 
-  const body = { general, models, permissions, memory, access, advanced }[tab[0]]();
+  const repos = () => repositoriesTab(d);
+  const body = { general: () => [...general(), ...advanced()], models, permissions, repos, memory, access }[tab[0]]();
   main.append(h("div", { class: "page" }, h("div", { class: "page-inner settings" },
     h("div", { class: "settings-head" },
       pictureMark("realm-mark large", `${realmPath(d.name)}/image`, d.image, d.name),
@@ -2380,6 +2413,88 @@ function renderSettings(main) {
       h("button", { type: "button", role: "tab", "aria-selected": String(id === tab[0]), class: "tab" + (id === tab[0] ? " on" : ""),
         onclick: () => go(`#/r/${enc(d.name)}/settings/${id}`) }, icon(ic), label))),
     ...body)));
+}
+
+const repoUi = { adding: false, busy: false, confirm: null };
+
+/** Settings → Repositories: the git repositories this realm's chats work in. */
+function repositoriesTab(d) {
+  const list = d.repos || [];
+  const path = `${realmPath(d.name)}/repos`;
+  const apply = (r) => { app.realmDetail = { ...app.realmDetail, repos: r.repos }; renderMain(); };
+  const change = async (name, patch, msg) => {
+    try { apply(await api(`${path}/${enc(name)}`, patch, "PATCH")); flash(msg); } catch (e) { flash(e.message, true); }
+  };
+  const anyPr = list.some((r) => r.delivery === "pull_request");
+  const card = (r) => {
+    const checks = h("textarea", { rows: Math.max(2, r.checks.length), placeholder: "One command per line, e.g. cargo test", spellcheck: "false" });
+    checks.value = r.checks.join("\n");
+    checks.addEventListener("change", () => change(r.name, { checks: checks.value.split("\n") }, "Checks saved"));
+    const del = !r.main && h("button", { class: "c-act " + (repoUi.confirm === r.name ? "sure" : "danger"), type: "button",
+      title: "Forget this repository (its files stay)", "aria-label": "Forget this repository",
+      onclick: async () => {
+        if (repoUi.confirm !== r.name) { repoUi.confirm = r.name; renderMain(); setTimeout(() => { if (repoUi.confirm === r.name) { repoUi.confirm = null; renderMain(); } }, 3000); return; }
+        repoUi.confirm = null;
+        try { apply(await api(`${path}/${enc(r.name)}`, undefined, "DELETE")); flash("Repository forgotten; its files stay"); } catch (e) { flash(e.message, true); }
+      } }, repoUi.confirm === r.name ? "Forget?" : icon("trash"));
+    return h("div", { class: "card repo-card" },
+      h("div", { class: "repo-head" },
+        h("div", { class: "routine-icon", "aria-hidden": "true" }, icon(r.github ? "gitPull" : "code")),
+        h("div", { class: "grow" },
+          h("div", { class: "repo-title" }, h("span", { class: "strong" }, r.name),
+            r.main && h("span", { class: "chip" }, "realm folder"),
+            r.branch && h("span", { class: "muted small" }, "on " + r.branch)),
+          h("div", { class: "muted small repo-path", title: r.path }, tildePath(r.path),
+            r.github && [" · ", h("a", { href: `https://github.com/${r.github}`, target: "_blank", rel: "noopener noreferrer" }, r.github)])),
+        del),
+      h("div", { class: "repo-row" },
+        h("div", { class: "repo-k" }, "Changes"),
+        h("div", { class: "seg" },
+          [["adopt", "Adopt here"], ["pull_request", "Pull requests"]].map(([v, label]) =>
+            h("button", { type: "button", class: r.delivery === v ? "on" : "", disabled: v === "pull_request" && !r.github,
+              title: v === "pull_request" && !r.github ? "Only for a repository on GitHub" : "",
+              onclick: () => r.delivery !== v && change(r.name, { delivery: v }, v === "adopt" ? "You adopt changes here" : "Changes become pull requests") }, label)))),
+      h("div", { class: "repo-row" },
+        h("div", { class: "repo-k" }, "Checks"),
+        h("div", { class: "grow" }, checks, h("div", { class: "muted small" }, "Run on every change, in the chat's sandbox, before you review it."))));
+  };
+
+  // Connect another repository: a URL to clone, or a folder on this Mac.
+  const source = h("input", { type: "text", placeholder: "https://github.com/owner/name or ~/Code/project", spellcheck: "false", autocomplete: "off" });
+  const name = h("input", { type: "text", placeholder: "name (optional)", spellcheck: "false", autocomplete: "off" });
+  const dest = h("input", { type: "text", placeholder: "where to clone it (optional)", spellcheck: "false", autocomplete: "off" });
+  const connect = async () => {
+    if (!source.value.trim() || repoUi.busy) return;
+    repoUi.busy = true; btn.disabled = true; btn.replaceChildren(h("span", { class: "spinner" }), /:\/\/|^git@/.test(source.value) ? "Cloning…" : "Connecting…");
+    try {
+      apply(await api(path, { source: source.value, name: name.value, path: dest.value }));
+      repoUi.adding = false;
+      flash("Repository connected");
+    } catch (e) { flash(e.message, true); btn.disabled = false; btn.replaceChildren(icon("plus"), "Connect"); }
+    repoUi.busy = false;
+  };
+  const btn = h("button", { class: "btn primary", type: "button", onclick: connect }, icon("plus"), "Connect");
+  source.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+  const adder = repoUi.adding
+    ? h("div", { class: "card repo-add" },
+        h("div", { class: "strong" }, "Connect a repository"),
+        h("div", { class: "muted small" }, "A URL is cloned next to the realm's folder (or where you say); a folder is used where it is. Airth detects its checks."),
+        source, h("div", { class: "inline" }, name, dest),
+        h("div", { class: "row-end" }, h("button", { class: "btn ghost", type: "button", onclick: () => { repoUi.adding = false; renderMain(); } }, "Cancel"), btn))
+    : null;
+  if (repoUi.adding) setTimeout(() => source.focus(), 30);
+
+  return [
+    h("div", { class: "page-head repo-intro" },
+      h("p", { class: "muted lead" }, "The git repositories this realm's chats work in. A chat picks one, works on its own copy, and you review what it changed. Memory, North Star and routines stay shared across them."),
+      !repoUi.adding && h("button", { class: "btn primary", type: "button", onclick: () => { repoUi.adding = true; renderMain(); } }, icon("plus"), "Connect")),
+    adder,
+    list.length ? h("div", { class: "repos" }, list.map(card))
+      : !repoUi.adding && h("div", { class: "routine-empty" }, h("div", { class: "routine-icon big", "aria-hidden": "true" }, icon("code")),
+          h("div", { class: "strong" }, "No repositories"), h("p", { class: "muted small" }, "Connect one to have Airth work on code: each chat gets its own copy, checked before you review it.")),
+    anyPr && !d.github_token && h("div", { class: "error-banner" }, "Pull requests need a GitHub token: add GITHUB_TOKEN under ",
+      h("a", { href: `#/r/${enc(d.name)}/settings/access` }, "Access"), " (a fine-grained token for these repositories, with Contents and Pull requests)."),
+  ];
 }
 
 function field(label, control, help) {
@@ -3261,7 +3376,7 @@ async function renderObjectives(main) {
         h("div", { class: "routine-top" },
           h("div", { class: "routine-title" },
             h("span", { class: "routine-name" }, o.id),
-            h("span", { class: "routine-when" }, whenText(o.trigger))),
+            h("span", { class: "routine-when" }, whenText(o.trigger), o.repo && h("span", { class: "r-repo" }, icon("code"), o.repo))),
           h("div", { class: "routine-actions" },
             busy ? h("span", { class: "chip running" }, "Running")
               : act("play", "Run now", () => runNow(o), { disabled: !!(d && d.model_error) }),
@@ -3298,7 +3413,9 @@ async function renderObjectives(main) {
     minutes: h("input", { type: "number", min: 1, placeholder: "minutes" }),
     tokens: h("input", { type: "number", min: 1000, step: 1000, placeholder: "tokens" }),
     iterations: h("input", { type: "number", min: 1, placeholder: "model calls" }),
+    repo: h("select", null, repoChoices().map((c) => h("option", { value: c.value }, `${c.label} · ${c.sub}`))),
   };
+  const hasRepoChoice = repoChoices().length >= 2;
   const grantOptions = [
     { capability: "write", label: "Change files" },
     { capability: "execute", label: "Run commands" },
@@ -3317,6 +3434,7 @@ async function renderObjectives(main) {
     const body = {
       id: f.id.value.trim(), objective: f.objective.value.trim(),
       enabled: editing ? editing.enabled : true,
+      repo: hasRepoChoice ? f.repo.value || null : null,
       trigger: { kind: f.kind.value, every: f.every.value, path: f.path.value },
       approvals: grantOptions.filter((g) => g.box.checked).map((g) => ({ capability: g.capability, scope: g.scope || null })),
       approval_wait_minutes: num(f.wait) ?? 10,
@@ -3347,7 +3465,8 @@ async function renderObjectives(main) {
       h("div", { class: "wiz-q" }, "What should Airth achieve each time?"),
       f.objective,
       h("div", { class: "wiz-hint" }, "Write it like an instruction to a colleague: every time starts from it."),
-      field("Name", f.id, "Shown in the list, and used by `airth objective run`.")];
+      field("Name", f.id, "Shown in the list, and used by `airth objective run`."),
+      hasRepoChoice && field("Repository", f.repo, "Where each run works: it gets its own copy, which you review.")];
     if (step === 1) return [
       h("div", { class: "wiz-q" }, "When should it run?"),
       h("div", { class: "tiles" },
@@ -3373,6 +3492,7 @@ async function renderObjectives(main) {
       h("div", { class: "wiz-q" }, "Ready to go"),
       h("div", { class: "review" },
         kv("Task", f.objective.value.trim()), kv("Name", f.id.value.trim()), kv("Runs", when),
+        hasRepoChoice && kv("Repository", f.repo.value || "the realm's folder"),
         kv("Approved", grantOptions.filter((g) => g.box.checked).map((g) => g.label).join(", ") || "nothing beyond the realm's rules"),
         kv("Waits for you", `${f.wait.value || 10} min`)),
       h("details", { class: "wiz-more" }, h("summary", null, "Limits each time (optional)"),
@@ -3411,6 +3531,7 @@ async function renderObjectives(main) {
     f.path.value = t.path || "";
     for (const g of grantOptions) g.box.checked = !!o && o.approvals.some((a) => a.capability === g.capability && (a.scope || null) === (g.scope || null));
     f.wait.value = o ? o.approval_wait_minutes : 10;
+    f.repo.value = o ? (o.repo || (repoChoices().find((c) => c.sub === "this realm's folder") || { value: "" }).value) : chosenRepo();
     const b = (o && o.budget) || {};
     f.minutes.value = b.max_minutes ?? ""; f.tokens.value = b.max_tokens ?? ""; f.iterations.value = b.max_iterations ?? "";
     syncTrigger();

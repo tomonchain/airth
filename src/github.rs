@@ -177,6 +177,16 @@ impl GitHub {
         Ok(target)
     }
 
+    /// Clone the repository into `dest` (a new folder).
+    pub fn clone_into(&self, r: &Remote, dest: &Path) -> Result<()> {
+        let parent = dest.parent().context("no parent folder")?;
+        std::fs::create_dir_all(parent)?;
+        let dest = dest.to_str().context("non UTF-8 path")?;
+        self.git(parent, &["clone", "--quiet", &self.url(r), dest])
+            .with_context(|| format!("cannot clone {}", r.slug()))?;
+        Ok(())
+    }
+
     /// Push the worktree's HEAD to `branch` on GitHub.
     pub fn push(&self, worktree: &Path, r: &Remote, branch: &str) -> Result<()> {
         self.git(

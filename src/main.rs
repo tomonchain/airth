@@ -64,6 +64,9 @@ enum Cmd {
     Run {
         /// What the agent should achieve
         objective: String,
+        /// Work in this realm repository (see `airth realm repo list`)
+        #[arg(long)]
+        repo: Option<String>,
         #[command(flatten)]
         opts: RunOpts,
     },
@@ -306,7 +309,11 @@ fn main() -> ExitCode {
 
 fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
     match command {
-        Some(Cmd::Run { objective, opts }) => run(ctx, &objective, opts),
+        Some(Cmd::Run {
+            objective,
+            repo,
+            opts,
+        }) => run(ctx, &objective, repo.as_deref(), opts),
         Some(Cmd::Send { run, message, opts }) => send(ctx, &run, &message, opts),
         Some(Cmd::Resume { run, opts }) => resume(ctx, &run, opts),
         Some(Cmd::Runs) => runs(ctx),
@@ -436,6 +443,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
             run(
                 ctx,
                 &objective,
+                None,
                 RunOpts {
                     max_iterations: 50,
                     max_tokens: None,
@@ -459,7 +467,7 @@ fn prompt_objective() -> Result<String> {
     Ok(objective)
 }
 
-fn run(ctx: &Ctx, objective: &str, opts: RunOpts) -> Result<bool> {
+fn run(ctx: &Ctx, objective: &str, repo: Option<&str>, opts: RunOpts) -> Result<bool> {
     let realm = ctx.realm()?;
     let hub = ctx.hub();
     banner(&hub, &realm);
@@ -470,7 +478,8 @@ fn run(ctx: &Ctx, objective: &str, opts: RunOpts) -> Result<bool> {
         observer: &mut observer,
         cancel: cancel_on_ctrl_c()?,
     };
-    let state = hub.dispatch(&realm, objective, opts.config(), hooks)?;
+    let mut state = hub.create_run_in(&realm, objective, repo)?;
+    hub.drive(&realm, &mut state, opts.config(), hooks)?;
     Ok(finish(&state))
 }
 

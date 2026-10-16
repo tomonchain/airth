@@ -182,6 +182,27 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
 }
 
+/// Clone `url` into `dest` (a new folder), without prompting for a password.
+pub fn clone(url: &str, dest: &Path) -> Result<()> {
+    let parent = dest.parent().context("no parent folder")?;
+    std::fs::create_dir_all(parent)?;
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(parent)
+        .args(["-c", "core.hooksPath=/dev/null", "clone", "--quiet", url])
+        .arg(dest)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .context("cannot run git")?;
+    if !out.status.success() {
+        bail!(
+            "cannot clone {url}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Whether `dir` is the top level of a git repository with at least one commit.
 pub fn is_repo_root(dir: &Path) -> bool {
     let Ok(top) = git(dir, &["rev-parse", "--show-toplevel"]) else {

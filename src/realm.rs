@@ -55,6 +55,75 @@ pub const PROVIDER_KEYS: &[&str] = &[
     "AIRTH_FALLBACK_MAX_TOKENS",
 ];
 
+/// A git repository a realm's chats work in: each chat gets its own
+/// worktree of it, checked with its checks and delivered its way.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Repo {
+    /// Short name, unique in the realm (letters, digits, - _ .).
+    pub name: String,
+    /// The checkout.
+    pub path: PathBuf,
+    /// Where it was cloned from, if Airth cloned it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Commands that verify a chat's change before it is delivered.
+    #[serde(default)]
+    pub checks: Vec<String>,
+    #[serde(default)]
+    pub delivery: Delivery,
+    /// The realm's root itself (its settings are the realm's).
+    #[serde(skip)]
+    pub main: bool,
+}
+
+/// The checks Airth proposes for a project, from what it is built with.
+pub fn detect_checks(dir: &Path) -> Vec<String> {
+    if dir.join("Cargo.toml").exists() {
+        vec!["cargo check --all-targets".into(), "cargo test".into()]
+    } else if dir.join("package.json").exists() {
+        let text = std::fs::read_to_string(dir.join("package.json")).unwrap_or_default();
+        let pm = if dir.join("pnpm-lock.yaml").exists() {
+            "pnpm"
+        } else if dir.join("yarn.lock").exists() {
+            "yarn"
+        } else {
+            "npm"
+        };
+        let scripts: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        ["lint", "typecheck", "test"]
+            .iter()
+            .filter(|s| scripts["scripts"][**s].is_string())
+            .map(|s| format!("{pm} run {s}"))
+            .collect()
+    } else if dir.join("go.mod").exists() {
+        vec!["go vet ./...".into(), "go test ./...".into()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// A valid repository name: what it would be called from a URL or folder.
+pub fn repo_name_from(source: &str) -> String {
+    let last = source
+        .trim()
+        .trim_end_matches('/')
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or_default();
+    let last = last.strip_suffix(".git").unwrap_or(last);
+    last.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches(['-', '.'])
+        .to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealmConfig {
     pub name: String,
@@ -73,6 +142,9 @@ pub struct RealmConfig {
     /// How isolated changes reach the repository: adopted here, or as pull requests.
     #[serde(default)]
     pub delivery: Delivery,
+    /// More git repositories the realm's chats can work in, besides its root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<Repo>,
     /// Whether runs in this realm see the owner profile.
     #[serde(default = "yes")]
     pub share_owner_profile: bool,
@@ -158,6 +230,144 @@ impl Realm {
         };
         root.canonicalize()
             .with_context(|| format!("realm root {} is missing", root.display()))
+    }
+
+    /// The repositories the realm's chats can work in: its root first when
+    /// it is one (with isolated chats), then the ones added to it.
+    pub fn repos(&self) -> Vec<Repo> {
+        let mut out = Vec::new();
+        if self.config.isolation == Isolation::Worktree
+            && let Ok(root) = self.root()
+        {
+            out.push(Repo {
+                name: root
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| self.name().to_string()),
+                path: root,
+                url: None,
+                checks: self.config.checks.clone(),
+                delivery: self.config.delivery,
+                main: true,
+            });
+        }
+        out.extend(self.config.repos.iter().cloned());
+        out
+    }
+
+    /// The repository named `name`, or the realm's root repository when
+    /// None (None if the root is not one).
+    pub fn repo(&self, name: Option<&str>) -> Result<Option<Repo>> {
+        let repos = self.repos();
+        match name.map(str::trim).filter(|n| !n.is_empty()) {
+            None => Ok(repos.into_iter().find(|r| r.main)),
+            Some(name) => repos
+                .into_iter()
+                .find(|r| r.name == name)
+                .map(Some)
+                .with_context(|| format!("realm '{}' has no repository '{name}'", self.name())),
+        }
+    }
+
+    /// The repository whose checkout is `path` (a change's `repo`).
+    pub fn repo_at(&self, path: &Path) -> Option<Repo> {
+        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        self.repos()
+            .into_iter()
+            .find(|r| r.path.canonicalize().unwrap_or_else(|_| r.path.clone()) == path)
+    }
+
+    /// Add a repository (an existing checkout). Its checks are detected.
+    pub fn add_repo(&mut self, name: &str, path: &Path, url: Option<String>) -> Result<Repo> {
+        let name = name.trim();
+        if name.is_empty()
+            || name.len() > 64
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+            || name.starts_with('.')
+        {
+            bail!("a repository name uses letters, digits, - _ and . only");
+        }
+        if self.repos().iter().any(|r| r.name == name) {
+            bail!("this realm already has a repository named '{name}'");
+        }
+        let path = path
+            .canonicalize()
+            .with_context(|| format!("{} does not exist", path.display()))?;
+        if !crate::isolation::is_repo_root(&path) {
+            bail!("{} is not a git repository with commits", path.display());
+        }
+        if self.repo_at(&path).is_some() {
+            bail!(
+                "{} is already one of this realm's repositories",
+                path.display()
+            );
+        }
+        let repo = Repo {
+            name: name.to_string(),
+            checks: detect_checks(&path),
+            path,
+            url,
+            delivery: Delivery::Adopt,
+            main: false,
+        };
+        self.config.repos.push(repo.clone());
+        self.save()?;
+        Ok(repo)
+    }
+
+    /// Change a repository's checks and delivery (the root's are the realm's).
+    pub fn update_repo(
+        &mut self,
+        name: &str,
+        checks: Option<Vec<String>>,
+        delivery: Option<Delivery>,
+    ) -> Result<Repo> {
+        let repo = self.repo(Some(name))?.expect("named");
+        if let Some(Delivery::PullRequest) = delivery {
+            crate::github::Remote::of(&repo.path)?;
+        }
+        if repo.main {
+            if let Some(c) = checks {
+                self.config.checks = c;
+            }
+            if let Some(d) = delivery {
+                self.config.delivery = d;
+            }
+        } else {
+            let r = self
+                .config
+                .repos
+                .iter_mut()
+                .find(|r| r.name == name)
+                .expect("found above");
+            if let Some(c) = checks {
+                r.checks = c;
+            }
+            if let Some(d) = delivery {
+                r.delivery = d;
+            }
+        }
+        self.save()?;
+        Ok(self.repo(Some(name))?.expect("named"))
+    }
+
+    /// Forget a repository (its files stay where they are).
+    pub fn remove_repo(&mut self, name: &str) -> Result<()> {
+        let before = self.config.repos.len();
+        self.config.repos.retain(|r| r.name != name);
+        if self.config.repos.len() == before {
+            bail!("'{name}' is not a repository added to this realm");
+        }
+        self.save()
+    }
+
+    /// Whether any of the realm's repositories delivers pull requests.
+    pub fn delivers_pull_requests(&self) -> bool {
+        self.repos()
+            .iter()
+            .any(|r| r.delivery == Delivery::PullRequest)
     }
 
     pub fn memory(&self) -> MemoryStore {
@@ -249,7 +459,7 @@ impl Realm {
     pub fn command_env(&self) -> Result<Vec<(String, String)>> {
         let runtime_only = |k: &str| {
             PROVIDER_KEYS.contains(&k)
-                || (self.config.delivery == Delivery::PullRequest && k == crate::github::TOKEN)
+                || (k == crate::github::TOKEN && self.delivers_pull_requests())
         };
         Ok(self
             .secrets()?
@@ -406,6 +616,7 @@ mod tests {
                 isolation: Isolation::None,
                 checks: vec![],
                 delivery: Default::default(),
+                repos: vec![],
                 share_owner_profile: true,
                 integrations: vec![],
                 archived: false,
@@ -424,6 +635,64 @@ mod tests {
         assert_eq!(r.run_titles().get("run1").unwrap(), "Kit launch plan");
         r.set_run_title("run1", "   ").unwrap();
         assert!(!r.run_titles().contains_key("run1"));
+    }
+
+    #[test]
+    fn repositories_are_added_named_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = realm(dir.path());
+        assert!(r.repos().is_empty(), "a plain folder is not a repository");
+        let site = crate::isolation::tests::repo();
+        std::fs::write(
+            site.path().join("package.json"),
+            r#"{"scripts":{"test":"x","lint":"y"}}"#,
+        )
+        .unwrap();
+        let repo = r.add_repo("site", site.path(), None).unwrap();
+        assert_eq!(repo.checks, vec!["npm run lint", "npm run test"]);
+        assert!(!repo.main);
+        assert!(
+            r.add_repo("site", site.path(), None).is_err(),
+            "names are unique"
+        );
+        assert!(
+            r.add_repo("other", site.path(), None).is_err(),
+            "and so are folders"
+        );
+        assert!(r.add_repo("../x", site.path(), None).is_err());
+        assert!(
+            r.add_repo("plain", dir.path(), None).is_err(),
+            "not a repository"
+        );
+        assert_eq!(r.repo_at(site.path()).unwrap().name, "site");
+        assert!(
+            r.repo(None).unwrap().is_none(),
+            "the root is not a repository"
+        );
+        r.update_repo("site", Some(vec!["make".into()]), None)
+            .unwrap();
+        let reloaded = Realm::load(r.dir()).unwrap();
+        assert_eq!(
+            reloaded.repo(Some("site")).unwrap().unwrap().checks,
+            vec!["make"]
+        );
+        assert!(reloaded.repo(Some("nope")).is_err());
+        r.remove_repo("site").unwrap();
+        assert!(r.repos().is_empty());
+        assert!(site.path().exists(), "its files stay");
+    }
+
+    #[test]
+    fn repository_names_come_from_urls_and_folders() {
+        assert_eq!(
+            repo_name_from("https://github.com/tomonchain/airth.git"),
+            "airth"
+        );
+        assert_eq!(
+            repo_name_from("git@github.com:acme/web-site.git"),
+            "web-site"
+        );
+        assert_eq!(repo_name_from("/Users/me/Code/My App/"), "My-App");
     }
 
     #[test]

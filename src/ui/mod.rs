@@ -453,7 +453,7 @@ fn follow_pull_requests(runner: Runner) {
             continue;
         };
         for realm in realms {
-            if realm.config.delivery != Delivery::PullRequest || realm.config.archived {
+            if !realm.delivers_pull_requests() || realm.config.archived {
                 continue;
             }
             let Ok(runs) = runner.hub.runs(&realm) else {
@@ -1007,13 +1007,51 @@ impl App {
                 json_response(200, self.realm_detail(&realm)?)
             }
             (Method::Get, ["realms", r, "runs"]) => json_response(200, self.runs(&self.realm(r)?)?),
+            (Method::Get, ["realms", r, "repos"]) => {
+                json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
+            }
+            (Method::Post, ["realms", r, "repos"]) => {
+                let body = read_json(request)?;
+                let mut realm = self.realm(r)?;
+                let text = |k: &str| body[k].as_str().map(str::trim).filter(|v| !v.is_empty());
+                let dest = text("path").map(expand_home);
+                self.hub.connect_repo(
+                    &mut realm,
+                    text("source").unwrap_or_default(),
+                    text("name"),
+                    dest.as_deref(),
+                )?;
+                json_response(200, json!({"repos": self.repos(&realm)}))
+            }
+            (Method::Patch, ["realms", r, "repos", name]) => {
+                let body = read_json(request)?;
+                let mut realm = self.realm(r)?;
+                let checks = body["checks"].as_array().map(|list| {
+                    list.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::trim)
+                        .filter(|c| !c.is_empty())
+                        .map(String::from)
+                        .collect()
+                });
+                let delivery = body["delivery"].as_str().map(Delivery::parse).transpose()?;
+                realm.update_repo(&percent_decode(name), checks, delivery)?;
+                json_response(200, json!({"repos": self.repos(&realm)}))
+            }
+            (Method::Delete, ["realms", r, "repos", name]) => {
+                let mut realm = self.realm(r)?;
+                realm.remove_repo(&percent_decode(name))?;
+                json_response(200, json!({"repos": self.repos(&realm)}))
+            }
             (Method::Post, ["realms", r, "runs"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let choice = self.model_choice(&realm, &body)?;
-                let mut state = self
-                    .hub
-                    .create_run(&realm, body["objective"].as_str().unwrap_or_default())?;
+                let mut state = self.hub.create_run_in(
+                    &realm,
+                    body["objective"].as_str().unwrap_or_default(),
+                    body["repo"].as_str(),
+                )?;
                 if choice.is_some() {
                     state.model_choice = choice;
                     state.save()?;
@@ -1510,7 +1548,7 @@ impl App {
                     }
                     None => {
                         let state = self.hub.load_run(&realm, id)?;
-                        if !realm.config.checks.is_empty() {
+                        if !self.hub.repo_of(&realm, &state).checks.is_empty() {
                             self.spawn(realm, state, Job::Check);
                         }
                         json_response(200, json!({"resolving": false}))
@@ -1678,6 +1716,26 @@ impl App {
         }))
     }
 
+    /// The realm's repositories for the app, with where each one lives on GitHub.
+    fn repos(&self, realm: &Realm) -> Vec<Value> {
+        realm
+            .repos()
+            .into_iter()
+            .map(|r| {
+                json!({
+                    "name": r.name,
+                    "path": r.path,
+                    "url": r.url,
+                    "main": r.main,
+                    "checks": r.checks,
+                    "delivery": r.delivery.as_str(),
+                    "github": crate::github::Remote::of(&r.path).ok().map(|g| g.slug()),
+                    "branch": crate::isolation::current_branch(&r.path),
+                })
+            })
+            .collect()
+    }
+
     fn realm_detail(&self, realm: &Realm) -> Result<Value> {
         let c = &realm.config;
         let model = self.hub.connections_for(realm);
@@ -1693,10 +1751,13 @@ impl App {
             "own_root": c.root.is_some(),
             "isolation": c.isolation.as_str(),
             "delivery": c.delivery.as_str(),
-            "github": (c.isolation == Isolation::Worktree)
-                .then(|| realm.root().ok().and_then(|r| crate::github::Remote::of(&r).ok()))
+            "github": realm
+                .repo(None)
+                .ok()
                 .flatten()
+                .and_then(|r| crate::github::Remote::of(&r.path).ok())
                 .map(|r| r.slug()),
+            "repos": self.repos(realm),
             "github_token": realm.secret(crate::github::TOKEN).is_some(),
             "policy": c.policy,
             "checks": c.checks,
@@ -1868,13 +1929,17 @@ impl App {
             .split('&')
             .find_map(|kv| kv.strip_prefix("since="))
             .and_then(|v| v.parse().ok());
-        let checks_required = !realm.config.checks.is_empty();
+        let repo = |state: &State| {
+            let r = self.hub.repo_of(realm, state);
+            (!r.checks.is_empty(), state.change.as_ref().map(|_| r.name))
+        };
         if let Some(live) = self.live(realm.name(), id) {
             let version = live.version.load(Ordering::SeqCst);
             if since == Some(version) {
                 return Ok(json!({"unchanged": true, "version": version}));
             }
             let state = live.snapshot.lock().unwrap().clone();
+            let (checks_required, repo_name) = repo(&state);
             let pending = live.pending.lock().unwrap().as_ref().map(|p| {
                 json!({
                     "id": p.id,
@@ -1893,10 +1958,12 @@ impl App {
                 "state": state,
                 "pending": pending,
                 "checks_required": checks_required,
+                "repo": repo_name,
                 "title": realm.run_titles().get(id),
             }));
         }
         let state = self.hub.load_run(realm, id)?;
+        let (checks_required, repo_name) = repo(&state);
         let live_elsewhere = self.hub.is_live(realm, id);
         Ok(json!({
             "version": 0,
@@ -1906,6 +1973,7 @@ impl App {
             "state": state,
             "pending": null,
             "checks_required": checks_required,
+            "repo": repo_name,
             "title": realm.run_titles().get(id),
         }))
     }
@@ -2150,6 +2218,11 @@ impl App {
             created_at: base
                 .as_ref()
                 .map_or_else(chrono::Utc::now, |o| o.created_at),
+            repo: body["repo"]
+                .as_str()
+                .map(str::trim)
+                .filter(|r| !r.is_empty())
+                .map(String::from),
             next_at: None,
             fingerprint: None,
             last_run: base.as_ref().and_then(|o| o.last_run.clone()),

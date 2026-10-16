@@ -199,6 +199,16 @@ airth check <run>   # re-run the checks
 
 The app shows the same: a change panel with the files, the checks, the diff, and Adopt or Discard. If the checks fail, an "Ask Airth to fix" button sends their output back to the agent.
 
+**Several repositories.** A realm can work in more than one repository: its own folder when it is one, plus the ones you connect (Settings → Repositories, or `airth realm repo add <url or folder>`). A URL is cloned next to the realm's folder; a folder is used where it is. Each repository has its own checks (detected for Cargo, npm, pnpm, yarn and Go projects) and its own delivery. A chat picks the repository it works in (the picker next to the model, or `airth run --repo <name>`), a routine too (`airth objective add … --repo <name>`); memory, North Star and routines stay shared. A chat can read the realm's other repositories, never another realm's.
+
+```bash
+airth realm repo add https://github.com/acme/site   # clone and connect
+airth realm repo add ~/Code/api --name api          # connect a checkout
+airth realm repo checks api "go test ./..."
+airth realm repo delivery site pr
+airth realm repo list
+```
+
 **Several chats at once.** Each chat starts from your branch as it was. Before a change is adopted, Airth merges in what your branch got since, runs the checks again on the result, and only then merges: what lands is what was checked. After an adoption, the realm's other open changes are updated the same way, so a conflict shows early, in the chat it concerns, with a "Resolve with Airth" button: the chat resolves it itself, keeping its own intent and what changed meanwhile, then the checks run again. The panel also tells when two open chats touch the same files. Adoption refuses to overwrite edits you have not committed (it names the files).
 
 ```bash
