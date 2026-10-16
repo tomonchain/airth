@@ -363,6 +363,16 @@ src/
   state.rs        persisted run state, plans
 ```
 
+## Contributing
+
+To build from source, clone the repo and run `cargo install --path .`. Every change must pass:
+
+- `cargo fmt --check` (formatting)
+- `cargo clippy --all-targets -- -D warnings` (linting)
+- `cargo test` (tests)
+
+Changes are reviewed as pull requests on GitHub. Work in your own fork or branch, and the runtime will run the checks before the owner reviews your diff.
+
 ## License
 
 Airth is **fair source**, under the [Functional Source License 1.1, Apache 2.0 future license](LICENSE.md) (FSL-1.1-ALv2):
