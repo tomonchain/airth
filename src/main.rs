@@ -20,6 +20,7 @@ mod notify;
 mod objective;
 mod owner;
 mod permissions;
+mod projects;
 mod realm;
 mod release;
 mod runtime;

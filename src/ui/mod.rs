@@ -946,6 +946,136 @@ impl App {
                 }
                 json_response(200, self.realm_detail(&realm)?)
             }
+            (Method::Get, ["realms", r, "projects"]) => {
+                json_response(200, self.projects(&self.realm(r)?)?)
+            }
+            (Method::Post, ["realms", r, "projects"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
+                let p = realm
+                    .projects()
+                    .create(&text("name"), &text("goal"), &text("why"))?;
+                if body["focus"].as_bool() == Some(true) {
+                    realm.projects().set_focus(Some(&p.id))?;
+                }
+                json_response(
+                    200,
+                    json!({"id": p.id, "projects": self.projects(&realm)?["projects"]}),
+                )
+            }
+            (Method::Patch, ["realms", r, "projects", id]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let store = realm.projects();
+                store.edit(
+                    id,
+                    body["name"].as_str(),
+                    body["goal"].as_str(),
+                    body["why"].as_str(),
+                    body["status"]
+                        .as_str()
+                        .map(crate::projects::ProjectStatus::parse)
+                        .transpose()?,
+                )?;
+                match body["focus"].as_bool() {
+                    Some(true) => store.set_focus(Some(id))?,
+                    Some(false) if store.get(id)?.focus => store.set_focus(None)?,
+                    _ => {}
+                }
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "projects", id]) => {
+                let realm = self.realm(r)?;
+                if realm.projects().get(id)?.focus {
+                    self.hub.schedule_north_star(&realm, None)?;
+                }
+                realm.projects().remove(id)?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Put, ["realms", r, "projects", id, "milestones"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let items: Vec<(String, String)> = body["milestones"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|m| {
+                        (
+                            m["title"].as_str().unwrap_or_default().to_string(),
+                            m["done_when"].as_str().unwrap_or_default().to_string(),
+                        )
+                    })
+                    .collect();
+                realm.projects().set_milestones(id, &items)?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Patch, ["realms", r, "projects", id, "milestones", m]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let status = body["status"]
+                    .as_str()
+                    .map(crate::northstar::Status::parse)
+                    .transpose()?;
+                realm
+                    .projects()
+                    .update_milestone(id, m, status, body["note"].as_str(), None)?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Post, ["realms", r, "projects", id, "tasks"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let opt = |k: &str| body[k].as_str().map(str::trim).filter(|v| !v.is_empty());
+                if let Some(repo) = opt("repo") {
+                    realm.repo(Some(repo))?;
+                }
+                realm.projects().add_task(
+                    id,
+                    body["title"].as_str().unwrap_or_default(),
+                    body["notes"].as_str().unwrap_or_default(),
+                    opt("milestone"),
+                    opt("repo"),
+                )?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Patch, ["realms", r, "projects", id, "tasks", t]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                if let Some(repo) = body["repo"].as_str().filter(|v| !v.is_empty()) {
+                    realm.repo(Some(repo))?;
+                }
+                realm.projects().edit_task(
+                    id,
+                    t,
+                    body["title"].as_str(),
+                    body["notes"].as_str(),
+                    body["status"]
+                        .as_str()
+                        .map(crate::projects::TaskStatus::parse)
+                        .transpose()?,
+                    body["milestone"].as_str(),
+                    body["repo"].as_str(),
+                )?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Delete, ["realms", r, "projects", id, "tasks", t]) => {
+                let realm = self.realm(r)?;
+                realm.projects().remove_task(id, t)?;
+                json_response(200, self.projects(&realm)?)
+            }
+            (Method::Post, ["realms", r, "projects", id, "tasks", t, "run"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let choice = self.model_choice(&realm, &body)?;
+                let mut state = self.hub.start_task(&realm, id, t)?;
+                if choice.is_some() {
+                    state.model_choice = choice;
+                    state.save()?;
+                }
+                let run = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": run}))
+            }
             (Method::Put, ["realms", r, "northstar"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
@@ -1047,11 +1177,19 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let choice = self.model_choice(&realm, &body)?;
+                let project = body["project"].as_str().filter(|p| !p.is_empty());
+                if let Some(p) = project {
+                    realm.projects().get(p)?;
+                }
                 let mut state = self.hub.create_run_in(
                     &realm,
                     body["objective"].as_str().unwrap_or_default(),
                     body["repo"].as_str(),
                 )?;
+                if let Some(p) = project {
+                    state.project = Some(p.to_string());
+                    state.save()?;
+                }
                 if choice.is_some() {
                     state.model_choice = choice;
                     state.save()?;
@@ -1716,6 +1854,32 @@ impl App {
         }))
     }
 
+    /// The realm's projects for the app: each task says whether a chat is
+    /// working on it now.
+    fn projects(&self, realm: &Realm) -> Result<Value> {
+        let list: Vec<Value> = realm
+            .projects()
+            .list()?
+            .into_iter()
+            .map(|p| {
+                let (done, total) = p.as_north_star().progress();
+                let mut v = json!(p);
+                v["done"] = json!(done);
+                v["total"] = json!(total);
+                if let Some(tasks) = v["tasks"].as_array_mut() {
+                    for t in tasks {
+                        let live = t["run"].as_str().is_some_and(|run| {
+                            self.live(realm.name(), run).is_some() || self.hub.is_live(realm, run)
+                        });
+                        t["live"] = json!(live);
+                    }
+                }
+                v
+            })
+            .collect();
+        Ok(json!({"projects": list}))
+    }
+
     /// The realm's repositories for the app, with where each one lives on GitHub.
     fn repos(&self, realm: &Realm) -> Vec<Value> {
         realm
@@ -1797,6 +1961,7 @@ impl App {
         let (done, total) = star.progress();
         let objective = realm.objectives().get(crate::northstar::OBJECTIVE_ID).ok();
         let mut v = json!(star);
+        v["project"] = json!(realm.projects().focus()?.map(|p| p.id));
         v["done"] = json!(done);
         v["total"] = json!(total);
         v["next"] = json!(star.next().map(|m| &m.id));
@@ -1913,6 +2078,7 @@ impl App {
                     "change": r.change.map(|c| c.as_str()),
                     "checks_passed": r.checks_passed,
                     "touches": r.touches,
+                    "project": r.project,
                     "conflicts": r.conflicts,
                     "pull_request": r.pull_request,
                     "plan_done": r.plan_done,
@@ -2219,6 +2385,11 @@ impl App {
                 .as_ref()
                 .map_or_else(chrono::Utc::now, |o| o.created_at),
             repo: body["repo"]
+                .as_str()
+                .map(str::trim)
+                .filter(|r| !r.is_empty())
+                .map(String::from),
+            project: body["project"]
                 .as_str()
                 .map(str::trim)
                 .filter(|r| !r.is_empty())

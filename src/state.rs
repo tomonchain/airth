@@ -210,6 +210,11 @@ pub struct State {
     /// started to advance it).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub north_star: bool,
+    /// The realm project the run belongs to, and the task of it it works on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_task: Option<String>,
     /// What the run was told about its realm when it started. Every drive
     /// sends it unchanged, so the provider's cache of the conversation stays
     /// valid; later changes are sent as a message (`context_update`).
@@ -255,6 +260,8 @@ impl State {
             model_choice: None,
             answered_by: None,
             north_star: false,
+            project: None,
+            project_task: None,
             path,
         }
     }

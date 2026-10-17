@@ -125,6 +125,16 @@ airth northstar milestone m2 done    # set a status yourself
 airth northstar daily "every 3h"     # or "off"
 ```
 
+## Projects: goals, milestones and a board
+
+A realm can hold several **projects** (Projects in the sidebar): a goal, why it matters, milestones, and a board of **tasks** (To do, In progress, Review, Done). The North Star is the project marked as the focus; any project can become it.
+
+- **Hand a task to Airth** (▶ on its card): a chat starts in the task's repository, told about the project, the milestone and the task's details. The card then moves by itself: in progress while the chat works, in review once its change waits for you (or its pull request is open), done once you adopt it (or the pull request is merged), back to do with the reason if the chat fails or you discard its change.
+- Move cards yourself by dragging them; click one to edit its details, milestone and repository.
+- A chat started from New chat, or a routine, can belong to a project (the project picker next to the model): it is told about the project.
+
+Projects live in the realm's `projects.json`; a North Star from an older Airth becomes the focus project.
+
 ## Skills: Airth extends itself
 
 When a run needs a capability Airth lacks, it can **propose a skill**: a small program with tests that would become a new tool. You decide what happens next:
@@ -347,7 +357,8 @@ src/
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
   objective.rs    persistent objectives, schedules, file watches
-  northstar.rs    a realm's North Star: goal, milestones, progress
+  northstar.rs    a realm's North Star (its focus project): goal, milestones, progress
+  projects.rs     a realm's projects: goals, milestones, tasks that move with their chats
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls
   notify.rs       the owner's inbox

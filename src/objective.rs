@@ -80,6 +80,9 @@ pub struct Objective {
     /// The realm repository its runs work in (None: the realm's root).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// The realm project its runs belong to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// When the schedule fires next.
     #[serde(default)]
     pub next_at: Option<DateTime<Utc>>,
@@ -403,6 +406,7 @@ mod tests {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
+            project: None,
             next_at: None,
             fingerprint: None,
             last_run: None,

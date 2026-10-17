@@ -329,6 +329,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                 enabled: true,
                 created_at: chrono::Utc::now(),
                 repo,
+                project: None,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,

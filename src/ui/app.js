@@ -304,6 +304,8 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
   if ((m = h.match(/^#\/r\/([^/]+)\/(?:routines|objectives)/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/northstar/))) return { view: "northstar", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/projects\/([^/?#]+)/))) return { view: "project", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/projects/))) return { view: "projects", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
@@ -379,7 +381,7 @@ async function selectRealm(name) {
   app.runs = [];
   app.realmDetail = null;
   try { localStorage.setItem("airth-realm", name); } catch {}
-  await Promise.all([refreshRuns(), refreshRealmDetail()]);
+  await Promise.all([refreshRuns(), refreshRealmDetail(), loadProjects(true)]);
 }
 
 // ---------- sidebar ----------
@@ -438,6 +440,7 @@ function renderNav() {
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
     navLink(r ? `#/r/${r}` : null, "pencil", "New chat", v === "new"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
+    navLink(r ? `#/r/${r}/projects` : null, "listCheck", "Projects", v === "projects" || v === "project" || v === "northstar"),
     navLink("#/inbox", "inbox", "Inbox", v === "inbox", unread > 0 && h("span", { class: "count" }, String(unread))),
     navLink(r ? `#/r/${r}/routines` : null, "clock", "Routines", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
@@ -694,6 +697,8 @@ function renderMain() {
     case "documents": return renderDocuments(main);
     case "objectives": return renderObjectives(main);
     case "northstar": return renderNorthStar(main);
+    case "projects": return renderProjects(main);
+    case "project": return renderProject(main, app.route.id);
     case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
@@ -762,6 +767,43 @@ document.addEventListener("mousedown", (e) => {
 
 /** "Auto ▾": which model answers this request. get/set read and store the choice.
  *  `auto` renames the first entry ({label, sub}), e.g. "None" for an optional model. */
+/** The project a new chat belongs to: the last one picked, if it still exists (none by default). */
+function chosenProject() {
+  let saved = null;
+  try { saved = localStorage.getItem("airth-project:" + app.realm); } catch {}
+  return projectsNow().some((p) => p.id === saved && p.status === "active") ? saved : "";
+}
+
+/** Which project a new chat belongs to, next to the model pill (once the realm has projects). */
+function projectPicker() {
+  const choices = () => [{ value: "", label: "No project", sub: "a chat on its own" },
+    ...projectsNow().filter((p) => p.status === "active").map((p) => ({ value: p.id, label: (p.focus ? "★ " : "") + p.name, sub: p.goal }))];
+  const label = h("span", { class: "mp-label" });
+  const btn = h("button", { class: "model-pill", type: "button", title: "Which project the chat belongs to", "aria-haspopup": "true" }, icon("listCheck"), label, h("span", { class: "mp-chev" }, "▾"));
+  const wrap = h("span", { class: "mp" }, btn);
+  const refresh = () => {
+    const c = choices().find((x) => x.value === chosenProject());
+    label.textContent = c && c.value ? c.label : "Project";
+    btn.classList.toggle("chosen", !!chosenProject());
+    wrap.hidden = choices().length < 2;
+  };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (modelUi.open) { modelUi.open.remove(); modelUi.open = null; return; }
+    const menu = h("div", { class: "mp-menu", role: "menu" },
+      h("div", { class: "mp-list" }, choices().map((c) => h("button", { type: "button", class: "mp-item" + (c.value === chosenProject() ? " on" : ""), role: "menuitem",
+        onclick: () => {
+          try { localStorage.setItem("airth-project:" + app.realm, c.value); } catch { /* per window only */ }
+          refresh(); menu.remove(); modelUi.open = null;
+        } }, h("span", { class: "grow" }, c.label, c.sub && h("span", { class: "mp-sub" }, c.sub)), c.value === chosenProject() && icon("check")))));
+    wrap.append(menu);
+    modelUi.open = menu;
+  });
+  refresh();
+  if (!app.projects || app.projects.realm !== app.realm) loadProjects().then(refresh);
+  return wrap;
+}
+
 /** The realm's repositories a new chat can work in ("" is the realm's folder, when it is not one). */
 function repoChoices() {
   const repos = (app.realmDetail && app.realmDetail.repos) || [];
@@ -894,7 +936,7 @@ function saveDraft(key, text) {
   drafts.set(key, text.trim() ? text : "");
 }
 
-function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model, repo }) {
+function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model, repo, project }) {
   const ta = h("textarea", { rows, placeholder, disabled, "aria-label": placeholder });
   if (draftKey && drafts.get(draftKey)) {
     ta.value = drafts.get(draftKey);
@@ -940,7 +982,8 @@ function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = fal
   btn.addEventListener("click", submit);
   const picker = model ? modelPicker(model) : null;
   const repoEl = repo ? repoPicker(repo) : null;
-  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, repoEl, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
+  const projectEl = project ? projectPicker() : null;
+  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, projectEl, repoEl, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
   return { el, ta, btn, errorEl, picker, block: (b) => { blocked = b; sync(); } };
 }
 
@@ -1003,9 +1046,257 @@ async function startNorthStarRun(what, realm = app.realm) {
   } catch (e) { flash(e.message, true); }
 }
 
-/** The North Star page: the goal, its milestones and how Airth pushes it (not part of "New chat"). */
+/** The North Star page: the focus project's page, or where to set one. */
 function renderNorthStar(main) {
+  const ns = northStar();
+  if (ns && ns.project) return renderProject(main, ns.project);
   page(main, "North Star", "The one goal of this realm. Every chat sees it and prefers the work that moves it forward.", northStarCard());
+}
+
+// ---------- projects ----------
+//
+// A realm's projects: a goal, milestones (the stages) and tasks on a board.
+// Tasks Airth works on move by themselves with their chat. The focus project
+// is the North Star (its card above handles the goal, milestones and rhythm).
+
+const projectUi = { creating: false, editing: false, confirm: null, task: null, adding: "", poll: null };
+const TASK_COLS = [["todo", "To do"], ["doing", "In progress"], ["review", "Review"], ["done", "Done"]];
+
+/** The realm's projects, kept for the pickers and headers (loaded once per realm). */
+async function loadProjects(force) {
+  const realm = app.realm;
+  if (!realm) return [];
+  if (!force && app.projects && app.projects.realm === realm) return app.projects.list;
+  try {
+    const { projects } = await api(`${realmPath(realm)}/projects`);
+    app.projects = { realm, list: projects };
+  } catch { app.projects = { realm, list: [] }; }
+  return app.projects.list;
+}
+const projectsNow = () => (app.projects && app.projects.realm === app.realm ? app.projects.list : []);
+
+async function projectCall(path, body, method) {
+  const r = await api(`${realmPath(app.realm)}/projects${path}`, body, method);
+  if (r && r.projects) app.projects = { realm: app.realm, list: r.projects };
+  if (path === "" || /^\/[^/]+$/.test(path)) await refreshRealmDetail();
+  renderSidebar();
+  return r;
+}
+
+async function renderProjects(main) {
+  const realm = app.realm;
+  const head = h("div", { class: "page-head" }, h("h1", null, "Projects"),
+    !projectUi.creating && h("button", { class: "btn primary", type: "button", onclick: () => { projectUi.creating = true; renderMain(); } }, icon("plus"), "New project"));
+  main.append(h("div", { class: "page" }, h("div", { class: "page-inner" }, head,
+    h("p", { class: "sub" }, "What you pursue in this realm. Each project has a goal, milestones and a board of tasks; Airth can take a task and the board follows its chat. The North Star is the project every chat keeps in sight."))));
+  const inner = $(".page-inner", main);
+  const list = await loadProjects(true);
+  if (app.route.view !== "projects" || app.realm !== realm) return;
+
+  if (projectUi.creating) {
+    const name = h("input", { type: "text", placeholder: "Name, e.g. Launch the site", autocomplete: "off" });
+    const goal = h("input", { type: "text", placeholder: "The goal: what done looks like, e.g. “The site is live and takes orders”" });
+    const why = h("input", { type: "text", placeholder: "Why it matters (optional)" });
+    const focus = h("input", { type: "checkbox", checked: !northStar() });
+    const create = async () => {
+      if (!name.value.trim()) return name.focus();
+      try {
+        const r = await projectCall("", { name: name.value, goal: goal.value, why: why.value, focus: focus.checked }, "POST");
+        projectUi.creating = false;
+        go(`#/r/${enc(realm)}/projects/${enc(r.id)}`);
+      } catch (e) { flash(e.message, true); }
+    };
+    for (const i of [name, goal, why]) i.addEventListener("keydown", (e) => { if (e.key === "Enter") create(); if (e.key === "Escape") { projectUi.creating = false; renderMain(); } });
+    inner.append(h("div", { class: "card project-new" },
+      h("div", { class: "strong" }, "New project"), name, goal, why,
+      h("label", { class: "toggle small" }, focus, h("span", null, "Make it the North Star", northStar() ? h("span", { class: "muted" }, ` (instead of “${northStar().goal}”)`) : null)),
+      h("div", { class: "row-end" },
+        h("button", { class: "btn ghost", type: "button", onclick: () => { projectUi.creating = false; renderMain(); } }, "Cancel"),
+        h("button", { class: "btn primary", type: "button", onclick: create }, "Create"))));
+    setTimeout(() => name.focus(), 30);
+  }
+
+  if (!list.length && !projectUi.creating) {
+    inner.append(h("div", { class: "routine-empty" },
+      h("div", { class: "routine-icon big", "aria-hidden": "true" }, icon("listCheck")),
+      h("div", { class: "strong" }, "No projects yet"),
+      h("p", { class: "muted small" }, "Launch a site, prepare a trip, ship a release… Give it a goal and tasks, and hand tasks to Airth."),
+      h("button", { class: "btn", type: "button", onclick: () => { projectUi.creating = true; renderMain(); } }, icon("plus"), "New project")));
+    return;
+  }
+  const order = (p) => (p.focus ? 0 : p.status === "active" ? 1 : p.status === "paused" ? 2 : 3);
+  inner.append(h("div", { class: "projects" }, [...list].sort((a, b) => order(a) - order(b)).map((p) => {
+    const count = (st) => p.tasks.filter((t) => t.status === st).length;
+    const working = p.tasks.some((t) => t.live);
+    const fill = h("span");
+    fill.style.width = p.total ? `${Math.round((100 * p.done) / p.total)}%` : "0";
+    return h("a", { class: "card project-card" + (p.status !== "active" ? " off" : ""), href: `#/r/${enc(realm)}/projects/${enc(p.id)}` },
+      h("div", { class: "project-top" },
+        p.focus && h("span", { class: "ns-star", title: "The North Star" }, "★"),
+        h("span", { class: "project-name" }, p.name),
+        p.status !== "active" && h("span", { class: "chip" }, p.status),
+        working && h("span", { class: "chip running" }, "Airth is working")),
+      p.goal && h("div", { class: "project-goal" }, p.goal),
+      h("div", { class: "project-meta" },
+        p.total > 0 && h("span", { class: "project-progress", title: `${p.done} of ${p.total} milestones done` }, h("span", { class: "bar" }, fill), `${p.done}/${p.total}`),
+        p.tasks.length > 0 && h("span", null, `${count("todo")} to do · ${count("doing")} in progress · ${count("review")} to review · ${count("done")} done`),
+        !p.tasks.length && h("span", { class: "r-faint" }, "No tasks yet")));
+  })));
+}
+
+async function renderProject(main, id) {
+  const realm = app.realm;
+  const page_ = h("div", { class: "page" }, h("div", { class: "page-inner wide" }, working("Loading…")));
+  main.append(page_);
+  const list = await loadProjects(true);
+  if (app.realm !== realm || !["project", "northstar"].includes(app.route.view)) return;
+  drawProject(page_.firstChild, id);
+}
+
+function drawProject(inner, id) {
+  const realm = app.realm;
+  const p = projectsNow().find((x) => x.id === id);
+  clearTimeout(projectUi.poll);
+  if (!p) return inner.replaceChildren(h("p", { class: "muted" }, "This project does not exist (anymore). ", h("a", { href: `#/r/${enc(realm)}/projects` }, "All projects")));
+  const redraw = () => { if (inner.isConnected) drawProject(inner, id); };
+  const call = async (path, body, method, msg) => {
+    try { await projectCall(`/${enc(id)}${path}`, body, method); if (msg) flash(msg); } catch (e) { flash(e.message, true); }
+    redraw();
+  };
+  // While Airth works on a task, follow it.
+  if (p.tasks.some((t) => t.live)) projectUi.poll = setTimeout(async () => { if (inner.isConnected) { await loadProjects(true); redraw(); } }, 4000);
+
+  const act = (ic, label, onclick, cls = "") => h("button", { class: "c-act " + cls, type: "button", title: label, "aria-label": label, onclick }, icon(ic));
+  const del = projectUi.confirm === "project"
+    ? h("button", { class: "c-act sure", type: "button", onclick: async () => { projectUi.confirm = null; await call("", undefined, "DELETE", "Project deleted"); go(`#/r/${enc(realm)}/projects`); } }, "Delete it and its tasks?")
+    : act("trash", "Delete this project", () => { projectUi.confirm = "project"; redraw(); setTimeout(() => { if (projectUi.confirm === "project") { projectUi.confirm = null; redraw(); } }, 3000); }, "danger");
+  const head = h("div", { class: "project-page-head" },
+    h("a", { class: "back", href: `#/r/${enc(realm)}/projects` }, "← Projects"),
+    h("div", { class: "page-head" },
+      h("h1", null, p.focus && h("span", { class: "ns-star", title: "The North Star" }, "★ "), p.name),
+      h("div", { class: "project-tools" },
+        h("div", { class: "seg small" }, [["active", "Active"], ["paused", "Paused"], ["done", "Done"]].map(([v, label]) =>
+          h("button", { type: "button", class: p.status === v ? "on" : "", onclick: () => p.status !== v && call("", { status: v }, "PATCH") }, label))),
+        !p.focus && act("star", "Make it the North Star", () => call("", { focus: true }, "PATCH", "It is the North Star now")),
+        act("pencil", "Rename, change the goal", () => { projectUi.editing = !projectUi.editing; redraw(); }),
+        del)));
+
+  // Goal and milestones: the North Star card for the focus project.
+  let about;
+  if (projectUi.editing) {
+    const name = h("input", { type: "text", value: p.name });
+    const goal = h("input", { type: "text", value: p.goal, placeholder: "The goal" });
+    const why = h("input", { type: "text", value: p.why, placeholder: "Why it matters (optional)" });
+    about = h("div", { class: "card project-new" }, name, goal, why,
+      h("div", { class: "row-end" },
+        h("button", { class: "btn ghost", type: "button", onclick: () => { projectUi.editing = false; redraw(); } }, "Cancel"),
+        h("button", { class: "btn primary", type: "button", onclick: () => { projectUi.editing = false; call("", { name: name.value, goal: goal.value, why: why.value }, "PATCH", "Saved"); } }, "Save")));
+  } else if (p.focus) {
+    about = northStarCard();
+  } else {
+    about = h("div", { class: "project-about" },
+      p.goal ? h("div", { class: "ns-goal" }, p.goal) : h("p", { class: "muted small" }, "No goal written yet."),
+      p.why && h("div", { class: "ns-why" }, p.why),
+      projectMilestones(p, call));
+  }
+
+  inner.replaceChildren(head, about, h("h2", null, "Tasks"), taskBoard(p, call, redraw));
+}
+
+/** A project's milestones (the North Star has its own card): click a mark to move it, add one at the end. */
+function projectMilestones(p, call) {
+  const add = h("input", { type: "text", placeholder: "Add a milestone…", class: "ms-add" });
+  add.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !add.value.trim()) return;
+    const items = [...p.milestones.map((m) => ({ title: m.title, done_when: m.done_when })), { title: add.value, done_when: "" }];
+    call("/milestones", { milestones: items }, "PUT");
+  });
+  return h("div", { class: "project-ms" },
+    p.milestones.length > 0 && h("ol", { class: "ns-milestones" }, p.milestones.map((m) => h("li", { class: "ns-m " + m.status },
+      h("button", { class: "mark", type: "button", title: `${m.status}: click to mark ${NS_NEXT[m.status]}`, onclick: () => call(`/milestones/${enc(m.id)}`, { status: NS_NEXT[m.status] }, "PATCH") }, NS_MARK[m.status]),
+      h("div", { class: "grow" }, h("div", { class: "ns-m-title" }, m.title), m.note && h("div", { class: "muted small" }, m.note))))),
+    add);
+}
+
+/** The board: tasks by status. Drag a card to move it; Airth's tasks move with their chat. */
+function taskBoard(p, call, redraw) {
+  const realm = app.realm;
+  const repos = (app.realmDetail && app.realmDetail.repos) || [];
+  const act = (ic, label, onclick, cls = "") => h("button", { class: "c-act " + cls, type: "button", title: label, "aria-label": label,
+    onclick: (e) => { e.stopPropagation(); onclick(); } }, icon(ic));
+  const run = async (t) => {
+    try {
+      const model = storedModel(`new:${realm}`) || "auto";
+      const r = await api(`${realmPath(realm)}/projects/${enc(p.id)}/tasks/${enc(t.id)}/run`, { model });
+      await Promise.all([refreshRuns(), loadProjects(true)]);
+      go(`#/r/${enc(realm)}/run/${enc(r.id)}`);
+    } catch (e) { flash(e.message, true); }
+  };
+
+  const editor = (t) => {
+    const title = h("input", { type: "text", value: t.title });
+    const notes = h("textarea", { rows: 4, placeholder: "Details for Airth: what to do, what done means…" });
+    notes.value = t.notes || "";
+    const ms = h("select", null, h("option", { value: "" }, "No milestone"), p.milestones.map((m) => h("option", { value: m.id, selected: m.id === t.milestone }, `${m.id} · ${m.title}`)));
+    const repo = repos.length > 0 && h("select", null, h("option", { value: "" }, repos.some((r) => r.main) ? "The realm's folder" : "No repository"),
+      repos.filter((r) => !r.main).map((r) => h("option", { value: r.name, selected: r.name === t.repo }, r.name)));
+    const save = () => { projectUi.task = null; call(`/tasks/${enc(t.id)}`, { title: title.value, notes: notes.value, milestone: ms.value, repo: repo ? repo.value : undefined }, "PATCH"); };
+    return h("div", { class: "task-card editing" }, title, notes,
+      h("div", { class: "inline" }, p.milestones.length > 0 && ms, repo),
+      h("div", { class: "row-end" },
+        h("button", { class: "btn ghost small", type: "button", onclick: () => { projectUi.task = null; redraw(); } }, "Cancel"),
+        h("button", { class: "btn primary small", type: "button", onclick: save }, "Save")));
+  };
+
+  const card = (t) => {
+    if (projectUi.task === t.id) return editor(t);
+    const sure = projectUi.confirm === "task:" + t.id;
+    const el = h("div", { class: "task-card" + (t.live ? " live" : ""), draggable: "true", tabindex: "0",
+        title: t.notes || "", onclick: () => { projectUi.task = t.id; redraw(); } },
+      h("div", { class: "task-title" }, t.title),
+      h("div", { class: "task-meta" },
+        t.milestone && h("span", { class: "task-chip", title: (p.milestones.find((m) => m.id === t.milestone) || {}).title || "" }, t.milestone),
+        t.repo && h("span", { class: "task-chip" }, icon("code"), t.repo),
+        t.live && h("span", { class: "task-live" }, h("span", { class: "spinner" }), "Airth is on it"),
+        t.run && h("a", { class: "task-chip link", href: `#/r/${enc(realm)}/run/${enc(t.run)}`, onclick: (e) => e.stopPropagation(), title: "The chat" }, icon("pencil"), "chat")),
+      t.note && t.status !== "done" && h("div", { class: "task-note" }, t.note),
+      h("div", { class: "task-acts" },
+        (t.status === "todo" || (t.status === "doing" && !t.live)) && act("play", t.run ? "Run again with Airth" : "Run with Airth", () => run(t)),
+        sure ? h("button", { class: "c-act sure", type: "button", onclick: (e) => { e.stopPropagation(); projectUi.confirm = null; call(`/tasks/${enc(t.id)}`, undefined, "DELETE"); } }, "Delete?")
+          : act("trash", "Delete this task", () => { projectUi.confirm = "task:" + t.id; redraw(); setTimeout(() => { if (projectUi.confirm === "task:" + t.id) { projectUi.confirm = null; redraw(); } }, 3000); }, "danger")));
+    el.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); });
+    el.addEventListener("dragend", () => el.classList.remove("dragging"));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") { projectUi.task = t.id; redraw(); } });
+    return el;
+  };
+
+  const add = h("input", { type: "text", class: "task-add", placeholder: "+ Add a task", value: projectUi.adding });
+  add.addEventListener("input", () => { projectUi.adding = add.value; });
+  add.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !add.value.trim()) return;
+    projectUi.adding = "";
+    await call("/tasks", { title: add.value }, "POST");
+    const box = document.querySelector(".task-add");
+    if (box) box.focus();
+  });
+
+  return h("div", { class: "board" }, TASK_COLS.map(([st, label]) => {
+    const tasks = p.tasks.filter((t) => t.status === st);
+    const col = h("div", { class: "board-col", "data-status": st },
+      h("div", { class: "board-head" }, h("span", null, label), h("span", { class: "count" }, String(tasks.length))),
+      tasks.map(card),
+      st === "todo" && add);
+    col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("over"); });
+    col.addEventListener("dragleave", () => col.classList.remove("over"));
+    col.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col.classList.remove("over");
+      const t = e.dataTransfer.getData("text/plain");
+      const task = p.tasks.find((x) => x.id === t);
+      if (task && task.status !== st) call(`/tasks/${enc(t)}`, { status: st }, "PATCH");
+    });
+    return col;
+  }));
 }
 
 /** The North Star card: goal, progress, milestones, and how Airth pushes it. */
@@ -1245,6 +1536,7 @@ function renderNew(main) {
       set: (v) => storeModel(`new:${app.realm}`, v),
     },
     repo: {},
+    project: true,
     buttonLabel: "Start",
     rows: 3,
     // Without a realm model you can still pick one in the model menu.
@@ -1254,7 +1546,7 @@ function renderNew(main) {
       : "Every step that needs approval waits for you.",
     onSubmit: async (objective) => {
       const model = storedModel(`new:${app.realm}`) || "auto";
-      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model, repo: chosenRepo() || null });
+      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model, repo: chosenRepo() || null, project: chosenProject() || null });
       storeModel(`run:${app.realm}/${id}`, model);
       await refreshRuns();
       go(`#/r/${enc(app.realm)}/run/${enc(id)}`);
@@ -1434,6 +1726,8 @@ function renderRun() {
     h("span", { class: "rh-state " + statusClass }, STATUS_LABEL[status] || status),
     h("span", null, "updated " + ago(s.updated_at)),
     d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this chat works in" }, icon("code"), d.repo),
+    s.project && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/projects/${enc(s.project)}`, title: "The project this chat belongs to" }, icon("listCheck"),
+      ((projectsNow().find((p) => p.id === s.project) || {}).name || s.project) + (s.project_task ? ` · ${s.project_task}` : "")),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
     (s.north_star || (app.runs.find((r) => r.id === s.id) || {}).focus) && h("span", { class: "rh-tag ns", title: "This chat serves the realm's North Star" }, "★ North Star"),
     s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
@@ -3328,7 +3622,7 @@ async function renderObjectives(main) {
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
   inner.append(wizSlot, listEl);
   let list;
-  try { list = await api(`${realmPath(realm)}/objectives`); } catch (e) { return flash(e.message, true); }
+  try { [list] = await Promise.all([api(`${realmPath(realm)}/objectives`), loadProjects()]); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "objectives" || app.realm !== realm) return;
   const d = app.realmDetail;
   const refresh = (l) => { list = l; draw(); };
@@ -3414,7 +3708,9 @@ async function renderObjectives(main) {
     tokens: h("input", { type: "number", min: 1000, step: 1000, placeholder: "tokens" }),
     iterations: h("input", { type: "number", min: 1, placeholder: "model calls" }),
     repo: h("select", null, repoChoices().map((c) => h("option", { value: c.value }, `${c.label} · ${c.sub}`))),
+    project: h("select", null, h("option", { value: "" }, "No project"), projectsNow().filter((p) => p.status === "active").map((p) => h("option", { value: p.id }, (p.focus ? "★ " : "") + p.name))),
   };
+  const hasProjects = projectsNow().length > 0;
   const hasRepoChoice = repoChoices().length >= 2;
   const grantOptions = [
     { capability: "write", label: "Change files" },
@@ -3435,6 +3731,7 @@ async function renderObjectives(main) {
       id: f.id.value.trim(), objective: f.objective.value.trim(),
       enabled: editing ? editing.enabled : true,
       repo: hasRepoChoice ? f.repo.value || null : null,
+      project: hasProjects ? f.project.value || null : null,
       trigger: { kind: f.kind.value, every: f.every.value, path: f.path.value },
       approvals: grantOptions.filter((g) => g.box.checked).map((g) => ({ capability: g.capability, scope: g.scope || null })),
       approval_wait_minutes: num(f.wait) ?? 10,
@@ -3466,7 +3763,8 @@ async function renderObjectives(main) {
       f.objective,
       h("div", { class: "wiz-hint" }, "Write it like an instruction to a colleague: every time starts from it."),
       field("Name", f.id, "Shown in the list, and used by `airth objective run`."),
-      hasRepoChoice && field("Repository", f.repo, "Where each run works: it gets its own copy, which you review.")];
+      hasRepoChoice && field("Repository", f.repo, "Where each run works: it gets its own copy, which you review."),
+      hasProjects && field("Project", f.project, "Each run is told about the project and belongs to it.")];
     if (step === 1) return [
       h("div", { class: "wiz-q" }, "When should it run?"),
       h("div", { class: "tiles" },
@@ -3532,6 +3830,7 @@ async function renderObjectives(main) {
     for (const g of grantOptions) g.box.checked = !!o && o.approvals.some((a) => a.capability === g.capability && (a.scope || null) === (g.scope || null));
     f.wait.value = o ? o.approval_wait_minutes : 10;
     f.repo.value = o ? (o.repo || (repoChoices().find((c) => c.sub === "this realm's folder") || { value: "" }).value) : chosenRepo();
+    f.project.value = (o && o.project) || "";
     const b = (o && o.budget) || {};
     f.minutes.value = b.max_minutes ?? ""; f.tokens.value = b.max_tokens ?? ""; f.iterations.value = b.max_iterations ?? "";
     syncTrigger();

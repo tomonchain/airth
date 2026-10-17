@@ -521,6 +521,8 @@ pub struct Briefing {
     pub checks: Vec<String>,
     /// The realm's North Star and milestones, if the owner set one.
     pub north_star: Option<String>,
+    /// The project the run belongs to, and its task.
+    pub project: Option<String>,
 }
 
 impl Briefing {
@@ -535,6 +537,7 @@ impl Briefing {
             pull_requests: false,
             checks: Vec::new(),
             north_star: None,
+            project: None,
         }
     }
 }
@@ -609,6 +612,9 @@ pub fn run_context(b: &Briefing) -> String {
     }
     if let Some(star) = &b.north_star {
         out.push_str(&format!("{star}\n\n"));
+    }
+    if let Some(project) = b.project.as_deref().filter(|p| !p.is_empty()) {
+        out.push_str(&format!("{project}\n\n"));
     }
     out.trim_end().to_string()
 }

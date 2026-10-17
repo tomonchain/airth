@@ -20,6 +20,7 @@ use crate::northstar;
 use crate::notify::Kind;
 use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
+use crate::projects::{TaskStatus, TaskUpdate};
 use crate::realm::{PROVIDER_KEYS, Realm, Repo};
 use crate::runtime::Runtime;
 use crate::skill::{self, SkillRecord, SkillStatus, SkillStore};
@@ -79,6 +80,8 @@ pub struct RunSummary {
     pub conflicts: bool,
     /// For open changes delivered as pull requests: the pull request.
     pub pull_request: Option<PullRequest>,
+    /// The project the run belongs to.
+    pub project: Option<String>,
 }
 
 impl RunSummary {
@@ -531,12 +534,14 @@ impl Hub {
                 state.report = Some(format!("no model available: {e:#}"));
                 state.save()?;
                 let _ = self.objective_run_ended(realm, state);
+                self.sync_task(realm, state);
                 return Err(e);
             }
         };
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
         let model = self.model_for_drive(realm, &connections, state)?;
         state.save()?;
+        self.sync_task(realm, state);
         let workspace = self.workspace_for(realm, state)?;
         let context = frozen_context(
             state,
@@ -619,6 +624,7 @@ impl Hub {
             state.save()?;
             observer.changed(state);
         }
+        self.sync_task(realm, state);
         if state.skill.is_some()
             && let Err(e) = self.skill_run_ended(realm, state, &hooks.cancel)
         {
@@ -670,6 +676,7 @@ impl Hub {
             trigger: trigger.to_string(),
         });
         state.north_star = objective.id == northstar::OBJECTIVE_ID;
+        state.project = objective.project.clone();
         state.save()?;
 
         let fingerprint = match &objective.trigger {
@@ -927,6 +934,7 @@ impl Hub {
             isolation::adopt(change, &message)?;
             state.save()?;
         }
+        self.sync_task(realm, &state);
         self.update_open_changes(realm, &state.id);
         Ok(state)
     }
@@ -1012,7 +1020,82 @@ impl Hub {
         self.close_pull_request(realm, change);
         isolation::discard(change)?;
         state.save()?;
+        self.sync_task(realm, &state);
         Ok(state)
+    }
+
+    /// Start a chat on one of a project's tasks: it works in the task's
+    /// repository, is told about the project and the task, and moves the
+    /// task along. Saved, not started.
+    pub fn start_task(&self, realm: &Realm, project: &str, task: &str) -> Result<State> {
+        let p = realm.projects().get(project)?;
+        let t = p.task(task)?.clone();
+        if let Some(run) = &t.run
+            && t.status == TaskStatus::Doing
+            && self.is_live(realm, run)
+        {
+            bail!("a chat is already working on this task");
+        }
+        let mut state = self.create_run_in(realm, &t.title, t.repo.as_deref())?;
+        state.project = Some(p.id.clone());
+        state.project_task = Some(t.id.clone());
+        state.save()?;
+        realm.projects().record(
+            &p.id,
+            &t.id,
+            TaskUpdate {
+                status: TaskStatus::Doing,
+                run: Some(&state.id),
+                note: Some(String::new()),
+            },
+        )?;
+        Ok(state)
+    }
+
+    /// Move the task a run works on to match the run: in progress while it
+    /// works, in review once its change waits for the owner, done once
+    /// adopted or merged, back to do if it failed or was thrown away. Best
+    /// effort: a task deleted since is ignored.
+    fn sync_task(&self, realm: &Realm, state: &State) {
+        let (Some(project), Some(task)) = (&state.project, &state.project_task) else {
+            return;
+        };
+        let first = |t: &str| first_line(t, 160);
+        let (status, note) = match &state.change {
+            Some(c) if c.status == ChangeStatus::Adopted => (TaskStatus::Done, None),
+            Some(c) if c.status == ChangeStatus::Discarded => (
+                TaskStatus::Todo,
+                Some("Its change was discarded.".to_string()),
+            ),
+            _ => match state.status {
+                Status::Running => (TaskStatus::Doing, None),
+                Status::Completed
+                    if state
+                        .change
+                        .as_ref()
+                        .is_some_and(|c| c.has_changes() && !c.files.is_empty()) =>
+                {
+                    (TaskStatus::Review, None)
+                }
+                Status::Completed => (TaskStatus::Done, None),
+                Status::Failed => (
+                    TaskStatus::Todo,
+                    Some(format!(
+                        "The chat failed: {}",
+                        first(state.report.as_deref().unwrap_or("no reason given"))
+                    )),
+                ),
+                Status::Stopped => (TaskStatus::Todo, Some("The chat was stopped.".to_string())),
+            },
+        };
+        let update = TaskUpdate {
+            status,
+            run: Some(&state.id),
+            note,
+        };
+        if let Err(e) = realm.projects().record(project, task, update) {
+            eprintln!("could not update task {project}/{task}: {e:#}");
+        }
     }
 
     /// Where a new chat's worktree starts: the checkout's HEAD, or, in a
@@ -1349,6 +1432,7 @@ impl Hub {
             }
         };
         state.save()?;
+        self.sync_task(realm, &state);
         let title = match &event {
             PrEvent::Merged => Some((Kind::Completed, "merged")),
             PrEvent::Closed => Some((Kind::Stopped, "closed without merging")),
@@ -1430,6 +1514,7 @@ impl Hub {
         }
         record_merged(&gh, &remote, change);
         state.save()?;
+        self.sync_task(realm, &state);
         Ok(state)
     }
 
@@ -1771,6 +1856,7 @@ impl Hub {
             enabled: true,
             created_at: existing.as_ref().map_or_else(Utc::now, |o| o.created_at),
             repo: existing.as_ref().and_then(|o| o.repo.clone()),
+            project: existing.as_ref().and_then(|o| o.project.clone()),
             next_at: same.and_then(|o| o.next_at),
             fingerprint: None,
             last_run: existing.as_ref().and_then(|o| o.last_run.clone()),
@@ -1799,6 +1885,11 @@ impl Hub {
                 Some(_) => None,
                 None => realm.north_star().get()?.map(|s| s.prompt_section()),
             },
+            project: state
+                .project
+                .as_deref()
+                .and_then(|p| realm.projects().get(p).ok())
+                .map(|p| p.prompt_section(state.project_task.as_deref())),
         })
     }
 
@@ -1838,6 +1929,7 @@ impl Hub {
                     .as_ref()
                     .filter(|c| c.status == ChangeStatus::Open)
                     .and_then(|c| c.pull_request.clone()),
+                project: s.project.clone(),
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
                 id: s.id,
@@ -3541,6 +3633,93 @@ mod tests {
         assert!(hub.create_run_in(&realm, "x", Some("nope")).is_err());
     }
 
+    /// A task started from a project's board moves with its chat: in
+    /// progress, in review once its change waits, done once adopted; and back
+    /// to do, with the reason, when its chat fails.
+    #[test]
+    fn project_tasks_move_with_their_chats() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = Home::at(home_dir.path()).unwrap();
+        let repo = crate::isolation::tests::repo();
+        git_in(repo.path(), &["config", "user.name", "t"]);
+        git_in(repo.path(), &["config", "user.email", "t@t"]);
+        let realm = home
+            .create_realm(NewRealm {
+                name: "shop".into(),
+                description: String::new(),
+                root: Some(repo.path().to_path_buf()),
+                isolation: None,
+            })
+            .unwrap();
+        let store = realm.projects();
+        let p = store.create("Launch", "Shop live by May", "").unwrap();
+        store
+            .set_milestones(&p.id, &[("Landing page".into(), String::new())])
+            .unwrap();
+        store
+            .add_task(
+                &p.id,
+                "Write the landing page",
+                "One page, in French",
+                Some("m1"),
+                None,
+            )
+            .unwrap();
+        store
+            .add_task(&p.id, "Set up payments", "", None, None)
+            .unwrap();
+
+        let (hub, _, systems) = make_hub(
+            &home,
+            vec![
+                call(
+                    "1",
+                    "write_file",
+                    json!({"path": "index.html", "content": "<h1>Shop</h1>\n"}),
+                ),
+                done("Wrote the landing page."),
+            ],
+        );
+        let mut state = hub.start_task(&realm, &p.id, "t1").unwrap();
+        assert_eq!(state.objective, "Write the landing page");
+        assert_eq!(store.get(&p.id).unwrap().tasks[0].status, TaskStatus::Doing);
+        assert!(hub.start_task(&realm, &p.id, "nope").is_err());
+        hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true))
+            .unwrap();
+        let briefing = systems.lock().unwrap()[0].clone();
+        assert!(
+            briefing.contains("project \"Launch\": Shop live by May"),
+            "{briefing}"
+        );
+        assert!(
+            briefing.contains("task t1: Write the landing page"),
+            "{briefing}"
+        );
+        assert!(briefing.contains("One page, in French"), "{briefing}");
+        let task = store.get(&p.id).unwrap().tasks[0].clone();
+        assert_eq!(
+            (task.status, task.run.as_deref()),
+            (TaskStatus::Review, Some(state.id.as_str()))
+        );
+
+        hub.adopt(&realm, &state.id).unwrap();
+        let task = store.get(&p.id).unwrap().tasks[0].clone();
+        assert_eq!(task.status, TaskStatus::Done);
+        assert!(task.done_at.is_some());
+
+        // Out of script: the model is unreachable, the chat fails.
+        let (hub, _, _) = make_hub(&home, vec![]);
+        let mut state = hub.start_task(&realm, &p.id, "t2").unwrap();
+        let _ = hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true));
+        let task = store.get(&p.id).unwrap().tasks[1].clone();
+        assert_eq!(task.status, TaskStatus::Todo);
+        assert!(task.note.starts_with("The chat failed"), "{}", task.note);
+        assert_eq!(
+            hub.runs(&realm).unwrap().last().unwrap().project.as_deref(),
+            Some(p.id.as_str())
+        );
+    }
+
     #[test]
     fn failed_checks_block_adoption() {
         let home_dir = tempfile::tempdir().unwrap();
@@ -3844,6 +4023,7 @@ mod tests {
                 enabled: true,
                 created_at: Utc::now(),
                 repo: None,
+                project: None,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,
@@ -3956,6 +4136,7 @@ mod tests {
                 enabled: true,
                 created_at: Utc::now(),
                 repo: None,
+                project: None,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,

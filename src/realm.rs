@@ -6,7 +6,7 @@
 //!   realm.json    settings: root, policy, isolation, checks
 //!   memory.json   long-term memory (see memory.rs)
 //!   objectives.json  persistent objectives and their triggers (see objective.rs)
-//!   northstar.json   the realm's North Star and its milestones (see northstar.rs)
+//!   projects.json    projects, their milestones and tasks; the focus one is the North Star (see projects.rs)
 //!   skills/       skills: proposals, drafts, installed copies (see skill.rs)
 //!   secrets.env   credentials, KEY=VALUE, readable only by the owner
 //!   runs/         run states and locks
@@ -380,6 +380,10 @@ impl Realm {
 
     pub fn objectives(&self) -> ObjectiveStore {
         ObjectiveStore::new(self.dir.join("objectives.json"))
+    }
+
+    pub fn projects(&self) -> crate::projects::ProjectStore {
+        crate::projects::ProjectStore::new(&self.dir)
     }
 
     pub fn north_star(&self) -> crate::northstar::NorthStarStore {

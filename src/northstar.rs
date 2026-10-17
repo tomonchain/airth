@@ -1,17 +1,16 @@
 //! A realm's North Star: the one goal the owner wants the realm's work to
 //! serve, the milestones toward it (brainstormed with Airth), and which runs
-//! moved each one. Kept in `realms/<name>/northstar.json`.
+//! moved each one. It is the realm's focus project (see projects.rs).
 //!
 //! Only the owner sets or changes the goal. Runs see it in their briefing and
 //! record milestones and progress through the `north_star` tool, under the
 //! realm's memory rule.
 
-use crate::realm::write_atomic;
+use crate::projects::ProjectStore;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::path::Path;
 
 /// The permission scope of North Star updates (capability `memory`).
 pub const SCOPE: &str = "north star";
@@ -163,46 +162,34 @@ impl NorthStar {
     }
 }
 
-static LOCK: Mutex<()> = Mutex::new(());
-
+/// The realm's North Star: a view of its focus project (see projects.rs).
 pub struct NorthStarStore {
-    path: PathBuf,
+    projects: ProjectStore,
 }
 
 impl NorthStarStore {
+    /// `path` is the realm's `northstar.json`; the projects live next to it.
     pub fn new(path: impl AsRef<Path>) -> Self {
+        let dir = path.as_ref().parent().unwrap_or(Path::new("/"));
         Self {
-            path: path.as_ref().to_path_buf(),
+            projects: ProjectStore::new(dir),
         }
     }
 
     pub fn get(&self) -> Result<Option<NorthStar>> {
-        match std::fs::read_to_string(&self.path) {
-            Ok(text) => serde_json::from_str(&text)
-                .with_context(|| format!("parsing {}", self.path.display()))
-                .map(Some),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e).with_context(|| format!("reading {}", self.path.display())),
-        }
+        Ok(self.projects.focus()?.map(|p| p.as_north_star()))
     }
 
-    fn save(&self, star: &NorthStar) -> Result<()> {
-        write_atomic(&self.path, &serde_json::to_string_pretty(star)?)
+    fn focus_id(&self) -> Result<String> {
+        Ok(self
+            .projects
+            .focus()?
+            .context("no North Star is set in this realm (only the owner sets it)")?
+            .id)
     }
 
-    /// Change the North Star under the lock, and save it.
-    fn modify(&self, f: impl FnOnce(&mut NorthStar) -> Result<()>) -> Result<NorthStar> {
-        let _guard = LOCK.lock().unwrap();
-        let mut star = self
-            .get()?
-            .context("no North Star is set in this realm (only the owner sets it)")?;
-        f(&mut star)?;
-        star.updated_at = Utc::now();
-        self.save(&star)?;
-        Ok(star)
-    }
-
-    /// Set (or reword) the goal. Milestones are kept.
+    /// Set (or reword) the goal. Milestones are kept. Without a North Star,
+    /// this starts a project that is one.
     pub fn set_goal(&self, goal: &str, why: &str) -> Result<NorthStar> {
         let goal = goal.trim();
         if goal.is_empty() {
@@ -210,89 +197,49 @@ impl NorthStarStore {
         }
         check_len("the North Star", goal, MAX_GOAL)?;
         check_len("the why", why.trim(), MAX_GOAL)?;
-        let _guard = LOCK.lock().unwrap();
-        let now = Utc::now();
-        let star = match self.get()? {
-            Some(mut star) => {
-                if star.goal != goal {
-                    star.set_at = now;
+        self.projects.modify(|list| {
+            let now = Utc::now();
+            let index = match list.iter().position(|p| p.focus) {
+                Some(i) => i,
+                None => {
+                    let mut p = crate::projects::new_project(
+                        list,
+                        &crate::projects::short_name(goal),
+                        goal,
+                        why,
+                    )?;
+                    p.focus = true;
+                    list.push(p);
+                    list.len() - 1
                 }
-                star.goal = goal.to_string();
-                star.why = why.trim().to_string();
-                star.updated_at = now;
-                star
+            };
+            let p = &mut list[index];
+            if p.goal != goal {
+                p.set_at = now;
             }
-            None => NorthStar {
-                goal: goal.to_string(),
-                why: why.trim().to_string(),
-                milestones: Vec::new(),
-                set_at: now,
-                updated_at: now,
-            },
-        };
-        self.save(&star)?;
-        Ok(star)
+            p.goal = goal.to_string();
+            p.why = why.trim().to_string();
+            p.updated_at = now;
+            Ok(p.as_north_star())
+        })
     }
 
-    /// Forget the North Star; false if there was none.
+    /// Stop having a North Star; false if there was none. Its project stays,
+    /// with its milestones and tasks.
     pub fn clear(&self) -> Result<bool> {
-        let _guard = LOCK.lock().unwrap();
-        match std::fs::remove_file(&self.path) {
-            Ok(()) => Ok(true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e.into()),
+        if self.projects.focus()?.is_none() {
+            return Ok(false);
         }
+        self.projects.set_focus(None)?;
+        Ok(true)
     }
 
     /// Replace the milestones (title, done when), in order. A milestone with
     /// the same title as an existing one keeps its id, status and history.
     pub fn set_milestones(&self, items: &[(String, String)]) -> Result<NorthStar> {
-        if items.is_empty() || items.len() > MAX_MILESTONES {
-            bail!("give between 1 and {MAX_MILESTONES} milestones");
-        }
-        for (title, done_when) in items {
-            if title.trim().is_empty() {
-                bail!("a milestone has no title");
-            }
-            check_len("a milestone title", title.trim(), MAX_TITLE)?;
-            check_len("a milestone's done when", done_when.trim(), MAX_NOTE)?;
-        }
-        self.modify(|star| {
-            let key = |t: &str| t.trim().to_lowercase();
-            let mut old = std::mem::take(&mut star.milestones);
-            let mut next_id = old
-                .iter()
-                .filter_map(|m| m.id.strip_prefix('m')?.parse::<u32>().ok())
-                .max()
-                .unwrap_or(0);
-            for (title, done_when) in items {
-                let milestone = match old.iter().position(|m| key(&m.title) == key(title)) {
-                    Some(i) => {
-                        let mut m = old.remove(i);
-                        m.title = title.trim().to_string();
-                        if !done_when.trim().is_empty() {
-                            m.done_when = done_when.trim().to_string();
-                        }
-                        m
-                    }
-                    None => {
-                        next_id += 1;
-                        Milestone {
-                            id: format!("m{next_id}"),
-                            title: title.trim().to_string(),
-                            status: Status::Todo,
-                            done_when: done_when.trim().to_string(),
-                            note: String::new(),
-                            done_at: None,
-                            // Credited to runs that move it, not to the one defining it.
-                            runs: Vec::new(),
-                        }
-                    }
-                };
-                star.milestones.push(milestone);
-            }
-            Ok(())
-        })
+        check_milestones(items)?;
+        let id = self.focus_id()?;
+        Ok(self.projects.set_milestones(&id, items)?.as_north_star())
     }
 
     /// Record progress on a milestone: a new status, a note, and the run.
@@ -306,38 +253,103 @@ impl NorthStarStore {
         if let Some(note) = note {
             check_len("the note", note.trim(), MAX_NOTE)?;
         }
-        self.modify(|star| {
-            let ids: Vec<String> = star.milestones.iter().map(|m| m.id.clone()).collect();
-            let m = star
-                .milestones
-                .iter_mut()
-                .find(|m| m.id == id)
-                .with_context(|| {
-                    if ids.is_empty() {
-                        "there are no milestones yet: brainstorm them first".to_string()
-                    } else {
-                        format!("no milestone '{id}' (milestones: {})", ids.join(", "))
-                    }
-                })?;
-            if let Some(status) = status {
-                if status == Status::Done && m.status != Status::Done {
-                    m.done_at = Some(Utc::now());
-                } else if status != Status::Done {
-                    m.done_at = None;
-                }
-                m.status = status;
-            }
-            if let Some(note) = note.map(str::trim).filter(|n| !n.is_empty()) {
-                m.note = note.to_string();
-            }
-            if let Some(run) = run
-                && !m.runs.iter().any(|r| r == run)
-            {
-                m.runs.push(run.to_string());
-            }
-            Ok(())
-        })
+        let project = self.focus_id()?;
+        Ok(self
+            .projects
+            .update_milestone(&project, id, status, note, run)?
+            .as_north_star())
     }
+}
+
+/// Milestones as given (title, done when) are valid.
+pub(crate) fn check_milestones(items: &[(String, String)]) -> Result<()> {
+    if items.is_empty() || items.len() > MAX_MILESTONES {
+        bail!("give between 1 and {MAX_MILESTONES} milestones");
+    }
+    for (title, done_when) in items {
+        if title.trim().is_empty() {
+            bail!("a milestone has no title");
+        }
+        check_len("a milestone title", title.trim(), MAX_TITLE)?;
+        check_len("a milestone's done when", done_when.trim(), MAX_NOTE)?;
+    }
+    Ok(())
+}
+
+/// Replace `milestones` with `items`, in order; one with the same title as
+/// before keeps its id, status and history.
+pub(crate) fn merge_milestones(milestones: &mut Vec<Milestone>, items: &[(String, String)]) {
+    let key = |t: &str| t.trim().to_lowercase();
+    let mut old = std::mem::take(milestones);
+    let mut next_id = old
+        .iter()
+        .filter_map(|m| m.id.strip_prefix('m')?.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    for (title, done_when) in items {
+        let milestone = match old.iter().position(|m| key(&m.title) == key(title)) {
+            Some(i) => {
+                let mut m = old.remove(i);
+                m.title = title.trim().to_string();
+                if !done_when.trim().is_empty() {
+                    m.done_when = done_when.trim().to_string();
+                }
+                m
+            }
+            None => {
+                next_id += 1;
+                Milestone {
+                    id: format!("m{next_id}"),
+                    title: title.trim().to_string(),
+                    status: Status::Todo,
+                    done_when: done_when.trim().to_string(),
+                    note: String::new(),
+                    done_at: None,
+                    // Credited to runs that move it, not to the one defining it.
+                    runs: Vec::new(),
+                }
+            }
+        };
+        milestones.push(milestone);
+    }
+}
+
+/// Record progress on one of `milestones`: a new status, a note, and the run.
+pub(crate) fn update_milestone(
+    milestones: &mut [Milestone],
+    id: &str,
+    status: Option<Status>,
+    note: Option<&str>,
+    run: Option<&str>,
+) -> Result<()> {
+    let ids: Vec<String> = milestones.iter().map(|m| m.id.clone()).collect();
+    let m = milestones
+        .iter_mut()
+        .find(|m| m.id == id)
+        .with_context(|| {
+            if ids.is_empty() {
+                "there are no milestones yet: brainstorm them first".to_string()
+            } else {
+                format!("no milestone '{id}' (milestones: {})", ids.join(", "))
+            }
+        })?;
+    if let Some(status) = status {
+        if status == Status::Done && m.status != Status::Done {
+            m.done_at = Some(Utc::now());
+        } else if status != Status::Done {
+            m.done_at = None;
+        }
+        m.status = status;
+    }
+    if let Some(note) = note.map(str::trim).filter(|n| !n.is_empty()) {
+        m.note = note.to_string();
+    }
+    if let Some(run) = run
+        && !m.runs.iter().any(|r| r == run)
+    {
+        m.runs.push(run.to_string());
+    }
+    Ok(())
 }
 
 fn check_len(what: &str, text: &str, max: usize) -> Result<()> {
