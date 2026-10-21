@@ -141,6 +141,8 @@ pub struct Workspace {
     /// Values never shown to the model: replaced in every tool result.
     secrets: Vec<(String, String)>,
     sandboxed: bool,
+    /// Whether commands and requests may reach other machines.
+    network: bool,
 }
 
 impl Workspace {
@@ -155,6 +157,7 @@ impl Workspace {
             env: Vec::new(),
             secrets: Vec::new(),
             sandboxed: false,
+            network: true,
         })
     }
 
@@ -198,6 +201,17 @@ impl Workspace {
     pub fn with_sandbox(mut self, sandboxed: bool) -> Self {
         self.sandboxed = sandboxed;
         self
+    }
+
+    /// Cut the run off the network: commands by the sandbox, requests by the
+    /// `http_request` tool.
+    pub fn with_network(mut self, network: bool) -> Self {
+        self.network = network;
+        self
+    }
+
+    pub fn network(&self) -> bool {
+        self.network
     }
 
     pub fn rules(&self) -> &[(PathBuf, Access)] {

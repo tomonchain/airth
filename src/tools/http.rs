@@ -198,6 +198,9 @@ impl Tool for HttpRequest {
     }
 
     fn execute(&self, input: &Value, ws: &Workspace, _: &CancelToken) -> Result<String> {
+        if !ws.network() {
+            bail!("network access is off for this realm");
+        }
         let p = self.prepare(input)?;
         let mut builder = reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::none())

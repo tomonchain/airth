@@ -153,6 +153,9 @@ pub struct RealmConfig {
     pub integrations: Vec<Integration>,
     #[serde(default)]
     pub archived: bool,
+    /// Runs may not reach the network (commands are cut off by the sandbox).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub offline: bool,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
 }
@@ -624,6 +627,7 @@ mod tests {
                 share_owner_profile: true,
                 integrations: vec![],
                 archived: false,
+                offline: false,
                 created_at: Utc::now(),
             },
         )

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 
 /// What a tool is capable of doing. More granular capabilities can be added later.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Capability {
     Read,

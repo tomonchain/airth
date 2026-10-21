@@ -1569,7 +1569,8 @@ impl Hub {
             }
             return Ok(ws
                 .with_secrets(Vec::new(), self.redactions(realm)?)
-                .with_sandbox(true));
+                .with_sandbox(true)
+                .with_network(!realm.config.offline));
         }
         let root = match &state.change {
             Some(c) if c.status == ChangeStatus::Open => c.path.clone(),
@@ -1606,7 +1607,8 @@ impl Hub {
         }
         Ok(ws
             .with_secrets(env, self.redactions(realm)?)
-            .with_sandbox(true))
+            .with_sandbox(true)
+            .with_network(!realm.config.offline))
     }
 
     /// What no run of `realm` may reach: Airth's home and other realms' folders.
@@ -2770,7 +2772,7 @@ mod tests {
             .collect();
         assert!(focus.contains(&(brainstorm.id.clone(), true)));
         assert!(focus.contains(&(push.id.clone(), true)));
-        assert!(focus.contains(&(other.id.clone(), false)));
+        assert!(focus.contains(&(other.id, false)));
 
         // Denied by the owner, nothing is recorded.
         let (hub, _, _) = make_hub(
@@ -2815,7 +2817,7 @@ mod tests {
     #[test]
     fn skills_expose_tools_with_capabilities() {
         let f = fixture();
-        let skills = Hub::new(f.home.clone()).skills();
+        let skills = Hub::new(f.home).skills();
         let cap = |name: &str| skills.iter().find(|s| s.name == name).unwrap().capability;
         assert_eq!(cap("read_file"), Capability::Read);
         assert_eq!(cap("write_file"), Capability::Write);
@@ -3429,7 +3431,7 @@ mod tests {
         assert!(refused(&hub).contains("failed"));
         let status = hub.pull_request_status(&realm, &state.id).unwrap().unwrap();
         assert_eq!(
-            (status.checks, status.failed.clone()),
+            (status.checks, status.failed),
             (Checks::Failing, vec!["check".to_string()])
         );
         fake.lock().unwrap()["checks"] = json!("success");

@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 24. Benchmarks drive real runs through the hub, in throwaway realms, and verify outcomes themselves
+
+Airth Bench (`src/bench/`) measures the harness, so it must exercise the harness: each task is a normal run created and driven by `Hub::drive`, with the same agent loop, tools, permission gate, sandbox, compaction and usage accounting as a chat. There is no second runtime. What differs is around the run:
+
+- Each attempt gets a fresh workspace in the system temp directory and a realm of its own under `benchmarks/work/`, outside `realms/`: never listed, never shown, never one of the owner's. It does not share the owner profile; its credentials and memory are the task's synthetic ones. Both are deleted afterwards; the run's full state is kept as the trace.
+- The approver says no to everything, so the task's policy alone decides (by default: files and commands allowed, network, skills and apps denied). Unattended commands are only safe where the OS confines them, so tasks that run commands, or are verified by one, are skipped without the sandbox.
+- Realms gained an `offline` setting, enforced rather than requested: `http_request` refuses, and the sandbox profile denies outbound IP connections. Bench realms are offline unless a task asks for the network.
+- Success is decided by the task's checks on the workspace and the conversation, never by the agent's report. A security task also needs evidence the attack reached the agent (a tool call aimed at it); if the model only declined, the result is inconclusive, since it says nothing about what Airth would have prevented.
+- Metrics come from what runs already record (events, per-call usage, compactions); costs are estimates from list prices and are labelled so. Rates exclude skipped tasks. Comparisons call a drop *confirmed* only past a two-proportion test (z ≥ 1.96); a new security failure always is.
+
+Cost: a benchmark spends real tokens on the owner's key, and a task's outcome still depends on a stochastic model, so single runs show trends, not proof; repeats (`--repeat`) are the way to tell. External agents (Claude Code, Codex) would need an adapter that runs the same tasks and checks; not built yet.
+
 ## 23. Requests are shaped for the provider's prompt cache
 
 An agent re-sends its whole conversation on every model call, so most of a run's cost is input that the provider has already seen. Requests are built so that this input is read from the cache (about a tenth of the price, or less) instead of being written again:

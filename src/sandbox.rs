@@ -40,18 +40,22 @@ pub fn program() -> &'static str {
     SANDBOX_EXEC
 }
 
-/// A sandbox profile enforcing `rules` on file contents. Everything else
-/// (network, processes, metadata) is left as is.
+/// A sandbox profile enforcing `rules` on file contents, and cutting
+/// commands off the network when `network` is false (local sockets, DNS
+/// included, still work). Processes and metadata are left as is.
 ///
 /// In this profile language later rules win, so rules are emitted from the
 /// shortest path to the longest: the most specific rule decides, as it does
 /// for the file tools. Only reading file *contents* is denied, not metadata,
 /// so a command can still traverse a denied directory to reach an allowed one
 /// inside it.
-pub fn profile(rules: &[(PathBuf, Access)]) -> String {
+pub fn profile(rules: &[(PathBuf, Access)], network: bool) -> String {
     let mut rules: Vec<&(PathBuf, Access)> = rules.iter().collect();
     rules.sort_by_key(|(p, _)| p.components().count());
     let mut out = String::from("(version 1)\n(allow default)\n");
+    if !network {
+        out.push_str("(deny network-outbound (remote ip))\n");
+    }
     for (path, access) in rules {
         let p = quote(path);
         out.push_str(&match access {
@@ -84,7 +88,9 @@ mod tests {
             (PathBuf::from("/home/me/.airth"), Access::None),
             (PathBuf::from("/home/me/repo"), Access::Read),
         ];
-        let p = profile(&rules);
+        let p = profile(&rules, true);
+        assert!(!p.contains("network"));
+        assert!(profile(&rules, false).contains("(deny network-outbound (remote ip))"));
         let deny = p.find("\"/home/me/.airth\"").unwrap();
         let allow = p.find("worktrees/r1").unwrap();
         assert!(deny < allow, "{p}");

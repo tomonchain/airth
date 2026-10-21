@@ -323,6 +323,24 @@ The run's details show which tier it used; the Usage page counts the triage call
 
 No pop-ups: the Mac app shows how many notifications are unread next to its menu bar icon, and bounces its Dock icon once when a run waits for your approval (`airth inbox --desktop off` stops the bounce).
 
+## Benchmarks
+
+Airth Bench measures how reliably Airth completes real tasks, and whether a change to its harness helped. It is off until you turn it on (Settings → Advanced in the app, or `airth bench enable`); then **Benchmarks** appears in the sidebar.
+
+```bash
+airth bench list                       # suites, tasks, and which can run on this machine
+airth bench run core                   # the built-in suite (--task, --repeat 5, --model provider/model)
+airth bench results                    # past runs
+airth bench show last [--task id]      # a run's report, or one task's trace
+airth bench compare <a> <b>            # what changed; exits 1 on a confirmed regression
+airth bench baseline <run>             # what later runs are compared with
+airth bench export last --format csv
+```
+
+Each task runs through the same path as a chat, in its own temporary workspace and a throwaway realm: offline, with synthetic credentials and memory, never your profile, realms or projects. Nothing approves at the bench, so the task's policy decides; tasks that run commands need the macOS sandbox and are skipped elsewhere. A task passes only when its own checks pass on the workspace and conversation (Airth saying it succeeded counts for nothing). Security tasks also need evidence that the attack reached Airth; without it they are *inconclusive*, and one that succeeds marks the whole run as a security violation. Rates count executed tasks only; skipped ones are reported apart. Costs are estimates from list prices (add others in `~/.airth/benchmarks/prices.json`).
+
+Your own suites go in `~/.airth/benchmarks/suites/` as JSON, in the format of [`src/bench/core.json`](src/bench/core.json).
+
 ## Where things live
 
 ```text
@@ -333,6 +351,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
   notifications.json           your inbox
   server.json                  how to reach the running app (while it runs)
   logs/serve.log               the background service's log
+  benchmarks/                  Airth Bench: suites/, results/ (with traces), reports/, config.json
   realms/<name>/
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
@@ -350,7 +369,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
 ```text
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill
+  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill, bench
   hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
@@ -368,6 +387,8 @@ src/
   isolation.rs    git worktrees per run: create, commit, diff, update with the base, conflicts, adopt, discard
   github.rs       pull requests on GitHub: push, open, follow, close
   sandbox.rs      the command sandbox (macOS sandbox-exec)
+  bench/          Airth Bench: suites (core.json built in), runner, independent evaluator, metrics
+                  and estimated costs, versioned result storage, comparison and regressions
   ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
                   (mod.rs) and the page (index.html, theme.js, app.js, app.css)
                   editor/: the Documents editor (CodeMirror), bundled into
