@@ -421,7 +421,7 @@ mod tests {
             trigger: Trigger::Watch {
                 path: "../elsewhere".into(),
             },
-            ..o.clone()
+            ..o
         };
         assert!(store.save(bad).is_err());
         assert!(store.remove("triage").unwrap());

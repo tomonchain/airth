@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn triage_picks_the_fast_model_only_for_simple_asks() {
         let main = fake("main", Some("x"));
-        let one = Connections::single(main.clone());
+        let one = Connections::single(main);
         assert_eq!(one.triage("What time is it in Tokyo?").tier, Tier::Strong);
 
         let simple = Connections {

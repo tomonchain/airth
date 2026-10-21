@@ -785,7 +785,7 @@ impl App {
                 json_response(200, self.owner()?)
             }
             // Pictures of the owner and of each realm, for the app.
-            (Method::Get, ["owner", "avatar"]) => image_response(self.hub.home().dir(), "avatar")?,
+            (Method::Get, ["owner", "avatar"]) => image_response(self.hub.home().dir(), "avatar"),
             (Method::Put, ["owner", "avatar"]) => {
                 images::save(self.hub.home().dir(), "avatar", &read_bytes(request)?)?;
                 json_response(200, self.owner()?)
@@ -794,7 +794,7 @@ impl App {
                 images::remove(self.hub.home().dir(), "avatar")?;
                 json_response(200, self.owner()?)
             }
-            (Method::Get, ["realms", r, "image"]) => image_response(self.realm(r)?.dir(), "image")?,
+            (Method::Get, ["realms", r, "image"]) => image_response(self.realm(r)?.dir(), "image"),
             (Method::Put, ["realms", r, "image"]) => {
                 let realm = self.realm(r)?;
                 images::save(realm.dir(), "image", &read_bytes(request)?)?;
@@ -2893,14 +2893,14 @@ fn read_bytes(request: &mut Request) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-fn image_response(dir: &std::path::Path, stem: &str) -> Result<HttpResponse> {
+fn image_response(dir: &std::path::Path, stem: &str) -> HttpResponse {
     let Some((bytes, mime)) = images::load(dir, stem) else {
-        return Ok(json_response(404, json!({"error": "no picture"})));
+        return json_response(404, json!({"error": "no picture"}));
     };
-    Ok(Response::from_data(bytes)
+    Response::from_data(bytes)
         .with_header(content_type(mime))
         .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
-        .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap()))
+        .with_header(Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap())
 }
 
 fn json_response(status: u16, value: Value) -> HttpResponse {

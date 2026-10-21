@@ -121,7 +121,6 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         .with_traffic_light_inset(LogicalPosition::new(16.0, 19.0))
         .build(&event_loop)
         .context("cannot open the window")?;
-    let nav_origin = origin.clone();
     let ipc = event_loop.create_proxy();
     let webview = WebViewBuilder::new()
         .with_url(&url)
@@ -135,7 +134,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
             let _ = ipc.send_event(event);
         })
         .with_navigation_handler(move |to| {
-            if to.starts_with(&nav_origin) || to.starts_with("about:") {
+            if to.starts_with(&origin) || to.starts_with("about:") {
                 return true;
             }
             open_outside(&to);

@@ -3012,7 +3012,6 @@ let confirmDelete = null;
 // other pages.
 
 const docsUi = { filter: "", ide: null, quick: null };
-const DOC_TEXT = /\.(md|markdown|txt|text|csv|tsv|json|jsonl|ya?ml|toml|ini|cfg|conf|log|xml|html?|css|scss|js|mjs|cjs|ts|mts|jsx|tsx|py|rb|rs|go|java|kt|swift|c|h|cc|cpp|hpp|cs|m|php|sh|bash|zsh|fish|sql|r|lua|tex|srt|vtt|ics|vcf|eml|env|lock|plist|gitignore|dockerfile)$|(^|\/)(Makefile|Dockerfile|LICENSE|README|Procfile|Gemfile)$/i;
 const DOC_IMAGE = /\.(png|jpe?g|gif|webp|svg|heic)$/i;
 const DOC_PDF = /\.pdf$/i;
 const DOC_MD = /\.(md|markdown)$/i;

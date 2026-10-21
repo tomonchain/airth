@@ -835,7 +835,7 @@ pub fn realm(ctx: &Ctx, command: RealmCmd) -> Result<bool> {
             let realm = home.create_realm(NewRealm {
                 name,
                 description,
-                root: root.clone(),
+                root,
                 isolation,
             })?;
             eprintln!("\x1b[32m✓\x1b[0m created realm {}", realm.name());

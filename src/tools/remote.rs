@@ -94,7 +94,7 @@ pub fn challenge(verifier: &str) -> String {
 }
 
 /// `{origin}/.well-known/{kind}{path}`, as RFC 8414 / RFC 9728 place metadata.
-fn well_known(url: &Url, kind: &str, with_path: bool) -> Result<Url> {
+fn well_known(url: &Url, kind: &str, with_path: bool) -> Url {
     let path = url.path().trim_end_matches('/');
     let mut u = url.clone();
     u.set_query(None);
@@ -103,7 +103,7 @@ fn well_known(url: &Url, kind: &str, with_path: bool) -> Result<Url> {
         "/.well-known/{kind}{}",
         if with_path { path } else { "" }
     ));
-    Ok(u)
+    u
 }
 
 fn get_json(http: &Client, url: &Url) -> Option<Value> {
@@ -153,8 +153,8 @@ fn discover(http: &Client, mcp_url: &Url) -> Result<Option<Auth>> {
             prm_urls.push(u);
         }
     }
-    prm_urls.push(well_known(mcp_url, "oauth-protected-resource", true)?);
-    prm_urls.push(well_known(mcp_url, "oauth-protected-resource", false)?);
+    prm_urls.push(well_known(mcp_url, "oauth-protected-resource", true));
+    prm_urls.push(well_known(mcp_url, "oauth-protected-resource", false));
     let prm = prm_urls.iter().find_map(|u| get_json(http, u));
     // Without protected-resource metadata (older servers), the MCP server's
     // own origin is the authorization server.
@@ -169,13 +169,13 @@ fn discover(http: &Client, mcp_url: &Url) -> Result<Option<Auth>> {
             u
         });
     let candidates = [
-        well_known(&issuer, "oauth-authorization-server", true)?,
-        well_known(&issuer, "openid-configuration", true)?,
+        well_known(&issuer, "oauth-authorization-server", true),
+        well_known(&issuer, "openid-configuration", true),
         Url::parse(&format!(
             "{}/.well-known/openid-configuration",
             issuer.as_str().trim_end_matches('/')
         ))?,
-        well_known(&issuer, "oauth-authorization-server", false)?,
+        well_known(&issuer, "oauth-authorization-server", false),
     ];
     let meta = candidates
         .iter()
@@ -274,7 +274,7 @@ pub enum Started {
 /// needed, and return the sign-in page with a fresh PKCE challenge.
 pub fn start(skills_dir: &Path, name: &str, redirect_uri: &str) -> Result<Started> {
     let server = McpStore::new(skills_dir).get(name)?;
-    let url = server.url.clone().context("not a remote server")?;
+    let url = server.url.context("not a remote server")?;
     let mcp_url = Url::parse(&url).context("invalid server URL")?;
     let http = client()?;
     let Some(mut auth) = discover(&http, &mcp_url)? else {

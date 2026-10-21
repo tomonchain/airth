@@ -707,16 +707,6 @@ kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid c
 .suggestion:nth-child(4) { animation-delay: .44s; }
 .suggestion:first-child { animation-delay: .26s; }
 .suggestion:hover { color: var(--text); background: var(--hover); transform: translateY(-1px); }
-.tools-card { border-radius: var(--radius); }
-.tools-card > summary {
-  list-style: none; cursor: pointer; text-align: center; font-size: 12.5px; color: var(--faint);
-  padding: 6px; border-radius: 10px; transition: color .15s;
-}
-.tools-card > summary::-webkit-details-marker { display: none; }
-.tools-card > summary::after { content: " ›"; display: inline-block; transition: transform .2s var(--ease); }
-.tools-card[open] > summary::after { transform: rotate(90deg); }
-.tools-card > summary:hover { color: var(--text); }
-.tools-card > div { margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); animation: fade-up .3s var(--ease) both; overflow: hidden; }
 .tool-row { display: grid; grid-template-columns: 140px auto 1fr; gap: 12px; align-items: baseline; padding: 9px 16px; border-top: 1px solid var(--border); font-size: 13px; }
 .tool-row:first-child { border-top: 0; }
 .tool-row code { font-size: 12.5px; }
@@ -1001,7 +991,6 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .inline input[type=number] { width: 120px; }
 .stack { display: grid; gap: 8px; }
-.summary-head { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; padding: 8px 0 6px; }
 .list-row.link {
   width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; color: inherit;
   cursor: pointer; align-items: flex-start; border-radius: 0; transition: background .15s;
@@ -1755,7 +1744,6 @@ a.rh-tag { color: var(--brand); }
   .doc-filter { width: 100%; }
   .doc-tools { width: 100%; }
 }
-.warn-text { color: var(--warn); }
 /* The sidebar always shows on a wide window; its toggles are for phones. */
 @media (min-width: 761px) { #side-close, #side-open { display: none !important; } }
 /* Settings → Repositories */
