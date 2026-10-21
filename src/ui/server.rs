@@ -1,0 +1,443 @@
+//! Serving the app: starting and stopping the server, the file that tells
+//! other processes where it runs, and the background threads (updates,
+//! schedules, pull requests).
+
+use super::*;
+
+/// Where the self-update stands, as shown in the app.
+#[derive(Default, serde::Serialize)]
+pub(super) struct UpdateState {
+    /// The newer version, if there is one.
+    pub(super) available: Option<crate::update::Available>,
+    /// idle, preparing, ready, failed or restarting.
+    pub(super) phase: &'static str,
+    /// What preparing is doing now (building, testing...).
+    pub(super) step: Option<String>,
+    pub(super) error: Option<String>,
+    /// The built and tested binary, for the version in `available`.
+    #[serde(skip)]
+    pub(super) staged: Option<std::path::PathBuf>,
+    #[serde(skip)]
+    pub(super) prepared_commit: Option<String>,
+}
+
+/// Every minute, look for a newer version (asking the upstream every 30
+/// minutes) and prepare it: build and test it, ready to install on restart.
+pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
+    let work = hub.home().dir().join("update");
+    let mut ticks: u64 = 0;
+    loop {
+        let fetch = ticks.is_multiple_of(30) || state.lock().unwrap().phase == "checking";
+        ticks += 1;
+        match crate::update::check(fetch) {
+            Ok(found) => {
+                let todo = {
+                    let mut st = state.lock().unwrap();
+                    if st.phase == "checking" {
+                        st.phase = "idle";
+                    }
+                    let todo = match &found {
+                        Some(a)
+                            if st.prepared_commit.as_deref() != Some(a.commit.as_str())
+                                && st.phase != "restarting" =>
+                        {
+                            Some(a.clone())
+                        }
+                        _ => None,
+                    };
+                    if found.is_none() && st.phase != "restarting" {
+                        *st = UpdateState {
+                            phase: "idle",
+                            ..Default::default()
+                        };
+                    }
+                    st.available = found;
+                    todo
+                };
+                if let Some(available) = todo {
+                    {
+                        let mut st = state.lock().unwrap();
+                        st.phase = "preparing";
+                        st.error = None;
+                        st.prepared_commit = Some(available.commit.clone());
+                    }
+                    let step_state = state.clone();
+                    let result = crate::update::prepare(&available, &work, &|step| {
+                        step_state.lock().unwrap().step = Some(step.to_string());
+                    });
+                    let mut st = state.lock().unwrap();
+                    st.step = None;
+                    match result {
+                        Ok(staged) => {
+                            eprintln!("update {} is ready: restart to install it", available.short);
+                            st.phase = "ready";
+                            st.staged = Some(staged);
+                        }
+                        Err(e) => {
+                            eprintln!("update {} failed: {e:#}", available.short);
+                            st.phase = "failed";
+                            st.error = Some(format!("{e:#}"));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let mut st = state.lock().unwrap();
+                if st.phase == "checking" {
+                    st.phase = "idle";
+                    st.error = Some(format!("{e:#}"));
+                }
+            }
+        }
+        for _ in 0..60 {
+            if state.lock().unwrap().phase == "checking" {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+/// The app's access key, kept in the home so links keep working across
+/// restarts (and updates).
+pub(super) fn persistent_token(hub: &Hub) -> Result<String> {
+    let path = hub.home().dir().join("ui-token");
+    if let Ok(t) = std::fs::read_to_string(&path)
+        && t.trim().len() >= 32
+        && t.trim().bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Ok(t.trim().to_string());
+    }
+    let token = random_token()?;
+    crate::realm::write_private(&path, &token)?;
+    Ok(token)
+}
+
+/// Stop the runs, then come back as the new binary: launchd restarts the
+/// service when it exits; otherwise the process replaces itself.
+pub(super) fn restart(
+    registry: Registry,
+    info_path: std::path::PathBuf,
+    exe: std::path::PathBuf,
+    port: u16,
+) {
+    let lives: Vec<Arc<Live>> = registry.lock().unwrap().values().cloned().collect();
+    for live in &lives {
+        live.cancel.cancel();
+    }
+    for _ in 0..100 {
+        if registry.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = std::fs::remove_file(&info_path);
+    if std::env::var("AIRTH_SERVICE").as_deref() == Ok("1") {
+        std::process::exit(0);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut args: Vec<String> = std::env::args().skip(1).collect();
+        // Started as Airth.app (no arguments): come back as the app.
+        if args.is_empty() && exe.to_string_lossy().contains(".app/Contents/MacOS/") {
+            let err = std::process::Command::new(&exe).exec();
+            eprintln!("restart failed: {err}");
+            std::process::exit(1);
+        }
+        // Same port (so the page reconnects), and no new browser tab.
+        if let Some(i) = args.iter().position(|a| a == "--port") {
+            args.drain(i..(i + 2).min(args.len()));
+        }
+        args.retain(|a| !a.starts_with("--port="));
+        args.push("--port".into());
+        args.push(port.to_string());
+        if args.iter().any(|a| a == "ui") && !args.iter().any(|a| a == "--no-open") {
+            args.push("--no-open".into());
+        }
+        let err = std::process::Command::new(&exe).args(&args).exec();
+        eprintln!("restart failed: {err}");
+    }
+    std::process::exit(1);
+}
+
+/// Where a running app can be reached, for `airth ui` to reuse it.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(super) struct ServerInfo {
+    pid: i32,
+    port: u16,
+    token: String,
+}
+
+pub(super) fn server_file(hub: &Hub) -> std::path::PathBuf {
+    hub.home().dir().join("server.json")
+}
+
+/// The link to the app already serving this home, if one is.
+pub fn running_url(hub: &Hub) -> Option<String> {
+    let text = std::fs::read_to_string(server_file(hub)).ok()?;
+    let info: ServerInfo = serde_json::from_str(&text).ok()?;
+    if !crate::hub::process_alive(info.pid) {
+        return None;
+    }
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], info.port));
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    Some(format!(
+        "http://127.0.0.1:{}/#token={}",
+        info.port, info.token
+    ))
+}
+
+/// Open `url` and wait for the opener, so a command that exits right after
+/// (as `airth ui` does when Airth is already running) cannot cut it off.
+pub fn open_url(url: &str) {
+    let opener = if cfg!(target_os = "macos") {
+        "/usr/bin/open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(opener)
+        .arg(url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Look for due objectives every few seconds and start their runs. Only one
+/// app serves a home at a time, so only one scheduler runs.
+pub(super) fn run_scheduler(runner: Runner) {
+    loop {
+        match scheduler::due(&runner.hub, chrono::Utc::now()) {
+            Ok(due) => {
+                for d in due {
+                    match runner.hub.start_objective(
+                        &d.realm,
+                        &d.objective,
+                        &d.trigger,
+                        None,
+                        chrono::Utc::now(),
+                    ) {
+                        Ok((state, o)) => {
+                            eprintln!(
+                                "objective {}/{} started run {} ({})",
+                                d.realm.name(),
+                                o.id,
+                                state.id,
+                                d.trigger
+                            );
+                            runner.spawn(
+                                d.realm,
+                                state,
+                                Job::Unattended {
+                                    objective: o.id,
+                                    wait_minutes: o.approval_wait_minutes,
+                                },
+                            );
+                        }
+                        Err(e) => eprintln!(
+                            "objective {}/{} could not start: {e:#}",
+                            d.realm.name(),
+                            d.objective
+                        ),
+                    }
+                }
+            }
+            Err(e) => eprintln!("scheduler: {e:#}"),
+        }
+        std::thread::sleep(scheduler::TICK);
+    }
+}
+
+/// Every two minutes, follow the open pull requests of realms that deliver
+/// changes that way: record them merged or closed, keep their branches
+/// current with the base, and have a chat resolve a conflict.
+pub(super) fn follow_pull_requests(runner: Runner) {
+    loop {
+        std::thread::sleep(Duration::from_secs(120));
+        let Ok(realms) = runner.hub.home().realms() else {
+            continue;
+        };
+        for realm in realms {
+            if !realm.delivers_pull_requests() || realm.config.archived {
+                continue;
+            }
+            let Ok(runs) = runner.hub.runs(&realm) else {
+                continue;
+            };
+            for run in runs.iter().filter(|r| r.pull_request.is_some() && !r.live) {
+                if runner.is_running(realm.name(), &run.id) {
+                    continue;
+                }
+                match runner.hub.follow_pull_request(&realm, &run.id) {
+                    Ok(PrEvent::Conflict) => match runner.hub.resolve(&realm, &run.id) {
+                        Ok(Some(state)) => {
+                            eprintln!("run {} resolves a conflict with its base", run.id);
+                            runner.spawn(realm.clone(), state, Job::Drive);
+                        }
+                        Ok(None) => {}
+                        Err(e) => eprintln!("run {} cannot resolve its conflict: {e:#}", run.id),
+                    },
+                    Ok(_) => {}
+                    Err(e) => eprintln!("pull request of run {}: {e:#}", run.id),
+                }
+            }
+        }
+    }
+}
+
+pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
+    let server = start(hub, options)?;
+    eprintln!("\x1b[1mairth\x1b[0m → {}", server.url);
+    eprintln!(
+        "\x1b[2mThis link grants control of the agent; don't share it. Objectives run while this is running. Ctrl-C to quit.\x1b[0m"
+    );
+    let registry = server.registry.clone();
+    let path = server.info_path.clone();
+    ctrlc::set_handler(move || shut_down(&registry, &path))
+        .context("cannot install Ctrl-C handler")?;
+    #[cfg(unix)]
+    {
+        // launchd and `kill` stop services with SIGTERM: shut down the same way.
+        let _ =
+            unsafe { libc::signal(libc::SIGTERM, on_sigterm as *const () as libc::sighandler_t) };
+    }
+    let _ = server.thread.join();
+    Ok(())
+}
+
+/// A running app server: requests are served on their own thread.
+pub struct Running {
+    pub url: String,
+    registry: Registry,
+    info_path: std::path::PathBuf,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl Running {
+    /// Stop the runs in progress (they can be resumed) and forget the server.
+    pub fn stop(&self) {
+        let lives: Vec<Arc<Live>> = self.registry.lock().unwrap().values().cloned().collect();
+        for live in &lives {
+            live.cancel.cancel();
+        }
+        for _ in 0..50 {
+            if self.registry.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = std::fs::remove_file(&self.info_path);
+    }
+}
+
+/// Start the app server, the scheduler and the updater, without blocking.
+pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
+    let server = Server::http(("127.0.0.1", options.port))
+        .or_else(|_| Server::http(("127.0.0.1", 0)))
+        .map_err(|e| anyhow!("cannot start the UI server: {e}"))?;
+    let port = server
+        .server_addr()
+        .to_ip()
+        .context("server has no IP address")?
+        .port();
+    let hub = Arc::new(hub);
+    let token_hub = hub.clone();
+    let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+    let runner = Runner {
+        hub: hub.clone(),
+        registry: registry.clone(),
+        max_iterations: options.max_iterations,
+    };
+    let app = App {
+        hub,
+        registry,
+        runner,
+        token: persistent_token(&token_hub)?,
+        port,
+        options,
+        update: Arc::new(Mutex::new(UpdateState {
+            phase: "idle",
+            ..Default::default()
+        })),
+        writes: Mutex::new(()),
+        previews: Mutex::new(HashMap::new()),
+        benches: Arc::new(Mutex::new(HashMap::new())),
+    };
+    let info_path = server_file(&app.hub);
+    crate::realm::write_private(
+        &info_path,
+        &serde_json::to_string(&ServerInfo {
+            pid: std::process::id() as i32,
+            port,
+            token: app.token.clone(),
+        })?,
+    )?;
+
+    let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
+    if app.options.open_browser {
+        open_in_browser(&url);
+    }
+
+    let runner = app.runner.clone();
+    std::thread::spawn(move || run_scheduler(runner));
+    let runner = app.runner.clone();
+    std::thread::spawn(move || follow_pull_requests(runner));
+    let (hub, update) = (app.hub.clone(), app.update.clone());
+    std::thread::spawn(move || run_updater(hub, update));
+
+    let registry = app.registry.clone();
+    let thread = std::thread::spawn(move || serve_requests(server, app));
+    Ok(Running {
+        url,
+        registry,
+        info_path,
+        thread,
+    })
+}
+
+/// Serve the app: one thread per request, so a slow provider (sign-in, model
+/// lists, registry search) never freezes the app, nor an approval.
+pub(super) fn serve_requests(server: Server, app: App) {
+    let app = Arc::new(app);
+    for request in server.incoming_requests() {
+        let app = Arc::clone(&app);
+        std::thread::spawn(move || app.handle(request));
+    }
+}
+
+#[cfg(unix)]
+extern "C" fn on_sigterm(_: libc::c_int) {
+    // Only async-signal-safe work here: ctrlc's handler thread does the rest.
+    unsafe {
+        libc::kill(libc::getpid(), libc::SIGINT);
+    }
+}
+
+/// Stop every live run, give them a moment to save, then exit. A second Ctrl-C exits at once.
+pub(super) fn shut_down(registry: &Registry, info_path: &std::path::Path) {
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+    let _ = std::fs::remove_file(info_path);
+    if CALLS.fetch_add(1, Ordering::SeqCst) > 0 {
+        std::process::exit(130);
+    }
+    let lives: Vec<Arc<Live>> = registry.lock().unwrap().values().cloned().collect();
+    if !lives.is_empty() {
+        eprintln!(
+            "\nstopping {} run(s)… (Ctrl-C again to quit now)",
+            lives.len()
+        );
+    }
+    for live in &lives {
+        live.cancel.cancel();
+    }
+    let registry = registry.clone();
+    std::thread::spawn(move || {
+        for _ in 0..50 {
+            if registry.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        std::process::exit(0);
+    });
+}

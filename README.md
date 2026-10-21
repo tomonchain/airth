@@ -370,7 +370,9 @@ Your own suites go in `~/.airth/benchmarks/suites/` as JSON, in the format of [`
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
   cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill, bench
-  hub.rs          the interface to agents: runs per realm, workspaces, checks, adoption
+  hub/            the interface to agents: runs per realm, workspaces, briefings (mod.rs); models
+                  and routing, changes and adoption, repositories, pull-request delivery,
+                  objectives and the North Star, skills, saved runs
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
@@ -389,8 +391,10 @@ src/
   sandbox.rs      the command sandbox (macOS sandbox-exec)
   bench/          Airth Bench: suites (core.json built in), runner, independent evaluator, metrics
                   and estimated costs, versioned result storage, comparison and regressions
-  ui/             the local app and background runtime: HTTP server, scheduler thread, webhooks
-                  (mod.rs) and the page (index.html, theme.js, app.js, app.css)
+  ui/             the local app and background runtime: request checks and routing (mod.rs), the
+                  server and its threads (server.rs), live runs (live.rs), one router per area
+                  (general, realms, runs, extensions, bench) and the page: index.html, theme.js,
+                  js/ and css/ (joined in name order into app.js and app.css by build.rs)
                   editor/: the Documents editor (CodeMirror), bundled into
                   vendor/editor.js by editor/build.sh
   term.rs         terminal output for CLI runs

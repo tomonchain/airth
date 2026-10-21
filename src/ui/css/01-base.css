@@ -1,0 +1,148 @@
+/* Airth: minimal, premium, ChatGPT-like. Pure CSS (the page's CSP allows no external assets). */
+
+@property --angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+
+:root {
+  --bg: #ffffff;
+  --sidebar: #f9f9f9;
+  --panel: #ffffff;
+  --surface: #f4f4f4;
+  --hover: rgba(0,0,0,.045);
+  --text: #0d0d0d;
+  --muted: #5d5d5d;
+  --faint: #8f8f8f;
+  --border: rgba(0,0,0,.08);
+  --border-strong: rgba(0,0,0,.14);
+  --accent: #0d0d0d;
+  --accent-hover: #2b2b2b;
+  --accent-soft: rgba(0,0,0,.05);
+  --accent-text: #ffffff;
+  --brand: #6d5dfc;
+  --brand-2: #3fb8ff;
+  --brand-3: #2dd4bf;
+  --brand-soft: rgba(109,93,252,.10);
+  --ok: #16a34a;
+  --ok-soft: rgba(22,163,74,.10);
+  --step-done: #16a34a;
+  --step-done-text: #ffffff;
+  /* Reading: owner-adjustable (Appearance), set by theme.js before first paint. */
+  --fs-read: 14px;
+  --read-width: 760px;
+  --err: #dc2626;
+  --err-soft: rgba(220,38,38,.09);
+  --warn: #c2410c;
+  --warn-soft: rgba(234,88,12,.10);
+  --code-bg: #f4f4f4;
+  --diff-add: rgba(22,163,74,.10);
+  --diff-add-text: #166534;
+  --diff-del: rgba(220,38,38,.09);
+  --diff-del-text: #991b1b;
+  --diff-hunk: #8f8f8f;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  --shadow-lg: 0 0 0 1px var(--border), 0 12px 40px rgba(0,0,0,.08);
+  --radius: 14px;
+  --ease: cubic-bezier(.2,.8,.2,1);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+  color-scheme: light;
+  /* Syntax colors in the Documents editor (.tok-* classes). */
+  --tok-keyword: #8b3fd9; --tok-string: #0a7d4f; --tok-number: #b45309; --tok-comment: #8f8f8f;
+  --tok-type: #0f6fb8; --tok-fn: #2557d6; --tok-prop: #a3366f; --tok-meta: #6b7280; --tok-heading: #0d0d0d;
+}
+
+/* Dark theme: theme.js sets data-theme from the owner's choice (or the system's). */
+:root[data-theme="dark"] {
+    --tok-keyword: #c792ea; --tok-string: #a5d6a7; --tok-number: #f9b872; --tok-comment: #7f8590;
+    --tok-type: #82aaff; --tok-fn: #89ddff; --tok-prop: #f78c9c; --tok-meta: #9aa0aa; --tok-heading: #ffffff;
+    --bg: #212121;
+    --sidebar: #171717;
+    --panel: #2a2a2a;
+    --surface: #303030;
+    --hover: rgba(255,255,255,.06);
+    --text: #ececec;
+    --muted: #b4b4b4;
+    --faint: #8a8a8a;
+    --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.14);
+    --accent: #ececec;
+    --accent-hover: #ffffff;
+    --accent-soft: rgba(255,255,255,.07);
+    --accent-text: #0d0d0d;
+    --brand: #9b8cff;
+    --brand-soft: rgba(155,140,255,.14);
+    --ok: #4ade80;
+    --ok-soft: rgba(74,222,128,.12);
+    --step-done: #15803d;
+    --step-done-text: #dcfce7;
+    --err: #f87171;
+    --err-soft: rgba(248,113,113,.12);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251,191,36,.12);
+    --code-bg: #2a2a2a;
+    --diff-add: rgba(74,222,128,.12);
+    --diff-add-text: #86efac;
+    --diff-del: rgba(248,113,113,.12);
+    --diff-del-text: #fca5a5;
+    --diff-hunk: #8a8a8a;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.2);
+    --shadow-lg: 0 0 0 1px var(--border), 0 12px 40px rgba(0,0,0,.45);
+    color-scheme: dark;
+}
+
+/* The circular reveal when switching theme (theme.js animates the clip-path). */
+:root[data-text="s"] { --fs-read: 13px; }
+:root[data-text="l"] { --fs-read: 15px; }
+:root[data-text="xl"] { --fs-read: 16px; }
+:root[data-width="narrow"] { --read-width: 660px; }
+:root[data-width="wide"] { --read-width: 960px; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { z-index: 2; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/1.55 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--brand-soft); }
+button, input, textarea, select { font: inherit; color: inherit; }
+code, pre, kbd { font-family: var(--mono); font-size: 12.5px; }
+[hidden] { display: none !important; }
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
+.i { display: inline-grid; place-items: center; line-height: 0; }
+.i svg { width: 18px; height: 18px; }
+.tool .icon .i svg { width: 14px; height: 14px; }
+.act-icons .icon .i svg { width: 13px; height: 13px; }
+
+.app { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: calc(100vh - 26px); transition: grid-template-columns .3s var(--ease); }
+/* A thin footer: context fill and token volume. */
+.statusbar {
+  height: 26px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-top: 1px solid var(--border);
+  background: var(--sidebar); color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+}
+.statusbar .sb-sep { color: var(--faint); }
+.statusbar .sb-spacer { flex: 1; }
+.statusbar .sb-meter { width: 56px; height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; flex: none; }
+.statusbar .sb-meter > span { display: block; height: 100%; background: var(--brand); border-radius: inherit; }
+.statusbar .sb-meter.warm > span { background: var(--warn); }
+.statusbar .sb-meter.hot > span { background: var(--err); }
+.statusbar .sb-item { display: inline-flex; align-items: center; gap: 6px; }
+.app.side-hidden { grid-template-columns: 0 minmax(0, 1fr); }
+.app.side-hidden .sidebar { visibility: hidden; overflow: hidden; padding-left: 0; padding-right: 0; }
+.side-open { position: fixed; top: 12px; left: 12px; z-index: 6; background: color-mix(in srgb, var(--bg) 80%, transparent); }
+/* Only one sidebar toggle shows at a time: this one exists only while the sidebar is hidden. */
+.icon-action.side-open { display: none; }
+.app.side-hidden .icon-action.side-open { display: grid; animation: fade-up .3s var(--ease) both; }
+.app.side-hidden .run-header { padding-left: 60px; }
+.side-top { display: flex; align-items: flex-start; gap: 2px; margin-bottom: 4px; }
+.side-top .realm-switch { flex: 1; min-width: 0; margin-bottom: 0; }
+.side-top > .icon-action { margin-top: 3px; }
+

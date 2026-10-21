@@ -144,7 +144,10 @@ Object.assign(fixtures, {
 });
 
 // ---------- load the app (without booting it) ----------
-const src = fs.readFileSync(path.join(__dirname, "..", "src", "ui", "app.js"), "utf8").replace(/\nboot\(\);\s*$/, "\n");
+// The page's app.js: src/ui/js joined in name order, as build.rs does.
+const jsDir = path.join(__dirname, "..", "src", "ui", "js");
+const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
+  .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
 const exportsCode = `\n;globalThis.__app = { app, skillUi, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
