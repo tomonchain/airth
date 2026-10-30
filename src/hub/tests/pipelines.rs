@@ -78,3 +78,47 @@ fn a_pipeline_reads_only_what_the_realm_allows() {
     );
     assert_eq!(heartbeats(&f).len(), 2);
 }
+
+#[test]
+fn a_scheduled_pipeline_runs_unattended_and_tells_the_owner() {
+    let f = fixture();
+    let dir = f.root.path().join("business/pipelines");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("watch.json"),
+        r#"{"schedule": "every 1h", "steps": [{"type": "rss", "feeds": ["https://example.com/feed.xml"]}]}"#,
+    )
+    .unwrap();
+    let hub = Hub::new(f.home.clone());
+    let t0 = Utc::now();
+    // Armed when first seen, due an hour later, once.
+    assert!(hub.due_pipelines(t0).unwrap().is_empty());
+    let due = hub.due_pipelines(t0 + chrono::Duration::hours(1)).unwrap();
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].1, "watch");
+    assert!(
+        hub.due_pipelines(t0 + chrono::Duration::hours(1))
+            .unwrap()
+            .is_empty()
+    );
+    // The realm asks before network requests, and nobody is there: the read
+    // is denied at once, and the owner hears why.
+    hub.run_pipeline_unattended(&due[0].0, "watch");
+    let beats = heartbeats(&f);
+    assert_eq!(beats.len(), 1);
+    assert!(!beats[0].0 && beats[0].1.contains("runs unattended"));
+    let inbox = f.home.inbox().list().unwrap();
+    assert_eq!(inbox.last().unwrap().title, "watch failed");
+    // Airth off for hours: the next run is late, once, and says so.
+    let late = hub.due_pipelines(t0 + chrono::Duration::hours(5)).unwrap();
+    assert_eq!(late.len(), 1);
+    let titles: Vec<String> = f
+        .home
+        .inbox()
+        .list()
+        .unwrap()
+        .into_iter()
+        .map(|n| n.title)
+        .collect();
+    assert!(titles.iter().any(|t| t.starts_with("watch missed its run")));
+}

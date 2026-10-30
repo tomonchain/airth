@@ -6,7 +6,7 @@
 //!   realm.json    settings: root, policy, isolation, checks
 //!   memory.json   long-term memory (see memory.rs)
 //!   objectives.json  persistent objectives and their triggers (see objective.rs)
-//!   business.db   business state in SQLite: owner time, pipeline runs, model calls (see business/store.rs)
+//!   business.db   business state in SQLite: owner time, pipeline runs and schedules, model calls (see business/store.rs)
 //!   skills/       skills: proposals, drafts, installed copies (see skill.rs)
 //!   secrets.env   credentials, KEY=VALUE, readable only by the owner
 //!   runs/         run states and locks

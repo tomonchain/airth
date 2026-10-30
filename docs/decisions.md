@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 34. A pipeline's schedule is in its file, not in an objective
+
+Decision 30 had an objective name the pipeline it starts. The pipeline file already says when it runs (`schedule`), so the background runtime reads it directly: every few seconds it loads each realm's pipelines, and runs those whose time has come, each on its own thread. When each runs next, and when it last started, live in `business.db`. A schedule seen for the first time is armed for its next time; one missed while Airth was not running fires once, late, and the owner is told; a run that started and left no heartbeat (Airth stopped during it) is reported at the next one. A scheduled run has nobody to ask: what the realm's rules leave to the owner is denied at once, and the run's heartbeat says so. Each run, done or failed, lands in the owner's inbox.
+
+*Why:* one place for when a pipeline runs, versioned with the rest of the business. An objective beside the file would be a second schedule to keep in step, outside git.
+
+*Cost:* a scheduled pipeline cannot be approved in advance the way an objective can (its approvals): the realm's rules must allow what it does, network requests first. Objectives keep their budgets and approvals; pipelines have none yet, and a judge step's cost is bounded only by the number of items read.
+
 ## 33. Feeds are read with quick-xml
 
 Pipelines read RSS and Atom feeds (decision 30), which are XML. They are parsed with `quick-xml`, a streaming reader with no dependencies of its own. A feed that breaks off, because it is malformed or because the HTTP tool cut it at its size limit, gives the items read before the break, and the run notes it. Feeds are fetched through `Runtime::invoke` with the `http_request` tool, so each read is checked against the realm's rules, redacted and recorded like any tool call; redirects are not followed, and the run says where the feed moved.

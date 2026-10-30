@@ -76,6 +76,13 @@ const MIGRATIONS: &[&str] = &[
         outcome TEXT
     );
     CREATE INDEX model_calls_by_prompt ON model_calls(prompt_version, at);",
+    // 4: when each scheduled pipeline runs next, and when it was last
+    // started, to notice a run that left no heartbeat.
+    "CREATE TABLE pipeline_schedule (
+        pipeline TEXT PRIMARY KEY,
+        next_at TEXT NOT NULL,
+        started_at TEXT
+    );",
 ];
 
 pub struct Store {

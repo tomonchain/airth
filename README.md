@@ -91,7 +91,7 @@ A realm runs one business (decision 32). What the business is lives in the realm
 | `judge` | Asks the model about each item with a prompt file; its answer must be a JSON object matching the schema file. With `keep`, a boolean of that answer, only the items it marks go on. |
 | `report` | Writes what is left as a report for you. Always last. |
 
-`prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); without it, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
+`prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); while Airth runs, the pipeline runs on its own then, with nobody to ask: the realm's rules must allow its network requests (`airth realm policy network allow`). Each run lands in your inbox; a time missed while Airth was not running is run once, late, and you are told. Without `schedule`, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
 
 `airth pipeline run <name>` runs one now. Its reads go through the realm's rules like any tool call: a realm that asks before network requests asks you here (`airth realm policy network allow` to stop). Each run leaves a row in `business.db`, failed or not: its heartbeat, with what it read, kept and reported. What a run kept is remembered, so the next one only keeps what is new. A `judge` step asks the realm's model about each item, with no tools: the prompt file and the schema are its instructions, the item is data. An answer that is not exactly a JSON object matching the schema is dropped, never repaired; every call is recorded in `business.db` with the prompt's version, the model, tokens, estimated cost, latency and whether the answer fit. The answer goes on with the item, under `answer`.
 
@@ -371,7 +371,8 @@ src/
   business/       the business a realm runs: its profile and archive, from the realm's business/ folder;
                   its state in business.db (store.rs) and the owner-time ledger (time.rs)
   pipeline/       business pipelines: the declared step types, loaded and checked from business/pipelines/;
-                  feeds (rss.rs), answers checked against schemas (schema.rs), running the steps (run.rs)
+                  feeds (rss.rs), answers checked against schemas (schema.rs), running the steps (run.rs),
+                  when scheduled ones run (schedule.rs)
   objective.rs    persistent objectives, schedules, file watches
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls

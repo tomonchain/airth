@@ -5,8 +5,9 @@
 
 use super::*;
 use crate::business::store::Store;
-use crate::permissions::Grant;
+use crate::permissions::{Answer, Grant};
 use crate::pipeline::run::{Fetched, Io, Outcome};
+use crate::pipeline::schedule::{Tick, tick};
 use crate::state::{Event, EventStatus};
 use serde_json::json;
 
@@ -57,6 +58,96 @@ impl Hub {
         };
         crate::pipeline::run::run(name, &pipeline, &mut store, &mut io, Utc::now())
     }
+}
+
+/// Nobody is there: what the realm's rules leave to the owner is not done.
+struct Unattended;
+
+impl Approver for Unattended {
+    fn ask(&mut self, _: &crate::permissions::PermissionRequest) -> Result<Answer> {
+        Ok(Answer::No(
+            "a scheduled pipeline runs unattended: allow network requests in the realm's rules, or run it by hand (airth pipeline run)".into(),
+        ))
+    }
+}
+
+impl Hub {
+    /// The scheduled pipelines due at `now`, across realms, each claimed so
+    /// the next call does not return it again. A late or silent run is
+    /// told to the owner here.
+    pub fn due_pipelines(&self, now: DateTime<Utc>) -> Result<Vec<(Realm, String)>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived {
+                continue;
+            }
+            let Ok(root) = realm.root() else { continue };
+            let scheduled: Vec<(String, Schedule)> =
+                crate::pipeline::load_all(&crate::business::dir(&root))?
+                    .into_iter()
+                    .filter_map(|(name, p)| Some((name, Schedule::parse(&p.ok()?.schedule?).ok()?)))
+                    .collect();
+            if scheduled.is_empty() {
+                continue;
+            }
+            let mut store = Store::of(&realm)?;
+            for (name, schedule) in scheduled {
+                let Tick::Run { missed, silent } = tick(&mut store, &name, &schedule, now)? else {
+                    continue;
+                };
+                let inbox = self.home.inbox();
+                if let Some(at) = silent {
+                    inbox.push(
+                        Kind::Failed,
+                        realm.name(),
+                        None,
+                        &format!("{name} left no trace of its last run"),
+                        &format!("The run started at {} never recorded its end: Airth stopped during it. Running it again now.", local(at)),
+                    )?;
+                }
+                if let Some(at) = missed {
+                    inbox.push(
+                        Kind::Failed,
+                        realm.name(),
+                        None,
+                        &format!("{name} missed its run at {}", local(at)),
+                        "Airth was not running then. Running it now, once.",
+                    )?;
+                }
+                out.push((realm.clone(), name));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Run a scheduled pipeline with nobody there, and tell the owner how it went.
+    pub fn run_pipeline_unattended(&self, realm: &Realm, name: &str) {
+        let (kind, title, body) =
+            match self.run_pipeline(realm, name, Box::new(Unattended), Vec::new()) {
+                Ok(o) => (
+                    Kind::Completed,
+                    format!("{name}: {} new of {} read", o.kept.len(), o.read),
+                    [o.report.unwrap_or_default(), o.notes.join("\n")]
+                        .join("\n")
+                        .trim()
+                        .to_string(),
+                ),
+                Err(e) => (Kind::Failed, format!("{name} failed"), format!("{e:#}")),
+            };
+        if let Err(e) = self
+            .home
+            .inbox()
+            .push(kind, realm.name(), None, &title, &body)
+        {
+            eprintln!("pipeline {}/{name}: could not notify: {e:#}", realm.name());
+        }
+    }
+}
+
+fn local(at: DateTime<Utc>) -> String {
+    at.with_timezone(&chrono::Local)
+        .format("%a %d %H:%M")
+        .to_string()
 }
 
 /// A feed's body from the `http_request` event: its status must be 2xx, and

@@ -203,7 +203,7 @@ pub fn open_url(url: &str) {
         .status();
 }
 
-/// Look for due objectives every few seconds and start their runs. Only one
+/// Look for due objectives and pipelines every few seconds and start them. Only one
 /// app serves a home at a time, so only one scheduler runs.
 pub(super) fn run_scheduler(runner: Runner) {
     loop {
@@ -243,6 +243,16 @@ pub(super) fn run_scheduler(runner: Runner) {
                 }
             }
             Err(e) => eprintln!("scheduler: {e:#}"),
+        }
+        match runner.hub.due_pipelines(chrono::Utc::now()) {
+            Ok(due) => {
+                for (realm, name) in due {
+                    eprintln!("pipeline {}/{name} started", realm.name());
+                    let hub = runner.hub.clone();
+                    std::thread::spawn(move || hub.run_pipeline_unattended(&realm, &name));
+                }
+            }
+            Err(e) => eprintln!("pipelines: {e:#}"),
         }
         std::thread::sleep(scheduler::TICK);
     }

@@ -30,6 +30,7 @@ pub const DIR: &str = "pipelines";
 
 pub mod rss;
 pub mod run;
+pub mod schedule;
 mod schema;
 
 /// One step, as declared.
