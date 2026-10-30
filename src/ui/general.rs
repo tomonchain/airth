@@ -71,11 +71,6 @@ impl App {
                 std::thread::spawn(move || restart(registry, path, exe, port));
                 ok()
             }
-            (Method::Get, ["inbox"]) => {
-                let mut list = self.hub.home().inbox().list()?;
-                list.reverse();
-                json_response(200, json!(list))
-            }
             (Method::Post, ["inbox", "read"]) => {
                 let body = read_json(request)?;
                 let ids: Option<Vec<u64>> = body["ids"]
@@ -83,15 +78,6 @@ impl App {
                     .map(|a| a.iter().filter_map(Value::as_u64).collect());
                 self.hub.home().inbox().mark_read(ids.as_deref())?;
                 ok()
-            }
-            (Method::Get, ["summary"]) => {
-                let hours: i64 = query
-                    .split('&')
-                    .find_map(|kv| kv.strip_prefix("hours="))
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(24);
-                let since = chrono::Utc::now() - chrono::Duration::hours(hours.clamp(1, 24 * 90));
-                json_response(200, json!(scheduler::summary(&self.hub, since)?))
             }
             (Method::Get, ["usage"]) => {
                 let days: u32 = query

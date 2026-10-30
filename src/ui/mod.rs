@@ -21,7 +21,7 @@ use crate::images;
 use crate::integration::Integration;
 use crate::isolation::{Delivery, Isolation};
 use crate::notify::{Inbox, Kind};
-use crate::objective::{Objective, Trigger};
+use crate::objective::Trigger;
 use crate::owner::Owner;
 use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
 use crate::realm::{PROVIDER_KEYS, Realm};

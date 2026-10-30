@@ -116,7 +116,7 @@ async function renderPipelines(main) {
       h("div", { class: "biz-head" }, h("h2", null, p.name), lastRun(p), h("span", { class: "grow" }), run),
       p.error ? h("div", { class: "biz-bad small" }, p.error) : [
         p.description && h("p", { class: "muted" }, p.description),
-        p.schedule && h("div", { class: "muted small" }, `${p.schedule}${p.next_at ? " · next " + when(p.next_at) : ""}`),
+        p.schedule && h("div", { class: "muted small" }, `${scheduleText(p.schedule)}${p.next_at ? " · next " + when(p.next_at) : ""}`),
         h("ol", { class: "biz-steps small" }, p.steps.map((s) => h("li", null, s))),
       ],
       p.runs.length > 0 && h("div", { class: "biz-runs" }, p.runs.map((r) => h("div", { class: "biz-row small" },
@@ -125,4 +125,20 @@ async function renderPipelines(main) {
       last && last.ok && last.notes && h("div", { class: "muted small biz-clip" }, last.notes),
       last && last.report && h("details", { class: "biz-report" }, h("summary", null, "Last report"), h("div", { class: "prose", html: mdc(last.report) }))));
   }
+}
+
+/** A schedule in words: "weekdays 09:00" → "Weekdays at 09:00". */
+function scheduleText(every) {
+  const t = (every || "").trim().toLowerCase();
+  const m = t.match(/^every (\d+)\s*(m|min|mins|h|hr|hrs|d|day|days)$/);
+  if (m) {
+    const n = Number(m[1]);
+    const unit = m[2][0] === "m" ? "min" : m[2][0] === "h" ? (n === 1 ? "hour" : "hours") : (n === 1 ? "day" : "days");
+    return n === 1 && unit !== "min" ? `Every ${unit}` : `Every ${n} ${unit}`;
+  }
+  const at = t.match(/^(\S+) (\d{1,2}:\d{2})$/);
+  if (!at) return every;
+  const days = { daily: "Every day", weekdays: "Weekdays", weekends: "Weekends" }[at[1]]
+    || at[1].split(",").map((d) => d.slice(0, 1).toUpperCase() + d.slice(1, 3)).join(", ");
+  return `${days} at ${at[2]}`;
 }

@@ -306,9 +306,7 @@ function renderMain() {
     case "settings": return renderSettings(main);
     case "owner": return renderOwner(main);
     case "documents": return renderDocuments(main);
-    case "objectives": return renderObjectives(main);
     case "skills": return renderSkills(main);
-    case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
     case "new-realm": return renderNewRealm(main);
     case "welcome": return renderWelcome(main);

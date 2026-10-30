@@ -92,7 +92,7 @@ A realm runs one business (decision 32). What the business is lives in the realm
 | `queue` | Puts each item in the draft queue for you to approve, edit or reject. `text` names the field holding the draft (`answer.draft`, a field of the judge's answer); `kind` is what your business calls it (`post`, `reply`). |
 | `report` | Writes what is left as a report for you. Always last. |
 
-`prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); while Airth runs, the pipeline runs on its own then, with nobody to ask: the realm's rules must allow its network requests (`airth realm policy network allow`). Each run lands in your inbox; a time missed while Airth was not running is run once, late, and you are told. Without `schedule`, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
+`prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); while Airth runs, the pipeline runs on its own then, with nobody to ask: the realm's rules must allow its network requests (`airth realm policy network allow`). Each run lands in the realm's notifications, on Today; a time missed while Airth was not running is run once, late, and you are told. Without `schedule`, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
 
 `airth pipeline run <name>` runs one now. Its reads go through the realm's rules like any tool call: a realm that asks before network requests asks you here (`airth realm policy network allow` to stop). Each run leaves a row in `business.db`, failed or not: its heartbeat, with what it read, kept and reported. What a run kept is remembered, so the next one only keeps what is new. A `judge` step asks the realm's model about each item, with no tools: the prompt file and the schema are its instructions, the item is data. An answer that is not exactly a JSON object matching the schema is dropped, never repaired; every call is recorded in `business.db` with the prompt's version, the model, tokens, estimated cost, latency and whether the answer fit. The answer goes on with the item, under `answer`.
 
@@ -134,7 +134,7 @@ airth objective run morning-triage  # now, in this terminal
 
 Every run, started by an objective or not, can have a **budget**: `--max-iterations`, `--max-tokens`, `--max-minutes`.
 
-Routines (called objectives in the CLI) run while Airth runs in the background:
+Routines (objectives in the CLI, set up there; the business's recurring work is its pipelines) run while Airth runs in the background:
 
 ```bash
 airth secret set ANTHROPIC_API_KEY --all-realms   # the service does not see your shell
@@ -258,7 +258,7 @@ This opens Airth in your browser, served locally on `127.0.0.1`. From there you 
 - start chats and watch them live: reasoning, tool calls and results; archive or delete the ones you are done with;
 - approve or deny each step that needs it, with an optional reason the agent sees;
 - follow each chat's plan, and resume chats that did not finish;
-- set up routines, and read your inbox and the daily summary;
+- see what waits for you on Today, and how the business's pipelines ran;
 - develop, review and install skills;
 - review, adopt or discard changes;
 - see token usage across realms: per day, realm, model and run, with the share served from the prompt cache (every model call is recorded in its run);

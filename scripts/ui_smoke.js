@@ -101,10 +101,7 @@ const realmDetail = {
   integrations: [{ name: "gh", base_url: "https://api.github.com", description: null, headers: {}, missing_secrets: [] }],
 };
 const fixtures = {
-  "realms/acme/objectives": [{ id: "o1", objective: "Daily", enabled: true, trigger: { kind: "schedule", every: "daily 08:00" }, trigger_label: "daily 08:00", next_at: null, running: false, last_status: null, last_run: null, last_at: null, approvals: [], approval_wait_minutes: 10, budget: {}, webhook_url: null }],
   "realms/acme/skills": [{ name: "wc", status: "proposed", description: "Count", reason: null, proposed_by: "owner", dev_run: null, evaluation: null, installed: null, developing_now: false, summary: null }],
-  inbox: [{ id: 1, kind: "completed", realm: "acme", run: null, title: "Done", body: null, read: false, created_at: now }],
-  "summary?hours=24": [{ realm: "acme", runs: 1, completed: 1, failed: 0, stopped: 0, to_review: [], unfinished: [], recent: [{ id: "r1", objective: "x", origin: null, report: null }], objectives: [] }],
   "usage?days=30": { days: 30, window: { input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }, today: { input: 0, output: 0, cache_read: 0, cache_write: 0, calls: 0, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }, month: { input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } },
     by_day: [{ date: now.slice(0, 10), input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }], by_realm: [{ name: "acme", input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }], by_model: [{ name: "unrecorded", input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }], by_purpose: [{ name: "work", input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }], by_source: [{ name: "chats", input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }, { name: "objectives", input: 4, output: 1, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }],
     top_runs: [{ realm: "acme", id: "r1", objective: "", input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } }] },
@@ -168,7 +165,7 @@ const main = body.querySelector("#main");
   A.app.run = live;
   A.renderMain(); A.renderRun(); check("run view", main);
   check("approval", A.approvalCard({ id: 1, tool: "write_file", capability: "write", preview: "create a.md", warnings: [], grantable: false, grant_label: null }));
-  for (const view of ["today", "pipelines", "new", "settings", "owner", "objectives", "skills", "inbox", "usage", "new-realm"]) {
+  for (const view of ["today", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();
     await new Promise((r) => setTimeout(r, 30));

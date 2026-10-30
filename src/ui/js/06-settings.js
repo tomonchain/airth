@@ -498,7 +498,7 @@ function appearanceCard() {
   return card;
 }
 
-// ---------- objectives ----------
+// ---------- times ----------
 
 function when(iso) {
   if (!iso) return "";
@@ -508,10 +508,6 @@ function when(iso) {
   if (mins < 60) return `in ${mins} min`;
   if (mins < 24 * 60) return `in ${Math.round(mins / 60)} h · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   return d.toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
-function grantText(g) {
-  return g.scope ? `${g.capability}: ${g.scope.replace(/^integration /, "")}` : `all ${g.capability}`;
 }
 
 let confirmDelete = null;

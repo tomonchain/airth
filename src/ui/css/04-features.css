@@ -73,51 +73,9 @@ a.rh-tag { color: var(--brand); }
 .rh-actions .copy-btn { width: 32px; height: 32px; }
 
 /* ---------- Objective wizard ---------- */
-.wizard-wrap { margin-top: 14px; animation: blur-in .45s var(--ease) both; }
-.wizard { border: 1px solid var(--border); border-radius: 20px; background: var(--panel); padding: 18px 22px 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
-.wiz-steps { display: flex; gap: 6px; margin-bottom: 12px; }
-.wiz-step {
-  display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 4px 8px 4px 4px; border-radius: 999px;
-  font-size: 12.5px; color: var(--faint); cursor: default; transition: color .25s var(--ease);
-}
-.wiz-step.done { cursor: pointer; color: var(--muted); }
-.wiz-step.on { color: var(--text); font-weight: 600; }
-.wiz-dot {
-  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700;
-  background: var(--surface); color: var(--faint); transition: background .3s var(--ease), color .3s;
-}
-.wiz-dot .i svg { width: 12px; height: 12px; }
-.wiz-step.on .wiz-dot { background: var(--accent); color: var(--accent-text); }
-.wiz-step.done .wiz-dot { background: var(--step-done); color: var(--step-done-text); }
-.wiz-bar { height: 3px; border-radius: 999px; background: var(--surface); overflow: hidden; margin-bottom: 20px; }
-.wiz-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width .5s var(--ease); }
-.wiz-pane { display: grid; gap: 12px; min-height: 220px; align-content: start; }
-.wiz-pane.from-right { animation: wiz-right .4s var(--ease) both; }
-.wiz-pane.from-left { animation: wiz-left .4s var(--ease) both; }
-.wiz-q { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
-.wiz-pane textarea { width: 100%; font-size: 15px; line-height: 1.55; border-radius: 14px; padding: 12px 14px; }
-.wiz-pane .field { border-top: 0; padding: 4px 0; }
-.wiz-hint { font-size: 12.5px; color: var(--faint); line-height: 1.5; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.tiles.compact { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
-.tile {
-  display: grid; gap: 4px; justify-items: start; text-align: left; cursor: pointer; padding: 14px; border-radius: 14px;
-  border: 1px solid var(--border-strong); background: transparent; color: var(--text);
-  transition: border-color .2s var(--ease), background .2s var(--ease), transform .2s var(--ease), box-shadow .2s;
-}
-.tile:hover { transform: translateY(-1px); background: var(--hover); }
-.tile .i { color: var(--muted); margin-bottom: 4px; }
-.tile.on { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 3px var(--brand-soft); }
-.tile.on .i { color: var(--brand); }
-.tile-label { font-weight: 600; font-size: 13.5px; }
-.tile-sub { font-size: 12px; color: var(--faint); }
-.wiz-presets { justify-content: flex-start; margin: 0; }
 .suggestion.on { color: var(--text); border-color: var(--brand); background: var(--brand-soft); }
-.wiz-wait input { width: 72px; }
 .review { border: 1px solid var(--border); border-radius: 14px; padding: 4px 14px; }
 .review .kv .v { white-space: normal; text-align: right; }
-.wiz-more > summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 4px 0 8px; }
-.wiz-nav { display: flex; justify-content: space-between; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 @keyframes wiz-right { from { opacity: 0; transform: translateX(24px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes wiz-left { from { opacity: 0; transform: translateX(-24px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 
