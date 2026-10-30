@@ -377,6 +377,8 @@ impl Hub {
         }
         // Installed skills run from the home: readable, never writable.
         ws = ws.with_rule(realm.skills().installed_root(), Access::Read);
+        // What the business is belongs to the owner: runs read it only.
+        ws = ws.with_rule(crate::business::dir(&root), Access::Read);
         // The realm's other repositories can be read, to work across them.
         for repo in &realm.config.repos {
             if repo.path != root {
@@ -463,6 +465,10 @@ impl Hub {
             realm: Some(realm.name().to_string()),
             realm_description: realm.config.description.clone(),
             owner,
+            business: match &state.skill {
+                Some(_) => None,
+                None => crate::business::briefing(&realm.root()?)?,
+            },
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
             pull_requests: state.change.is_some()

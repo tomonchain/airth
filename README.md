@@ -377,6 +377,7 @@ src/
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
+  business/       the business a realm runs: its profile and archive, from the realm's business/ folder
   objective.rs    persistent objectives, schedules, file watches
   northstar.rs    a realm's North Star (its focus project): goal, milestones, progress
   projects.rs     a realm's projects: goals, milestones, tasks that move with their chats

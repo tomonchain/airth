@@ -512,6 +512,8 @@ pub struct Briefing {
     pub realm_description: String,
     /// The owner profile, if this realm shares it.
     pub owner: Option<String>,
+    /// The business this realm runs, from its `business/` folder.
+    pub business: Option<String>,
     /// The realm's memory, one entry per line.
     pub memory: Vec<String>,
     /// The run works in its own git worktree, adopted only after review.
@@ -533,6 +535,7 @@ impl Briefing {
             realm: None,
             realm_description: String::new(),
             owner: None,
+            business: None,
             memory: Vec::new(),
             isolated: false,
             pull_requests: false,
@@ -603,6 +606,9 @@ pub fn run_context(b: &Briefing) -> String {
     out.push_str("\n\n");
     if let Some(owner) = &b.owner {
         out.push_str(&format!("About your owner:\n{owner}\n\n"));
+    }
+    if let Some(business) = &b.business {
+        out.push_str(&format!("The business this realm runs:\n{business}\n\n"));
     }
     if !b.memory.is_empty() {
         out.push_str("What you remember in this realm (from earlier runs or the owner):\n");

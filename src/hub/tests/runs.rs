@@ -466,3 +466,84 @@ fn resume_answers_tool_calls_cut_off_by_a_crash() {
     // A completed run is continued with a message, not resumed.
     assert!(hub.resume(&f.realm, &state.id).is_err());
 }
+
+/// Pilot step 1: every run of a realm is told about its business, and can
+/// read its folder but never change it, even with writes allowed and when a
+/// command tries.
+#[test]
+fn runs_read_the_business_folder_but_never_change_it() {
+    let mut f = fixture();
+    let business = f.root.path().join("business");
+    std::fs::create_dir_all(business.join("archive")).unwrap();
+    std::fs::write(
+        business.join("profile.md"),
+        "Hedgen: on-chain research on X.",
+    )
+    .unwrap();
+    std::fs::write(business.join("archive/post.md"), "an old post").unwrap();
+    f.realm.config.policy.write = Rule::Allow;
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+
+    let (hub, _, systems) = make_hub(
+        &f.home,
+        vec![
+            call(
+                "1",
+                "read_file",
+                json!({"path": "business/archive/post.md"}),
+            ),
+            call(
+                "2",
+                "write_file",
+                json!({"path": "business/profile.md", "content": "Hedgen sells tokens."}),
+            ),
+            call(
+                "3",
+                "execute_command",
+                json!({"command": "echo forged > business/profile.md"}),
+            ),
+            call(
+                "4",
+                "write_file",
+                json!({"path": "notes.md", "content": "ok"}),
+            ),
+            done("done"),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &f.realm,
+            "Update the business",
+            config(10),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+    assert_eq!(state.status, Status::Completed);
+    let system = &systems.lock().unwrap()[0];
+    assert!(
+        system.contains("The business this realm runs:\nHedgen: on-chain research on X."),
+        "{system}"
+    );
+    assert!(system.contains("business/archive/: 1 file"), "{system}");
+
+    assert_eq!(state.events[0].status, crate::state::EventStatus::Ok);
+    assert!(state.events[0].result.contains("an old post"));
+    assert_ne!(
+        state.events[1].status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        state.events[1].result
+    );
+    // A command is only stopped by the sandbox.
+    if crate::sandbox::available() {
+        assert_eq!(
+            std::fs::read_to_string(business.join("profile.md")).unwrap(),
+            "Hedgen: on-chain research on X."
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(f.root.path().join("notes.md")).unwrap(),
+        "ok"
+    );
+}
