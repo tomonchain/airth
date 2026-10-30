@@ -8,11 +8,12 @@ A realm is one business. The app shows nothing that is not about the business it
 
 - **Today**: what waits for the owner (drafts with Approve, Edit, Reject, their source, prompt version and cost), the pipelines (last run, next run, a missing heartbeat in warning), and the week (owner time against the baseline, share of drafts sent unedited, model cost).
 - **Pipelines** and **Reports**: what runs, and what it produced.
+- **Costs**: what running the business with Airth costs, in tokens and money, by model, by pipeline and by why the model was called (the usage page, scoped to this business).
 - **What the business is made of**: Documents (its profile, archive and other files), Code (the repositories of its projects), Skills, Connectors (its integrations and their credentials).
 - **Ask Airth**: a chat about this business, with its documents, code, skills and connectors.
 - **Settings** of the business.
 
-The North Star, goal-tracking projects, routines, benchmarks, the global inbox and the usage page leave the surface: routines become pipelines, the inbox becomes Today, usage becomes the cost in Today and the reports. Each is removed, not hidden, in its own change, with its code and tests; settings that belong to the owner (profile, model keys, the phone) stay in one Owner settings page.
+The North Star, goal-tracking projects, routines, benchmarks and the global inbox leave the surface: routines become pipelines, and the inbox becomes Today. Each is removed, not hidden, in its own change, with its code and tests; settings that belong to the owner (profile, model keys, the phone) stay in one Owner settings page.
 
 *Why:* the owner wants one tool to run businesses with as little of their time as possible, not a personal agent with a business page beside it. Every screen that is not about the business is one more thing to walk past, to maintain and to keep secure.
 
