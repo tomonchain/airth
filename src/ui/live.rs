@@ -21,6 +21,8 @@ pub(super) struct Pending {
     pub(super) id: u64,
     pub(super) request: PermissionRequest,
     pub(super) reply: mpsc::Sender<Answer>,
+    /// When the owner was asked: their answer's time goes to the ledger.
+    pub(super) asked: std::time::Instant,
 }
 
 /// Live runs by "<realm>/<run id>".
@@ -87,6 +89,7 @@ impl Approver for UiApprover {
             id: self.next_id,
             request: request.clone(),
             reply: tx,
+            asked: std::time::Instant::now(),
         });
         self.live.bump();
         let answer = loop {

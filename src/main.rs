@@ -190,6 +190,11 @@ enum Cmd {
         #[command(subcommand)]
         command: cli::OwnerCmd,
     },
+    /// Your time on the realm's business: what Airth recorded, and what you add
+    Time {
+        #[command(subcommand)]
+        command: cli::TimeCmd,
+    },
     /// Show or edit the realm's long-term memory
     Memory {
         #[command(subcommand)]
@@ -427,6 +432,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         .map(|_| true),
         Some(Cmd::Realm { command }) => cli::realm(ctx, command),
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
+        Some(Cmd::Time { command }) => cli::time(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),

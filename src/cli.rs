@@ -131,6 +131,22 @@ pub enum MemoryCmd {
 }
 
 #[derive(Subcommand)]
+pub enum TimeCmd {
+    /// What your time on the business was, by activity, and each entry
+    Show {
+        /// How many days back
+        #[arg(long, default_value_t = 7)]
+        days: u32,
+    },
+    /// Record time you spent outside Airth (publishing, replying on X…)
+    Add {
+        minutes: u32,
+        /// What it was
+        note: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum SecretCmd {
     /// List the realm's credential names (values are never shown)
     List,
@@ -1068,6 +1084,50 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
     }
     home.save_owner(&owner)?;
     eprintln!("\x1b[32m✓\x1b[0m profile saved");
+    Ok(true)
+}
+
+pub fn time(ctx: &Ctx, command: TimeCmd) -> Result<bool> {
+    use crate::business::{store::Store, time};
+    let realm = ctx.realm()?;
+    let mut store = Store::of(&realm)?;
+    match command {
+        TimeCmd::Show { days } => {
+            let since = chrono::Utc::now() - chrono::Duration::days(i64::from(days));
+            let entries = store.time_since(since)?;
+            let mut by_activity = std::collections::BTreeMap::<&str, u64>::new();
+            for e in &entries {
+                *by_activity.entry(&e.activity).or_default() += e.seconds;
+            }
+            let total: u64 = by_activity.values().sum();
+            println!(
+                "\x1b[1m{}\x1b[0m on {} over the last {days} days",
+                time::human(total),
+                realm.name()
+            );
+            for (activity, secs) in &by_activity {
+                println!("  {activity:<10} {}", time::human(*secs));
+            }
+            for e in &entries {
+                println!(
+                    "\x1b[2m{}  {:<10} {:>8}  {}\x1b[0m",
+                    e.at.with_timezone(&chrono::Local).format("%a %d %H:%M"),
+                    e.activity,
+                    time::human(e.seconds),
+                    e.note
+                );
+            }
+        }
+        TimeCmd::Add { minutes, note } => {
+            store.record_time(&time::Entry {
+                at: chrono::Utc::now(),
+                activity: time::REPORTED.into(),
+                seconds: u64::from(minutes) * 60,
+                note,
+            })?;
+            eprintln!("recorded {minutes} min on {}", realm.name());
+        }
+    }
     Ok(true)
 }
 

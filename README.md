@@ -65,6 +65,17 @@ airth owner set name "Thomas"
 airth owner add boundaries "Never push to main"
 ```
 
+## A realm's business
+
+A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules) and `archive/` (past posts and documents). Every run of the realm is told the profile and where the archive is; runs can read the folder, never change it.
+
+What it costs you is recorded in the realm's `business.db`: each answer you give Airth counts from the moment it asked (up to 10 minutes), and you add what happens outside Airth.
+
+```bash
+airth time show                    # your time on this business, the last 7 days (--days 30)
+airth time add 15 "Published the thread on X"
+```
+
 ## Tasks: plans, approvals, resuming
 
 Give Airth an objective, not steps. For anything beyond a couple of steps it writes a plan and keeps it current as it works. You see the plan live in the app (and in the terminal).
@@ -310,6 +321,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     objectives.json            objectives: triggers, approvals, budgets, last run
+    business.db                business state (SQLite): the owner-time ledger
     skills/                    skills.json, drafts/<skill>/, installed/<skill>/
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
@@ -322,7 +334,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
 ```text
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary, skill
+  cli.rs          CLI: realm, owner, time, memory, secret, integration, objective, inbox, summary, skill
   hub/            the interface to agents: runs per realm, workspaces, briefings (mod.rs); models
                   and routing, changes and adoption, repositories, pull-request delivery,
                   objectives, skills, saved runs
@@ -330,7 +342,8 @@ src/
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
-  business/       the business a realm runs: its profile and archive, from the realm's business/ folder
+  business/       the business a realm runs: its profile and archive, from the realm's business/ folder;
+                  its state in business.db (store.rs) and the owner-time ledger (time.rs)
   objective.rs    persistent objectives, schedules, file watches
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls

@@ -5,6 +5,9 @@
 //! runs may read the folder but never write it, so only the owner changes
 //! what the business is.
 
+pub mod store;
+pub mod time;
+
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 

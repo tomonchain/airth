@@ -299,7 +299,7 @@ impl App {
         }))
     }
 
-    fn answer(&self, realm: &str, id: &str, body: &Value) -> Result<()> {
+    pub(super) fn answer(&self, realm: &str, id: &str, body: &Value) -> Result<()> {
         let live = self
             .live(realm, id)
             .context("this run is not in progress")?;
@@ -323,6 +323,21 @@ impl App {
             .send(answer)
             .map_err(|_| anyhow!("the run is no longer waiting"))?;
         live.bump();
+        let entry = time::Entry {
+            at: chrono::Utc::now(),
+            activity: time::ANSWER.into(),
+            seconds: time::answer_seconds(p.asked.elapsed()),
+            note: format!("{} in run {id}", p.request.tool),
+        };
+        // The answer is given either way; a ledger that cannot be written is
+        // reported, not a reason to keep the run waiting.
+        if let Err(e) = self
+            .realm(realm)
+            .and_then(|r| Store::of(&r))
+            .and_then(|mut s| s.record_time(&entry))
+        {
+            eprintln!("could not record the answer's time in {realm}: {e:#}");
+        }
         Ok(())
     }
 

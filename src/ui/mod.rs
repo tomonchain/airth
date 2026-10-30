@@ -11,6 +11,8 @@
 //! cannot drive the agent or approve its actions.
 
 use crate::agent::{AgentConfig, Observer};
+use crate::business::store::Store;
+use crate::business::time;
 use crate::cancel::CancelToken;
 use crate::connectors;
 use crate::home::NewRealm;
@@ -287,6 +289,74 @@ impl App {
 mod tests {
     use super::*;
 
+    fn test_app(home: crate::home::Home, port: u16) -> App {
+        let hub = Arc::new(Hub::new(home));
+        let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+        App {
+            runner: Runner {
+                hub: hub.clone(),
+                registry: registry.clone(),
+                max_iterations: 1,
+            },
+            hub,
+            registry,
+            token: "t0k3n".into(),
+            port,
+            options: UiOptions {
+                port,
+                open_browser: false,
+                max_iterations: 1,
+                realm: None,
+            },
+            update: Arc::new(Mutex::new(UpdateState::default())),
+            writes: Mutex::new(()),
+            previews: Mutex::new(HashMap::new()),
+        }
+    }
+
+    #[test]
+    fn an_answer_goes_to_the_owner_time_ledger() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        let (tx, rx) = mpsc::channel();
+        let live = Arc::new(Live {
+            snapshot: Mutex::new(State::new("x", None)),
+            pending: Mutex::new(Some(Pending {
+                id: 1,
+                request: PermissionRequest {
+                    tool: "write_file".into(),
+                    capability: Capability::Write,
+                    preview: String::new(),
+                    warnings: Vec::new(),
+                    scope: None,
+                },
+                reply: tx,
+                asked: std::time::Instant::now() - Duration::from_secs(5),
+            })),
+            cancel: CancelToken::default(),
+            version: AtomicU64::new(1),
+        });
+        app.registry.lock().unwrap().insert(key("r", "run1"), live);
+        app.answer("r", "run1", &json!({"approval_id": 1, "approve": true}))
+            .unwrap();
+        assert!(matches!(rx.recv().unwrap(), Answer::Yes));
+        let since = chrono::Utc::now() - chrono::Duration::hours(1);
+        let entries = Store::of(&realm).unwrap().time_since(since).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].activity, time::ANSWER);
+        assert_eq!(entries[0].seconds, 5);
+        assert_eq!(entries[0].note, "write_file in run run1");
+    }
+
     #[test]
     fn a_slow_service_does_not_freeze_the_app() {
         // A remote MCP server that takes 2 seconds to answer.
@@ -310,28 +380,7 @@ mod tests {
         .unwrap();
         let server = Server::http("127.0.0.1:0").unwrap();
         let port = server.server_addr().to_ip().unwrap().port();
-        let hub = Arc::new(Hub::new(home));
-        let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
-        let app = App {
-            runner: Runner {
-                hub: hub.clone(),
-                registry: registry.clone(),
-                max_iterations: 1,
-            },
-            hub,
-            registry,
-            token: "t0k3n".into(),
-            port,
-            options: UiOptions {
-                port,
-                open_browser: false,
-                max_iterations: 1,
-                realm: None,
-            },
-            update: Arc::new(Mutex::new(UpdateState::default())),
-            writes: Mutex::new(()),
-            previews: Mutex::new(HashMap::new()),
-        };
+        let app = test_app(home, port);
         std::thread::spawn(move || serve_requests(server, app));
         let base = format!("http://127.0.0.1:{port}");
         let b = base.clone();
