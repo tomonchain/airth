@@ -2,6 +2,81 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 31. Business state lives in SQLite, one database per realm
+
+A business's state (the draft queue and its transitions, the owner-time ledger, pipeline heartbeats, the record of model calls) lives in the realm's `business.db`, through `rusqlite` with its bundled SQLite. Every write is one `BEGIN IMMEDIATE` transaction, in WAL mode with a busy timeout. Schema changes are numbered migrations, and a database newer than the binary is refused. Mutable records carry a revision: an update against a stale revision fails. The audit table is append-only, enforced by triggers. Run state, objectives, settings and memory stay JSON (decision 1).
+
+*Why:* the draft queue must never publish twice, even when a retried job and an answer from the phone arrive together; a transaction makes that a property of the store, not of every caller. The model-call record is the evaluation dataset (decision 26): it grows with every call and is queried by prompt version and outcome, which JSON files do poorly. The store comes from the `business-autonomy` branch, where it was built and tested (see `docs/reconciliation.md`).
+
+*Cost:* one new dependency, compiled in (about 1 MB). Business state is no longer readable with a text editor; `airth` must offer a way to inspect and export it. Two storage styles coexist, with a clear line between them.
+
+## 30. Business pipelines are a generic engine; each business declares its own
+
+Decision 26 left open whether pipelines are installed skills (decision 14) or a module of their own. Skills cannot do the job as decision 14 bounds them: a skill runs only when a model inside an agent run calls it, so the model would sequence the work; its command gets no provider key, so it cannot make a recorded model call; and it is denied the Airth home, where the queue and the ledger live.
+
+So the engine is a module, `src/pipeline/`. It holds the engine and a small set of generic step types, nothing specific to one business: read a source (RSS, a web page, JSON through an integration), filter and deduplicate, ask the model to judge or draft (a prompt and an output schema), queue for the owner's approval, send to a service through an integration, write a report. Steps with an effect go through `Runtime::invoke`, with the objective's approvals as grants and an approver that never waits, so the permission check, redaction and events stay the only path to execution (`runtime.rs` is unchanged). An objective names the pipeline it starts (a new optional field); the scheduler starts the pipeline instead of an agent run when it is set. Triggers, budgets and the missed-schedule rule stay as they are (decision 11).
+
+What belongs to a business lives in its realm folder, under `business/`, versioned in git with the rest of the realm: its pipelines (JSON files assembling step types, with their schedule), its prompts, its sources, the accounts it watches, its editorial pillars. A pipeline file is checked when it is loaded: an unknown step type, a missing prompt or an invalid schema refuses the pipeline before it runs, never halfway. A prompt's version is the hash of its content, recorded with every model call (decision 31). Runs can read `business/` but not write it: only the owner changes how the business runs.
+
+A step type enters the engine only when a real pipeline needs it. There is no workflow editor during the pilot: pipelines are files. Hedgen is the first business configured this way; a second one set up without changing the binary is the test that the engine is generic.
+
+*Why:* the owner wants anyone to run their company from Airth. Pipelines written in Rust for Hedgen would serve no one else, and every change would need a release. Declaring them per business keeps the guarantees of decision 26 (fixed steps, the model only judges, recorded calls) in the engine, and the business choices with the business, where git shows who changed what and when.
+
+*Cost:* the pipeline file format is a contract to keep stable and documented. Configuration errors must be caught at load time, which needs its own checks and tests. Generic step types are harder to get right than one-off code, and the first ones will be shaped by one business until a second one uses them.
+
+## 29. Airth runs on the owner's Mac until a stable beta, then on a Linux VPS
+
+During the pilot, Airth runs as the login service on the owner's Mac (decision 13), kept awake when a routine is due. A schedule missed while the Mac sleeps fires once, late (decision 11); the weekly report shows such delays so they are not mistaken for slowness.
+
+Once a beta is stable, Airth moves to a Linux VPS, always on. That move is gated: on Linux, commands run unconfined (decision 4, *Cost*). Before the VPS hosts a realm, one of these must hold:
+
+- a Linux sandbox exists (Landlock or bubblewrap), generated from the same path rules as the macOS profile, with the bench's security tasks passing on Linux; or
+- the realm denies execute and has no installed skill that runs commands, which `airth doctor` checks and reports.
+
+The app server also stays on loopback on the VPS; the owner reaches it through an SSH tunnel or a private network, never an open port.
+
+*Why:* the Mac is what exists and is enough to prove the pilot. A business must eventually run with the laptop closed, and a VPS is the cheapest always-on host, but moving there must not silently drop the isolation the rest of Airth relies on.
+
+*Cost:* until the move, a closed lid delays routines. The Linux sandbox is real work, scheduled after the pilot's proof, not before (decision 25).
+
+## 28. The approval queue reaches the owner's phone through a Telegram bot
+
+The pilot's proof depends on approving drafts in seconds, away from the desk, and notifications today stay in the app's inbox (decision 12, *Cost*). Airth polls the Telegram Bot API (outbound only, no port opened, which also works unchanged on the future VPS). Each item of the queue arrives as a message with Approve, Edit and Reject buttons; Edit takes the owner's reply as the new text. Answers are accepted only from the owner's chat id. The bot token is an integration credential bound to api.telegram.org (decision 10). Every answer goes through the same queue state machine and owner-time ledger as an answer given in the app (decisions 26 and 27), so the channel decides who answers, never what an answer may do (decision 2).
+
+*Why:* the cheapest path to a phone: one integration and one polling thread. The iOS companion app stays possible later and reuses the same queue.
+
+*Cost:* message contents transit through Telegram. Only drafts and public post links go there, never credentials or private realm data. Polling adds a request every few seconds while Airth runs.
+
+## 27. The owner's time is a recorded quantity
+
+Every owner interaction with a business run is recorded in the realm's ledger: what was shown, when, the answer (approved, edited, rejected), the time between showing and answering, and for an edit, the diff. The weekly report sums it per week and per pipeline, and compares it with the baseline the owner states for the manual period.
+
+*Why:* the pilot's claim is "this business runs with N minutes of the owner per week". Token usage is already recorded (decision 23); the owner's time is the cost that matters, and it is not recorded anywhere yet. Edits are also the best signal of where the drafts fall short.
+
+*Cost:* time between showing and answering overstates attention (a draft can wait an hour unread). The report shows both the sum and the median per item, and says so.
+
+## 26. Business operations are pipelines of tested steps; the model only judges
+
+A business routine (watch, drafting, replies radar, weekly report) is a fixed sequence of steps written in code. Steps that fetch, filter, deduplicate, schedule or change state are deterministic and tested. A model is called only for steps that need judgment, each with a versioned prompt file, an output schema checked in code, and a recorded outcome. The routine is started by an objective (decision 11) with its approvals and budget given in advance. A step that reads external content holds no tool with side effects.
+
+Drafts move through drafted → pending → approved → published | rejected, stored as JSON in the realm. Transitions are idempotent, so a retried routine never sends a draft twice. Airth never publishes to X; the owner does, from a prepared link.
+
+Each routine writes a heartbeat when it ends; a routine whose heartbeat is missing past its schedule notifies the owner.
+
+Before a prompt or model change ships, it is replayed on a reference set built from the owner's own past posts and from the drafts they approved or edited, and the results are compared.
+
+*Why:* the agent loop is right for open tasks, wrong for a daily routine: a routine that re-plans itself each morning is costly, hard to test and different every day. Fixing the sequence makes behaviour reproducible and failures local. It also keeps X's automation rules respected: automated replies found by keyword search are not allowed there, so a human publishes every reply.
+
+*Cost:* a new routine needs code, not just a sentence. That is deliberate during the pilot. Whether these pipelines become installed skills (decision 14) or a module of their own is the first implementation question, and gets its own entry.
+
+## 25. The surface is frozen until the Hedgen pilot proves itself
+
+Airth went from first commit to about 30,000 lines in under two weeks. Until the Hedgen pilot shows two consecutive weeks of its seven steps running (see `CLAUDE.md`) with a measured owner time well under the manual baseline, Airth gets bug fixes and pilot work only. Other ideas go to `docs/backlog.md` with the pilot step they would help.
+
+*Why:* the code is well structured, tested and documented, so the risk is not quality but breadth: one owner has to understand and maintain everything that exists. The pilot is what tells which of the existing features matter.
+
+*Cost:* useful improvements wait. Features that exist and are not used by the pilot stay as they are, unmaintained beyond keeping the checks green.
+
 ## 24. Benchmarks drive real runs through the hub, in throwaway realms, and verify outcomes themselves
 
 Airth Bench (`src/bench/`) measures the harness, so it must exercise the harness: each task is a normal run created and driven by `Hub::drive`, with the same agent loop, tools, permission gate, sandbox, compaction and usage accounting as a chat. There is no second runtime. What differs is around the run:
