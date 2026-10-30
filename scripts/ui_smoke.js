@@ -116,6 +116,19 @@ const fixtures = {
     { connected: false, connector: { id: "google", name: "Google", category: "Productivity", description: "Via the Mac", docs: "https://d", kind: "mac", setup_url: "x-apple.systempreferences:x" } },
   ] },
   owner: { name: "", about: "", preferences: [], goals: [], commitments: [], boundaries: [], updated_at: null },
+  // The business: a draft from a feed (with an unsafe link), a pipeline that ran, one refused, one never run.
+  "realms/acme/business": { has_business: true,
+    drafts: [{ id: 1, created_at: now, pipeline: "production", kind: "post", text: "ETH left the queue.", original: "ETH left the queue.",
+      source: { title: "Flows", link: "javascript:alert(1)" }, model_call: 3, status: "pending", revision: 1 }],
+    pipelines: [
+      { name: "watch", description: "Morning shortlist", schedule: "daily 07:00", steps: ["read 2 feed(s)", "report \"Watch\""], next_at: now,
+        runs: [{ started_at: now, finished_at: now, ok: true, items_read: 4, items_kept: 2, report: "# Watch\n\n- [a](https://e.com)", notes: "", error: null },
+          { started_at: now, finished_at: now, ok: false, items_read: 0, items_kept: 0, report: null, notes: "", error: "no feed could be read" }] },
+      { name: "broken", error: "step 2: unknown field", runs: [] },
+      { name: "replies", description: "", schedule: null, steps: ["read 1 feed(s)"], next_at: null, runs: [] }],
+    week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 },
+    notifications: [{ id: 2, kind: "failed", realm: "acme", run: null, title: "watch failed", body: "no feed could be read", read: false, created_at: now }] },
+  "inbox/read": {},
 };
 
 // ---------- load the app (without booting it) ----------
@@ -155,13 +168,19 @@ const main = body.querySelector("#main");
   A.app.run = live;
   A.renderMain(); A.renderRun(); check("run view", main);
   check("approval", A.approvalCard({ id: 1, tool: "write_file", capability: "write", preview: "create a.md", warnings: [], grantable: false, grant_label: null }));
-  for (const view of ["new", "settings", "owner", "objectives", "skills", "inbox", "usage", "new-realm"]) {
+  for (const view of ["today", "pipelines", "new", "settings", "owner", "objectives", "skills", "inbox", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();
     await new Promise((r) => setTimeout(r, 30));
     if (main.textContent.trim().length < 40) problems.push(`${view}: rendered (almost) nothing`);
     check(view, main);
   }
+  // A draft's source link from a feed is followed only when it is a web link.
+  A.app.route = { view: "today", realm: "acme" };
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  if (!main.textContent.includes("ETH left the queue.")) problems.push("today: the draft is missing");
+  if (main.textContent.includes("Flows")) problems.push("today: a javascript: link from a feed was rendered");
   A.app.route = { view: "skills", realm: "acme" };
   for (const tab of ["catalog", "mcp", "connectors"]) {
     A.skillUi.tab = tab;

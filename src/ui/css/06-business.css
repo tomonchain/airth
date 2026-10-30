@@ -1,0 +1,29 @@
+/* ---------- The business: Today and Pipelines ---------- */
+.biz-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; margin-top: 12px; }
+.biz-card { padding: 16px 18px; margin-bottom: 16px; }
+.page-inner .biz-card h2 { margin: 0 0 10px; }
+.biz-draft { padding: 12px 0; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.biz-draft:first-of-type { border-top: 0; padding-top: 0; }
+.biz-meta { font-size: 12.5px; color: var(--muted); }
+.biz-tag { font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--brand-soft); color: var(--brand); }
+.biz-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border-radius: 10px; padding: 10px 12px; }
+.biz-edit { width: 100%; font: inherit; }
+.biz-source { color: var(--muted); overflow-wrap: anywhere; }
+.biz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.biz-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); color: inherit; text-decoration: none; }
+.biz-row:first-of-type { border-top: 0; }
+.biz-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.page-inner .biz-head h2 { margin: 0; }
+.biz-ok { color: var(--ok); }
+.biz-bad { color: var(--err); }
+.biz-clip { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.biz-steps { margin: 8px 0 4px; padding-left: 20px; color: var(--muted); }
+.biz-runs { margin-top: 10px; }
+.biz-report { margin-top: 10px; }
+.biz-report summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.biz-note { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.biz-note:first-of-type { border-top: 0; }
+.biz-note.unread { font-weight: 500; }
+@media (max-width: 860px) {
+  .biz-grid { grid-template-columns: minmax(0, 1fr); }
+}

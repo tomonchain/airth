@@ -52,12 +52,12 @@ function renderNav() {
   $("#side-nav").replaceChildren(
     h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search chats, pages, realms and actions" },
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
-    navLink(r ? `#/r/${r}` : null, "pencil", "New chat", v === "new"),
+    navLink(r ? `#/r/${r}/today` : null, "inbox", "Today", v === "today", unread > 0 && h("span", { class: "count" }, String(unread))),
+    navLink(r ? `#/r/${r}/pipelines` : null, "clock", "Pipelines", v === "pipelines"),
+    navLink(r ? `#/r/${r}` : null, "pencil", "Ask Airth", v === "new"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
-    navLink("#/inbox", "inbox", "Inbox", v === "inbox", unread > 0 && h("span", { class: "count" }, String(unread))),
-    navLink(r ? `#/r/${r}/routines` : null, "clock", "Routines", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
-    navLink("#/usage", "chart", "Usage", v === "usage"),
+    navLink("#/usage", "chart", "Costs", v === "usage"),
   );
 }
 
@@ -299,6 +299,8 @@ function renderMain() {
     return;
   }
   switch (app.route.view) {
+    case "today": return renderToday(main);
+    case "pipelines": return renderPipelines(main);
     case "new": return renderNew(main);
     case "run": return renderRunShell(main);
     case "settings": return renderSettings(main);

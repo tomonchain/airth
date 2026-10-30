@@ -175,6 +175,17 @@ impl App {
                 }
                 json_response(200, self.realm_detail(&realm)?)
             }
+            (Method::Get, ["realms", r, "business"]) => {
+                json_response(200, self.business(&self.realm(r)?)?)
+            }
+            (Method::Post, ["realms", r, "pipelines", name, "run"]) => {
+                let realm = self.realm(r)?;
+                // Refused at once when the file does not hold.
+                crate::pipeline::load(&crate::business::dir(&realm.root()?), name)?;
+                let (hub, name) = (self.hub.clone(), name.to_string());
+                std::thread::spawn(move || hub.run_pipeline_unattended(&realm, &name));
+                ok()
+            }
             (Method::Get, ["realms", r, "drafts"]) => {
                 // `status=pending,approved`; every draft without it.
                 let status = param(query, "status");
@@ -339,6 +350,46 @@ impl App {
             "path": crate::documents::relative(&root, &dir),
             "entries": crate::documents::list(&dir)?,
             "made": made,
+        }))
+    }
+
+    /// The business page's data: drafts waiting, each pipeline with its
+    /// last runs and next time, the last seven days, and the realm's latest
+    /// notifications.
+    fn business(&self, realm: &Realm) -> Result<Value> {
+        let business = crate::business::dir(&realm.root()?);
+        let store = Store::of(realm)?;
+        let mut pipelines = Vec::new();
+        for (name, loaded) in crate::pipeline::load_all(&business)? {
+            let runs = store.pipeline_runs(&name, 10)?;
+            pipelines.push(match loaded {
+                Ok(p) => json!({
+                    "name": name,
+                    "description": p.description,
+                    "schedule": p.schedule,
+                    "steps": p.steps.iter().map(|s| s.describe(&p.prompts)).collect::<Vec<_>>(),
+                    "next_at": store.next_run(&name)?,
+                    "runs": runs,
+                }),
+                Err(e) => json!({"name": name, "error": format!("{e:#}"), "runs": runs}),
+            });
+        }
+        let notifications: Vec<_> = self
+            .hub
+            .home()
+            .inbox()
+            .list()?
+            .into_iter()
+            .rev()
+            .filter(|n| n.realm == realm.name())
+            .take(20)
+            .collect();
+        Ok(json!({
+            "has_business": business.is_dir(),
+            "drafts": store.drafts(&["pending"])?,
+            "pipelines": pipelines,
+            "week": store.week(chrono::Utc::now() - chrono::Duration::days(7))?,
+            "notifications": notifications,
         }))
     }
 

@@ -304,12 +304,16 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
   if ((m = h.match(/^#\/r\/([^/]+)\/(?:routines|objectives)/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/today/))) return { view: "today", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/pipelines/))) return { view: "pipelines", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
   if (h.startsWith("#/inbox")) return { view: "inbox" };
   if (h.startsWith("#/usage")) return { view: "usage" };
   if (h.startsWith("#/realms/new")) return { view: "new-realm" };
   if (h.startsWith("#/welcome")) return { view: "welcome" };
+  // A new chat in the realm open last (the Mac app's File → New chat).
+  if (h.startsWith("#/chat")) return { view: "home", chat: true };
   return { view: "home" };
 }
 
@@ -354,7 +358,7 @@ async function onRoute() {
   if (app.route.view === "home") {
     const r = preferredRealm();
     if (!r) return go(welcomed() ? "#/realms/new" : "#/welcome");
-    return go(`#/r/${enc(r)}`);
+    return go(app.route.chat ? `#/r/${enc(r)}` : `#/r/${enc(r)}/today`);
   }
   // The guide has the whole window; the sidebar comes back after.
   $("#app").classList.toggle("welcoming", app.route.view === "welcome");

@@ -6,6 +6,7 @@
 //! what the business is.
 
 pub mod drafts;
+pub mod status;
 pub mod store;
 pub mod time;
 

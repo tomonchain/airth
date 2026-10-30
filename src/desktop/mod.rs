@@ -67,7 +67,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         "CmdOrCtrl+Q".parse::<Accelerator>().ok(),
     );
     let reload = MenuItem::new("Reload", true, "CmdOrCtrl+R".parse::<Accelerator>().ok());
-    let inbox = MenuItem::new("Inbox", true, "CmdOrCtrl+I".parse::<Accelerator>().ok());
+    let inbox = MenuItem::new("Today", true, "CmdOrCtrl+I".parse::<Accelerator>().ok());
     let new_chat = MenuItem::new("New Chat", true, "CmdOrCtrl+N".parse::<Accelerator>().ok());
     let menu = Menu::new();
     let app_menu = Submenu::new("Airth", true);
@@ -149,7 +149,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
 
     // Menu bar icon.
     let tray_open = MenuItem::new("Open Airth", true, None);
-    let tray_inbox = MenuItem::new("Inbox", true, None);
+    let tray_inbox = MenuItem::new("Today", true, None);
     let tray_quit = MenuItem::new("Quit Airth", true, None);
     let tray_menu = Menu::new();
     tray_menu.append_items(&[
@@ -237,9 +237,10 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
                 } else if id == tray_open.id() {
                     show();
                 } else if id == inbox.id() || id == tray_inbox.id() {
-                    go("#/inbox");
-                } else if id == new_chat.id() {
+                    // The open business's Today page.
                     go("#/");
+                } else if id == new_chat.id() {
+                    go("#/chat");
                 } else if id == reload.id() {
                     let _ = webview.reload();
                 }

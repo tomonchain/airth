@@ -98,6 +98,8 @@ A realm runs one business (decision 32). What the business is lives in the realm
 
 Drafts wait in the realm's `business.db` until you decide: approve, edit (it stays in the queue, with what was drafted kept beside your text) or reject. Each decision is logged, costs you the time it took (up to 10 minutes), and becomes the outcome of the model call that drafted it: approved, edited or rejected, the data that tells which prompts work. Nothing moves twice: approving an approved draft changes nothing, and a draft is published at most once.
 
+In the app, a realm opens on **Today**: the drafts waiting for you, each with Approve, Edit and Reject; how each pipeline last ran; the last seven days (your time, the share of drafts sent unedited, the model cost); and the realm's latest notifications. **Pipelines** shows each pipeline's steps, schedule, recent runs and last report, with Run now. **Ask Airth** is a chat about the business; **Costs** is the usage page.
+
 What it costs you is recorded in the realm's `business.db`: each answer you give Airth counts from the moment it asked (up to 10 minutes), and you add what happens outside Airth.
 
 ```bash
@@ -140,7 +142,7 @@ airth service install    # macOS: start at login, keep running (or run `airth se
 airth ui                 # opens the running app
 ```
 
-When a run ends, Airth notifies you (on macOS, also on the desktop, showing only the realm and the event). Catch up in the app's **Inbox**, or:
+When a run ends, Airth notifies you (on macOS, also on the desktop, showing only the realm and the event). Catch up on the realm's **Today** page in the app, or:
 
 ```bash
 airth inbox        # new notifications
