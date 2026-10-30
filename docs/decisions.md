@@ -94,7 +94,7 @@ Airth works with the owner's Mac apps through tools: `calendar`, `reminders`, `n
 
 *Cost:* Calendar, Reminders and Notes are shared by all realms, so a realm's `apps` rule decides whether that realm may use them. Ad-hoc signatures change with each update, so macOS may ask again for automation permissions after an update. Dictation uses the page's speech recognition when available, else macOS dictation.
 
-## 15. Airth updates itself from its source repository, only after its tests pass
+## 15a. Airth updates itself from its source repository, only after its tests pass
 
 Airth records at build time the commit and the checkout it was built from. The running app checks every minute whether that checkout's branch has moved forward, and every 30 minutes whether its upstream has. It prepares a newer version away from the owner's checkout, in a detached worktree in the home: `cargo build --release`, then `cargo test --release`. Only a version whose tests pass is offered ("Restart to update"), and only the owner's click (or `airth update`) installs it. The binary is swapped atomically and the previous one kept (`airth update --rollback`). The login service exits and launchd starts the new binary; a terminal `airth ui` replaces itself in place. The app's access key is kept in the home, so the open page reconnects after the restart.
 
@@ -102,7 +102,7 @@ Airth records at build time the commit and the checkout it was built from. The r
 
 *Cost:* updates need the source checkout and a Rust toolchain on the machine. Release builds take a few minutes. Runs in progress are stopped by the restart; they can be resumed.
 
-## 15. A second provider speaks the OpenAI-compatible Chat Completions format
+## 15b. A second provider speaks the OpenAI-compatible Chat Completions format
 
 Besides Anthropic, `AIRTH_PROVIDER` can be `openai`, `xai` (Grok) or `ollama` (local models). All three go through one provider that speaks the Chat Completions format. Presets set the base URL and the key variable (`OPENAI_API_KEY`, `XAI_API_KEY`, none for Ollama), and `OPENAI_BASE_URL` points it at any other compatible server. `AIRTH_MODEL` is required for these providers, so Airth never guesses a model name. The new keys are provider keys: never given to commands, redacted from everything the model sees, and storable once for all realms. Per-realm settings mean one realm can run on a local model while another bills a cloud key.
 
