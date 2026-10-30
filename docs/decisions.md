@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 32. Airth runs businesses; each realm is one business
+
+A realm is one business. The app shows nothing that is not about the business it runs. The rail lists the businesses, and for the one open:
+
+- **Today**: what waits for the owner (drafts with Approve, Edit, Reject, their source, prompt version and cost), the pipelines (last run, next run, a missing heartbeat in warning), and the week (owner time against the baseline, share of drafts sent unedited, model cost).
+- **Pipelines** and **Reports**: what runs, and what it produced.
+- **What the business is made of**: Documents (its profile, archive and other files), Code (the repositories of its projects), Skills, Connectors (its integrations and their credentials).
+- **Ask Airth**: a chat about this business, with its documents, code, skills and connectors.
+- **Settings** of the business.
+
+The North Star, goal-tracking projects, routines, benchmarks, the global inbox and the usage page leave the surface: routines become pipelines, the inbox becomes Today, usage becomes the cost in Today and the reports. Each is removed, not hidden, in its own change, with its code and tests; settings that belong to the owner (profile, model keys, the phone) stay in one Owner settings page.
+
+*Why:* the owner wants one tool to run businesses with as little of their time as possible, not a personal agent with a business page beside it. Every screen that is not about the business is one more thing to walk past, to maintain and to keep secure.
+
+*Cost:* features that work today go away, and anyone who used Airth as a coding or personal agent loses them. A business that is not yet set up has an empty realm, so creating one must lead straight to its profile, its code and its first connector. This supersedes the "nothing removed" rule of decision 25 for the features listed here.
+
 ## 31. Business state lives in SQLite, one database per realm
 
 A business's state (the draft queue and its transitions, the owner-time ledger, pipeline heartbeats, the record of model calls) lives in the realm's `business.db`, through `rusqlite` with its bundled SQLite. Every write is one `BEGIN IMMEDIATE` transaction, in WAL mode with a busy timeout. Schema changes are numbered migrations, and a database newer than the binary is refused. Mutable records carry a revision: an update against a stale revision fails. The audit table is append-only, enforced by triggers. Run state, objectives, settings and memory stay JSON (decision 1).
