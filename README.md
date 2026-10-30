@@ -31,7 +31,7 @@ airth run "Find and fix one small bug, with a test."
 
 Then run `airth review last` to read what it changed, and `airth adopt <run>` to merge it. On a Mac, [Installing on a Mac](#installing-on-a-mac) adds a native app that starts at login.
 
-See [SPECS_V1.1.md](SPECS_V1.1.md) for the vision and roadmap, and [docs/decisions.md](docs/decisions.md) for how it is built.
+See [CLAUDE.md](CLAUDE.md) for the current phase (the Hedgen pilot), [docs/decisions.md](docs/decisions.md) for how Airth is built, and [docs/archive/](docs/archive/) for the earlier specs.
 
 ## Realms
 
