@@ -11,7 +11,6 @@ Free to use, fair source: see [License](#license).
 - **Realms keep your life apart.** Your job, your company and a side project each get their own folder, permissions, memory and credentials. Nothing crosses between them, and the runtime enforces it (on macOS, commands run in a sandbox).
 - **You review before anything lands.** Each chat works in its own git worktree. You read the diff and the test results, then adopt or discard, or merge its pull request on GitHub.
 - **It works on its own, within bounds.** Schedules, file watches and webhooks start work for you. What a run may do is decided in advance, and anything else waits for your approval.
-- **One goal at a time.** Set a North Star and Airth picks the next step toward it every day.
 - **Your keys, your models.** Claude, GPT, Grok, DeepSeek, Mistral, OpenRouter, or a fully local model with Ollama. Credentials are never shown to the model.
 - **It extends itself.** It can propose new skills, and you review and install them. It also connects to Notion, Linear, Stripe, GitHub and other MCP services.
 
@@ -108,33 +107,6 @@ airth inbox        # new notifications
 airth summary      # the last 24 h across realms: what ran, what waits for review, what's next
 ```
 
-## North Star: one goal, every day
-
-Give a realm a **North Star**, the one goal its work serves ("100 kit sales by December"). From the realm's home in the app:
-
-1. **Define it with Airth.** Write the goal (when you set it, or when you create the realm) and Airth starts a short conversation: it asks you 3 to 5 questions (where things stand, what success looks like and by when, your constraints, what to delegate, the main risk), then proposes a sharper, measurable goal, 3 to 7 milestones each with how you will know it is done, the facts worth remembering, and a rhythm to push it forward. You adjust it in the run; when you agree, it records everything. Changing the goal itself always asks you, whatever the realm's policy. "Refine with Airth" reworks the plan later.
-2. **Push it forward now**, or let **Airth push it forward on its own** (default `weekdays 09:00`, or `every 3h` for all day). Each push takes the next milestone, does the most valuable step it can complete and verify, records the progress, and reports to your inbox. Those runs may record North Star progress without asking; everything else follows the realm's rules.
-3. **See the progress.** The goal and its progress bar stay at the top of the sidebar. Click a milestone's mark to set its status yourself.
-
-Every run of the realm sees the North Star and its milestones, prefers the work that moves the next one, and records what it advanced. **Focus** (on by default, per realm, in the sidebar) shadows the chats and routines that did not serve the goal, and the New chat page suggests goal-oriented work instead of generic ideas. The goal and its milestones live on their own North Star page (click the goal in the sidebar). Chats that need your approval are never shadowed.
-
-```bash
-airth northstar set "100 kit sales by December" --why "Fund the next product"
-airth northstar show                 # goal, milestones, progress
-airth northstar milestone m2 done    # set a status yourself
-airth northstar daily "every 3h"     # or "off"
-```
-
-## Projects: goals, milestones and a board
-
-A realm can hold several **projects** (Projects in the sidebar): a goal, why it matters, milestones, and a board of **tasks** (To do, In progress, Review, Done). The North Star is the project marked as the focus; any project can become it.
-
-- **Hand a task to Airth** (▶ on its card): a chat starts in the task's repository, told about the project, the milestone and the task's details. The card then moves by itself: in progress while the chat works, in review once its change waits for you (or its pull request is open), done once you adopt it (or the pull request is merged), back to do with the reason if the chat fails or you discard its change.
-- Move cards yourself by dragging them; click one to edit its details, milestone and repository.
-- A chat started from New chat, or a routine, can belong to a project (the project picker next to the model): it is told about the project.
-
-Projects live in the realm's `projects.json`; a North Star from an older Airth becomes the focus project.
-
 ## Skills: Airth extends itself
 
 When a run needs a capability Airth lacks, it can **propose a skill**: a small program with tests that would become a new tool. You decide what happens next:
@@ -173,7 +145,7 @@ airth service install                               # runs in the background, st
 
 Open **Airth.app** from Spotlight, Launchpad or the Dock. It is a native app with its own window: ⌥⇧A shows or hides it from anywhere, and closing the window keeps Airth in the menu bar. Use 🎙 in the message box to dictate. `airth ui` opens the same app in your browser.
 
-The first time, a short guide walks you through it: who you are, your Anthropic API key (checked, then kept in `~/.airth/secrets.env` for every realm), and your first realm with its North Star. Reopen it anytime with ⌘K → Welcome guide.
+The first time, a short guide walks you through it: who you are, your Anthropic API key (checked, then kept in `~/.airth/secrets.env` for every realm), and your first realm. Reopen it anytime with ⌘K → Welcome guide.
 
 With your approval, Airth works with your Mac apps: Calendar, Reminders, Notes, Mail (it only prepares drafts; you send them), Safari tabs, the clipboard, and opening apps and links. The realm's `apps` rule decides; answer "Allow Calendar for this run" to stop being asked about one app.
 
@@ -209,7 +181,7 @@ airth check <run>   # re-run the checks
 
 The app shows the same: a change panel with the files, the checks, the diff, and Adopt or Discard. If the checks fail, an "Ask Airth to fix" button sends their output back to the agent.
 
-**Several repositories.** A realm can work in more than one repository: its own folder when it is one, plus the ones you connect (Settings → Repositories, or `airth realm repo add <url or folder>`). A URL is cloned next to the realm's folder; a folder is used where it is. Each repository has its own checks (detected for Cargo, npm, pnpm, yarn and Go projects) and its own delivery. A chat picks the repository it works in (the picker next to the model, or `airth run --repo <name>`), a routine too (`airth objective add … --repo <name>`); memory, North Star and routines stay shared. A chat can read the realm's other repositories, never another realm's.
+**Several repositories.** A realm can work in more than one repository: its own folder when it is one, plus the ones you connect (Settings → Repositories, or `airth realm repo add <url or folder>`). A URL is cloned next to the realm's folder; a folder is used where it is. Each repository has its own checks (detected for Cargo, npm, pnpm, yarn and Go projects) and its own delivery. A chat picks the repository it works in (the picker next to the model, or `airth run --repo <name>`), a routine too (`airth objective add … --repo <name>`); memory and routines stay shared. A chat can read the realm's other repositories, never another realm's.
 
 ```bash
 airth realm repo add https://github.com/acme/site   # clone and connect
@@ -338,7 +310,6 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     objectives.json            objectives: triggers, approvals, budgets, last run
-    northstar.json             the North Star, its milestones and the runs that moved them
     skills/                    skills.json, drafts/<skill>/, installed/<skill>/
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
@@ -351,18 +322,16 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
 ```text
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill
+  cli.rs          CLI: realm, owner, memory, secret, integration, objective, inbox, summary, skill
   hub/            the interface to agents: runs per realm, workspaces, briefings (mod.rs); models
                   and routing, changes and adoption, repositories, pull-request delivery,
-                  objectives and the North Star, skills, saved runs
+                  objectives, skills, saved runs
   home.rs         the Airth home: owner profile, realms, default realm
   realm.rs        a realm: settings, credentials, folders
   owner.rs        the owner profile
   memory.rs       a realm's long-term memory
   business/       the business a realm runs: its profile and archive, from the realm's business/ folder
   objective.rs    persistent objectives, schedules, file watches
-  northstar.rs    a realm's North Star (its focus project): goal, milestones, progress
-  projects.rs     a realm's projects: goals, milestones, tasks that move with their chats
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls
   prices.rs       model list prices, and the owner's own, to estimate costs
@@ -386,7 +355,7 @@ src/
   runtime.rs      the single path from a tool call to execution (permission check, redaction, event)
   permissions.rs  capabilities, rules, policy, run grants, terminal approval
   tools/          read_file, list_directory, write_file, edit_file, execute_command, http_request,
-                  update_plan, remember, north_star, propose_skill, test_skill, installed skills; workspace access rules
+                  update_plan, remember, propose_skill, test_skill, installed skills; workspace access rules
   models/         provider-neutral Model trait; Anthropic and OpenAI-compatible (OpenAI, xAI, Ollama) providers;
                   router.rs: fast/main/fallback connections, triage, failover
   state.rs        persisted run state, plans

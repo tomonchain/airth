@@ -324,7 +324,7 @@ function repositoriesTab(d) {
 
   return [
     h("div", { class: "page-head repo-intro" },
-      h("p", { class: "muted lead" }, "The git repositories this realm's chats work in. A chat picks one, works on its own copy, and you review what it changed. Memory, North Star and routines stay shared across them."),
+      h("p", { class: "muted lead" }, "The git repositories this realm's chats work in. A chat picks one, works on its own copy, and you review what it changed. Memory and routines stay shared across them."),
       !repoUi.adding && h("button", { class: "btn primary", type: "button", onclick: () => { repoUi.adding = true; renderMain(); } }, icon("plus"), "Connect")),
     adder,
     list.length ? h("div", { class: "repos" }, list.map(card))

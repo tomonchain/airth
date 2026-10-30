@@ -7,7 +7,6 @@ mod http;
 mod mac;
 pub mod mcp;
 mod memory;
-mod northstar;
 mod plan;
 pub mod remote;
 mod shell;
@@ -65,8 +64,6 @@ pub struct RealmTools {
     /// Set for a run developing a skill: the skill's name, and where its
     /// tests run.
     pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
-    /// The realm's North Star, when the owner set one.
-    pub north_star: Option<crate::northstar::NorthStarStore>,
 }
 
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
@@ -90,12 +87,6 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         memory: realm.memory,
         source: realm.source.clone(),
     }));
-    if let Some(store) = realm.north_star {
-        tools.push(Box::new(northstar::NorthStarTool {
-            store,
-            run: realm.source.strip_prefix("run:").map(String::from),
-        }));
-    }
     tools.push(Box::new(skill::ProposeSkill {
         store: realm.skills.clone(),
         source: realm.source,

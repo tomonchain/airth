@@ -63,19 +63,12 @@ function renderNewRealm(main) {
     h("option", { value: "" }, "Automatic (a worktree per chat for git repositories)"),
     h("option", { value: "none" }, "None: work directly in the folder"),
     h("option", { value: "worktree" }, "Worktree per chat"));
-  const star = h("input", { type: "text", placeholder: "Optional: the one goal of this realm, e.g. “100 kit sales by December”" });
   const err = h("div", { class: "error-banner", hidden: true });
   const create = async () => {
     try {
       const r = await api("realms", { name: name.value.trim(), description: desc.value, root: root.value, isolation: iso.value || null });
       await refreshRealms();
       go(`#/r/${enc(r.name)}`);
-      // With a North Star, Airth starts defining it with the owner at once.
-      if (star.value.trim()) {
-        app.realmDetail = await api(`${realmPath(r.name)}/northstar`, { goal: star.value, why: "" }, "PUT");
-        if (app.realmDetail.model) { flash("Realm created. Airth has a few questions about your North Star."); await startNorthStarRun("brainstorm", r.name); }
-        else { flash("Realm created. Add a model in its settings to define the North Star with Airth."); renderMain(); renderSidebar(); }
-      }
     } catch (e) { err.textContent = e.message; err.hidden = false; }
   };
   name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
@@ -87,8 +80,7 @@ function renderNewRealm(main) {
       field("Name", name, "Lowercase letters, digits and dashes."),
       field("Description", desc, "Airth sees this, so it knows what the realm is for."),
       field("Folder", root, "The directory Airth works in. Other realms can never read it."),
-      field("Isolation", iso),
-      field("North Star", star, "Airth will ask you a few questions to sharpen it and define the milestones with you.")),
+      field("Isolation", iso)),
     err,
     h("div", { class: "row-end spaced" }, h("button", { class: "btn primary", type: "button", onclick: create }, "Create realm")));
   name.focus();
@@ -98,7 +90,7 @@ function renderNewRealm(main) {
 
 /** The first launch: what Airth is, then the few things it needs, one at a time. */
 const WELCOME_STEPS = ["hello", "you", "model", "realm", "tips"];
-const welcomeUi = { step: 0, setup: null, realm: null, star: "" };
+const welcomeUi = { step: 0, setup: null, realm: null };
 
 async function renderWelcome(main) {
   if (!welcomeUi.setup) {
@@ -129,8 +121,7 @@ async function renderWelcome(main) {
       h("p", { class: "lead" }, "Your personal agent. It works on your Mac with your files, apps and services, and asks you before anything that matters."),
       h("div", { class: "welcome-points" },
         point("folder", "Realms", "Each area of your life (work, a project, home) gets its own files, memory, keys and rules. Nothing crosses between them."),
-        point("send", "Chats", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own."),
-        point("star", "North Star", "Give a realm one goal. Airth helps you break it into milestones and keeps moving it forward.")),
+        point("send", "Chats", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own.")),
       h("p", { class: "muted small" }, "Setting up takes about two minutes."),
       actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Get started")),
     ];
@@ -199,12 +190,10 @@ async function renderWelcome(main) {
       const name = h("input", { type: "text", value: "personal", autocomplete: "off", spellcheck: "false" });
       name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
       const desc = h("input", { type: "text", placeholder: "e.g. My personal life: admin, health, side projects" });
-      const star = h("input", { type: "text", placeholder: "Optional, e.g. “Run a half marathon in March”" });
       const create = h("button", { class: "btn primary", type: "button" }, "Create realm");
       create.onclick = () => busy(create, async () => {
         const r = await api("realms", { name: name.value.trim(), description: desc.value.trim() });
         welcomeUi.realm = r.name;
-        welcomeUi.star = star.value.trim();
         await refreshRealms();
         renderSidebar();
         next();
@@ -214,7 +203,6 @@ async function renderWelcome(main) {
         h("p", { class: "lead" }, "A realm is one area of your life. Start with one; add others (work, a client, a project) whenever you like."),
         h("label", { class: "welcome-label" }, "Name", name, h("span", { class: "muted small" }, "Lowercase letters, digits and dashes.")),
         h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every chat of the realm.")),
-        h("label", { class: "welcome-label" }, "North Star", star, h("span", { class: "muted small" }, "The one goal of this realm. Airth will ask you a few questions to sharpen it.")),
         err,
         actions(create),
       ];
@@ -223,19 +211,13 @@ async function renderWelcome(main) {
   } else {
     const tip = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
     const mac = document.documentElement.dataset.shell === "mac";
-    const done = h("button", { class: "btn primary", type: "button" }, welcomeUi.star && s.model_ready ? "Define my North Star" : "Start using Airth");
+    const done = h("button", { class: "btn primary", type: "button" }, "Start using Airth");
     done.onclick = () => busy(done, async () => {
       try { localStorage.setItem("airth-welcomed", "1"); } catch {}
       const realm = welcomeUi.realm || preferredRealm();
-      const star = welcomeUi.star;
-      Object.assign(welcomeUi, { step: 0, setup: null, realm: null, star: "" });
+      Object.assign(welcomeUi, { step: 0, setup: null, realm: null });
       if (!realm) return go("#/realms/new");
       go(`#/r/${enc(realm)}`);
-      if (star) {
-        app.realmDetail = await api(`${realmPath(realm)}/northstar`, { goal: star, why: "" }, "PUT");
-        if (app.realmDetail.model) await startNorthStarRun("brainstorm", realm);
-        else { flash("Connect a model in the realm's settings to define the North Star with Airth."); renderMain(); renderSidebar(); }
-      }
     });
     body = [
       h("h1", null, "You're set"),
@@ -259,7 +241,7 @@ async function renderWelcome(main) {
       h("div", { class: "welcome-card" }, ...body),
       welcomeUi.step < WELCOME_STEPS.length - 1 && h("button", { class: "welcome-skip", type: "button", onclick: () => {
         try { localStorage.setItem("airth-welcomed", "1"); } catch {}
-        Object.assign(welcomeUi, { step: 0, setup: null, realm: null, star: "" });
+        Object.assign(welcomeUi, { step: 0, setup: null, realm: null });
         const r = preferredRealm();
         go(r ? `#/r/${enc(r)}` : "#/realms/new");
       } }, "Skip the guide"))));
@@ -422,7 +404,7 @@ async function boot() {
   setInterval(() => { if (!document.hidden) refreshToday(); }, 30000);
   // Background refreshes pause while the window is hidden, and catch up when it shows.
   setInterval(() => { if (!document.hidden) { refreshRealms(); refreshRuns(); } }, 2000);
-  setInterval(() => { if (document.hidden) return; refreshInfo(); if (app.route.view === "new" || app.route.view === "northstar" || focusOn()) refreshNorthStar(); }, 5000);
+  setInterval(() => { if (!document.hidden) refreshInfo(); }, 5000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshRealms(); refreshRuns(); refreshInfo(); } });
 }
 

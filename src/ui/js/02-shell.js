@@ -54,12 +54,11 @@ function renderNav() {
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
     navLink(r ? `#/r/${r}` : null, "pencil", "New chat", v === "new"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
-    navLink(r ? `#/r/${r}/projects` : null, "listCheck", "Projects", v === "projects" || v === "project" || v === "northstar"),
     navLink("#/inbox", "inbox", "Inbox", v === "inbox", unread > 0 && h("span", { class: "count" }, String(unread))),
     navLink(r ? `#/r/${r}/routines` : null, "clock", "Routines", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
-    nsSide());
+  );
 }
 
 /** Which date group a run falls in, ChatGPT style. */
@@ -93,21 +92,17 @@ function renderRunList() {
   const archivedCount = all.filter((r) => r.archived).length;
   const runs = all.filter((r) => app.showArchived ? r.archived : !r.archived);
   if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" }, app.showArchived ? "No archived chats." : "All chats are archived."));
-  const focus = focusOn();
   let group = null;
   for (const r of runs) {
     const g = dateGroup(r.updated_at);
     if (g !== group) { group = g; list.append(h("div", { class: "section-label" }, g)); }
     const active = app.route.view === "run" && app.route.id === r.id;
     const status = r.needs_approval ? "needs approval" : r.live ? "running" : r.status;
-    // In focus mode, runs that did not serve the North Star fade (never those that need you).
-    const shadowed = focus && !r.focus && !r.needs_approval && !active;
     list.append(
-      h("button", { class: "run-item" + (active ? " active" : "") + (shadowed ? " shadowed" : "") + (focus && r.focus ? " on-goal" : ""),
-          type: "button", title: `${runName(r)}\n${status} · ${ago(r.updated_at)}${r.focus ? " · ★ North Star" : ""}\nDouble-click to rename`,
+      h("button", { class: "run-item" + (active ? " active" : ""),
+          type: "button", title: `${runName(r)}\n${status} · ${ago(r.updated_at)}\nDouble-click to rename`,
           onclick: () => go(`#/r/${enc(app.realm)}/run/${enc(r.id)}`),
           ondblclick: (e) => { e.preventDefault(); editInPlace(e.currentTarget, r.id, runName(r)); } },
-        focus && r.focus && h("span", { class: "ns-star small", "aria-hidden": "true" }, "★"),
         h("span", { class: "obj" }, runName(r)),
         !r.live && runActions(r),
         runMark(r)));
@@ -310,9 +305,6 @@ function renderMain() {
     case "owner": return renderOwner(main);
     case "documents": return renderDocuments(main);
     case "objectives": return renderObjectives(main);
-    case "northstar": return renderNorthStar(main);
-    case "projects": return renderProjects(main);
-    case "project": return renderProject(main, app.route.id);
     case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
@@ -381,43 +373,6 @@ document.addEventListener("mousedown", (e) => {
 
 /** "Auto ▾": which model answers this request. get/set read and store the choice.
  *  `auto` renames the first entry ({label, sub}), e.g. "None" for an optional model. */
-/** The project a new chat belongs to: the last one picked, if it still exists (none by default). */
-function chosenProject() {
-  let saved = null;
-  try { saved = localStorage.getItem("airth-project:" + app.realm); } catch {}
-  return projectsNow().some((p) => p.id === saved && p.status === "active") ? saved : "";
-}
-
-/** Which project a new chat belongs to, next to the model pill (once the realm has projects). */
-function projectPicker() {
-  const choices = () => [{ value: "", label: "No project", sub: "a chat on its own" },
-    ...projectsNow().filter((p) => p.status === "active").map((p) => ({ value: p.id, label: (p.focus ? "★ " : "") + p.name, sub: p.goal }))];
-  const label = h("span", { class: "mp-label" });
-  const btn = h("button", { class: "model-pill", type: "button", title: "Which project the chat belongs to", "aria-haspopup": "true" }, icon("listCheck"), label, h("span", { class: "mp-chev" }, "▾"));
-  const wrap = h("span", { class: "mp" }, btn);
-  const refresh = () => {
-    const c = choices().find((x) => x.value === chosenProject());
-    label.textContent = c && c.value ? c.label : "Project";
-    btn.classList.toggle("chosen", !!chosenProject());
-    wrap.hidden = choices().length < 2;
-  };
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (modelUi.open) { modelUi.open.remove(); modelUi.open = null; return; }
-    const menu = h("div", { class: "mp-menu", role: "menu" },
-      h("div", { class: "mp-list" }, choices().map((c) => h("button", { type: "button", class: "mp-item" + (c.value === chosenProject() ? " on" : ""), role: "menuitem",
-        onclick: () => {
-          try { localStorage.setItem("airth-project:" + app.realm, c.value); } catch { /* per window only */ }
-          refresh(); menu.remove(); modelUi.open = null;
-        } }, h("span", { class: "grow" }, c.label, c.sub && h("span", { class: "mp-sub" }, c.sub)), c.value === chosenProject() && icon("check")))));
-    wrap.append(menu);
-    modelUi.open = menu;
-  });
-  refresh();
-  if (!app.projects || app.projects.realm !== app.realm) loadProjects().then(refresh);
-  return wrap;
-}
-
 /** The realm's repositories a new chat can work in ("" is the realm's folder, when it is not one). */
 function repoChoices() {
   const repos = (app.realmDetail && app.realmDetail.repos) || [];
@@ -550,7 +505,7 @@ function saveDraft(key, text) {
   drafts.set(key, text.trim() ? text : "");
 }
 
-function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model, repo, project }) {
+function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = false, note, draftKey, model, repo }) {
   const ta = h("textarea", { rows, placeholder, disabled, "aria-label": placeholder });
   if (draftKey && drafts.get(draftKey)) {
     ta.value = drafts.get(draftKey);
@@ -596,8 +551,7 @@ function composer({ placeholder, buttonLabel, onSubmit, rows = 1, disabled = fal
   btn.addEventListener("click", submit);
   const picker = model ? modelPicker(model) : null;
   const repoEl = repo ? repoPicker(repo) : null;
-  const projectEl = project ? projectPicker() : null;
-  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, projectEl, repoEl, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
+  const el = h("div", { class: "composer" }, errorEl, h("div", { class: "composer-box" }, ta, repoEl, picker && picker.el, micButton(ta), btn), note && h("div", { class: "note" }, note));
   return { el, ta, btn, errorEl, picker, block: (b) => { blocked = b; sync(); } };
 }
 

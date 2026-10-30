@@ -91,8 +91,8 @@ const state = {
   ],
 };
 const runs = [
-  { id: "r1", title: null, objective: "First run", status: "completed", live: false, updated_at: now, needs_approval: false, change: null, checks_passed: null, plan_done: 0, plan_total: 0, focus: false },
-  { id: "r2", title: "Named", objective: "Second", status: "failed", live: true, updated_at: now, needs_approval: true, change: "open", checks_passed: false, plan_done: 1, plan_total: 3, focus: null },
+  { id: "r1", title: null, objective: "First run", status: "completed", live: false, updated_at: now, needs_approval: false, change: null, checks_passed: null, plan_done: 0, plan_total: 0 },
+  { id: "r2", title: "Named", objective: "Second", status: "failed", live: true, updated_at: now, needs_approval: true, change: "open", checks_passed: false, plan_done: 1, plan_total: 3 },
 ];
 const realmDetail = {
   name: "acme", description: "", root: "/tmp/acme", own_root: true, isolation: "none", policy: { read: "allow", write: "ask", execute: "ask", memory: "allow", network: "ask", skill: "ask", apps: "deny" },

@@ -166,14 +166,7 @@ impl PermissionRequest {
     /// Whether the owner may approve this kind of request for the rest of the
     /// run. Requests with warnings are always asked one by one.
     pub fn grantable(&self) -> bool {
-        self.warnings.is_empty() && !self.owner_decides()
-    }
-
-    /// Decisions that are the owner's alone (rewording the North Star): asked
-    /// every time, even where the realm's policy allows the capability.
-    pub fn owner_decides(&self) -> bool {
-        self.capability == Capability::Memory
-            && self.scope.as_deref() == Some(crate::northstar::GOAL_SCOPE)
+        self.warnings.is_empty()
     }
 
     /// Plain-language description of what a grant for this request covers.
@@ -181,9 +174,6 @@ impl PermissionRequest {
         match (&self.scope, self.capability) {
             (Some(app), Capability::Apps) => app.clone(),
             (Some(skill), Capability::Skill) => format!("the {skill} skill"),
-            (Some(scope), Capability::Memory) if scope == crate::northstar::SCOPE => {
-                "North Star updates".into()
-            }
             (Some(scope), _) => format!("{} requests to {scope}", self.capability.as_str()),
             (None, Capability::Write) => "all file changes".into(),
             (None, Capability::Execute) => "all commands".into(),
@@ -252,11 +242,7 @@ impl PermissionGate {
     }
 
     pub fn check(&mut self, request: &PermissionRequest) -> Result<Verdict> {
-        let rule = match self.policy.rule(request.capability) {
-            Rule::Allow if request.owner_decides() => Rule::Ask,
-            rule => rule,
-        };
-        Ok(match rule {
+        Ok(match self.policy.rule(request.capability) {
             Rule::Allow => Verdict::Allowed,
             Rule::Deny => Verdict::Denied(format!(
                 "{} capability is disabled by policy",
@@ -471,30 +457,40 @@ mod tests {
     }
 
     #[test]
-    fn the_owner_always_decides_the_north_star() {
-        let goal = PermissionRequest {
-            scope: Some(crate::northstar::GOAL_SCOPE.into()),
+    fn scoped_requests_follow_the_policy_and_grants_never_lift_a_deny() {
+        let scoped = PermissionRequest {
+            scope: Some("notes".into()),
             ..req(Capability::Memory)
         };
-        let allowed = Policy {
-            memory: Rule::Allow,
-            ..Policy::default()
+        let grant = Grant {
+            capability: Capability::Memory,
+            scope: Some("notes".into()),
         };
-        // Asked even where memory is allowed, and even with a grant for it.
-        let mut gate = PermissionGate::new(allowed, Box::new(Script(vec![Answer::YesForRun])))
-            .with_grants(vec![Grant {
-                capability: Capability::Memory,
-                scope: Some(crate::northstar::GOAL_SCOPE.into()),
-            }]);
-        assert_eq!(gate.check(&goal).unwrap(), Verdict::Approved);
-        assert!(matches!(gate.check(&goal).unwrap(), Verdict::Denied(_)));
-        assert_eq!(gate.grants().len(), 1, "never granted for the run");
-        // Progress on milestones follows the policy as before.
-        let progress = PermissionRequest {
-            scope: Some(crate::northstar::SCOPE.into()),
-            ..req(Capability::Memory)
+        let with = |memory| {
+            PermissionGate::new(
+                Policy {
+                    memory,
+                    ..Policy::default()
+                },
+                Box::new(Fixed(false)),
+            )
+            .with_grants(vec![grant.clone()])
         };
-        assert_eq!(gate.check(&progress).unwrap(), Verdict::Allowed);
+        assert_eq!(with(Rule::Allow).check(&scoped).unwrap(), Verdict::Allowed);
+        assert_eq!(with(Rule::Ask).check(&scoped).unwrap(), Verdict::Approved);
+        assert!(matches!(
+            with(Rule::Deny).check(&scoped).unwrap(),
+            Verdict::Denied(_)
+        ));
+        // Without a grant, the owner is asked, and their no stands.
+        let mut gate = PermissionGate::new(
+            Policy {
+                memory: Rule::Ask,
+                ..Policy::default()
+            },
+            Box::new(Fixed(false)),
+        );
+        assert!(matches!(gate.check(&scoped).unwrap(), Verdict::Denied(_)));
     }
 
     #[test]

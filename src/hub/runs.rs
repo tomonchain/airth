@@ -24,13 +24,11 @@ impl Hub {
 
     /// All saved runs of a realm, oldest first. Unreadable files are reported and skipped.
     pub fn runs(&self, realm: &Realm) -> Result<Vec<RunSummary>> {
-        let star = realm.north_star().get().ok().flatten();
         Ok(self
             .load_all(realm)?
             .into_iter()
             .map(|s| RunSummary {
                 live: self.is_live(realm, &s.id),
-                focus: is_focus(&s, star.as_ref()),
                 change: s.change.as_ref().map(|c| c.status),
                 checks_passed: s
                     .change
@@ -58,7 +56,6 @@ impl Hub {
                     .as_ref()
                     .filter(|c| c.status == ChangeStatus::Open)
                     .and_then(|c| c.pull_request.clone()),
-                project: s.project.clone(),
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
                 id: s.id,
@@ -160,16 +157,12 @@ pub struct RunSummary {
     /// Steps of the run's plan that are closed (done or skipped), and all steps.
     pub plan_done: usize,
     pub plan_total: usize,
-    /// The run served the realm's North Star (see `is_focus`).
-    pub focus: bool,
     /// For open changes: the files they touch, to spot chats that overlap.
     pub touches: Vec<String>,
     /// For open changes: merging their base conflicts.
     pub conflicts: bool,
     /// For open changes delivered as pull requests: the pull request.
     pub pull_request: Option<PullRequest>,
-    /// The project the run belongs to.
-    pub project: Option<String>,
 }
 
 impl RunSummary {

@@ -1,149 +1,6 @@
-//! Objectives, budgets and the North Star.
+//! Objectives and budgets.
 
 use super::*;
-
-#[test]
-fn north_star_milestones_are_brainstormed_then_advanced() {
-    let f = fixture();
-    let hub = Hub::new(f.home.clone());
-    assert!(hub.brainstorm_north_star(&f.realm).is_err(), "no goal yet");
-    f.realm
-        .north_star()
-        .set_goal("100 kit sales by December", "Fund the next product")
-        .unwrap();
-    assert!(hub.push_north_star(&f.realm).is_err(), "no milestones yet");
-
-    // Brainstorm: a proposal first, recorded only after the owner agrees.
-    let milestones = json!({"action": "set_milestones", "milestones": [
-        {"title": "Landing page live", "note": "deployed, checkout works"},
-        {"title": "First 10 sales"}]});
-    let (hub, _, systems) = make_hub(
-        &f.home,
-        vec![
-            done("I propose: 1. Landing page live 2. First 10 sales. What should change?"),
-            call("1", "north_star", milestones),
-            call(
-                "2",
-                "north_star",
-                json!({"action": "set_goal", "goal": "100 kit sales by 15 December", "why": "Fund the next product"}),
-            ),
-            done("Recorded."),
-        ],
-    );
-    let mut brainstorm = hub.brainstorm_north_star(&f.realm).unwrap();
-    assert_eq!(brainstorm.tier, Some(Tier::Strong));
-    hub.drive(
-        &f.realm,
-        &mut brainstorm,
-        config(5),
-        hooks(&mut NoObserver, true),
-    )
-    .unwrap();
-    assert!(
-        f.realm
-            .north_star()
-            .get()
-            .unwrap()
-            .unwrap()
-            .milestones
-            .is_empty()
-    );
-    let system = systems.lock().unwrap()[0].clone();
-    assert!(system.contains("100 kit sales by December"), "{system}");
-    assert!(system.contains("No milestones yet"), "{system}");
-    hub.send(
-        &f.realm,
-        &brainstorm.id,
-        "Looks good",
-        config(5),
-        hooks(&mut NoObserver, true),
-    )
-    .unwrap();
-    let star = f.realm.north_star().get().unwrap().unwrap();
-    assert_eq!(star.progress(), (0, 2));
-    assert_eq!(star.milestones[0].done_when, "deployed, checkout works");
-    assert_eq!(
-        star.goal, "100 kit sales by 15 December",
-        "the owner approved it"
-    );
-
-    // A push run advances the next milestone; an unrelated run does not count.
-    let (hub, _, systems) = make_hub(
-        &f.home,
-        vec![
-            call(
-                "1",
-                "north_star",
-                json!({"action": "update", "milestone": "m1", "status": "done", "note": "Live on Vercel"}),
-            ),
-            done("Landing page is live."),
-            done("Here is the weather."),
-        ],
-    );
-    let mut push = hub.push_north_star(&f.realm).unwrap();
-    hub.drive(&f.realm, &mut push, config(5), hooks(&mut NoObserver, true))
-        .unwrap();
-    assert!(systems.lock().unwrap()[0].contains("[ ] m1. Landing page live"));
-    let other = hub
-        .dispatch(
-            &f.realm,
-            "Weather?",
-            config(5),
-            hooks(&mut NoObserver, true),
-        )
-        .unwrap();
-    let star = f.realm.north_star().get().unwrap().unwrap();
-    assert_eq!(star.progress(), (1, 2));
-    assert!(star.involves(&push.id));
-    let focus: Vec<(String, bool)> = hub
-        .runs(&f.realm)
-        .unwrap()
-        .into_iter()
-        .map(|r| (r.id, r.focus))
-        .collect();
-    assert!(focus.contains(&(brainstorm.id.clone(), true)));
-    assert!(focus.contains(&(push.id.clone(), true)));
-    assert!(focus.contains(&(other.id, false)));
-
-    // Denied by the owner, nothing is recorded.
-    let (hub, _, _) = make_hub(
-        &f.home,
-        vec![
-            call(
-                "1",
-                "north_star",
-                json!({"action": "update", "milestone": "m2", "status": "done"}),
-            ),
-            done("ok"),
-        ],
-    );
-    hub.dispatch(&f.realm, "x", config(5), hooks(&mut NoObserver, false))
-        .unwrap();
-    assert_eq!(
-        f.realm.north_star().get().unwrap().unwrap().progress(),
-        (1, 2)
-    );
-
-    // The daily push: an objective whose runs may record progress unasked.
-    hub.schedule_north_star(&f.realm, Some("weekdays 09:00"))
-        .unwrap();
-    let o = f.realm.objectives().get(northstar::OBJECTIVE_ID).unwrap();
-    assert_eq!(o.objective, PUSH_OBJECTIVE);
-    assert_eq!(o.approvals[0].scope.as_deref(), Some(northstar::SCOPE));
-    assert!(hub.schedule_north_star(&f.realm, Some("whenever")).is_err());
-    let (state, _) = hub
-        .start_objective(
-            &f.realm,
-            northstar::OBJECTIVE_ID,
-            "manual",
-            None,
-            Utc::now(),
-        )
-        .unwrap();
-    assert!(state.north_star);
-    hub.schedule_north_star(&f.realm, None).unwrap();
-    assert!(f.realm.objectives().get(northstar::OBJECTIVE_ID).is_err());
-}
 
 /// Nobody is there: every request that needs approval is denied, and counted.
 struct Away(Arc<Mutex<Vec<String>>>);
@@ -183,7 +40,6 @@ fn scheduled_objective_completes_while_the_owner_is_away() {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
-            project: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -296,7 +152,6 @@ fn budget_of_an_objective_stops_its_run() {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
-            project: None,
             next_at: None,
             fingerprint: None,
             last_run: None,

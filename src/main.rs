@@ -16,13 +16,11 @@ mod integration;
 mod isolation;
 mod memory;
 mod models;
-mod northstar;
 mod notify;
 mod objective;
 mod owner;
 mod permissions;
 mod prices;
-mod projects;
 mod realm;
 mod release;
 mod runtime;
@@ -191,12 +189,6 @@ enum Cmd {
     Owner {
         #[command(subcommand)]
         command: cli::OwnerCmd,
-    },
-    /// The realm's North Star: the one goal its work serves, and its milestones
-    #[command(name = "northstar", alias = "north-star")]
-    NorthStar {
-        #[command(subcommand)]
-        command: cli::NorthStarCmd,
     },
     /// Show or edit the realm's long-term memory
     Memory {
@@ -435,7 +427,6 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         .map(|_| true),
         Some(Cmd::Realm { command }) => cli::realm(ctx, command),
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
-        Some(Cmd::NorthStar { command }) => cli::north_star(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),

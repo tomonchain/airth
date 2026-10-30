@@ -104,7 +104,7 @@ const TOOL_ICONS = {
   read_file: "file", list_directory: "folder", write_file: "filePlus", edit_file: "fileEdit", execute_command: "terminal",
   remember: "brain", http_request: "world", update_plan: "listCheck", calendar: "calendar", reminders: "checkbox",
   notes: "notes", mail_draft: "mail", safari: "compass", clipboard: "clipboard", open_on_mac: "window",
-  propose_skill: "spark", test_skill: "flask", north_star: "star", use_skill: "books",
+  propose_skill: "spark", test_skill: "flask", use_skill: "books",
 };
 const toolIcon = (name) => icon(TOOL_ICONS[name] || (name.startsWith("mcp__") ? "plug" : "tool"));
 
@@ -303,9 +303,6 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/settings(?:\/([a-z]+))?/))) return { view: "settings", realm: decodeURIComponent(m[1]), tab: m[2] };
   if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
   if ((m = h.match(/^#\/r\/([^/]+)\/(?:routines|objectives)/))) return { view: "objectives", realm: decodeURIComponent(m[1]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/northstar/))) return { view: "northstar", realm: decodeURIComponent(m[1]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/projects\/([^/?#]+)/))) return { view: "project", realm: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/projects/))) return { view: "projects", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
@@ -381,6 +378,6 @@ async function selectRealm(name) {
   app.runs = [];
   app.realmDetail = null;
   try { localStorage.setItem("airth-realm", name); } catch {}
-  await Promise.all([refreshRuns(), refreshRealmDetail(), loadProjects(true)]);
+  await Promise.all([refreshRuns(), refreshRealmDetail()]);
 }
 

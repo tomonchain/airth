@@ -66,7 +66,6 @@
 .rh-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .rh-tag .i svg { width: 13px; height: 13px; }
 a.rh-tag { color: var(--brand); }
-.rh-tag.ns { color: var(--warn); }
 .rh-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .rh-stop { border-color: transparent; background: var(--err-soft); color: var(--err); padding: 6px 12px; font-size: 13px; }
 .rh-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 18%, transparent); }
@@ -215,67 +214,8 @@ a.rh-tag { color: var(--brand); }
   .new-inner h1 { font-size: 24px; }
 }
 
-/* ---------- North Star ---------- */
+/* The star before Airth's runtime notes in a chat. */
 .ns-star { color: var(--brand); font-size: 14px; line-height: 1; flex: none; }
-.ns-star.small { font-size: 11px; }
-.ns-bar { height: 5px; margin: 10px 0 12px; }
-
-/* Sidebar: the goal stays in sight. */
-.ns-side { margin: 10px 0 2px; padding: 10px 10px 6px; border-radius: 12px; background: var(--brand-soft); }
-.ns-side-goal {
-  display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; padding: 0;
-  text-align: left; cursor: pointer; color: var(--text); font-size: 13px; font-weight: 500;
-}
-.ns-side-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ns-side .progress-mini { font-size: 11.5px; color: var(--muted); }
-.ns-side .ns-bar { margin: 8px 0 4px; height: 3px; }
-.ns-focus { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; padding-top: 2px; }
-.ns-focus input { margin: 0; }
-
-/* Focus mode: what does not serve the North Star fades. */
-.run-item.shadowed, .objective.shadowed, .routine.shadowed { opacity: .38; transition: opacity .2s var(--ease); }
-.run-item.shadowed:hover, .objective.shadowed:hover, .objective.shadowed:focus-within, .routine.shadowed:hover, .routine.shadowed:focus-within { opacity: .85; }
-.chip.ns { background: var(--brand-soft); color: var(--brand); }
-
-/* The realm's home page card. */
-.ns-wrap { margin: 18px 0 16px; text-align: left; }
-.ns-empty {
-  display: flex; gap: 10px; align-items: center; width: 100%; padding: 12px 14px; cursor: pointer;
-  border: 1px dashed var(--border-strong); border-radius: var(--radius); background: transparent;
-  color: var(--muted); font-size: 13.5px; text-align: left; transition: background .15s var(--ease), border-color .15s var(--ease);
-}
-.ns-empty:hover { background: var(--brand-soft); border-color: var(--brand); color: var(--text); }
-.ns-card {
-  border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px 12px;
-  background: linear-gradient(180deg, var(--brand-soft), transparent 70%), var(--panel); box-shadow: var(--shadow);
-}
-.ns-card.editing { display: grid; gap: 8px; }
-.ns-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--brand); text-transform: uppercase; letter-spacing: .04em; }
-.ns-head .muted { text-transform: none; letter-spacing: 0; font-weight: 500; }
-.ns-head .icon-action { width: 28px; height: 28px; }
-.ns-goal { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin-top: 6px; line-height: 1.35; }
-.ns-why { color: var(--muted); font-size: 13px; margin-top: 2px; }
-.ns-hint { margin: 10px 0 4px; }
-.ns-milestones { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
-.ns-m { display: flex; gap: 10px; align-items: flex-start; padding: 6px 4px; border-radius: 8px; font-size: 13.5px; line-height: 1.45; }
-.ns-m.next { background: var(--hover); }
-.ns-m .mark {
-  flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 1.5px solid var(--border-strong);
-  background: transparent; color: var(--step-done-text); font-size: 11px; line-height: 1; cursor: pointer; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center; transition: background .15s var(--ease), border-color .15s var(--ease);
-}
-.ns-m .mark:hover { border-color: var(--brand); }
-.ns-m.doing .mark { border-color: var(--brand); box-shadow: inset 0 0 0 3px var(--panel); background: var(--brand); }
-.ns-m.done .mark { background: var(--step-done); border-color: var(--step-done); }
-.ns-m.done .ns-m-title { color: var(--muted); }
-.ns-m.dropped .mark { color: var(--faint); }
-.ns-m.dropped .ns-m-title { color: var(--faint); text-decoration: line-through; }
-.ns-m-title { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.ns-runs { flex: none; white-space: nowrap; }
-.ns-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.ns-daily { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
-.ns-daily .toggle { padding: 0; }
-.ns-every { width: 150px; font-size: 12.5px; padding: 4px 8px; }
 
 /* Realm settings: models */
 .model-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -311,24 +251,10 @@ a.rh-tag { color: var(--brand); }
 .answer-q textarea:focus { outline: 0; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .answer-form .row-end { margin-top: 6px; }
 
-/* Suggested replies */
-.quick-replies { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 22px; }
-.chip-btn { border: 1px solid var(--border-strong); background: transparent; color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
-.chip-btn:hover { background: var(--hover); }
-.chip-btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-.chip-btn.primary:hover { opacity: .88; }
-
-/* Readable approvals (North Star, memory) */
+/* Readable approvals (memory) */
 .preview-readable { margin: 10px 18px 4px; padding: 12px 14px; border-radius: 12px; background: var(--hover); font-size: 13.5px; line-height: 1.5; display: grid; gap: 4px; }
-.pr-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-top: 4px; }
-.pr-old { color: var(--muted); text-decoration: line-through; }
-.pr-new { font-weight: 600; font-size: 15px; }
 .pr-line { font-weight: 500; }
 .pr-item { padding-left: 4px; }
-
-/* The sidebar's North Star never overflows it. */
-.ns-side { min-width: 0; max-width: 100%; overflow: hidden; }
-.ns-side-goal { min-width: 0; }
 
 /* ---------- Mac app window ----------
    The page fills the window, title bar included: the traffic lights sit on the

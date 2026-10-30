@@ -159,7 +159,6 @@ impl Hub {
             isolation::adopt(change, &message)?;
             state.save()?;
         }
-        self.sync_task(realm, &state);
         self.update_open_changes(realm, &state.id);
         Ok(state)
     }
@@ -245,7 +244,6 @@ impl Hub {
         self.close_pull_request(realm, change);
         isolation::discard(change)?;
         state.save()?;
-        self.sync_task(realm, &state);
         Ok(state)
     }
 }

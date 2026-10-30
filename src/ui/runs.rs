@@ -18,19 +18,11 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let choice = self.model_choice(&realm, &body)?;
-                let project = body["project"].as_str().filter(|p| !p.is_empty());
-                if let Some(p) = project {
-                    realm.projects().get(p)?;
-                }
                 let mut state = self.hub.create_run_in(
                     &realm,
                     body["objective"].as_str().unwrap_or_default(),
                     body["repo"].as_str(),
                 )?;
-                if let Some(p) = project {
-                    state.project = Some(p.to_string());
-                    state.save()?;
-                }
                 if choice.is_some() {
                     state.model_choice = choice;
                     state.save()?;
@@ -243,12 +235,10 @@ impl App {
                     "change": r.change.map(|c| c.as_str()),
                     "checks_passed": r.checks_passed,
                     "touches": r.touches,
-                    "project": r.project,
                     "conflicts": r.conflicts,
                     "pull_request": r.pull_request,
                     "plan_done": r.plan_done,
                     "plan_total": r.plan_total,
-                    "focus": r.focus,
                 })
             })
             .collect();
@@ -413,11 +403,6 @@ impl App {
                 .as_ref()
                 .map_or_else(chrono::Utc::now, |o| o.created_at),
             repo: body["repo"]
-                .as_str()
-                .map(str::trim)
-                .filter(|r| !r.is_empty())
-                .map(String::from),
-            project: body["project"]
                 .as_str()
                 .map(str::trim)
                 .filter(|r| !r.is_empty())

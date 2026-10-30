@@ -3,7 +3,6 @@
 const SUGGESTIONS = {
   code: ["Identify and implement one small improvement", "Find and fix a bug", "Add tests for an untested module", "Review error messages and make them clearer"],
   other: ["Organize the files in this realm", "Summarize what's in this realm", "Draft a plan for this week", "Write a checklist for an upcoming task"],
-  northStar: ["What is blocking the next milestone?", "Plan this week around the next milestone", "Review our progress toward the North Star: what should we cut?", "What is the smallest step that moves the North Star today?"],
 };
 
 const POLICY_WORDS = { allow: "automatic", ask: "needs approval", deny: "disabled" };
@@ -20,7 +19,6 @@ function renderNew(main) {
       set: (v) => storeModel(`new:${app.realm}`, v),
     },
     repo: {},
-    project: true,
     buttonLabel: "Start",
     rows: 3,
     // Without a realm model you can still pick one in the model menu.
@@ -30,7 +28,7 @@ function renderNew(main) {
       : "Every step that needs approval waits for you.",
     onSubmit: async (objective) => {
       const model = storedModel(`new:${app.realm}`) || "auto";
-      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model, repo: chosenRepo() || null, project: chosenProject() || null });
+      const { id } = await api(`${realmPath(app.realm)}/runs`, { objective, model, repo: chosenRepo() || null });
       storeModel(`run:${app.realm}/${id}`, model);
       await refreshRuns();
       go(`#/r/${enc(app.realm)}/run/${enc(id)}`);
@@ -45,8 +43,7 @@ function renderNew(main) {
     c.errorEl.hidden = false;
   }
   const isCode = d && d.own_root && d.checks.length > 0;
-  const ns = northStar();
-  const suggestions = ns && ns.milestones.length && focusOn() ? SUGGESTIONS.northStar : isCode ? SUGGESTIONS.code : SUGGESTIONS.other;
+  const suggestions = isCode ? SUGGESTIONS.code : SUGGESTIONS.other;
   const fill = (text) => { c.ta.value = text; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); };
   const prefill = app.prefill;
   app.prefill = null;
@@ -210,10 +207,7 @@ function renderRun() {
     h("span", { class: "rh-state " + statusClass }, STATUS_LABEL[status] || status),
     h("span", null, "updated " + ago(s.updated_at)),
     d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this chat works in" }, icon("code"), d.repo),
-    s.project && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/projects/${enc(s.project)}`, title: "The project this chat belongs to" }, icon("listCheck"),
-      ((projectsNow().find((p) => p.id === s.project) || {}).name || s.project) + (s.project_task ? ` · ${s.project_task}` : "")),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
-    (s.north_star || (app.runs.find((r) => r.id === s.id) || {}).focus) && h("span", { class: "rh-tag ns", title: "This chat serves the realm's North Star" }, "★ North Star"),
     s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
   ].filter(Boolean);
   if (!app.renaming) runEls.header.replaceChildren(
@@ -345,7 +339,6 @@ function transcriptNodes(d) {
     const questions = numberedQuestions(text);
     const key = `answers:${s.id}:${s.messages.length - 1}`;
     if (questions.length) nodes.push(keyed(answerForm(questions, key, speaksFrench(s)), key));
-    else if (s.north_star && s.objective.startsWith("Define my North Star")) nodes.push(keyed(northStarReplies(s), "ns-replies:" + s.messages.length));
   }
   const checking = s.change && s.change.checks && !s.change.checks.finished && d.live;
   if (d.pending) nodes.push(keyed(approvalCard(d.pending), "approval:" + d.pending.id));
@@ -361,8 +354,7 @@ function transcriptNodes(d) {
   } else if (!d.live) {
     const status = d.interrupted ? "interrupted" : s.status;
     const last = s.messages[s.messages.length - 1];
-    const asks = last && last.role === "assistant" && (numberedQuestions(last.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")).length > 0
-      || (s.north_star && s.objective.startsWith("Define my North Star") && !s.events.some((e) => e.action === "north_star" && e.status === "ok")));
+    const asks = last && last.role === "assistant" && numberedQuestions(last.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")).length > 0;
     const text = {
       completed: asks ? "Your turn: Airth is waiting for your answer." : `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
       failed: "The chat failed.",
@@ -384,7 +376,6 @@ const RUNTIME_PREFIX = "[Airth runtime]";
 
 /** What a long runtime instruction is about, for the owner. */
 function runtimeLabel(body) {
-  if (body.includes("define this realm's North Star")) return "Airth asks you a few questions, proposes a plan, and records it once you agree";
   if (body.includes("conversation grew long")) return "Earlier conversation summarized";
   return "Instructions Airth received";
 }
@@ -442,17 +433,6 @@ function answerForm(questions, key, fr) {
     h("div", { class: "row-end" }, btn));
 }
 
-/** Suggested replies under the latest answer of a run defining the North Star. */
-function northStarReplies(s) {
-  const fr = speaksFrench(s);
-  const recorded = s.events.some((e) => e.action === "north_star" && e.status === "ok");
-  if (recorded) return h("div", { class: "quick-replies" },
-    h("button", { class: "chip-btn primary", type: "button", onclick: () => go(`#/r/${enc(app.realm)}/northstar`) }, "★ See my North Star"));
-  return h("div", { class: "quick-replies" },
-    h("button", { class: "chip-btn primary", type: "button", onclick: () => sendFollowUp(fr ? "C'est bon, enregistre-le tel que proposé." : "That looks good. Record it as proposed.").catch((e) => flash(e.message, true)) }, "Looks good, record it"),
-    h("button", { class: "chip-btn", type: "button", onclick: () => { const ta = $(".composer textarea"); if (ta) { ta.value = fr ? "Je changerais : " : "I'd change: "; ta.focus(); ta.dispatchEvent(new Event("input")); } } }, "Change something…"));
-}
-
 /** Past tense for a finished activity line: [verb, one, many]. */
 const DONE_VERBS = {
   read_file: ["read", "file", "files"],
@@ -463,7 +443,6 @@ const DONE_VERBS = {
   http_request: ["sent", "request", "requests"],
   remember: ["saved", "memory", "memories"],
   propose_skill: ["proposed", "skill", "skills"],
-  north_star: ["recorded", "North Star update", "North Star updates"],
 };
 
 /** "Read 4 files, ran 2 commands, updated the plan" */
@@ -483,7 +462,6 @@ function describeTools(tools) {
 const ACTIVE_VERBS = {
   read_file: "Reading", list_directory: "Listing", write_file: "Writing", edit_file: "Editing",
   execute_command: "Running", http_request: "Calling", remember: "Remembering", update_plan: "Updating the plan",
-  north_star: "Recording North Star progress:",
 };
 
 /** What Airth is doing right now, e.g. "Running $ cargo test". */
@@ -630,10 +608,6 @@ function toolLabel(name, input) {
       const steps = input.steps || [];
       return `${steps.filter((p) => p.status === "done" || p.status === "skipped").length}/${steps.length} steps done`;
     }
-    case "north_star":
-      return input.action === "set_milestones"
-        ? `${(input.milestones || []).length} milestones`
-        : `${input.milestone || "?"}${input.status ? " → " + input.status : ""}${input.note ? ": " + input.note : ""}`;
     default: return JSON.stringify(input);
   }
 }
@@ -682,25 +656,15 @@ function diffView(text, kind) {
   return el;
 }
 
-/** A North Star or memory change, as text rather than code. */
+/** A memory change, as text rather than code. */
 function readablePreview(text) {
-  if (text.startsWith("New North Star: ")) {
-    const field = (prefix) => (text.split("\n").find((l) => l.startsWith(prefix)) || "").slice(prefix.length);
-    const was = field("(was: ").replace(/\)$/, "");
-    const why = field("Why: ");
-    return h("div", { class: "preview-readable" },
-      h("div", { class: "pr-label" }, "Now"), h("div", { class: "pr-old" }, was),
-      h("div", { class: "pr-label" }, "Becomes"), h("div", { class: "pr-new" }, field("New North Star: ")),
-      why && h("div", { class: "muted small" }, "Why: " + why));
-  }
   return h("div", { class: "preview-readable" }, text.split("\n").filter((l) => l.trim()).map((l) =>
     /^\d+\. /.test(l) ? h("div", { class: "pr-item" }, l) : h("div", { class: "pr-line" }, l)));
 }
 
 function approvalCard(p) {
-  const title = p.tool === "north_star" && p.preview.startsWith("New North Star:") ? "Change your North Star?"
-    : { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?", north_star: "Record this on the North Star?" }[p.tool] || `Allow ${p.tool}?`;
-  const kind = p.tool === "execute_command" ? "command" : ["remember", "http_request", "north_star"].includes(p.tool) ? "plain" : "diff";
+  const title = { write_file: "Write this file?", edit_file: "Apply this edit?", execute_command: "Run this command?", remember: "Remember this?", http_request: "Send this request?" }[p.tool] || `Allow ${p.tool}?`;
+  const kind = p.tool === "execute_command" ? "command" : ["remember", "http_request"].includes(p.tool) ? "plain" : "diff";
   const reason = h("input", {
     id: "deny-reason", type: "text", placeholder: "Reason for denying (optional; Airth sees it)",
     value: app.reason, autocomplete: "off",
@@ -712,7 +676,7 @@ function approvalCard(p) {
       h("h3", null, title),
       h("span", { class: "chip rule-ask" }, p.capability)),
     p.warnings.map((w) => h("div", { class: "approval-warn" }, "⚠ " + w)),
-    ["north_star", "remember"].includes(p.tool) ? readablePreview(p.preview) : diffView(p.preview, kind),
+    p.tool === "remember" ? readablePreview(p.preview) : diffView(p.preview, kind),
     h("div", { class: "approval-actions" },
       h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve ", h("kbd", null, modKey + "↵")),
       p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this chat are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this chat`),

@@ -1,4 +1,4 @@
-//! Checks, adoption, repositories, project tasks and pull requests.
+//! Checks, adoption, repositories and pull requests.
 
 use super::*;
 
@@ -577,93 +577,6 @@ fn chats_work_in_the_realms_repositories() {
                 .any(|p| p.ends_with(site.path().file_name().unwrap()))
     );
     assert!(hub.create_run_in(&realm, "x", Some("nope")).is_err());
-}
-
-/// A task started from a project's board moves with its chat: in
-/// progress, in review once its change waits, done once adopted; and back
-/// to do, with the reason, when its chat fails.
-#[test]
-fn project_tasks_move_with_their_chats() {
-    let home_dir = tempfile::tempdir().unwrap();
-    let home = Home::at(home_dir.path()).unwrap();
-    let repo = crate::isolation::tests::repo();
-    git_in(repo.path(), &["config", "user.name", "t"]);
-    git_in(repo.path(), &["config", "user.email", "t@t"]);
-    let realm = home
-        .create_realm(NewRealm {
-            name: "shop".into(),
-            description: String::new(),
-            root: Some(repo.path().to_path_buf()),
-            isolation: None,
-        })
-        .unwrap();
-    let store = realm.projects();
-    let p = store.create("Launch", "Shop live by May", "").unwrap();
-    store
-        .set_milestones(&p.id, &[("Landing page".into(), String::new())])
-        .unwrap();
-    store
-        .add_task(
-            &p.id,
-            "Write the landing page",
-            "One page, in French",
-            Some("m1"),
-            None,
-        )
-        .unwrap();
-    store
-        .add_task(&p.id, "Set up payments", "", None, None)
-        .unwrap();
-
-    let (hub, _, systems) = make_hub(
-        &home,
-        vec![
-            call(
-                "1",
-                "write_file",
-                json!({"path": "index.html", "content": "<h1>Shop</h1>\n"}),
-            ),
-            done("Wrote the landing page."),
-        ],
-    );
-    let mut state = hub.start_task(&realm, &p.id, "t1").unwrap();
-    assert_eq!(state.objective, "Write the landing page");
-    assert_eq!(store.get(&p.id).unwrap().tasks[0].status, TaskStatus::Doing);
-    assert!(hub.start_task(&realm, &p.id, "nope").is_err());
-    hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true))
-        .unwrap();
-    let briefing = systems.lock().unwrap()[0].clone();
-    assert!(
-        briefing.contains("project \"Launch\": Shop live by May"),
-        "{briefing}"
-    );
-    assert!(
-        briefing.contains("task t1: Write the landing page"),
-        "{briefing}"
-    );
-    assert!(briefing.contains("One page, in French"), "{briefing}");
-    let task = store.get(&p.id).unwrap().tasks[0].clone();
-    assert_eq!(
-        (task.status, task.run.as_deref()),
-        (TaskStatus::Review, Some(state.id.as_str()))
-    );
-
-    hub.adopt(&realm, &state.id).unwrap();
-    let task = store.get(&p.id).unwrap().tasks[0].clone();
-    assert_eq!(task.status, TaskStatus::Done);
-    assert!(task.done_at.is_some());
-
-    // Out of script: the model is unreachable, the chat fails.
-    let (hub, _, _) = make_hub(&home, vec![]);
-    let mut state = hub.start_task(&realm, &p.id, "t2").unwrap();
-    let _ = hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true));
-    let task = store.get(&p.id).unwrap().tasks[1].clone();
-    assert_eq!(task.status, TaskStatus::Todo);
-    assert!(task.note.starts_with("The chat failed"), "{}", task.note);
-    assert_eq!(
-        hub.runs(&realm).unwrap().last().unwrap().project.as_deref(),
-        Some(p.id.as_str())
-    );
 }
 
 #[test]

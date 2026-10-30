@@ -16,11 +16,9 @@ use crate::isolation::{self, ChangeStatus, CheckResult, CheckRun, Delivery, Pull
 use crate::memory::MemoryStore;
 use crate::models::router::{Connections, Routed, Tier};
 use crate::models::{ContentBlock, Message, Model, ModelRequest, Role};
-use crate::northstar;
 use crate::notify::Kind;
 use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
-use crate::projects::{TaskStatus, TaskUpdate};
 use crate::realm::{PROVIDER_KEYS, Realm, Repo};
 use crate::runtime::Runtime;
 use crate::skill::{self, SkillRecord, SkillStatus, SkillStore};
@@ -43,7 +41,6 @@ mod skills;
 pub use changes::Adoption;
 pub use delivery::PrEvent;
 pub use objectives::away_reason;
-use objectives::is_focus;
 use runs::RunLock;
 pub(crate) use runs::process_alive;
 
@@ -197,14 +194,12 @@ impl Hub {
                 state.report = Some(format!("no model available: {e:#}"));
                 state.save()?;
                 let _ = self.objective_run_ended(realm, state);
-                self.sync_task(realm, state);
                 return Err(e);
             }
         };
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
         let model = self.model_for_drive(realm, &connections, state)?;
         state.save()?;
-        self.sync_task(realm, state);
         let workspace = self.workspace_for(realm, state)?;
         let context = frozen_context(
             state,
@@ -228,8 +223,6 @@ impl Hub {
                     )),
                     None => None,
                 },
-                north_star: (state.skill.is_none() && realm.north_star().get()?.is_some())
-                    .then(|| realm.north_star()),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),
@@ -287,7 +280,6 @@ impl Hub {
             state.save()?;
             observer.changed(state);
         }
-        self.sync_task(realm, state);
         if state.skill.is_some()
             && let Err(e) = self.skill_run_ended(realm, state, &hooks.cancel)
         {
@@ -474,15 +466,6 @@ impl Hub {
             pull_requests: state.change.is_some()
                 && self.repo_of(realm, state).delivery == Delivery::PullRequest,
             checks: self.repo_of(realm, state).checks,
-            north_star: match &state.skill {
-                Some(_) => None,
-                None => realm.north_star().get()?.map(|s| s.prompt_section()),
-            },
-            project: state
-                .project
-                .as_deref()
-                .and_then(|p| realm.projects().get(p).ok())
-                .map(|p| p.prompt_section(state.project_task.as_deref())),
         })
     }
 }
@@ -580,7 +563,7 @@ fn append_user_text(messages: &mut Vec<Message>, text: &str) {
 /// The context a drive of `state` sends: always the one the run started
 /// with, since changing it would invalidate the provider's cache of the whole
 /// conversation. If the realm's context changed since (a new memory, an
-/// edited profile or North Star), the new one is sent once, as a note after
+/// edited profile or business profile), the new one is sent once, as a note after
 /// the conversation.
 fn frozen_context(state: &mut State, fresh: String) -> String {
     let Some(started) = state.context.clone() else {

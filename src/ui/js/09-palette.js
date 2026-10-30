@@ -14,14 +14,6 @@ function paletteItems() {
   if (app.route.view === "run" && runEls) add("Actions", "Show or hide plan & details", icon("panel"), toggleSide);
   if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this chat", icon("rename"),
     () => setTimeout(() => editInPlace(runEls && runEls.header.querySelector("h1"), app.route.id, runName({ title: app.run.title, objective: app.run.state.objective })), 160));
-  const ns = northStar();
-  if (r && ns) {
-    if (ns.milestones.length) add("North Star", "Push the North Star forward now", h("span", { class: "i ns-star" }, "★"), () => startNorthStarRun("push"), { hint: ns.goal });
-    add("North Star", ns.milestones.length ? "Rework the milestones with Airth" : "Brainstorm milestones with Airth", h("span", { class: "i ns-star" }, "★"), () => startNorthStarRun("brainstorm"));
-    add("North Star", focusOn() ? "Turn focus mode off" : "Turn focus mode on", h("span", { class: "i ns-star" }, "★"), toggleFocus, { hint: "shadow what does not serve the North Star" });
-  } else if (r) {
-    add("North Star", "Set a North Star for this realm", h("span", { class: "i ns-star" }, "★"), () => { nsUi.open = true; go(`#/r/${r}/northstar`); });
-  }
   add("Go to", "Inbox", icon("inbox"), () => go("#/inbox"));
   add("Go to", "Usage", icon("chart"), () => go("#/usage"));
   if (app.realm) add("Go to", "What can Airth do for you?", icon("compass"), () => {

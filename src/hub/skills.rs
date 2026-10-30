@@ -15,7 +15,6 @@ impl Hub {
             inbox: self.home.inbox(),
             realm: String::new(),
             developing: None,
-            north_star: Some(crate::northstar::NorthStarStore::new("/nonexistent")),
         })
         .iter()
         .map(|t| {

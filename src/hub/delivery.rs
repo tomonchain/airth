@@ -214,7 +214,6 @@ impl Hub {
             }
         };
         state.save()?;
-        self.sync_task(realm, &state);
         let title = match &event {
             PrEvent::Merged => Some((Kind::Completed, "merged")),
             PrEvent::Closed => Some((Kind::Stopped, "closed without merging")),
@@ -296,7 +295,6 @@ impl Hub {
         }
         record_merged(&gh, &remote, change);
         state.save()?;
-        self.sync_task(realm, &state);
         Ok(state)
     }
 

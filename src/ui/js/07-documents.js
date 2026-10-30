@@ -647,7 +647,7 @@ async function renderObjectives(main) {
   const listEl = h("div", null, h("div", { class: "muted small" }, "Loading…"));
   inner.append(wizSlot, listEl);
   let list;
-  try { [list] = await Promise.all([api(`${realmPath(realm)}/objectives`), loadProjects()]); } catch (e) { return flash(e.message, true); }
+  try { list = await api(`${realmPath(realm)}/objectives`); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "objectives" || app.realm !== realm) return;
   const d = app.realmDetail;
   const refresh = (l) => { list = l; draw(); };
@@ -689,7 +689,7 @@ async function renderObjectives(main) {
     const last = o.last_status && h("span", null, "Last ",
       o.last_run ? h("a", { href: `#/r/${enc(realm)}/run/${enc(o.last_run)}` }, o.last_status) : o.last_status,
       o.last_at && h("span", { class: "r-faint" }, " · " + ago(o.last_at)));
-    return h("div", { class: "card routine" + (o.enabled ? "" : " off") + (focusOn() && o.id !== "north-star" ? " shadowed" : "") },
+    return h("div", { class: "card routine" + (o.enabled ? "" : " off") },
       h("div", { class: "routine-icon", "aria-hidden": "true" }, icon(KIND_ICON[o.trigger.kind] || "clock")),
       h("div", { class: "routine-main" },
         h("div", { class: "routine-top" },
@@ -733,9 +733,7 @@ async function renderObjectives(main) {
     tokens: h("input", { type: "number", min: 1000, step: 1000, placeholder: "tokens" }),
     iterations: h("input", { type: "number", min: 1, placeholder: "model calls" }),
     repo: h("select", null, repoChoices().map((c) => h("option", { value: c.value }, `${c.label} · ${c.sub}`))),
-    project: h("select", null, h("option", { value: "" }, "No project"), projectsNow().filter((p) => p.status === "active").map((p) => h("option", { value: p.id }, (p.focus ? "★ " : "") + p.name))),
   };
-  const hasProjects = projectsNow().length > 0;
   const hasRepoChoice = repoChoices().length >= 2;
   const grantOptions = [
     { capability: "write", label: "Change files" },
@@ -756,7 +754,6 @@ async function renderObjectives(main) {
       id: f.id.value.trim(), objective: f.objective.value.trim(),
       enabled: editing ? editing.enabled : true,
       repo: hasRepoChoice ? f.repo.value || null : null,
-      project: hasProjects ? f.project.value || null : null,
       trigger: { kind: f.kind.value, every: f.every.value, path: f.path.value },
       approvals: grantOptions.filter((g) => g.box.checked).map((g) => ({ capability: g.capability, scope: g.scope || null })),
       approval_wait_minutes: num(f.wait) ?? 10,
@@ -788,8 +785,7 @@ async function renderObjectives(main) {
       f.objective,
       h("div", { class: "wiz-hint" }, "Write it like an instruction to a colleague: every time starts from it."),
       field("Name", f.id, "Shown in the list, and used by `airth objective run`."),
-      hasRepoChoice && field("Repository", f.repo, "Where each run works: it gets its own copy, which you review."),
-      hasProjects && field("Project", f.project, "Each run is told about the project and belongs to it.")];
+      hasRepoChoice && field("Repository", f.repo, "Where each run works: it gets its own copy, which you review.")];
     if (step === 1) return [
       h("div", { class: "wiz-q" }, "When should it run?"),
       h("div", { class: "tiles" },
@@ -855,7 +851,6 @@ async function renderObjectives(main) {
     for (const g of grantOptions) g.box.checked = !!o && o.approvals.some((a) => a.capability === g.capability && (a.scope || null) === (g.scope || null));
     f.wait.value = o ? o.approval_wait_minutes : 10;
     f.repo.value = o ? (o.repo || (repoChoices().find((c) => c.sub === "this realm's folder") || { value: "" }).value) : chosenRepo();
-    f.project.value = (o && o.project) || "";
     const b = (o && o.budget) || {};
     f.minutes.value = b.max_minutes ?? ""; f.tokens.value = b.max_tokens ?? ""; f.iterations.value = b.max_iterations ?? "";
     syncTrigger();

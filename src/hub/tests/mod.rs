@@ -1,7 +1,6 @@
 //! The hub's tests, end to end with a scripted model; shared fixtures here.
 
 use super::delivery::TEST_GITHUB;
-use super::objectives::PUSH_OBJECTIVE;
 use super::*;
 use crate::agent::NoObserver;
 use crate::home::NewRealm;
