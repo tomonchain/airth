@@ -1,12 +1,12 @@
 //! Business pipelines run from the hub (decision 30): the engine is
 //! `crate::pipeline`; here its reads get the realm's runtime, so each one
 //! is checked against the realm's rules, redacted and recorded like any
-//! tool call.
+//! tool call, and its judge steps ask the realm's model.
 
 use super::*;
 use crate::business::store::Store;
 use crate::permissions::Grant;
-use crate::pipeline::run::{Fetched, Outcome};
+use crate::pipeline::run::{Fetched, Io, Outcome};
 use crate::state::{Event, EventStatus};
 use serde_json::json;
 
@@ -42,7 +42,20 @@ impl Hub {
                 &json!({"method": "GET", "url": url}),
             ))
         };
-        crate::pipeline::run::run(name, &pipeline, &mut store, &mut fetch, Utc::now())
+        // Asked only when a judge step runs: a pipeline without one needs no model.
+        let mut model = None;
+        let mut ask = |request: &crate::models::ModelRequest| {
+            if model.is_none() {
+                model = Some(self.model_for(realm).context("no model available")?);
+            }
+            model.as_ref().expect("set above").complete(request)
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: crate::prices::Prices::load(self.home()),
+        };
+        crate::pipeline::run::run(name, &pipeline, &mut store, &mut io, Utc::now())
     }
 }
 

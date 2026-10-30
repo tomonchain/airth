@@ -54,6 +54,28 @@ const MIGRATIONS: &[&str] = &[
         first_seen TEXT NOT NULL,
         PRIMARY KEY (pipeline, key)
     );",
+    // 3: every model call a pipeline makes, the evaluation dataset
+    // (decision 26). `outcome` is filled when the owner decides on what the
+    // call produced.
+    "CREATE TABLE model_calls (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        pipeline TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        prompt TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        cache_read_tokens INTEGER NOT NULL,
+        cache_write_tokens INTEGER NOT NULL,
+        cost_usd REAL,
+        latency_ms INTEGER NOT NULL,
+        valid INTEGER NOT NULL,
+        error TEXT,
+        outcome TEXT
+    );
+    CREATE INDEX model_calls_by_prompt ON model_calls(prompt_version, at);",
 ];
 
 pub struct Store {

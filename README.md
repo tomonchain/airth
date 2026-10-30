@@ -93,7 +93,7 @@ A realm runs one business (decision 32). What the business is lives in the realm
 
 `prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); without it, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
 
-`airth pipeline run <name>` runs one now. Its reads go through the realm's rules like any tool call: a realm that asks before network requests asks you here (`airth realm policy network allow` to stop). Each run leaves a row in `business.db`, failed or not: its heartbeat, with what it read, kept and reported. What a run kept is remembered, so the next one only keeps what is new. The `judge` step does not run yet.
+`airth pipeline run <name>` runs one now. Its reads go through the realm's rules like any tool call: a realm that asks before network requests asks you here (`airth realm policy network allow` to stop). Each run leaves a row in `business.db`, failed or not: its heartbeat, with what it read, kept and reported. What a run kept is remembered, so the next one only keeps what is new. A `judge` step asks the realm's model about each item, with no tools: the prompt file and the schema are its instructions, the item is data. An answer that is not exactly a JSON object matching the schema is dropped, never repaired; every call is recorded in `business.db` with the prompt's version, the model, tokens, estimated cost, latency and whether the answer fit. The answer goes on with the item, under `answer`.
 
 What it costs you is recorded in the realm's `business.db`: each answer you give Airth counts from the moment it asked (up to 10 minutes), and you add what happens outside Airth.
 
@@ -347,7 +347,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
     objectives.json            objectives: triggers, approvals, budgets, last run
-    business.db                business state (SQLite): the owner-time ledger, pipeline runs and what they saw
+    business.db                business state (SQLite): the owner-time ledger, pipeline runs, what they saw, model calls
     skills/                    skills.json, drafts/<skill>/, installed/<skill>/
     secrets.env                credentials (mode 600)
     runs/<id>.json             each run: conversation, plan, grants, tool events, change, checks
@@ -371,7 +371,7 @@ src/
   business/       the business a realm runs: its profile and archive, from the realm's business/ folder;
                   its state in business.db (store.rs) and the owner-time ledger (time.rs)
   pipeline/       business pipelines: the declared step types, loaded and checked from business/pipelines/;
-                  feeds (rss.rs) and running the steps (run.rs)
+                  feeds (rss.rs), answers checked against schemas (schema.rs), running the steps (run.rs)
   objective.rs    persistent objectives, schedules, file watches
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls

@@ -30,6 +30,7 @@ pub const DIR: &str = "pipelines";
 
 pub mod rss;
 pub mod run;
+mod schema;
 
 /// One step, as declared.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -62,7 +63,8 @@ struct File {
     steps: Vec<Step>,
 }
 
-/// A prompt file, read once when the pipeline is loaded.
+/// A prompt file, read once when the pipeline is loaded, with the schema
+/// its answers must match.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prompt {
     /// Relative to the business folder.
@@ -70,6 +72,7 @@ pub struct Prompt {
     pub text: String,
     /// SHA-256 of the text: recorded with every call made with it.
     pub version: String,
+    pub schema: Value,
 }
 
 /// A pipeline that passed every check.
@@ -79,7 +82,8 @@ pub struct Pipeline {
     /// When it runs on its own, as written ("daily 07:00"); checked.
     pub schedule: Option<String>,
     pub steps: Vec<Step>,
-    /// The prompts of its judge steps, in step order.
+    /// The prompts of its judge steps, in step order: the n-th judge step
+    /// uses the n-th prompt.
     pub prompts: Vec<Prompt>,
 }
 
@@ -200,6 +204,7 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
                 path: prompt.clone(),
                 version: crate::update::sha256_hex(text.as_bytes()),
                 text,
+                schema: schema_value,
             });
         }
         Step::Report { title } => {
