@@ -136,6 +136,26 @@ pub struct Usage {
     /// Of `input`: written to the prompt cache.
     #[serde(default)]
     pub cache_write: u64,
+    /// Calls recorded before purposes count as work.
+    #[serde(default)]
+    pub purpose: Purpose,
+}
+
+/// Why a model call was made.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Purpose {
+    /// A step of the run itself.
+    #[default]
+    Work,
+    /// Summarizing a long conversation.
+    Compaction,
+    /// Refreshing the prompt cache while tools wait.
+    Warm,
+    /// Choosing between the fast and the main model.
+    Triage,
+    /// Titling a delivered change.
+    Title,
 }
 
 /// A long conversation replaced, for the model, by the model's own summary

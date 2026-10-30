@@ -400,6 +400,7 @@ mod tests {
             output,
             cache_read,
             cache_write: 0,
+            purpose: Default::default(),
         }
     }
 

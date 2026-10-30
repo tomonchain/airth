@@ -8,7 +8,7 @@
 use crate::cancel::CancelToken;
 use crate::models::{ContentBlock, Message, Model, ModelRequest, ModelResponse, Role, StopReason};
 use crate::runtime::Runtime;
-use crate::state::{Event, EventStatus, State, Status, Usage};
+use crate::state::{Event, EventStatus, Purpose, State, Status, Usage};
 use anyhow::Result;
 use serde_json::Value;
 
@@ -208,7 +208,7 @@ impl<'a> Agent<'a> {
                 return;
             }
         };
-        record_usage(state, &response);
+        record_usage(state, &response, Purpose::Compaction);
         let summary = last_text(&response.content);
         let calls_tools = response
             .content
@@ -313,7 +313,7 @@ impl<'a> Agent<'a> {
                 }
             };
             self.observer.response(state.iterations, &response);
-            record_usage(state, &response);
+            record_usage(state, &response, Purpose::Work);
             let size = response.input_tokens + response.output_tokens;
             // Caching is on when the provider reports cached tokens.
             let cached = response.cache_read_tokens + response.cache_write_tokens > 0;
@@ -384,7 +384,7 @@ impl<'a> Agent<'a> {
                         (results, warmed)
                     });
                     for response in &warmed {
-                        record_usage(state, response);
+                        record_usage(state, response, Purpose::Warm);
                     }
                     let results = results?;
                     state.messages.push(Message {
@@ -424,7 +424,7 @@ fn last_text(content: &[ContentBlock]) -> String {
 
 const COMPACT_PROMPT: &str = "[Airth runtime] The conversation is getting long: it will now be replaced by a summary you write, and you will continue from that summary alone. Do not call tools now. Write the summary for yourself, with everything you need to finish the objective well:\n- the owner's requests and constraints, including any given during the run (verbatim where wording matters);\n- what is done and how it was verified;\n- the current state: files changed (paths), commands that matter, values, identifiers;\n- decisions made and why, and approaches that failed (so you do not retry them);\n- what is left, as precise next steps.\nBe specific and complete, but leave out what you can cheaply re-read (file contents, long outputs).";
 
-fn record_usage(state: &mut State, response: &ModelResponse) {
+fn record_usage(state: &mut State, response: &ModelResponse, purpose: Purpose) {
     state.input_tokens += response.input_tokens;
     state.output_tokens += response.output_tokens;
     state.usage.push(Usage {
@@ -434,6 +434,7 @@ fn record_usage(state: &mut State, response: &ModelResponse) {
         output: response.output_tokens,
         cache_read: response.cache_read_tokens,
         cache_write: response.cache_write_tokens,
+        purpose,
     });
 }
 

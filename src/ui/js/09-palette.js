@@ -167,7 +167,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- usage ----------
 
-const usageUi = { days: 30 };
+const usageUi = { days: 30, show: "cost" };
 
 /** 1234 → 1.2k, 4567890 → 4.57M: token counts at a glance. */
 function tok(n) {
@@ -177,28 +177,65 @@ function tok(n) {
   return String(n);
 }
 
+/** Estimated dollars: cents below $100, whole dollars above. */
+function usd(x) {
+  if (!x) return "$0";
+  if (x < 0.01) return "<$0.01";
+  return "$" + (x >= 100 ? Math.round(x).toLocaleString() : x.toFixed(2));
+}
+
 const total = (t) => t.input + t.output;
+const costOf = (t) => t.cost.input + t.cost.cache_read + t.cost.cache_write + t.cost.output;
+const fresh = (t) => Math.max(0, t.input - t.cache_read - t.cache_write);
 const cachePct = (t) => (t.input ? Math.round((100 * t.cache_read) / t.input) : 0);
 const tokDetail = (t) => `${tok(t.input)} in · ${tok(t.output)} out · ${t.calls} call${t.calls === 1 ? "" : "s"}`;
 
+/** What was billed, in the order the chart stacks it (bottom first). */
+const KINDS = [
+  { key: "input", label: "fresh input", tokens: fresh },
+  { key: "cache_write", label: "cache writes", tokens: (t) => t.cache_write },
+  { key: "cache_read", label: "cache reads", tokens: (t) => t.cache_read },
+  { key: "output", label: "output", tokens: (t) => t.output },
+];
+
+const PURPOSES = {
+  work: ["Run steps", "The model working on the request: each step re-reads the whole conversation."],
+  compaction: ["Compaction", "Summarizing a conversation that grew too long."],
+  warm: ["Keeping the cache warm", "Refreshing the prompt cache while tools wait for your approval, so the next step reads it instead of rewriting it."],
+  triage: ["Triage", "Deciding whether a request fits the fast model."],
+  title: ["Change titles", "Naming a change before it is delivered."],
+};
+const USAGE_SOURCES = { chats: "Chats", objectives: "Objectives" };
+
 async function renderUsage(main) {
-  page(main, "Usage", "Tokens your chats exchanged with the model, across every realm. Input includes what the provider served from its prompt cache, which costs far less than fresh input.");
+  page(main, "Usage", "What your chats exchanged with the model, across every realm. Costs are estimates from public list prices; input read from the prompt cache costs a tenth of fresh input.");
   const inner = $(".page-inner", main);
-  const period = h("div", { class: "seg", role: "radiogroup", "aria-label": "Period" }, [7, 30, 90].map((d) =>
-    h("button", { type: "button", role: "radio", "aria-checked": String(usageUi.days === d), class: usageUi.days === d ? "on" : "",
-      onclick: () => { usageUi.days = d; renderMain(); } }, `${d} days`)));
+  const seg = (label, options, current, set) => h("div", { class: "seg", role: "radiogroup", "aria-label": label }, options.map(([value, text]) =>
+    h("button", { type: "button", role: "radio", "aria-checked": String(current === value), class: current === value ? "on" : "",
+      onclick: () => { set(value); renderMain(); } }, text)));
+  const bar = h("div", { class: "usage-bar" });
   const body = h("div", null, h("div", { class: "working" }, h("span", { class: "orb" }), h("span", { class: "shimmer" }, "Adding up…")));
-  inner.append(h("div", { class: "usage-bar" }, period), body);
+  inner.append(bar, body);
   let r;
   try { r = await api(`usage?days=${usageUi.days}`); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "usage") return;
 
+  const priced = r.window.unpriced < r.window.calls;
+  const cost = priced && usageUi.show === "cost";
+  const weight = cost ? costOf : total;
+  const fmt = cost ? usd : tok;
+  bar.replaceChildren(
+    priced ? seg("Show", [["cost", "Cost"], ["tokens", "Tokens"]], usageUi.show, (v) => (usageUi.show = v)) : null,
+    seg("Period", [7, 30, 90].map((d) => [d, `${d} days`]), usageUi.days, (v) => (usageUi.days = v)));
+
   const stat = (label, value, detail) => h("div", { class: "stat" },
     h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), h("div", { class: "stat-detail" }, detail));
+  const amount = (t) => (priced ? usd(costOf(t)) : tok(total(t)));
+  const amountDetail = (t) => priced ? `${tok(total(t))} tokens · ${t.calls} call${t.calls === 1 ? "" : "s"}` : tokDetail(t);
   const stats = h("div", { class: "stats" },
-    stat(`Last ${r.days} days`, tok(total(r.window)), tokDetail(r.window)),
-    stat("Today", tok(total(r.today)), tokDetail(r.today)),
-    stat("This month", tok(total(r.month)), tokDetail(r.month)),
+    stat(`Last ${r.days} days`, amount(r.window), amountDetail(r.window)),
+    stat("Today", amount(r.today), amountDetail(r.today)),
+    stat("This month", amount(r.month), amountDetail(r.month)),
     stat("From cache", cachePct(r.window) + "%", `${tok(r.window.cache_read)} of ${tok(r.window.input)} input tokens`));
 
   if (!r.window.calls) {
@@ -206,55 +243,74 @@ async function renderUsage(main) {
     return;
   }
 
-  // Daily chart: fresh input, cached input and output, stacked.
-  const max = Math.max(1, ...r.by_day.map((d) => total(d)));
+  const part = (t, k) => (cost ? t.cost[k.key] : k.tokens(t));
+
+  // Daily chart: what was billed, stacked.
+  const max = Math.max(Number.MIN_VALUE, ...r.by_day.map(weight));
   const every = Math.ceil(r.by_day.length / 7);
   const cols = r.by_day.map((d, i) => {
-    const seg = (cls, n) => {
-      const el = h("span", { class: "seg-" + cls });
-      el.style.height = (100 * n) / max + "%";
-      return el;
-    };
     const date = new Date(d.date + "T12:00:00");
     const label = date.toLocaleDateString([], { day: "numeric", month: "short" });
-    const bar = h("div", { class: "bar" }, seg("out", d.output), seg("cache", d.cache_read), seg("in", d.input - d.cache_read));
-    bar.style.animationDelay = Math.min(i * 18, 600) + "ms";
+    const segs = KINDS.slice().reverse().map((k) => {
+      const el = h("span", { class: "seg-" + k.key });
+      el.style.height = (100 * part(d, k)) / max + "%";
+      return el;
+    });
+    const b = h("div", { class: "bar" }, segs);
+    b.style.animationDelay = Math.min(i * 18, 600) + "ms";
+    const lines = KINDS.map((k) => `${k.label}: ${tok(k.tokens(d))}${priced ? " · " + usd(d.cost[k.key]) : ""}`);
     return h("div", { class: "col" + (i === r.by_day.length - 1 ? " today" : ""),
-        title: `${label}\n${tok(total(d))} tokens\n${tok(d.input - d.cache_read)} fresh input · ${tok(d.cache_read)} cached · ${tok(d.output)} output\n${d.calls} calls` },
-      bar, h("div", { class: "col-label" }, i % every === 0 || i === r.by_day.length - 1 ? label : ""));
+        title: `${label}\n${priced ? usd(costOf(d)) + " · " : ""}${tok(total(d))} tokens · ${d.calls} calls\n${lines.join("\n")}` },
+      b, h("div", { class: "col-label" }, i % every === 0 || i === r.by_day.length - 1 ? label : ""));
   });
   const chart = h("div", { class: "card chart-card" },
     h("div", { class: "chart-head" },
       h("span", { class: "strong" }, "Per day"),
-      h("span", { class: "legend" },
-        h("span", null, h("i", { class: "seg-in" }), "fresh input"),
-        h("span", null, h("i", { class: "seg-cache" }), "cached input"),
-        h("span", null, h("i", { class: "seg-out" }), "output"))),
+      h("span", { class: "legend" }, KINDS.map((k) => h("span", null, h("i", { class: "seg-" + k.key }), k.label)))),
     h("div", { class: "chart" }, cols));
 
-  const shareList = (title, items, linkTo) => h("div", { class: "card share-card" },
-    h("div", { class: "chart-head" }, h("span", { class: "strong" }, title)),
-    items.map((s, i) => {
-      const pct = (100 * total(s)) / total(r.window);
-      const fill = h("span");
-      fill.style.width = Math.max(pct, 1) + "%";
-      fill.style.animationDelay = i * 60 + "ms";
-      const nameEl = linkTo ? h("a", { href: linkTo(s) }, s.name) : h("span", null, s.name === "unrecorded" ? "before tracking" : s.name);
-      return h("div", { class: "share", title: tokDetail(s) + ` · ${cachePct(s)}% cached` },
-        h("div", { class: "share-top" }, nameEl, h("span", { class: "muted" }, `${tok(total(s))} · ${Math.round(pct)}%`)),
-        h("div", { class: "share-bar" }, fill));
-    }));
+  const row = (i, name, value, pct, title) => {
+    const fill = h("span");
+    fill.style.width = Math.max(pct, 1) + "%";
+    fill.style.animationDelay = i * 60 + "ms";
+    return h("div", { class: "share", title },
+      h("div", { class: "share-top" }, name, h("span", { class: "muted" }, `${value} · ${Math.round(pct)}%`)),
+      h("div", { class: "share-bar" }, fill));
+  };
+  const all = weight(r.window) || 1;
+  const card = (title, rows) => h("div", { class: "card share-card" },
+    h("div", { class: "chart-head" }, h("span", { class: "strong" }, title)), rows);
+  const shareList = (title, items, name) => card(title, items.map((s, i) => row(i, name(s), fmt(weight(s)), (100 * weight(s)) / all,
+    `${tokDetail(s)} · ${cachePct(s)}% cached${priced ? " · " + usd(costOf(s)) : ""}`)));
 
+  const kindTotal = KINDS.reduce((a, k) => a + part(r.window, k), 0) || 1;
+  const kinds = card(cost ? "Where the cost goes" : "Where the tokens go", KINDS.map((k, i) =>
+    row(i, h("span", null, h("i", { class: "dot seg-" + k.key }), k.label), fmt(part(r.window, k)), (100 * part(r.window, k)) / kindTotal,
+      `${tok(k.tokens(r.window))} tokens${priced ? " · " + usd(r.window.cost[k.key]) : ""}`)));
+  const purposes = shareList("Why the model was called", r.by_purpose, (s) => {
+    const [label, help] = PURPOSES[s.name] || [s.name, ""];
+    return h("span", { title: help }, label);
+  });
+
+  const runDetail = (run) => [run.realm, run.scheduled ? "objective" : null, `${run.calls} calls`,
+    `${tok(Math.round(run.input / run.calls))} avg context`, `${tok(run.peak_input)} peak`, `${cachePct(run)}% cached`,
+    run.compactions ? `${run.compactions} compaction${run.compactions === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
   const top = h("div", { class: "card" },
-    h("div", { class: "chart-head" }, h("span", { class: "strong" }, "Hungriest chats")),
+    h("div", { class: "chart-head" }, h("span", { class: "strong" }, priced ? "Costliest chats" : "Hungriest chats")),
     r.top_runs.map((run) => h("button", { class: "list-row link", type: "button", onclick: () => go(`#/r/${enc(run.realm)}/run/${enc(run.id)}`) },
-      h("div", { class: "grow" }, h("div", { class: "clamp" }, run.objective || "(no objective)"), h("div", { class: "muted small" }, `${run.realm} · ${tokDetail(run)} · ${cachePct(run)}% cached`)),
-      h("span", { class: "strong" }, tok(total(run))))));
+      h("div", { class: "grow" }, h("div", { class: "clamp" }, run.objective || "(no objective)"), h("div", { class: "muted small" }, runDetail(run))),
+      h("div", { class: "run-amount" }, h("span", { class: "strong" }, fmt(weight(run))),
+        h("span", { class: "muted small" }, cost ? tok(total(run)) + " tokens" : priced ? usd(costOf(run)) : "")))));
+
+  const unpriced = r.window.unpriced
+    ? h("div", { class: "card muted small pad" }, `${r.window.unpriced} of ${r.window.calls} calls used a model without a known price and are left out of costs. Add its prices, in USD per million tokens, to benchmarks/prices.json in Airth's home.`)
+    : null;
 
   body.replaceChildren(stats, chart,
+    h("div", { class: "shares" }, kinds, purposes),
     h("div", { class: "shares" },
-      shareList("By realm", r.by_realm, (s) => `#/r/${enc(s.name)}`),
-      shareList("By model", r.by_model)),
-    top);
+      shareList("By realm", r.by_realm, (s) => h("a", { href: `#/r/${enc(s.name)}` }, s.name)),
+      shareList("By model", r.by_model, (s) => h("span", null, s.name === "unrecorded" ? "before tracking" : s.name))),
+    r.by_source.length > 1 ? h("div", { class: "shares" }, shareList("Chats and objectives", r.by_source, (s) => h("span", null, USAGE_SOURCES[s.name] || s.name))) : null,
+    top, unpriced);
 }
-

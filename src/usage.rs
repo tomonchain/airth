@@ -1,8 +1,10 @@
 //! Token usage: what every run's model calls consumed, across realms, by day,
-//! realm, model and run. Shown to the owner in the app; runs never see it.
+//! realm, model, purpose and run, with its estimated cost. Shown to the owner
+//! in the app; runs never see it.
 
+use crate::bench::metrics::{Price, Prices};
 use crate::hub::Hub;
-use crate::state::{State, Usage};
+use crate::state::{Purpose, State, Usage};
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
@@ -11,23 +13,75 @@ use std::collections::HashMap;
 /// The model name for tokens of runs from before each call was recorded.
 pub const UNRECORDED: &str = "unrecorded";
 
+/// Estimated USD from list prices, by what was billed.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
+pub struct Cost {
+    /// Input neither read from nor written to the cache.
+    pub input: f64,
+    pub cache_read: f64,
+    pub cache_write: f64,
+    pub output: f64,
+}
+
+impl Cost {
+    fn of(u: &Usage, p: Price) -> Self {
+        let m = 1_000_000.0;
+        Cost {
+            input: fresh(u) as f64 * p.input / m,
+            cache_read: u.cache_read as f64 * p.cache_read / m,
+            cache_write: u.cache_write as f64 * p.cache_write / m,
+            output: u.output as f64 * p.output / m,
+        }
+    }
+
+    fn add(&mut self, c: Cost) {
+        self.input += c.input;
+        self.cache_read += c.cache_read;
+        self.cache_write += c.cache_write;
+        self.output += c.output;
+    }
+
+    pub fn total(&self) -> f64 {
+        self.input + self.cache_read + self.cache_write + self.output
+    }
+}
+
+/// Input tokens billed at the full price.
+fn fresh(u: &Usage) -> u64 {
+    u.input.saturating_sub(u.cache_read + u.cache_write)
+}
+
 /// Token counts. `input` includes the cached input (`cache_read`, `cache_write`).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
 pub struct Tokens {
     pub input: u64,
     pub output: u64,
     pub cache_read: u64,
     pub cache_write: u64,
     pub calls: u64,
+    /// The largest input of a single call: the context at its biggest.
+    pub peak_input: u64,
+    /// The calls' cost; calls of a model without a known price are left out.
+    pub cost: Cost,
+    /// Calls left out of `cost`.
+    pub unpriced: u64,
 }
 
 impl Tokens {
-    fn add(&mut self, u: &Usage) {
+    fn add(&mut self, u: &Usage, price: Option<Price>) {
         self.input += u.input;
         self.output += u.output;
         self.cache_read += u.cache_read;
         self.cache_write += u.cache_write;
         self.calls += 1;
+        // The unrecorded remainder lumps many calls together.
+        if u.model != UNRECORDED {
+            self.peak_input = self.peak_input.max(u.input);
+        }
+        match price {
+            Some(p) => self.cost.add(Cost::of(u, p)),
+            None => self.unpriced += 1,
+        }
     }
 
     pub fn total(&self) -> u64 {
@@ -55,6 +109,9 @@ pub struct RunUsage {
     pub realm: String,
     pub id: String,
     pub objective: String,
+    /// Started by a realm objective rather than by hand.
+    pub scheduled: bool,
+    pub compactions: u32,
     #[serde(flatten)]
     pub tokens: Tokens,
 }
@@ -71,7 +128,12 @@ pub struct Report {
     pub by_day: Vec<Day>,
     pub by_realm: Vec<Share>,
     pub by_model: Vec<Share>,
-    /// The runs that used the most tokens in the window.
+    /// Why the calls were made: work, compaction, warm, triage, title.
+    pub by_purpose: Vec<Share>,
+    /// Chats started by hand, and runs started by a realm objective.
+    pub by_source: Vec<Share>,
+    /// The runs that cost the most in the window (used the most tokens,
+    /// when no price is known).
     pub top_runs: Vec<RunUsage>,
 }
 
@@ -83,7 +145,8 @@ pub fn report<Tz: TimeZone>(hub: &Hub, days: u32, now: DateTime<Tz>) -> Result<R
             runs.push((realm.name().to_string(), state));
         }
     }
-    Ok(aggregate(&runs, days, now))
+    let prices = crate::bench::Bench::new(hub.home()).store().prices();
+    Ok(aggregate(&runs, days, now, &prices))
 }
 
 /// A run's model calls. Runs from before calls were recorded (or the part of
@@ -106,6 +169,7 @@ fn calls(state: &State) -> Vec<Usage> {
                 output,
                 cache_read: 0,
                 cache_write: 0,
+                purpose: Purpose::Work,
             },
         );
     }
@@ -128,21 +192,39 @@ fn first_line(s: &str) -> String {
     }
 }
 
+fn purpose_name(p: Purpose) -> &'static str {
+    match p {
+        Purpose::Work => "work",
+        Purpose::Compaction => "compaction",
+        Purpose::Warm => "warm",
+        Purpose::Triage => "triage",
+        Purpose::Title => "title",
+    }
+}
+
+/// Costliest first, then the most tokens.
+fn by_weight(a: &Tokens, b: &Tokens) -> std::cmp::Ordering {
+    b.cost
+        .total()
+        .total_cmp(&a.cost.total())
+        .then(b.total().cmp(&a.total()))
+}
+
 fn shares(map: HashMap<String, Tokens>) -> Vec<Share> {
     let mut v: Vec<Share> = map
         .into_iter()
         .map(|(name, tokens)| Share { name, tokens })
         .collect();
-    v.sort_by(|a, b| {
-        b.tokens
-            .total()
-            .cmp(&a.tokens.total())
-            .then(a.name.cmp(&b.name))
-    });
+    v.sort_by(|a, b| by_weight(&a.tokens, &b.tokens).then(a.name.cmp(&b.name)));
     v
 }
 
-pub fn aggregate<Tz: TimeZone>(runs: &[(String, State)], days: u32, now: DateTime<Tz>) -> Report {
+pub fn aggregate<Tz: TimeZone>(
+    runs: &[(String, State)],
+    days: u32,
+    now: DateTime<Tz>,
+    prices: &Prices,
+) -> Report {
     let days = days.clamp(1, 366);
     let tz = now.timezone();
     let today = now.date_naive();
@@ -161,45 +243,67 @@ pub fn aggregate<Tz: TimeZone>(runs: &[(String, State)], days: u32, now: DateTim
         by_day: Vec::new(),
         by_realm: Vec::new(),
         by_model: Vec::new(),
+        by_purpose: Vec::new(),
+        by_source: Vec::new(),
         top_runs: Vec::new(),
     };
     let mut realms: HashMap<String, Tokens> = HashMap::new();
     let mut models: HashMap<String, Tokens> = HashMap::new();
+    let mut purposes: HashMap<String, Tokens> = HashMap::new();
+    let mut sources: HashMap<String, Tokens> = HashMap::new();
     let mut top = Vec::new();
     for (realm, state) in runs {
         let mut run = Tokens::default();
+        let source = if state.origin.is_some() {
+            "objectives"
+        } else {
+            "chats"
+        };
         for call in calls(state) {
+            let price = prices.get(&call.model);
             let date = call.at.with_timezone(&tz).date_naive();
             if date.year() == today.year() && date.month() == today.month() && date <= today {
-                report.month.add(&call);
+                report.month.add(&call, price);
             }
             if date < first || date > today {
                 continue;
             }
             if date == today {
-                report.today.add(&call);
+                report.today.add(&call, price);
             }
             let index = (date - first).num_days() as usize;
-            by_day[index].tokens.add(&call);
-            report.window.add(&call);
-            run.add(&call);
-            realms.entry(realm.clone()).or_default().add(&call);
-            models.entry(call.model.clone()).or_default().add(&call);
+            by_day[index].tokens.add(&call, price);
+            report.window.add(&call, price);
+            run.add(&call, price);
+            realms.entry(realm.clone()).or_default().add(&call, price);
+            models
+                .entry(call.model.clone())
+                .or_default()
+                .add(&call, price);
+            purposes
+                .entry(purpose_name(call.purpose).into())
+                .or_default()
+                .add(&call, price);
+            sources.entry(source.into()).or_default().add(&call, price);
         }
         if run.calls > 0 {
             top.push(RunUsage {
                 realm: realm.clone(),
                 id: state.id.clone(),
                 objective: first_line(&state.objective),
+                scheduled: state.origin.is_some(),
+                compactions: state.compaction.as_ref().map_or(0, |c| c.count),
                 tokens: run,
             });
         }
     }
-    top.sort_by_key(|r| std::cmp::Reverse(r.tokens.total()));
+    top.sort_by(|a, b| by_weight(&a.tokens, &b.tokens));
     top.truncate(10);
     report.by_day = std::mem::take(&mut by_day);
     report.by_realm = shares(realms);
     report.by_model = shares(models);
+    report.by_purpose = shares(purposes);
+    report.by_source = shares(sources);
     report.top_runs = top;
     report
 }
@@ -220,6 +324,7 @@ mod tests {
             output,
             cache_read,
             cache_write: 0,
+            purpose: Purpose::Work,
         }
     }
 
@@ -255,7 +360,7 @@ mod tests {
                 ),
             ),
         ];
-        let r = aggregate(&runs, 7, at(12, 18));
+        let r = aggregate(&runs, 7, at(12, 18), &Prices::default());
         assert_eq!(r.by_day.len(), 7);
         assert_eq!(r.by_day.last().unwrap().date, at(12, 0).date_naive());
         assert_eq!(r.by_day[6].tokens.input, 2300);
@@ -282,7 +387,7 @@ mod tests {
                 vec![call(1, "opus", 500, 50, 0), call(12, "opus", 10, 1, 0)],
             ),
         )];
-        let r = aggregate(&runs, 7, at(12, 18));
+        let r = aggregate(&runs, 7, at(12, 18), &Prices::default());
         assert_eq!(r.window.total(), 11);
         assert_eq!(r.month.total(), 561);
         assert_eq!(r.top_runs[0].tokens.total(), 11);
@@ -302,11 +407,57 @@ mod tests {
         mixed.input_tokens += 900;
         mixed.output_tokens += 90;
         let runs = vec![("acme".to_string(), old), ("acme".to_string(), mixed)];
-        let r = aggregate(&runs, 7, at(12, 18));
+        let r = aggregate(&runs, 7, at(12, 18), &Prices::default());
         assert_eq!(r.window.total(), 4400 + 1100);
         let unrecorded = r.by_model.iter().find(|m| m.name == UNRECORDED).unwrap();
         assert_eq!(unrecorded.tokens.total(), 4400 + 990);
         assert_eq!(r.by_day[5].tokens.total(), 4400); // the 11th
         assert_eq!(r.by_day[3].tokens.total(), 990); // the 9th
+        assert_eq!(r.window.peak_input, 100);
+    }
+
+    #[test]
+    fn estimates_costs_by_what_was_billed_and_why() {
+        let mut work = call(
+            12,
+            "anthropic/claude-sonnet-5-5",
+            1_000_000,
+            100_000,
+            400_000,
+        );
+        work.cache_write = 100_000;
+        let mut warm = call(12, "claude-sonnet-5-5", 500_000, 0, 500_000);
+        warm.purpose = Purpose::Warm;
+        let mut scheduled = run("20261012T080000.000Z", "Digest", vec![work, warm]);
+        scheduled.origin = Some(crate::state::Origin {
+            objective: "digest".into(),
+            trigger: "schedule: daily 08:00".into(),
+        });
+        let runs = vec![
+            ("acme".to_string(), scheduled),
+            (
+                "acme".to_string(),
+                run(
+                    "20261012T090000.000Z",
+                    "Local",
+                    vec![call(12, "qwen3", 10, 1, 0)],
+                ),
+            ),
+        ];
+        let r = aggregate(&runs, 7, at(12, 18), &Prices::default());
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        // Sonnet 5.5: $2 in, $10 out, $0.20 cache reads, $2.50 cache writes.
+        assert!(close(r.window.cost.input, 1.0));
+        assert!(close(r.window.cost.cache_read, 0.08 + 0.1));
+        assert!(close(r.window.cost.cache_write, 0.25));
+        assert!(close(r.window.cost.output, 1.0));
+        assert_eq!(r.window.unpriced, 1);
+        assert_eq!(r.window.peak_input, 1_000_000);
+        assert_eq!(r.by_purpose[0].name, "work");
+        assert!(close(r.by_purpose[1].tokens.cost.total(), 0.1));
+        assert_eq!(r.by_source[0].name, "objectives");
+        assert_eq!(r.by_source[1].name, "chats");
+        assert!(r.top_runs[0].scheduled);
+        assert_eq!(r.top_runs[1].objective, "Local");
     }
 }

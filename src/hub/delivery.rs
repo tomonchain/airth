@@ -140,6 +140,7 @@ impl Hub {
             output: r.output_tokens,
             cache_read: r.cache_read_tokens,
             cache_write: r.cache_write_tokens,
+            purpose: crate::state::Purpose::Title,
         });
         let text: String = r
             .content
