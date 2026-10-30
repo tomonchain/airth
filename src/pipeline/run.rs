@@ -126,7 +126,9 @@ fn steps(
                 }
                 seen_now.extend(this_run);
             }
-            Step::Judge { keep, .. } => {
+            Step::Judge {
+                keep, rank, limit, ..
+            } => {
                 let Some(prompt) = prompts.next() else {
                     bail!("step {}: its prompt was not loaded", i + 1);
                 };
@@ -152,16 +154,27 @@ fn steps(
                         prompt.path
                     ));
                 }
+                if let Some(rank) = rank {
+                    let score = |item: &Item| item["answer"][rank].as_f64().unwrap_or(f64::MIN);
+                    // Stable: equal scores keep the feeds' order.
+                    kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
+                }
+                if let Some(limit) = limit
+                    && kept.len() > *limit
+                {
+                    out.notes.push(format!(
+                        "step {}: kept the {limit} best of {}",
+                        i + 1,
+                        kept.len()
+                    ));
+                    kept.truncate(*limit);
+                }
                 items = kept;
             }
             Step::Queue { kind, text } => {
                 let mut missing = 0;
                 for item in &items {
-                    // A dotted path into the item: answer.draft.
-                    let mut path = text.split('.');
-                    let first = item.get(path.next().unwrap_or_default());
-                    let value = path.fold(first, |v, key| v.and_then(|v| v.get(key)));
-                    match value
+                    match field(item, text)
                         .and_then(Value::as_str)
                         .filter(|t| !t.trim().is_empty())
                     {
@@ -185,7 +198,18 @@ fn steps(
                     ));
                 }
             }
-            Step::Report { title } => out.report = Some(report(title, &items)),
+            Step::Report {
+                title,
+                group_by,
+                detail,
+            } => {
+                out.report = Some(report(
+                    title,
+                    &items,
+                    group_by.as_deref(),
+                    detail.as_deref(),
+                ))
+            }
         }
     }
     out.kept = items;
@@ -246,8 +270,8 @@ fn judge(
     store.write(|tx| {
         tx.execute(
             "INSERT INTO model_calls (at, pipeline, step, prompt, prompt_version, model, input_tokens, output_tokens,
-                cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, error, answer)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 Utc::now().to_rfc3339(),
                 pipeline,
@@ -263,6 +287,7 @@ fn judge(
                 latency_ms,
                 error.is_none(),
                 error,
+                text,
             ],
         )?;
         Ok(tx.last_insert_rowid())
@@ -270,18 +295,55 @@ fn judge(
     .map(|call| (answer.ok(), call))
 }
 
-/// The report, in Markdown: one line per item, linked.
-fn report(title: &str, items: &[Item]) -> String {
+/// A field of an item, dotted for nested ones: `answer.draft`.
+fn field<'a>(item: &'a Item, path: &str) -> Option<&'a Value> {
+    let mut keys = path.split('.');
+    let first = item.get(keys.next().unwrap_or_default());
+    keys.fold(first, |v, key| v.and_then(|v| v.get(key)))
+}
+
+/// A field as text: strings as they are, numbers and the rest as JSON.
+fn field_text(item: &Item, path: &str) -> String {
+    match field(item, path) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// The report, in Markdown: one line per item, linked, with `detail` under
+/// it; grouped by `group_by`, the largest groups first.
+fn report(title: &str, items: &[Item], group_by: Option<&str>, detail: Option<&str>) -> String {
     let mut out = format!("# {title}\n\n");
     if items.is_empty() {
         out.push_str("Nothing new.\n");
     }
-    let text = |item: &Item, key: &str| {
-        item.get(key)
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
+    let Some(group_by) = group_by else {
+        lines(&mut out, items, detail);
+        return out;
     };
+    let mut groups: Vec<(String, Vec<Item>)> = Vec::new();
+    for item in items {
+        let name = match field_text(item, group_by) {
+            name if name.trim().is_empty() => "Other".to_string(),
+            name => name,
+        };
+        match groups.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, list)) => list.push(item.clone()),
+            None => groups.push((name, vec![item.clone()])),
+        }
+    }
+    groups.sort_by_key(|(_, list)| std::cmp::Reverse(list.len()));
+    for (name, list) in groups {
+        out.push_str(&format!("## {name} ({})\n\n", list.len()));
+        lines(&mut out, &list, detail);
+        out.push('\n');
+    }
+    out
+}
+
+fn lines(out: &mut String, items: &[Item], detail: Option<&str>) {
+    let text = |item: &Item, key: &str| field_text(item, key);
     for item in items {
         let title = text(item, "title");
         let title = if title.is_empty() {
@@ -297,8 +359,10 @@ fn report(title: &str, items: &[Item]) -> String {
         if !summary.is_empty() {
             out.push_str(&format!("  {summary}\n"));
         }
+        if let Some(detail) = detail.map(|d| text(item, d)).filter(|d| !d.is_empty()) {
+            out.push_str(&format!("  *{detail}*\n"));
+        }
     }
-    out
 }
 
 impl Store {
@@ -445,6 +509,8 @@ mod tests {
             Step::Dedupe { by: "link".into() },
             Step::Report {
                 title: "Daily watch".into(),
+                group_by: None,
+                detail: None,
             },
         ]);
         // Both feeds carry the same two items: kept once each.
@@ -545,6 +611,8 @@ mod tests {
                     prompt: "prompts/watch.md".into(),
                     schema: "schemas/watch.json".into(),
                     keep: Some("relevant".into()),
+                    rank: None,
+                    limit: None,
                 },
             ])
         };
@@ -632,6 +700,8 @@ mod tests {
                     prompt: "prompts/post.md".into(),
                     schema: "schemas/post.json".into(),
                     keep: None,
+                    rank: None,
+                    limit: None,
                 },
                 Step::Queue {
                     kind: "post".into(),
@@ -667,6 +737,72 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_best_ranked_and_reports_them_by_group_with_the_answer_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let prompt = Prompt {
+            path: "prompts/watch.md".into(),
+            text: "Score it.".into(),
+            version: "v1".into(),
+            schema: serde_json::json!({"type": "object", "properties": {"score": {"type": "integer"}}}),
+        };
+        let p = Pipeline {
+            prompts: vec![prompt],
+            ..pipeline(vec![
+                rss(&["https://a.com/feed"]),
+                Step::Judge {
+                    prompt: "prompts/watch.md".into(),
+                    schema: "schemas/watch.json".into(),
+                    keep: None,
+                    rank: Some("score".into()),
+                    limit: Some(2),
+                },
+                Step::Report {
+                    title: "Watch".into(),
+                    group_by: Some("answer.pillar".into()),
+                    detail: Some("answer.why".into()),
+                },
+            ])
+        };
+        let links = ["https://e.com/1", "https://e.com/2", "https://e.com/3"];
+        let mut fetch = serve(feed(&links), &[]);
+        let mut answers = vec![
+            answer(r#"{"score": 2, "pillar": "flows", "why": "small"}"#),
+            answer(r#"{"score": 5, "pillar": "staking", "why": "big unstaking"}"#),
+            answer(r#"{"score": 4, "pillar": "flows", "why": "ETF outflows"}"#),
+        ]
+        .into_iter();
+        let mut ask = |_: &ModelRequest| Ok(answers.next().unwrap());
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+        };
+        let out = run("watch", &p, &mut store, &mut io, Utc::now()).unwrap();
+        let kept: Vec<_> = out.kept.iter().map(|i| i["link"].clone()).collect();
+        assert_eq!(kept, vec!["https://e.com/2", "https://e.com/3"]);
+        assert!(out.notes.iter().any(|n| n.contains("kept the 2 best of 3")));
+        let report = out.report.unwrap();
+        assert!(report.contains("## staking (1)"));
+        assert!(report.contains("## flows (1)"));
+        assert!(report.contains("*big unstaking*"));
+        assert!(!report.contains("small"));
+        // What the model answered is kept with each call.
+        let answers: Vec<String> = store
+            .conn
+            .prepare("SELECT answer FROM model_calls ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            answers[1],
+            r#"{"score": 5, "pillar": "staking", "why": "big unstaking"}"#
+        );
+    }
+
+    #[test]
     fn a_model_that_fails_fails_the_run() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(&dir.path().join(FILE)).unwrap();
@@ -684,6 +820,8 @@ mod tests {
                     prompt: "p.md".into(),
                     schema: "s.json".into(),
                     keep: None,
+                    rank: None,
+                    limit: None,
                 },
             ])
         };

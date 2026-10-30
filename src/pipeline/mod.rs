@@ -43,20 +43,33 @@ pub enum Step {
     Dedupe { by: String },
     /// Ask the model about each item: the prompt, and the JSON schema its
     /// answer must match. With `keep`, only items whose answer sets that
-    /// boolean go on.
+    /// boolean go on. With `rank`, a number in the answer, they go on best
+    /// first, and with `limit`, only that many.
     Judge {
         prompt: String,
         schema: String,
         #[serde(default)]
         keep: Option<String>,
+        #[serde(default)]
+        rank: Option<String>,
+        #[serde(default)]
+        limit: Option<usize>,
     },
     /// Put each item in the draft queue, for the owner to approve, edit or
     /// reject. `text` names the field holding the draft, `answer.<field>`
     /// for a field of the judge's answer; `kind` is what the business calls
     /// it (post, thread, reply).
     Queue { kind: String, text: String },
-    /// Write what is left as a report for the owner.
-    Report { title: String },
+    /// Write what is left as a report for the owner: one line per item,
+    /// grouped by a field (`group_by`, like `answer.pillar`), with another
+    /// field under each (`detail`, like `answer.why`).
+    Report {
+        title: String,
+        #[serde(default)]
+        group_by: Option<String>,
+        #[serde(default)]
+        detail: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +201,8 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
             prompt,
             schema,
             keep,
+            rank,
+            limit,
         } => {
             let text = std::fs::read_to_string(inside(business, prompt)?)
                 .with_context(|| format!("prompt {prompt}"))?;
@@ -206,6 +221,19 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
             {
                 bail!("keep: {keep} must be a boolean property of {schema}");
             }
+            if let Some(rank) = rank
+                && !matches!(
+                    schema_value["properties"][rank]["type"].as_str(),
+                    Some("number" | "integer")
+                )
+            {
+                bail!("rank: {rank} must be a number property of {schema}");
+            }
+            match limit {
+                Some(0) => bail!("limit: keep at least one item"),
+                Some(_) if rank.is_none() => bail!("limit keeps the best items: give rank too"),
+                _ => {}
+            }
             prompts.push(Prompt {
                 path: prompt.clone(),
                 version: crate::update::sha256_hex(text.as_bytes()),
@@ -217,17 +245,31 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
             if kind.is_empty() || !kind.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
                 bail!("a queue's kind is a lowercase word, like post or reply");
             }
-            if text.split('.').any(str::is_empty) {
+            if !is_path(text) {
                 bail!("queue: text names the field holding the draft, like answer.draft");
             }
         }
-        Step::Report { title } => {
+        Step::Report {
+            title,
+            group_by,
+            detail,
+        } => {
             if title.trim().is_empty() {
                 bail!("a report needs a title");
+            }
+            for path in [group_by, detail].into_iter().flatten() {
+                if !is_path(path) {
+                    bail!("report: {path} is not a field, like answer.pillar");
+                }
             }
         }
     }
     Ok(())
+}
+
+/// A field of an item, dotted for nested ones: `answer.draft`.
+fn is_path(path: &str) -> bool {
+    !path.split('.').any(str::is_empty)
 }
 
 /// A path a pipeline names, which must stay inside the business folder.
@@ -249,6 +291,8 @@ impl Step {
                 prompt,
                 schema,
                 keep,
+                rank,
+                limit,
             } => {
                 let version = prompts
                     .iter()
@@ -258,10 +302,20 @@ impl Step {
                     .as_deref()
                     .map(|k| format!(", keep where {k}"))
                     .unwrap_or_default();
-                format!("judge with {prompt} ({version}), answers as {schema}{keep}")
+                let rank = match (rank, limit) {
+                    (Some(r), Some(n)) => format!(", the {n} best by {r}"),
+                    (Some(r), None) => format!(", best {r} first"),
+                    _ => String::new(),
+                };
+                format!("judge with {prompt} ({version}), answers as {schema}{keep}{rank}")
             }
             Step::Queue { kind, text } => format!("queue each as a {kind} draft, from {text}"),
-            Step::Report { title } => format!("report \"{title}\""),
+            Step::Report {
+                title, group_by, ..
+            } => match group_by {
+                Some(g) => format!("report \"{title}\", by {g}"),
+                None => format!("report \"{title}\""),
+            },
         }
     }
 }
@@ -392,6 +446,25 @@ mod tests {
         assert!(queue("post", "answer.draft").is_ok());
         assert!(format!("{:#}", queue("Post!", "answer.draft").unwrap_err()).contains("kind"));
         assert!(format!("{:#}", queue("post", "answer.").unwrap_err()).contains("field"));
+    }
+
+    #[test]
+    fn rank_limit_and_report_fields_are_checked() {
+        let judge = |extra: &str| {
+            with_steps(&format!(
+                r#"[{RSS}, {{"type": "judge", "prompt": "prompts/watch.md", "schema": "schemas/watch.json"{extra}}}]"#
+            ))
+        };
+        // The test schema has only a boolean: nothing to rank by.
+        assert!(format!("{:#}", judge(r#", "rank": "relevant""#).unwrap_err()).contains("number"));
+        assert!(format!("{:#}", judge(r#", "limit": 5"#).unwrap_err()).contains("give rank"));
+        let report = |extra: &str| {
+            with_steps(&format!(
+                r#"[{RSS}, {{"type": "report", "title": "t"{extra}}}]"#
+            ))
+        };
+        assert!(report(r#", "group_by": "answer.pillar", "detail": "answer.why""#).is_ok());
+        assert!(report(r#", "group_by": "answer.""#).is_err());
     }
 
     #[test]

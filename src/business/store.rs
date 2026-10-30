@@ -108,6 +108,8 @@ const MIGRATIONS: &[&str] = &[
         BEGIN SELECT RAISE(ABORT, 'the draft log is append-only'); END;
     CREATE TRIGGER draft_log_no_delete BEFORE DELETE ON draft_log
         BEGIN SELECT RAISE(ABORT, 'the draft log is append-only'); END;",
+    // 6: what the model answered, valid or not: the call's evaluation needs it.
+    "ALTER TABLE model_calls ADD COLUMN answer TEXT;",
 ];
 
 pub struct Store {
