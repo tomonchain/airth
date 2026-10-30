@@ -1,5 +1,4 @@
 mod agent;
-mod bench;
 mod business;
 mod cancel;
 mod cli;
@@ -22,6 +21,7 @@ mod notify;
 mod objective;
 mod owner;
 mod permissions;
+mod prices;
 mod projects;
 mod realm;
 mod release;
@@ -220,11 +220,6 @@ enum Cmd {
     Skill {
         #[command(subcommand)]
         command: cli::SkillCmd,
-    },
-    /// Airth Bench: run benchmark suites and compare results
-    Bench {
-        #[command(subcommand)]
-        command: cli::BenchCmd,
     },
     /// Check that the environment is ready
     Doctor,
@@ -446,7 +441,6 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Skill { command }) => cli::skill(ctx, command),
-        Some(Cmd::Bench { command }) => cli::bench(ctx, command),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {
             run(

@@ -421,7 +421,7 @@ const OWNER_LISTS = [
   ["commitments", "Commitments", "What you are on the hook for", "e.g. A newsletter every Friday"],
   ["boundaries", "Boundaries", "Lines Airth must never cross", "e.g. Never email a client without my OK"],
 ];
-const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"], ["advanced", "Advanced", "tool"]];
+const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"]];
 
 async function renderOwner(main) {
   const tab = OWNER_TABS.find((t) => t[0] === app.route.tab) || OWNER_TABS[0];
@@ -435,10 +435,6 @@ async function renderOwner(main) {
   main.append(h("div", { class: "page" }, inner));
   if (tab[0] === "appearance") {
     inner.append(h("p", { class: "muted lead" }, "Kept in this browser or app window. System follows macOS, day and night."), appearanceCard());
-    return;
-  }
-  if (tab[0] === "advanced") {
-    inner.append(h("p", { class: "muted lead" }, "Features for evaluating Airth itself."), advancedCard());
     return;
   }
   let owner;
@@ -474,27 +470,6 @@ async function renderOwner(main) {
     h("p", { class: "muted lead" }, "What Airth knows about you. Realms that share your profile give it to every chat; you can turn that off in a realm's settings."),
     h("div", { class: "card" }, picture, field("Name", name), field("About", about), lists.map((l) => l.el)),
     h("div", { class: "row-end" }, status));
-}
-
-/** Settings → Advanced: Airth Bench, off until the owner turns it on. */
-function advancedCard() {
-  const on = !!(app.info && app.info.benchmarks);
-  const sw = h("label", { class: "switch", title: on ? "On: click to turn off" : "Off: click to turn on" },
-    h("input", { type: "checkbox", role: "switch", checked: on, "aria-label": "Enable Airth Bench", onchange: async (e) => {
-      try {
-        const o = await api("bench", { enabled: e.target.checked }, "PUT");
-        app.info.benchmarks = o.enabled;
-        flash(o.enabled ? "Airth Bench is on: see Benchmarks in the sidebar" : "Airth Bench is off; past results are kept");
-        renderSidebar();
-      } catch (err) { e.target.checked = !e.target.checked; flash(err.message, true); }
-    } }),
-    h("span", { class: "track", "aria-hidden": "true" }));
-  return h("div", { class: "card" },
-    h("div", { class: "strong small bench-section" }, "Benchmarking"),
-    h("div", { class: "policy-row" },
-      h("div", null, h("div", { class: "strong" }, "Enable Airth Bench"),
-        h("div", { class: "muted small" }, "Measure how reliably Airth completes tasks: suites of coding, planning, context, recovery, security and personal-agent tasks, each run in an isolated workspace and realm, offline, on synthetic data, and verified by independent checks. Adds Benchmarks to the sidebar. Nothing runs until you start it, nothing leaves this Mac, and turning it off keeps past results.")),
-      sw));
 }
 
 function appearanceCard() {

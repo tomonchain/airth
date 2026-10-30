@@ -2,8 +2,8 @@
 //! realm, model, purpose and run, with its estimated cost. Shown to the owner
 //! in the app; runs never see it.
 
-use crate::bench::metrics::{Price, Prices};
 use crate::hub::Hub;
+use crate::prices::{Price, Prices};
 use crate::state::{Purpose, State, Usage};
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
@@ -145,7 +145,7 @@ pub fn report<Tz: TimeZone>(hub: &Hub, days: u32, now: DateTime<Tz>) -> Result<R
             runs.push((realm.name().to_string(), state));
         }
     }
-    let prices = crate::bench::Bench::new(hub.home()).store().prices();
+    let prices = Prices::load(hub.home());
     Ok(aggregate(&runs, days, now, &prices))
 }
 

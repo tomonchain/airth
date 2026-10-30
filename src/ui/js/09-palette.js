@@ -24,7 +24,6 @@ function paletteItems() {
   }
   add("Go to", "Inbox", icon("inbox"), () => go("#/inbox"));
   add("Go to", "Usage", icon("chart"), () => go("#/usage"));
-  if (app.info && app.info.benchmarks) add("Go to", "Benchmarks", icon("flask"), () => go("#/bench"));
   if (app.realm) add("Go to", "What can Airth do for you?", icon("compass"), () => {
     const show = () => openCanDo((text) => {
       const ta = $(".new-view textarea");
@@ -303,7 +302,7 @@ async function renderUsage(main) {
         h("span", { class: "muted small" }, cost ? tok(total(run)) + " tokens" : priced ? usd(costOf(run)) : "")))));
 
   const unpriced = r.window.unpriced
-    ? h("div", { class: "card muted small pad" }, `${r.window.unpriced} of ${r.window.calls} calls used a model without a known price and are left out of costs. Add its prices, in USD per million tokens, to benchmarks/prices.json in Airth's home.`)
+    ? h("div", { class: "card muted small pad" }, `${r.window.unpriced} of ${r.window.calls} calls used a model without a known price and are left out of costs. Add its prices, in USD per million tokens, to prices.json in Airth's home.`)
     : null;
 
   body.replaceChildren(stats, chart,

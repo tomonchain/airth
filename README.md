@@ -323,24 +323,6 @@ The run's details show which tier it used; the Usage page counts the triage call
 
 No pop-ups: the Mac app shows how many notifications are unread next to its menu bar icon, and bounces its Dock icon once when a run waits for your approval (`airth inbox --desktop off` stops the bounce).
 
-## Benchmarks
-
-Airth Bench measures how reliably Airth completes real tasks, and whether a change to its harness helped. It is off until you turn it on (Settings → Advanced in the app, or `airth bench enable`); then **Benchmarks** appears in the sidebar.
-
-```bash
-airth bench list                       # suites, tasks, and which can run on this machine
-airth bench run core                   # the built-in suite (--task, --repeat 5, --model provider/model)
-airth bench results                    # past runs
-airth bench show last [--task id]      # a run's report, or one task's trace
-airth bench compare <a> <b>            # what changed; exits 1 on a confirmed regression
-airth bench baseline <run>             # what later runs are compared with
-airth bench export last --format csv
-```
-
-Each task runs through the same path as a chat, in its own temporary workspace and a throwaway realm: offline, with synthetic credentials and memory, never your profile, realms or projects. Nothing approves at the bench, so the task's policy decides; tasks that run commands need the macOS sandbox and are skipped elsewhere. A task passes only when its own checks pass on the workspace and conversation (Airth saying it succeeded counts for nothing). Security tasks also need evidence that the attack reached Airth; without it they are *inconclusive*, and one that succeeds marks the whole run as a security violation. Rates count executed tasks only; skipped ones are reported apart. Costs are estimates from list prices (add others in `~/.airth/benchmarks/prices.json`).
-
-Your own suites go in `~/.airth/benchmarks/suites/` as JSON, in the format of [`src/bench/core.json`](src/bench/core.json).
-
 ## Where things live
 
 ```text
@@ -351,7 +333,7 @@ Your own suites go in `~/.airth/benchmarks/suites/` as JSON, in the format of [`
   notifications.json           your inbox
   server.json                  how to reach the running app (while it runs)
   logs/serve.log               the background service's log
-  benchmarks/                  Airth Bench: suites/, results/ (with traces), reports/, config.json
+  prices.json                  your model prices, optional: USD per million tokens, by model id prefix
   realms/<name>/
     realm.json                 folder, permissions, isolation, checks, integrations
     memory.json                long-term memory, with provenance
@@ -369,7 +351,7 @@ Your own suites go in `~/.airth/benchmarks/suites/` as JSON, in the format of [`
 ```text
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill, bench
+  cli.rs          CLI: realm, owner, northstar, memory, secret, integration, objective, inbox, summary, skill
   hub/            the interface to agents: runs per realm, workspaces, briefings (mod.rs); models
                   and routing, changes and adoption, repositories, pull-request delivery,
                   objectives and the North Star, skills, saved runs
@@ -383,6 +365,7 @@ src/
   projects.rs     a realm's projects: goals, milestones, tasks that move with their chats
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls
+  prices.rs       model list prices, and the owner's own, to estimate costs
   notify.rs       the owner's inbox
   service.rs      the login service (launchd)
   skill.rs        skills: manifests, evaluation, installation
@@ -390,11 +373,10 @@ src/
   isolation.rs    git worktrees per run: create, commit, diff, update with the base, conflicts, adopt, discard
   github.rs       pull requests on GitHub: push, open, follow, close
   sandbox.rs      the command sandbox (macOS sandbox-exec)
-  bench/          Airth Bench: suites (core.json built in), runner, independent evaluator, metrics
                   and estimated costs, versioned result storage, comparison and regressions
   ui/             the local app and background runtime: request checks and routing (mod.rs), the
                   server and its threads (server.rs), live runs (live.rs), one router per area
-                  (general, realms, runs, extensions, bench) and the page: index.html, theme.js,
+                  (general, realms, runs, extensions) and the page: index.html, theme.js,
                   js/ and css/ (joined in name order into app.js and app.css by build.rs)
                   editor/: the Documents editor (CodeMirror), bundled into
                   vendor/editor.js by editor/build.sh

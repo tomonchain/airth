@@ -11,9 +11,6 @@
 //! cannot drive the agent or approve its actions.
 
 use crate::agent::{AgentConfig, Observer};
-use crate::bench::Bench;
-use crate::bench::metrics::Summary;
-use crate::bench::storage::{BenchRun, RunOptions};
 use crate::cancel::CancelToken;
 use crate::connectors;
 use crate::home::NewRealm;
@@ -41,7 +38,6 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server};
 
-mod bench;
 mod extensions;
 mod general;
 mod http;
@@ -89,8 +85,6 @@ struct App {
     /// Links to PDF previews (see `files/preview`): a frame cannot send the
     /// API token, so each preview gets its own short-lived, unguessable link.
     previews: Mutex<HashMap<String, (std::path::PathBuf, std::time::Instant)>>,
-    /// Benchmark runs this process executes, to stop them.
-    benches: Arc<Mutex<HashMap<String, CancelToken>>>,
 }
 
 impl App {
@@ -229,7 +223,6 @@ impl App {
             Self::realms_routes,
             Self::runs_routes,
             Self::extensions_routes,
-            Self::bench_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {
@@ -285,7 +278,6 @@ impl App {
             "default_realm": self.hub.home().default_realm(),
             "max_iterations": self.options.max_iterations,
             "unread": self.hub.home().inbox().unread(),
-            "benchmarks": self.hub.home().benchmarks_enabled(),
             "tools": tools,
         })
     }
@@ -339,7 +331,6 @@ mod tests {
             update: Arc::new(Mutex::new(UpdateState::default())),
             writes: Mutex::new(()),
             previews: Mutex::new(HashMap::new()),
-            benches: Arc::new(Mutex::new(HashMap::new())),
         };
         std::thread::spawn(move || serve_requests(server, app));
         let base = format!("http://127.0.0.1:{port}");

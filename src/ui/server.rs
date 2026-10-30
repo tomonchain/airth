@@ -361,7 +361,6 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         })),
         writes: Mutex::new(()),
         previews: Mutex::new(HashMap::new()),
-        benches: Arc::new(Mutex::new(HashMap::new())),
     };
     let info_path = server_file(&app.hub);
     crate::realm::write_private(

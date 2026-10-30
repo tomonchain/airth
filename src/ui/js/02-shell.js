@@ -59,7 +59,6 @@ function renderNav() {
     navLink(r ? `#/r/${r}/routines` : null, "clock", "Routines", v === "objectives"),
     navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
-    app.info && app.info.benchmarks && navLink("#/bench", "flask", "Benchmarks", v === "bench"),
     nsSide());
 }
 
@@ -317,7 +316,6 @@ function renderMain() {
     case "skills": return renderSkills(main);
     case "inbox": return renderInbox(main);
     case "usage": return renderUsage(main);
-    case "bench": return renderBench(main);
     case "new-realm": return renderNewRealm(main);
     case "welcome": return renderWelcome(main);
   }

@@ -7,7 +7,7 @@
 //! notifications.json  the owner's inbox (see notify.rs)
 //! server.json         the running app's address, while it runs (see ui)
 //! secrets.env         model provider settings for every realm (mode 600)
-//! benchmarks/         Airth Bench suites, results and reports (see bench/)
+//! prices.json         the owner's model prices, optional (see prices.rs)
 //! realms/<name>/      one directory per realm (see realm.rs)
 //! ```
 //!
@@ -33,8 +33,6 @@ struct Config {
     default_realm: Option<String>,
     /// Show notifications on the desktop too (macOS). Default on.
     desktop_notifications: Option<bool>,
-    /// Airth Bench is on (see bench/). Default off.
-    benchmarks: Option<bool>,
 }
 
 /// What a new realm looks like.
@@ -134,18 +132,6 @@ impl Home {
     pub fn set_desktop_notifications(&self, on: bool) -> Result<()> {
         let mut config = self.config();
         config.desktop_notifications = Some(on);
-        self.save_config(&config)
-    }
-
-    /// Whether Airth Bench is enabled: the app shows Benchmarks, and suites
-    /// can be run. Turning it off keeps the results.
-    pub fn benchmarks_enabled(&self) -> bool {
-        self.config().benchmarks.unwrap_or(false)
-    }
-
-    pub fn set_benchmarks_enabled(&self, on: bool) -> Result<()> {
-        let mut config = self.config();
-        config.benchmarks = Some(on);
         self.save_config(&config)
     }
 

@@ -117,31 +117,6 @@ const fixtures = {
   ] },
   owner: { name: "", about: "", preferences: [], goals: [], commitments: [], boundaries: [], updated_at: null },
 };
-// Benchmarks: a finished run with a regression and a security violation, one running, unknown costs.
-const benchSummary = (rate) => ({ executed: 2, passed: rate ? 1 : 0, skipped: 1, success_rate: rate, recovery_rate: null, avg_cost_usd: null, avg_duration_ms: 1500,
-  security: { prevented: 0, succeeded: 1, inconclusive: 0 }, security_violation: true, by_category: { coding: { executed: 2, passed: 1, skipped: 0 }, security: { executed: 0, passed: 0, skipped: 1 } } });
-const benchEnv = { airth_version: "0.1.4", commit: null, dirty: false, os: "macos", arch: "aarch64", sandbox: false, model: "anthropic/claude-x", model_config: {} };
-const benchRun = (id, status, rate) => ({ id, suite: "core", suite_version: "1.0.0", status, started_at: now, finished_at: null, environment: benchEnv,
-  options: { tasks: [], repeat: 2, keep: false }, planned: 3, done: 2, current: status === "running" ? "coding-001 (1/1)" : null, error: null, here: true, summary: benchSummary(rate) });
-const benchMetrics = { duration_ms: 1500, model_calls: 2, input_tokens: 10, output_tokens: 2, cache_read_tokens: 0, cache_write_tokens: 0, tool_calls: 1, tool_failures: 0,
-  permission_denials: 0, retries: 0, repeated_actions: 0, compactions: 0, model_switches: 0, context: [], models: [], budget_exhausted: false, interrupted: false };
-const benchResult = { task: "t1", category: "coding", title: "", attempt: 1, outcome: "FAIL", reason: "", security: null, checks: [{ check: "a exists", passed: false, detail: "" }],
-  metrics: benchMetrics, run_status: null, report: null, files: [], trace: true, started_at: now };
-const benchCompare = { a: { id: "b0", suite: "core", suite_version: "1", airth_version: "0.1.3", commit: null, model: "m", started_at: now, summary: { ...benchSummary(1), tasks: [] } },
-  b: { id: "b1", suite: "core", suite_version: "1", airth_version: "0.1.4", commit: null, model: "m", started_at: now, summary: { ...benchSummary(0.5), tasks: [] } },
-  tasks: [{ task: "t1", a: [1, 1], b: null, change: "not_comparable", mean_duration_ms: [null, 1000], mean_cost_usd: [null, null] }],
-  regressions: [{ kind: "task", message: "t1: passed 1/1 → 0/1", confirmed: false }], improvements: [], caveats: ["different models (a and b)"] };
-Object.assign(fixtures, {
-  bench: { enabled: true, sandbox: false, baseline: null, max_repeat: 20, comparison: benchCompare,
-    suites: [{ name: "core", version: "1.0.0", description: "", builtin: true, tasks: [{ id: "t1", category: "coding", title: "", unavailable: "it needs cargo" }] }],
-    runs: [benchRun("b2", "running", null), benchRun("b1", "completed", 0.5), benchRun("b0", "interrupted", null)] },
-  "bench/runs/b1": { run: benchRun("b1", "completed", 0.5), results: [benchResult, { ...benchResult, outcome: "SKIPPED", trace: false, security: "succeeded" }],
-    summary: { ...benchSummary(0.5), tokens: { input: 0, output: 0, cache_read: 0, cache_write: 0, model_calls: 0, tool_calls: 0 },
-      tasks: [{ task: "t1", category: "coding", attempts: 2, executed: 1, passed: 0, mean_duration_ms: null, sd_duration_ms: null, mean_cost_usd: null }] }, baseline: null },
-  "bench/runs/b1/tasks/t1/1": { task: {}, objective: "Fix it", result: benchResult,
-    run: { status: "completed", report: null, plan: [], events: [{ action: "read_file", arguments: { path: "x" }, result: "null", status: "error" }] } },
-  "bench/compare?a=b0&b=b1": benchCompare,
-});
 
 // ---------- load the app (without booting it) ----------
 // The page's app.js: src/ui/js joined in name order, as build.rs does.
@@ -186,18 +161,6 @@ const main = body.querySelector("#main");
     await new Promise((r) => setTimeout(r, 30));
     if (main.textContent.trim().length < 40) problems.push(`${view}: rendered (almost) nothing`);
     check(view, main);
-  }
-  A.app.info.benchmarks = true;
-  A.renderNav();
-  if (!body.querySelector("#side-nav").textContent.includes("Benchmarks")) problems.push("nav: Benchmarks missing once enabled");
-  for (const route of [{ view: "owner", tab: "advanced" }, { view: "bench" }, { view: "bench", id: "b1" },
-    { view: "bench", id: "b1", task: "t1", attempt: 1 }, { view: "bench", compare: true, a: "b0", b: "b1" }]) {
-    A.app.route = route;
-    A.renderMain();
-    await new Promise((r) => setTimeout(r, 30));
-    const label = JSON.stringify(route);
-    if (main.textContent.trim().length < 40) problems.push(`${label}: rendered (almost) nothing`);
-    check(label, main);
   }
   A.app.route = { view: "skills", realm: "acme" };
   for (const tab of ["catalog", "mcp", "connectors"]) {

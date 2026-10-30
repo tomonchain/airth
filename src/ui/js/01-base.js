@@ -311,10 +311,6 @@ function parseRoute() {
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
   if (h.startsWith("#/inbox")) return { view: "inbox" };
   if (h.startsWith("#/usage")) return { view: "usage" };
-  if ((m = h.match(/^#\/bench\/compare\/([^/?#]+)\/([^/?#]+)/))) return { view: "bench", compare: true, a: decodeURIComponent(m[1]), b: decodeURIComponent(m[2]) };
-  if ((m = h.match(/^#\/bench\/([^/?#]+)\/([^/?#]+)\/(\d+)/))) return { view: "bench", id: decodeURIComponent(m[1]), task: decodeURIComponent(m[2]), attempt: +m[3] };
-  if ((m = h.match(/^#\/bench\/([^/?#]+)/))) return { view: "bench", id: decodeURIComponent(m[1]) };
-  if (h.startsWith("#/bench")) return { view: "bench" };
   if (h.startsWith("#/realms/new")) return { view: "new-realm" };
   if (h.startsWith("#/welcome")) return { view: "welcome" };
   return { view: "home" };
