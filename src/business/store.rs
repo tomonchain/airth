@@ -29,10 +29,35 @@ const MIGRATIONS: &[&str] = &[
         BEGIN SELECT RAISE(ABORT, 'the owner-time ledger is append-only'); END;
     CREATE TRIGGER owner_time_no_delete BEFORE DELETE ON owner_time
         BEGIN SELECT RAISE(ABORT, 'the owner-time ledger is append-only'); END;",
+    // 2: pipelines. Each run leaves one row, its heartbeat, append-only;
+    // what a run kept is remembered so the next one skips it.
+    "CREATE TABLE pipeline_runs (
+        id INTEGER PRIMARY KEY,
+        pipeline TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT NOT NULL,
+        ok INTEGER NOT NULL,
+        items_read INTEGER NOT NULL,
+        items_kept INTEGER NOT NULL,
+        report TEXT,
+        notes TEXT NOT NULL DEFAULT '',
+        error TEXT
+    );
+    CREATE INDEX pipeline_runs_by_name ON pipeline_runs(pipeline, started_at);
+    CREATE TRIGGER pipeline_runs_no_update BEFORE UPDATE ON pipeline_runs
+        BEGIN SELECT RAISE(ABORT, 'pipeline runs are append-only'); END;
+    CREATE TRIGGER pipeline_runs_no_delete BEFORE DELETE ON pipeline_runs
+        BEGIN SELECT RAISE(ABORT, 'pipeline runs are append-only'); END;
+    CREATE TABLE pipeline_seen (
+        pipeline TEXT NOT NULL,
+        key TEXT NOT NULL,
+        first_seen TEXT NOT NULL,
+        PRIMARY KEY (pipeline, key)
+    );",
 ];
 
 pub struct Store {
-    pub(super) conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 impl Store {
@@ -53,7 +78,7 @@ impl Store {
 
     /// One write, all or nothing. Immediate, so two writers never both read
     /// a state that only one of them may change.
-    pub(super) fn write<T>(&mut self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {
+    pub(crate) fn write<T>(&mut self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;

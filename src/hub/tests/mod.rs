@@ -13,6 +13,7 @@ use std::sync::Mutex;
 mod changes;
 mod models;
 mod objectives;
+mod pipelines;
 mod runs;
 mod skills;
 

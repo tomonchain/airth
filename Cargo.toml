@@ -12,6 +12,7 @@ aws-lc-rs = { version = "1", default-features = false }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 ctrlc = "3.5.2"
+quick-xml = "0.42.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "rustls"] }
 # Business state in SQLite, built in (decision 31).
 rusqlite = { version = "0.41", features = ["bundled"] }

@@ -66,6 +66,11 @@ pub struct RealmTools {
     pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
 }
 
+/// The tools a pipeline's steps call: HTTP, with the realm's integrations.
+pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
+    vec![Box::new(http::HttpRequest { integrations })]
+}
+
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
 /// memory, integrations and installed skills. A run developing a skill gets
 /// `test_skill` instead of memory and skills.

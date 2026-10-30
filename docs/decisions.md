@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 33. Feeds are read with quick-xml
+
+Pipelines read RSS and Atom feeds (decision 30), which are XML. They are parsed with `quick-xml`, a streaming reader with no dependencies of its own. A feed that breaks off, because it is malformed or because the HTTP tool cut it at its size limit, gives the items read before the break, and the run notes it. Feeds are fetched through `Runtime::invoke` with the `http_request` tool, so each read is checked against the realm's rules, redacted and recorded like any tool call; redirects are not followed, and the run says where the feed moved.
+
+*Why:* feeds are external content, often not quite well formed: a hand-written parser would be one more thing to get wrong on untrusted input. `quick-xml` is small, widely used, and reads what is there without building a document tree.
+
+*Cost:* one more dependency to keep up to date. Items are what the feed says: titles, links, dates as written, summaries reduced to plain text.
+
 ## 32. Airth runs businesses; each realm is one business
 
 A realm is one business. The app shows nothing that is not about the business it runs. The rail lists the businesses, and for the one open:

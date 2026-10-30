@@ -28,6 +28,9 @@ use std::path::{Component, Path, PathBuf};
 /// Where a business's pipelines live, under its `business/` folder.
 pub const DIR: &str = "pipelines";
 
+pub mod rss;
+pub mod run;
+
 /// One step, as declared.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]

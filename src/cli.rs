@@ -134,6 +134,8 @@ pub enum MemoryCmd {
 pub enum PipelineCmd {
     /// Check every pipeline: its steps, schedule and prompt versions, or why it is refused
     Check,
+    /// Run a pipeline now; what the realm's rules leave to you is asked here
+    Run { name: String },
 }
 
 #[derive(Subcommand)]
@@ -1125,6 +1127,22 @@ pub fn pipeline(ctx: &Ctx, command: PipelineCmd) -> Result<bool> {
                 }
             }
             Ok(ok)
+        }
+        PipelineCmd::Run { name } => {
+            let outcome = ctx.hub().run_pipeline(
+                &realm,
+                &name,
+                Box::new(crate::permissions::TerminalApprover),
+                Vec::new(),
+            )?;
+            for note in &outcome.notes {
+                eprintln!("\x1b[33m!\x1b[0m {note}");
+            }
+            eprintln!("read {} item(s), kept {}", outcome.read, outcome.kept.len());
+            if let Some(report) = outcome.report {
+                println!("\n{report}");
+            }
+            Ok(true)
         }
     }
 }
