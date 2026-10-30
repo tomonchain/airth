@@ -69,6 +69,30 @@ airth owner add boundaries "Never push to main"
 
 A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules) and `archive/` (past posts and documents). Every run of the realm is told the profile and where the archive is; runs can read the folder, never change it.
 
+**Pipelines** are the business's recurring work, declared as files in `business/pipelines/`, one JSON file each (decision 30). The engine is the same for every business; what is specific to one (feeds, prompts, schemas, schedule) lives in its folder, versioned with it:
+
+```json
+{
+  "description": "Morning shortlist on the editorial pillars",
+  "schedule": "daily 07:00",
+  "steps": [
+    { "type": "rss", "feeds": ["https://example.com/feed.xml"] },
+    { "type": "dedupe", "by": "link" },
+    { "type": "judge", "prompt": "prompts/watch.md", "schema": "schemas/watch.json", "keep": "relevant" },
+    { "type": "report", "title": "Daily watch" }
+  ]
+}
+```
+
+| Step | What it does |
+|---|---|
+| `rss` | Reads items from RSS or Atom feeds (`feeds`: http or https URLs). Always first, and only first. |
+| `dedupe` | Drops items an earlier run already saw, compared by one field (`by`). |
+| `judge` | Asks the model about each item with a prompt file; its answer must be a JSON object matching the schema file. With `keep`, a boolean of that answer, only the items it marks go on. |
+| `report` | Writes what is left as a report for you. Always last. |
+
+`prompt` and `schema` are paths inside `business/`. A prompt's version is the hash of its content, so changing the file changes the version recorded with each model call. `schedule` takes the forms routines use (`daily 07:00`, `weekdays 09:00`, `every 2h`); without it, the pipeline runs by hand. `airth pipeline check` checks every pipeline and shows its steps and prompt versions; an unknown step or field, a missing file or a schema that is not an object refuses the pipeline before it ever runs.
+
 What it costs you is recorded in the realm's `business.db`: each answer you give Airth counts from the moment it asked (up to 10 minutes), and you add what happens outside Airth.
 
 ```bash
@@ -334,7 +358,7 @@ No pop-ups: the Mac app shows how many notifications are unread next to its menu
 ```text
 src/
   main.rs         CLI: run, send, resume, resolve, runs, review, check, adopt, discard, ui, serve, doctor
-  cli.rs          CLI: realm, owner, time, memory, secret, integration, objective, inbox, summary, skill
+  cli.rs          CLI: realm, owner, pipeline, time, memory, secret, integration, objective, inbox, summary, skill
   hub/            the interface to agents: runs per realm, workspaces, briefings (mod.rs); models
                   and routing, changes and adoption, repositories, pull-request delivery,
                   objectives, skills, saved runs
@@ -344,6 +368,7 @@ src/
   memory.rs       a realm's long-term memory
   business/       the business a realm runs: its profile and archive, from the realm's business/ folder;
                   its state in business.db (store.rs) and the owner-time ledger (time.rs)
+  pipeline/       business pipelines: the declared step types, loaded and checked from business/pipelines/
   objective.rs    persistent objectives, schedules, file watches
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls

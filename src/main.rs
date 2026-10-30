@@ -20,6 +20,7 @@ mod notify;
 mod objective;
 mod owner;
 mod permissions;
+mod pipeline;
 mod prices;
 mod realm;
 mod release;
@@ -189,6 +190,11 @@ enum Cmd {
     Owner {
         #[command(subcommand)]
         command: cli::OwnerCmd,
+    },
+    /// The pipelines the realm's business declares in business/pipelines/
+    Pipeline {
+        #[command(subcommand)]
+        command: cli::PipelineCmd,
     },
     /// Your time on the realm's business: what Airth recorded, and what you add
     Time {
@@ -432,6 +438,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         .map(|_| true),
         Some(Cmd::Realm { command }) => cli::realm(ctx, command),
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
+        Some(Cmd::Pipeline { command }) => cli::pipeline(ctx, command),
         Some(Cmd::Time { command }) => cli::time(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),

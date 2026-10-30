@@ -131,6 +131,12 @@ pub enum MemoryCmd {
 }
 
 #[derive(Subcommand)]
+pub enum PipelineCmd {
+    /// Check every pipeline: its steps, schedule and prompt versions, or why it is refused
+    Check,
+}
+
+#[derive(Subcommand)]
 pub enum TimeCmd {
     /// What your time on the business was, by activity, and each entry
     Show {
@@ -1085,6 +1091,42 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
     home.save_owner(&owner)?;
     eprintln!("\x1b[32m✓\x1b[0m profile saved");
     Ok(true)
+}
+
+pub fn pipeline(ctx: &Ctx, command: PipelineCmd) -> Result<bool> {
+    let realm = ctx.realm()?;
+    let business = crate::business::dir(&realm.root()?);
+    match command {
+        PipelineCmd::Check => {
+            let all = crate::pipeline::load_all(&business)?;
+            if all.is_empty() {
+                eprintln!(
+                    "no pipelines in {}",
+                    business.join(crate::pipeline::DIR).display()
+                );
+            }
+            let mut ok = true;
+            for (name, loaded) in all {
+                match loaded {
+                    Ok(p) => {
+                        let when = p.schedule.as_deref().unwrap_or("run by hand");
+                        println!("\x1b[32m✓\x1b[0m \x1b[1m{name}\x1b[0m  \x1b[2m{when}\x1b[0m");
+                        if !p.description.is_empty() {
+                            println!("  {}", p.description);
+                        }
+                        for (i, step) in p.steps.iter().enumerate() {
+                            println!("  {}. {}", i + 1, step.describe(&p.prompts));
+                        }
+                    }
+                    Err(e) => {
+                        ok = false;
+                        println!("\x1b[31m✗\x1b[0m \x1b[1m{name}\x1b[0m  {e:#}");
+                    }
+                }
+            }
+            Ok(ok)
+        }
+    }
 }
 
 pub fn time(ctx: &Ctx, command: TimeCmd) -> Result<bool> {
