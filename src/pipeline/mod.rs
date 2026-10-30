@@ -50,6 +50,11 @@ pub enum Step {
         #[serde(default)]
         keep: Option<String>,
     },
+    /// Put each item in the draft queue, for the owner to approve, edit or
+    /// reject. `text` names the field holding the draft, `answer.<field>`
+    /// for a field of the judge's answer; `kind` is what the business calls
+    /// it (post, thread, reply).
+    Queue { kind: String, text: String },
     /// Write what is left as a report for the owner.
     Report { title: String },
 }
@@ -208,6 +213,14 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
                 schema: schema_value,
             });
         }
+        Step::Queue { kind, text } => {
+            if kind.is_empty() || !kind.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
+                bail!("a queue's kind is a lowercase word, like post or reply");
+            }
+            if text.split('.').any(str::is_empty) {
+                bail!("queue: text names the field holding the draft, like answer.draft");
+            }
+        }
         Step::Report { title } => {
             if title.trim().is_empty() {
                 bail!("a report needs a title");
@@ -247,6 +260,7 @@ impl Step {
                     .unwrap_or_default();
                 format!("judge with {prompt} ({version}), answers as {schema}{keep}")
             }
+            Step::Queue { kind, text } => format!("queue each as a {kind} draft, from {text}"),
             Step::Report { title } => format!("report \"{title}\""),
         }
     }
@@ -366,6 +380,18 @@ mod tests {
         assert!(load(dir.path(), "daily-watch").is_err());
         assert!(load(dir.path(), "../daily-watch").is_err());
         assert!(load(dir.path(), "Daily").is_err());
+    }
+
+    #[test]
+    fn a_queue_names_its_kind_and_where_the_draft_is() {
+        let queue = |kind: &str, text: &str| {
+            with_steps(&format!(
+                r#"[{RSS}, {{"type": "queue", "kind": "{kind}", "text": "{text}"}}]"#
+            ))
+        };
+        assert!(queue("post", "answer.draft").is_ok());
+        assert!(format!("{:#}", queue("Post!", "answer.draft").unwrap_err()).contains("kind"));
+        assert!(format!("{:#}", queue("post", "answer.").unwrap_err()).contains("field"));
     }
 
     #[test]

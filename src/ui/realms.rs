@@ -175,6 +175,32 @@ impl App {
                 }
                 json_response(200, self.realm_detail(&realm)?)
             }
+            (Method::Get, ["realms", r, "drafts"]) => {
+                // `status=pending,approved`; every draft without it.
+                let status = param(query, "status");
+                let statuses: Vec<&str> = status.split(',').filter(|s| !s.is_empty()).collect();
+                let drafts = Store::of(&self.realm(r)?)?.drafts(&statuses)?;
+                json_response(200, json!({"drafts": drafts}))
+            }
+            (Method::Post, ["realms", r, "drafts", id]) => {
+                let body = read_json(request)?;
+                let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
+                let action = match body["action"].as_str() {
+                    Some("approve") => drafts::Move::Approve,
+                    Some("edit") => drafts::Move::Edit(text("text")),
+                    Some("reject") => drafts::Move::Reject(text("reason")),
+                    Some("published") => drafts::Move::Published,
+                    _ => bail!("action is approve, edit, reject or published"),
+                };
+                let draft = Store::of(&self.realm(r)?)?.move_draft(
+                    id.parse().context("no such draft")?,
+                    body["revision"].as_i64(),
+                    action,
+                    // How long the draft was in front of the owner, as the app saw it.
+                    body["seconds"].as_u64().unwrap_or(0),
+                )?;
+                json_response(200, json!({"draft": draft}))
+            }
             (Method::Post, ["realms", r, "secrets"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

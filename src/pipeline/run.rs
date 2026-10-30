@@ -4,6 +4,7 @@
 //! failed or not, leaves its row in `business.db`: the pipeline's heartbeat.
 
 use super::{Pipeline, Prompt, Step, rss, schema};
+use crate::business::drafts::New;
 use crate::business::store::Store;
 use crate::models::{ContentBlock, Message, ModelRequest, ModelResponse};
 use crate::prices::Prices;
@@ -36,6 +37,8 @@ pub struct Outcome {
     pub read: usize,
     pub kept: Vec<Item>,
     pub report: Option<String>,
+    /// Drafts put in the queue.
+    pub queued: usize,
     /// What went wrong without stopping the run (a feed down, a feed cut).
     pub notes: Vec<String>,
 }
@@ -130,10 +133,12 @@ fn steps(
                 let mut rejected = 0;
                 let mut kept = Vec::new();
                 for mut item in std::mem::take(&mut items) {
-                    let Some(answer) = judge(name, i + 1, prompt, &item, store, io)? else {
+                    let (answer, call) = judge(name, i + 1, prompt, &item, store, io)?;
+                    let Some(answer) = answer else {
                         rejected += 1;
                         continue;
                     };
+                    item.insert("model_call".into(), call.into());
                     let goes_on = keep.as_ref().is_none_or(|k| answer[k] == true);
                     item.insert("answer".into(), answer);
                     if goes_on {
@@ -148,6 +153,37 @@ fn steps(
                     ));
                 }
                 items = kept;
+            }
+            Step::Queue { kind, text } => {
+                let mut missing = 0;
+                for item in &items {
+                    // A dotted path into the item: answer.draft.
+                    let mut path = text.split('.');
+                    let first = item.get(path.next().unwrap_or_default());
+                    let value = path.fold(first, |v, key| v.and_then(|v| v.get(key)));
+                    match value
+                        .and_then(Value::as_str)
+                        .filter(|t| !t.trim().is_empty())
+                    {
+                        Some(draft) => {
+                            store.add_draft(&New {
+                                pipeline: name,
+                                kind,
+                                text: draft,
+                                source: &Value::Object(item.clone()),
+                                model_call: item.get("model_call").and_then(Value::as_i64),
+                            })?;
+                            out.queued += 1;
+                        }
+                        None => missing += 1,
+                    }
+                }
+                if missing > 0 {
+                    out.notes.push(format!(
+                        "step {}: {missing} item(s) had no {text} to queue",
+                        i + 1
+                    ));
+                }
             }
             Step::Report { title } => out.report = Some(report(title, &items)),
         }
@@ -166,7 +202,7 @@ fn judge(
     item: &Item,
     store: &mut Store,
     io: &mut Io,
-) -> Result<Option<Value>> {
+) -> Result<(Option<Value>, i64)> {
     let system = format!(
         "{}\n\nAnswer with one JSON object that matches this JSON schema, and nothing else: no code fence, no comment.\n{}",
         prompt.text.trim(),
@@ -229,9 +265,9 @@ fn judge(
                 error,
             ],
         )?;
-        Ok(())
-    })?;
-    Ok(answer.ok())
+        Ok(tx.last_insert_rowid())
+    })
+    .map(|call| (answer.ok(), call))
 }
 
 /// The report, in Markdown: one line per item, linked.
@@ -576,6 +612,58 @@ mod tests {
         assert!(calls[0].4 && calls[1].4);
         assert!(!calls[2].4 && calls[2].5.as_deref().unwrap().contains("should be boolean"));
         assert!(!calls[3].4 && calls[3].5.as_deref().unwrap().contains("not JSON"));
+    }
+
+    #[test]
+    fn queues_the_drafts_the_model_wrote_linked_to_their_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let prompt = Prompt {
+            path: "prompts/post.md".into(),
+            text: "Draft a post.".into(),
+            version: "v1".into(),
+            schema: serde_json::json!({"type": "object"}),
+        };
+        let p = Pipeline {
+            prompts: vec![prompt],
+            ..pipeline(vec![
+                rss(&["https://a.com/feed"]),
+                Step::Judge {
+                    prompt: "prompts/post.md".into(),
+                    schema: "schemas/post.json".into(),
+                    keep: None,
+                },
+                Step::Queue {
+                    kind: "post".into(),
+                    text: "answer.draft".into(),
+                },
+            ])
+        };
+        let mut fetch = serve(feed(&["https://e.com/1", "https://e.com/2"]), &[]);
+        let mut answers =
+            vec![answer(r#"{"draft": "ETH left the queue."}"#), answer("{}")].into_iter();
+        let mut ask = |_: &ModelRequest| Ok(answers.next().unwrap());
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+        };
+        let out = run("production", &p, &mut store, &mut io, Utc::now()).unwrap();
+        assert_eq!(out.queued, 1);
+        assert!(out.notes[0].contains("1 item(s) had no answer.draft"));
+        let drafts = store.drafts(&["pending"]).unwrap();
+        assert_eq!(drafts.len(), 1);
+        let d = &drafts[0];
+        assert_eq!(
+            (d.kind.as_str(), d.text.as_str()),
+            ("post", "ETH left the queue.")
+        );
+        assert_eq!(d.source["link"], "https://e.com/1");
+        let first_call: i64 = store
+            .conn
+            .query_row("SELECT MIN(id) FROM model_calls", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(d.model_call, Some(first_call));
     }
 
     #[test]

@@ -126,7 +126,10 @@ impl Hub {
             match self.run_pipeline(realm, name, Box::new(Unattended), Vec::new()) {
                 Ok(o) => (
                     Kind::Completed,
-                    format!("{name}: {} new of {} read", o.kept.len(), o.read),
+                    match o.queued {
+                        0 => format!("{name}: {} new of {} read", o.kept.len(), o.read),
+                        n => format!("{name}: {n} draft(s) to review"),
+                    },
                     [o.report.unwrap_or_default(), o.notes.join("\n")]
                         .join("\n")
                         .trim()

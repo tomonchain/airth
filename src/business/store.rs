@@ -83,6 +83,31 @@ const MIGRATIONS: &[&str] = &[
         next_at TEXT NOT NULL,
         started_at TEXT
     );",
+    // 5: the draft queue, and its log of every move (append-only).
+    "CREATE TABLE drafts (
+        id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        pipeline TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        original TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT '{}',
+        model_call INTEGER REFERENCES model_calls(id),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'published')),
+        revision INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX drafts_by_status ON drafts(status);
+    CREATE TABLE draft_log (
+        id INTEGER PRIMARY KEY,
+        draft INTEGER NOT NULL REFERENCES drafts(id),
+        at TEXT NOT NULL,
+        action TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TRIGGER draft_log_no_update BEFORE UPDATE ON draft_log
+        BEGIN SELECT RAISE(ABORT, 'the draft log is append-only'); END;
+    CREATE TRIGGER draft_log_no_delete BEFORE DELETE ON draft_log
+        BEGIN SELECT RAISE(ABORT, 'the draft log is append-only'); END;",
 ];
 
 pub struct Store {

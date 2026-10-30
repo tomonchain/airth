@@ -1138,7 +1138,12 @@ pub fn pipeline(ctx: &Ctx, command: PipelineCmd) -> Result<bool> {
             for note in &outcome.notes {
                 eprintln!("\x1b[33m!\x1b[0m {note}");
             }
-            eprintln!("read {} item(s), kept {}", outcome.read, outcome.kept.len());
+            eprintln!(
+                "read {} item(s), kept {}, queued {} draft(s)",
+                outcome.read,
+                outcome.kept.len(),
+                outcome.queued
+            );
             if let Some(report) = outcome.report {
                 println!("\n{report}");
             }
