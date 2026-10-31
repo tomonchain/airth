@@ -178,6 +178,18 @@ impl App {
             (Method::Get, ["realms", r, "business"]) => {
                 json_response(200, self.business(&self.realm(r)?)?)
             }
+            (Method::Get, ["realms", r, "steering"]) => {
+                json_response(200, self.steering(&self.realm(r)?)?)
+            }
+            (Method::Put, ["realms", r, "strategy"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                crate::business::set_strategy(
+                    &realm.root()?,
+                    body["text"].as_str().unwrap_or_default(),
+                )?;
+                ok()
+            }
             (Method::Post, ["realms", r, "pipelines", name, "run"]) => {
                 let realm = self.realm(r)?;
                 // Refused at once when the file does not hold.
@@ -390,6 +402,75 @@ impl App {
             "pipelines": pipelines,
             "week": store.week(chrono::Utc::now() - chrono::Duration::days(7))?,
             "notifications": notifications,
+        }))
+    }
+
+    /// The owner's page (decision 37): what waits for a decision, what needs
+    /// attention, the strategy, and the week.
+    pub(super) fn steering(&self, realm: &Realm) -> Result<Value> {
+        let root = realm.root()?;
+        let store = Store::of(realm)?;
+        let mut approvals = Vec::new();
+        for (k, live) in self.registry.lock().unwrap().iter() {
+            let Some(id) = k.strip_prefix(&format!("{}/", realm.name())) else {
+                continue;
+            };
+            if let Some(p) = live.pending.lock().unwrap().as_ref() {
+                let state = live.snapshot.lock().unwrap();
+                approvals.push(json!({
+                    "run": id,
+                    "objective": state.objective,
+                    "routine": state.origin.as_ref().map(|o| o.objective.clone()),
+                    "approval_id": p.id,
+                    "tool": p.request.tool,
+                    "capability": p.request.capability.as_str(),
+                    "preview": p.request.preview.chars().take(1200).collect::<String>(),
+                    "warnings": p.request.warnings,
+                }));
+            }
+        }
+        let week_ago = chrono::Utc::now() - chrono::Duration::days(7);
+        let archived = realm.archived_runs();
+        let mut attention: Vec<Value> = self
+            .hub
+            .runs(realm)?
+            .into_iter()
+            .filter(|r| r.display_status() == "failed" && r.updated_at > week_ago)
+            .filter(|r| !archived.contains(&r.id))
+            .map(|r| json!({"kind": "failed", "run": r.id, "title": r.objective, "at": r.updated_at}))
+            .collect();
+        for o in realm.objectives().list()? {
+            if matches!(o.last_status.as_deref(), Some("failed" | "stopped")) {
+                attention.push(json!({
+                    "kind": "routine",
+                    "routine": o.id,
+                    "title": format!("{} {}", o.id, o.last_status.unwrap_or_default()),
+                    "run": o.last_run,
+                    "at": o.last_at,
+                }));
+            }
+        }
+        for (name, loaded) in crate::pipeline::load_all(&crate::business::dir(&root))? {
+            if let Err(e) = loaded {
+                attention.push(
+                    json!({"kind": "pipeline", "title": format!("{name} is refused: {e:#}")}),
+                );
+            } else if let Some(last) = store.pipeline_runs(&name, 1)?.pop()
+                && !last.ok
+            {
+                attention.push(json!({
+                    "kind": "pipeline",
+                    "title": format!("{name} failed: {}", last.error.unwrap_or_default()),
+                    "at": last.started_at,
+                }));
+            }
+        }
+        Ok(json!({
+            "approvals": approvals,
+            "drafts": store.drafts(&["pending"])?,
+            "attention": attention,
+            "strategy": crate::business::strategy(&root)?,
+            "week": store.week(week_ago)?,
         }))
     }
 

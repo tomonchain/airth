@@ -125,6 +125,13 @@ const fixtures = {
       { name: "replies", description: "", schedule: null, steps: ["read 1 feed(s)"], next_at: null, runs: [] }],
     week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 },
     notifications: [{ id: 2, kind: "failed", realm: "acme", run: null, title: "watch failed", body: "no feed could be read", read: false, created_at: now }] },
+  "realms/acme/steering": {
+    approvals: [{ run: "r1", objective: "Publish the article", routine: "weekly-article", approval_id: 4, tool: "execute_command", capability: "execute", preview: "$ git push", warnings: [] }],
+    drafts: [{ id: 1, created_at: now, pipeline: "production", kind: "post", text: "ETH left the queue.", original: "ETH left the queue.",
+      source: { title: "Flows", link: "javascript:alert(1)" }, model_call: 3, status: "pending", revision: 1 }],
+    attention: [{ kind: "pipeline", title: "watch failed: no feed could be read", at: now }, { kind: "routine", routine: "digest", title: "digest stopped", run: null, at: null }],
+    strategy: "",
+    week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 } },
   "inbox/read": {},
 };
 
@@ -165,7 +172,7 @@ const main = body.querySelector("#main");
   A.app.run = live;
   A.renderMain(); A.renderRun(); check("run view", main);
   check("approval", A.approvalCard({ id: 1, tool: "write_file", capability: "write", preview: "create a.md", warnings: [], grantable: false, grant_label: null }));
-  for (const view of ["today", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
+  for (const view of ["steering", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();
     await new Promise((r) => setTimeout(r, 30));
@@ -173,11 +180,13 @@ const main = body.querySelector("#main");
     check(view, main);
   }
   // A draft's source link from a feed is followed only when it is a web link.
-  A.app.route = { view: "today", realm: "acme" };
+  A.app.route = { view: "steering", realm: "acme" };
   A.renderMain();
   await new Promise((r) => setTimeout(r, 30));
-  if (!main.textContent.includes("ETH left the queue.")) problems.push("today: the draft is missing");
-  if (main.textContent.includes("Flows")) problems.push("today: a javascript: link from a feed was rendered");
+  if (!main.textContent.includes("ETH left the queue.")) problems.push("steering: the draft is missing");
+  if (main.textContent.includes("Flows")) problems.push("steering: a javascript: link from a feed was rendered");
+  if (!main.textContent.includes("$ git push")) problems.push("steering: the approval is missing");
+  if (!main.textContent.includes("watch failed")) problems.push("steering: what needs attention is missing");
   A.app.route = { view: "skills", realm: "acme" };
   for (const tab of ["catalog", "mcp", "connectors"]) {
     A.skillUi.tab = tab;

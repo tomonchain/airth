@@ -14,9 +14,9 @@ function paletteItems() {
   if (app.route.view === "run" && runEls) add("Actions", "Show or hide plan & details", icon("panel"), toggleSide);
   if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this chat", icon("rename"),
     () => setTimeout(() => editInPlace(runEls && runEls.header.querySelector("h1"), app.route.id, runName({ title: app.run.title, objective: app.run.state.objective })), 160));
-  if (r) add("Go to", "Today", icon("inbox"), () => go(`#/r/${r}/today`));
-  if (r) add("Go to", "Pipelines", icon("clock"), () => go(`#/r/${r}/pipelines`));
-  add("Go to", "Costs", icon("chart"), () => go("#/usage"));
+  if (r) add("Go to", "Steering", icon("compass"), () => go(`#/r/${r}/steering`));
+  if (r) add("Go to", "Routines", icon("refresh"), () => go(`#/r/${r}/routines`));
+  add("Go to", "Usage", icon("chart"), () => go("#/usage"));
   if (app.realm) add("Go to", "What can Airth do for you?", icon("compass"), () => {
     const show = () => openCanDo((text) => {
       const ta = $(".new-view textarea");

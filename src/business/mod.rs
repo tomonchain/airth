@@ -31,6 +31,19 @@ pub fn dir(root: &Path) -> PathBuf {
     root.join(DIR)
 }
 
+/// The owner's strategy as written, empty when there is none yet.
+pub fn strategy(root: &Path) -> Result<String> {
+    Ok(read_optional(&dir(root), STRATEGY)?.unwrap_or_default())
+}
+
+/// Write the owner's strategy (only the owner does: runs cannot write the
+/// business folder).
+pub fn set_strategy(root: &Path, text: &str) -> Result<()> {
+    let dir = dir(root);
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    crate::realm::write_atomic(&dir.join(STRATEGY), &format!("{}\n", text.trim()))
+}
+
 /// A bot's job, as the owner wrote it in `business/bots/<name>.md`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Job {
@@ -156,6 +169,20 @@ mod tests {
         assert!(
             b.contains("The owner's strategy, which all work for the business follows:\nGrow the newsletter first."),
             "{b}"
+        );
+    }
+
+    #[test]
+    fn the_owner_writes_the_strategy() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(strategy(root.path()).unwrap(), "");
+        set_strategy(root.path(), "  Four articles a month.\n\n").unwrap();
+        assert_eq!(strategy(root.path()).unwrap(), "Four articles a month.");
+        assert!(
+            briefing(root.path())
+                .unwrap()
+                .unwrap()
+                .contains("Four articles a month.")
         );
     }
 

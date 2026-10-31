@@ -357,6 +357,59 @@ mod tests {
         assert_eq!(entries[0].note, "write_file in run run1");
     }
 
+    /// Steering shows what waits for the owner in this business only.
+    #[test]
+    fn steering_lists_this_realms_approvals_and_strategy() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let new = |name: &str| NewRealm {
+            name: name.into(),
+            description: String::new(),
+            root: None,
+            isolation: None,
+        };
+        let realm = home.create_realm(new("r")).unwrap();
+        home.create_realm(new("rr")).unwrap();
+        crate::business::set_strategy(&realm.root().unwrap(), "Four articles a month.").unwrap();
+        let app = test_app(home, 0);
+        let waiting = |preview: &str| {
+            let (tx, _rx) = mpsc::channel();
+            Arc::new(Live {
+                snapshot: Mutex::new(State::new("Publish the article", None)),
+                pending: Mutex::new(Some(Pending {
+                    id: 7,
+                    request: PermissionRequest {
+                        tool: "execute_command".into(),
+                        capability: Capability::Execute,
+                        preview: preview.into(),
+                        warnings: Vec::new(),
+                        scope: None,
+                    },
+                    reply: tx,
+                    asked: std::time::Instant::now(),
+                })),
+                cancel: CancelToken::default(),
+                version: AtomicU64::new(1),
+            })
+        };
+        app.registry
+            .lock()
+            .unwrap()
+            .insert(key("r", "run1"), waiting("$ git push"));
+        app.registry
+            .lock()
+            .unwrap()
+            .insert(key("rr", "run2"), waiting("$ rm -rf other"));
+        let d = app.steering(&realm).unwrap();
+        let approvals = d["approvals"].as_array().unwrap();
+        assert_eq!(approvals.len(), 1, "{d}");
+        assert_eq!(approvals[0]["run"], "run1");
+        assert_eq!(approvals[0]["approval_id"], 7);
+        assert_eq!(approvals[0]["preview"], "$ git push");
+        assert_eq!(d["strategy"], "Four articles a month.");
+        assert_eq!(d["attention"], json!([]));
+    }
+
     #[test]
     fn a_slow_service_does_not_freeze_the_app() {
         // A remote MCP server that takes 2 seconds to answer.

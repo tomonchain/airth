@@ -45,19 +45,23 @@ async function refreshToday() {
   renderStatus();
 }
 
+/** The business's six sections (decision 37), then what it is made of. */
 function renderNav() {
-  const unread = app.info ? app.info.unread : 0;
   const v = app.route.view;
   const r = app.realm && enc(app.realm);
+  const waiting = (app.realms.find((x) => x.name === app.realm) || {}).needs_approval || 0;
   $("#side-nav").replaceChildren(
-    h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search chats, pages, realms and actions" },
+    h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search tasks, pages, businesses and actions" },
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
-    navLink(r ? `#/r/${r}/today` : null, "inbox", "Today", v === "today", unread > 0 && h("span", { class: "count" }, String(unread))),
-    navLink(r ? `#/r/${r}/pipelines` : null, "clock", "Pipelines", v === "pipelines"),
-    navLink(r ? `#/r/${r}` : null, "pencil", "Ask Airth", v === "new"),
+    navLink(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "count" }, String(waiting))),
+    navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines" || v === "pipelines"),
+    navLink(null, "calendar", "Planning", v === "planning"),
+    navLink(r ? `#/r/${r}` : null, "listCheck", "Tasks", v === "tasks" || v === "new" || v === "run"),
+    navLink(null, "brain", "Agents", v === "agents"),
+    navLink("#/usage", "chart", "Usage", v === "usage"),
+    h("div", { class: "section-label" }, "Business"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
-    navLink(r ? `#/r/${r}/skills` : null, "spark", "Skills", v === "skills"),
-    navLink("#/usage", "chart", "Costs", v === "usage"),
+    navLink(r ? `#/r/${r}/skills` : null, "plug", "Connectors & skills", v === "skills"),
   );
 }
 
@@ -299,7 +303,8 @@ function renderMain() {
     return;
   }
   switch (app.route.view) {
-    case "today": return renderToday(main);
+    case "steering": return renderSteering(main);
+    case "routines":
     case "pipelines": return renderPipelines(main);
     case "new": return renderNew(main);
     case "run": return renderRunShell(main);

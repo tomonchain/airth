@@ -303,8 +303,9 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/settings(?:\/([a-z]+))?/))) return { view: "settings", realm: decodeURIComponent(m[1]), tab: m[2] };
   if ((m = h.match(/^#\/r\/([^/]+)\/documents(?:\/([^?#]*))?/))) return { view: "documents", realm: decodeURIComponent(m[1]), path: decodeURIComponent(m[2] || "") };
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/today/))) return { view: "today", realm: decodeURIComponent(m[1]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/pipelines/))) return { view: "pipelines", realm: decodeURIComponent(m[1]) };
+  // Today was the business's page before Steering (decision 37).
+  if ((m = h.match(/^#\/r\/([^/]+)\/(?:steering|today)/))) return { view: "steering", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/(routines|pipelines)/))) return { view: m[2], realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
   if (h.startsWith("#/usage")) return { view: "usage" };
@@ -356,7 +357,7 @@ async function onRoute() {
   if (app.route.view === "home") {
     const r = preferredRealm();
     if (!r) return go(welcomed() ? "#/realms/new" : "#/welcome");
-    return go(app.route.chat ? `#/r/${enc(r)}` : `#/r/${enc(r)}/today`);
+    return go(app.route.chat ? `#/r/${enc(r)}` : `#/r/${enc(r)}/steering`);
   }
   // The guide has the whole window; the sidebar comes back after.
   $("#app").classList.toggle("welcoming", app.route.view === "welcome");

@@ -1,4 +1,4 @@
-// ---------- the business: Today and Pipelines (decision 32) ----------
+// ---------- the business: Steering and Pipelines (decision 37) ----------
 
 /** What the business pages keep between renders: when each draft was first shown, the one being edited. */
 const bizUi = { shown: new Map(), editing: null, data: null };
@@ -33,51 +33,86 @@ function noBusiness(inner) {
     h("p", { class: "muted small" }, "Add a business/ folder to the realm's folder: profile.md says what the business is, archive/ holds its past work, and pipelines/ its recurring work, one JSON file each. The README shows the format; airth pipeline check checks it.")));
 }
 
-async function renderToday(main) {
-  const realm = app.realm;
-  page(main, "Today", null);
-  const inner = $(".page-inner", main);
-  let d;
-  try { d = await loadBusiness(); } catch (e) { return flash(e.message, true); }
-  if (app.route.view !== "today" || app.realm !== realm) return;
-  inner.append(h("p", { class: "sub" },
-    `${d.drafts.length ? `${d.drafts.length} draft${d.drafts.length === 1 ? "" : "s"} wait for you` : "Nothing waits for you"} · your time this week: ${duration(d.week.owner_seconds)}`));
-  if (!d.has_business) return noBusiness(inner);
-
-  const decide = async (draft, body) => {
+/** A draft waiting for the owner: approve, edit or reject; `after` redraws the page. */
+function draftCard(realm, draft, after) {
+  if (!bizUi.shown.has(draft.id)) bizUi.shown.set(draft.id, Date.now());
+  const editing = bizUi.editing === draft.id;
+  const src = draft.source || {};
+  const decide = async (body) => {
     const shown = bizUi.shown.get(draft.id) || Date.now();
     try {
       await api(`${realmPath(realm)}/drafts/${draft.id}`, { ...body, revision: draft.revision, seconds: Math.round((Date.now() - shown) / 1000) });
       bizUi.shown.delete(draft.id);
       bizUi.editing = null;
     } catch (e) { flash(e.message, true); }
-    if (app.route.view === "today") { main.replaceChildren(); renderToday(main); }
+    after();
   };
-  const draftCard = (draft) => {
-    if (!bizUi.shown.has(draft.id)) bizUi.shown.set(draft.id, Date.now());
-    const editing = bizUi.editing === draft.id;
-    const src = draft.source || {};
-    const ta = editing && h("textarea", { class: "biz-edit", rows: 5 }, draft.text);
-    if (ta) ta.value = draft.text;
-    return h("div", { class: "biz-draft" },
-      h("div", { class: "biz-meta" }, h("span", { class: "biz-tag" }, draft.kind), ` ${draft.pipeline} · ${ago(draft.created_at)}`),
-      editing ? ta : h("div", { class: "biz-text" }, draft.text),
-      // Feeds are external: only web links are followed.
-      /^https?:\/\//i.test(src.link || "") && h("a", { class: "biz-source small", href: src.link, target: "_blank", rel: "noopener" }, src.title || src.link),
-      h("div", { class: "biz-actions" }, editing
-        ? [h("button", { class: "btn primary", type: "button", onclick: () => decide(draft, { action: "edit", text: ta.value }) }, "Save"),
-          h("button", { class: "btn", type: "button", onclick: () => { bizUi.editing = null; main.replaceChildren(); renderToday(main); } }, "Cancel")]
-        : [h("button", { class: "btn primary", type: "button", onclick: () => decide(draft, { action: "approve" }) }, "Approve"),
-          h("button", { class: "btn", type: "button", onclick: () => { bizUi.editing = draft.id; main.replaceChildren(); renderToday(main); } }, "Edit"),
-          h("button", { class: "btn", type: "button", onclick: () => decide(draft, { action: "reject", reason: "" }) }, "Reject")]));
-  };
+  const ta = editing && h("textarea", { class: "biz-edit", rows: 5 }, draft.text);
+  if (ta) ta.value = draft.text;
+  return h("div", { class: "biz-draft" },
+    h("div", { class: "biz-meta" }, h("span", { class: "biz-tag" }, draft.kind), ` ${draft.pipeline} · ${ago(draft.created_at)}`),
+    editing ? ta : h("div", { class: "biz-text" }, draft.text),
+    // Feeds are external: only web links are followed.
+    /^https?:\/\//i.test(src.link || "") && h("a", { class: "biz-source small", href: src.link, target: "_blank", rel: "noopener" }, src.title || src.link),
+    h("div", { class: "biz-actions" }, editing
+      ? [h("button", { class: "btn primary", type: "button", onclick: () => decide({ action: "edit", text: ta.value }) }, "Save"),
+        h("button", { class: "btn", type: "button", onclick: () => { bizUi.editing = null; after(); } }, "Cancel")]
+      : [h("button", { class: "btn primary", type: "button", onclick: () => decide({ action: "approve" }) }, "Approve"),
+        h("button", { class: "btn", type: "button", onclick: () => { bizUi.editing = draft.id; after(); } }, "Edit"),
+        h("button", { class: "btn", type: "button", onclick: () => decide({ action: "reject", reason: "" }) }, "Reject")]));
+}
 
-  const review = h("div", { class: "card biz-card" }, h("h2", null, `To review · ${d.drafts.length}`),
-    d.drafts.length ? d.drafts.map(draftCard) : h("div", { class: "muted small" }, "No draft waits for you."));
-  const pipes = h("div", { class: "card biz-card" }, h("h2", null, "Pipelines"),
-    d.pipelines.length
-      ? d.pipelines.map((p) => h("a", { class: "biz-row", href: `#/r/${enc(realm)}/pipelines` }, h("span", null, p.name), lastRun(p)))
-      : h("div", { class: "muted small" }, "None declared in business/pipelines/."));
+/** A run waiting for the owner's approval, answered right here. */
+function approvalItem(realm, a, after) {
+  const answer = async (approve) => {
+    try { await api(`${runPath(realm, a.run)}/approval`, { approval_id: a.approval_id, approve }); }
+    catch (e) { flash(e.message, true); }
+    after();
+  };
+  return h("div", { class: "biz-draft" },
+    h("div", { class: "biz-meta" }, h("span", { class: "biz-tag" }, a.capability), ` ${a.routine || "task"} · ${a.tool}`),
+    h("a", { class: "strong", href: `#/r/${enc(realm)}/run/${enc(a.run)}` }, runName({ objective: a.objective })),
+    h("pre", { class: "out small biz-clip" }, a.preview),
+    a.warnings.map((w) => h("div", { class: "approval-warn" }, "⚠ " + w)),
+    h("div", { class: "biz-actions" },
+      h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve"),
+      h("button", { class: "btn", type: "button", onclick: () => answer(false) }, "Deny")));
+}
+
+/** The owner's page (decision 37): decide, look at what needs attention, steer. */
+async function renderSteering(main) {
+  const realm = app.realm;
+  page(main, "Steering", null);
+  const inner = $(".page-inner", main);
+  let d;
+  try { d = await api(`${realmPath(realm)}/steering`); } catch (e) { return flash(e.message, true); }
+  if (app.route.view !== "steering" || app.realm !== realm) return;
+  const again = () => { if (app.route.view === "steering") { main.replaceChildren(); renderSteering(main); } };
+  const waiting = d.approvals.length + d.drafts.length;
+  inner.append(h("p", { class: "sub" },
+    `${waiting ? `${waiting} decision${waiting === 1 ? "" : "s"} wait for you` : "Nothing waits for you"} · your time this week: ${duration(d.week.owner_seconds)}`));
+
+  const decide = h("div", { class: "card biz-card" }, h("h2", null, `Decide · ${waiting}`),
+    waiting
+      ? [d.approvals.map((a) => approvalItem(realm, a, again)), d.drafts.map((x) => draftCard(realm, x, again))]
+      : h("div", { class: "muted small" }, "Nothing waits for you. The team carries on."));
+  const attention = h("div", { class: "card biz-card" }, h("h2", null, "Needs attention"),
+    d.attention.length
+      ? d.attention.map((x) => h(x.run ? "a" : "div", { class: "biz-row", href: x.run ? `#/r/${enc(realm)}/run/${enc(x.run)}` : null },
+        h("span", { class: "biz-bad biz-clip" }, x.title), x.at && h("span", { class: "muted small" }, ago(x.at))))
+      : h("div", { class: "muted small" }, "All went well this week."));
+
+  const text = h("textarea", { class: "biz-edit", rows: 10, "aria-label": "Strategy",
+    placeholder: "Your goals, the line every agent follows, and what the team may do alone.\n\nFor example:\n- One article a week on the blog.\n- Explain, never hype. Facts and numbers first.\n- Ask me before publishing or spending money." });
+  text.value = d.strategy;
+  const save = h("button", { class: "btn primary", type: "button", onclick: async () => {
+    try { await api(`${realmPath(realm)}/strategy`, { text: text.value }, "PUT"); flash("Strategy saved: every agent reads it from its next run"); }
+    catch (e) { flash(e.message, true); }
+  } }, "Save strategy");
+  const strategy = h("div", { class: "card biz-card" }, h("h2", null, "Strategy"),
+    h("p", { class: "muted small" }, "Where you steer: every agent of this business reads it before it works."), text,
+    h("div", { class: "biz-actions" }, save));
+
   const w = d.week;
   const decided = w.approved + w.rejected;
   const week = h("div", { class: "card biz-card" }, h("h2", null, "Last 7 days"),
@@ -88,19 +123,12 @@ async function renderToday(main) {
     h("div", { class: "biz-row" }, h("span", null, "Model cost"),
       h("span", { title: w.unpriced_calls ? `${w.unpriced_calls} call(s) to a model without a known price are not counted` : "" },
         `${w.model_cost.toFixed(2)} $${w.unpriced_calls ? " +" : ""}`)));
-  const recent = d.notifications.length > 0 && h("div", { class: "card biz-card" }, h("h2", null, "Recent"),
-    d.notifications.map((n) => h("div", { class: "biz-note" + (n.read ? "" : " unread") },
-      h("span", { class: "inbox-kind " + n.kind }, KIND_MARK[n.kind] || "•"),
-      h("div", { class: "grow" }, h("div", null, n.title), n.body && h("div", { class: "muted small biz-clip" }, n.body),
-        h("div", { class: "muted small" }, ago(n.created_at))))));
-  inner.append(h("div", { class: "biz-grid" }, h("div", null, review, recent), h("div", null, pipes, week)));
-  const unread = d.notifications.filter((n) => !n.read).map((n) => n.id);
-  if (unread.length) api("inbox/read", { ids: unread }).then(() => refreshInfo()).catch(() => {});
+  inner.append(h("div", { class: "biz-grid" }, h("div", null, decide, strategy), h("div", null, attention, week)));
 }
 
 async function renderPipelines(main) {
   const realm = app.realm;
-  page(main, "Pipelines", "The business's recurring work, as declared in business/pipelines/.");
+  page(main, "Routines", "The business's recurring work. Pipelines are declared in business/pipelines/.");
   const inner = $(".page-inner", main);
   let d;
   try { d = await loadBusiness(); } catch (e) { return flash(e.message, true); }
@@ -109,7 +137,7 @@ async function renderPipelines(main) {
   if (!d.pipelines.length) inner.append(h("div", { class: "card muted small pad" }, "No pipeline yet: add one in business/pipelines/."));
   for (const p of d.pipelines) {
     const run = h("button", { class: "btn", type: "button", disabled: !!p.error, onclick: async () => {
-      try { await api(`${realmPath(realm)}/pipelines/${enc(p.name)}/run`, {}); flash(`${p.name} started: you will find it in Today`); } catch (e) { flash(e.message, true); }
+      try { await api(`${realmPath(realm)}/pipelines/${enc(p.name)}/run`, {}); flash(`${p.name} started: its run shows here when it ends`); } catch (e) { flash(e.message, true); }
     } }, "Run now");
     const last = p.runs[0];
     inner.append(h("div", { class: "card biz-card" },
