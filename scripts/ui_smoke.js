@@ -32,7 +32,7 @@ class FakeNode {
   set textContent(v) { this.children = [new FakeText(String(v))]; }
   querySelector(sel) { return find(this, sel, true)[0] || null; }
   querySelectorAll(sel) { return find(this, sel, false); }
-  replaceWith() {} remove() {} focus() {} select() {} scrollIntoView() {} closest() { return null; }
+  replaceWith() {} remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); } focus() {} select() {} scrollIntoView() {} closest() { return null; }
   contains() { return false; }
   get offsetWidth() { return 0; }
 }
@@ -158,7 +158,7 @@ const fixtures = {
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
 const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
   .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
-const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderTabbar, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
+const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderTabbar, openMoreSheet, closeMoreSheet, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
 const A = globalThis.__app;
@@ -185,6 +185,12 @@ const main = body.querySelector("#main");
   A.renderNav(); check("nav", body.querySelector("#side-nav"));
   A.renderTabbar(); check("tab bar", body.querySelector("#tabbar"));
   if (body.querySelector("#tabbar").children.length !== 5) problems.push("tab bar: five tabs expected");
+  A.openMoreSheet();
+  const more = body.querySelector("#more-sheet");
+  if (!more || !more.textContent.includes("Routines") || !more.textContent.includes("perso")) problems.push("more sheet: incomplete");
+  else check("more sheet", more);
+  A.closeMoreSheet();
+  if (body.querySelector("#more-sheet")) problems.push("more sheet: not closed");
   A.renderFoot(); check("foot", body.querySelector("#sidebar-foot"));
   A.renderRealmSwitch(); check("realm switch", body.querySelector("#realm-switch"));
   A.app.route = { view: "run", realm: "acme", id: state.id };

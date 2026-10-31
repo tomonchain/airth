@@ -345,8 +345,9 @@ function welcomed() {
 }
 
 async function onRoute() {
-  // On a phone, going somewhere closes the sidebar.
+  // On a phone, going somewhere closes the sidebar and the More sheet.
   if (narrow()) $("#app").classList.add("side-hidden");
+  closeMoreSheet();
   const before = app.route;
   app.route = parseRoute();
   if (docsUi.quick) { docsUi.quick.remove(); docsUi.quick = null; }

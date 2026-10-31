@@ -46,8 +46,52 @@ function renderTabbar() {
     tab(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run" || v === "new"),
     tab(r ? `#/r/${r}/planning` : null, "calendar", "Planning", v === "planning"),
     tab(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
-    h("button", { class: "tab-item" + (rest ? " on" : ""), type: "button", onclick: (e) => { e.stopPropagation(); toggleSidebar(); } }, icon("dots"), h("span", null, "More")));
+    h("button", { class: "tab-item" + (rest ? " on" : ""), type: "button", "aria-haspopup": "dialog", onclick: (e) => { e.stopPropagation(); openMoreSheet(); } }, icon("dots"), h("span", null, "More")));
 }
+
+/** On a phone, More: a sheet from the bottom with what the tab bar leaves out. */
+function openMoreSheet() {
+  closeMoreSheet();
+  const r = app.realm && enc(app.realm);
+  const v = app.route.view;
+  const to = (hash) => () => { closeMoreSheet(); go(hash); };
+  const row = (hash, ic, label, active) => h("button", { class: "more-row" + (active ? " on" : ""), type: "button", disabled: !hash, onclick: hash ? to(hash) : null },
+    icon(ic), h("span", { class: "grow" }, label), h("span", { class: "more-chev", "aria-hidden": "true" }, "›"));
+  const others = app.realms.filter((x) => !x.archived && x.name !== app.realm);
+  const current = app.realms.find((x) => x.name === app.realm);
+  const dark = window.airthTheme && window.airthTheme.current() === "dark";
+  const sheet = h("div", { class: "more-sheet", role: "dialog", "aria-modal": "true", "aria-label": "More" },
+    h("div", { class: "more-grip", "aria-hidden": "true" }),
+    h("div", { class: "more-business" },
+      pictureMark("realm-mark", `${realmPath(app.realm || "")}/image`, current && current.image, app.realm),
+      h("div", { class: "grow" }, h("div", { class: "strong" }, app.realm || "No business"), h("div", { class: "muted small" }, "Business")),
+      r && h("button", { class: "icon-action", type: "button", "aria-label": "Business settings", onclick: to(`#/r/${r}/settings`) }, icon("gear"))),
+    others.length > 0 && h("div", { class: "more-group" },
+      h("div", { class: "more-label" }, "Switch to"),
+      others.map((x) => h("button", { class: "more-row", type: "button", onclick: to(`#/r/${enc(x.name)}/steering`) },
+        pictureMark("realm-mark small", `${realmPath(x.name)}/image`, x.image, x.name), h("span", { class: "grow" }, x.name),
+        x.needs_approval > 0 && h("span", { class: "tab-count static" }, String(x.needs_approval))))),
+    h("div", { class: "more-group" },
+      row(r && `#/r/${r}/routines`, "refresh", "Routines", v === "routines"),
+      row("#/usage", "chart", "Usage", v === "usage"),
+      row(r && `#/r/${r}/documents`, "folder", "Documents", v === "documents"),
+      row(r && `#/r/${r}/skills`, "plug", "Connectors & skills", v === "skills")),
+    h("div", { class: "more-group" },
+      row("#/owner", "notes", (app.ownerName || "").trim() || "Your profile", v === "owner"),
+      row("#/realms/new", "plus", "New business", v === "new-realm"),
+      h("button", { class: "more-row", type: "button", onclick: () => { closeMoreSheet(); openPalette(); } }, icon("search"), h("span", { class: "grow" }, "Search")),
+      h("button", { class: "more-row", type: "button", onclick: (e) => { window.airthTheme && window.airthTheme.set(dark ? "light" : "dark", e); closeMoreSheet(); renderFoot(); } },
+        icon(dark ? "sun" : "moon"), h("span", { class: "grow" }, dark ? "Light mode" : "Dark mode"))));
+  const back = h("div", { class: "more-back", id: "more-sheet", onclick: (e) => { if (e.target === back) closeMoreSheet(); } }, sheet);
+  document.body.append(back);
+}
+
+function closeMoreSheet() {
+  const el = $("#more-sheet");
+  if (el) el.remove();
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMoreSheet(); });
 
 /** Which date group a run falls in, ChatGPT style. */
 function dateGroup(iso) {
