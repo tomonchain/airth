@@ -37,8 +37,14 @@ mod schema;
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Step {
-    /// Read items from RSS or Atom feeds.
-    Rss { feeds: Vec<String> },
+    /// Read items from RSS or Atom feeds. With `max_age_days`, items
+    /// published longer ago than that are left out: some feeds carry old
+    /// pieces among the new.
+    Rss {
+        feeds: Vec<String>,
+        #[serde(default)]
+        max_age_days: Option<u32>,
+    },
     /// Drop items already seen in an earlier run, by one of their fields.
     Dedupe { by: String },
     /// Ask the model about each item: the prompt, and the JSON schema its
@@ -181,7 +187,13 @@ fn check_order(steps: &[Step]) -> Result<()> {
 
 fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result<()> {
     match step {
-        Step::Rss { feeds } => {
+        Step::Rss {
+            feeds,
+            max_age_days,
+        } => {
+            if *max_age_days == Some(0) {
+                bail!("max_age_days is at least 1");
+            }
             if feeds.is_empty() {
                 bail!("rss needs at least one feed");
             }
@@ -285,7 +297,16 @@ impl Step {
     /// One line for the owner.
     pub fn describe(&self, prompts: &[Prompt]) -> String {
         match self {
-            Step::Rss { feeds } => format!("read {} feed(s)", feeds.len()),
+            Step::Rss {
+                feeds,
+                max_age_days,
+            } => match max_age_days {
+                Some(days) => format!(
+                    "read {} feed(s), only what was published in the last {days} day(s)",
+                    feeds.len()
+                ),
+                None => format!("read {} feed(s)", feeds.len()),
+            },
             Step::Dedupe { by } => format!("drop items already seen (by {by})"),
             Step::Judge {
                 prompt,
@@ -425,6 +446,14 @@ mod tests {
     fn refuses_bad_feeds_schedules_and_names() {
         assert!(refusal(r#"[{"type": "rss", "feeds": []}]"#).contains("at least one feed"));
         assert!(refusal(r#"[{"type": "rss", "feeds": ["file:///etc/passwd"]}]"#).contains("http"));
+        assert!(
+            refusal(r#"[{"type": "rss", "feeds": ["https://e.com/f"], "max_age_days": 0}]"#)
+                .contains("at least 1")
+        );
+        assert!(
+            with_steps(r#"[{"type": "rss", "feeds": ["https://e.com/f"], "max_age_days": 2}]"#)
+                .is_ok()
+        );
         let dir = business();
         std::fs::write(
             dir.path().join("pipelines/daily-watch.json"),

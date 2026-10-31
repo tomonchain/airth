@@ -2,6 +2,7 @@
 //! data, never trusted to be well formed. A feed that breaks off (cut by
 //! the size limit, or malformed) gives the items read before the break.
 
+use chrono::{DateTime, Utc};
 use quick_xml::Reader;
 use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::{BytesStart, Event};
@@ -15,6 +16,16 @@ pub struct Feed {
     pub items: Vec<Map<String, Value>>,
     /// False when the feed broke off before its end.
     pub complete: bool,
+}
+
+/// When an item was published, from the date its feed wrote: RSS writes
+/// RFC 2822, Atom RFC 3339. None when it has none, or one that does not read.
+pub fn published(item: &Map<String, Value>) -> Option<DateTime<Utc>> {
+    let text = item.get("published")?.as_str()?.trim();
+    DateTime::parse_from_rfc2822(text)
+        .or_else(|_| DateTime::parse_from_rfc3339(text))
+        .ok()
+        .map(|d| d.with_timezone(&Utc))
 }
 
 pub fn parse(xml: &str) -> Feed {
@@ -218,6 +229,11 @@ mod tests {
         assert_eq!(field(a, "link"), "https://example.com/a");
         assert_eq!(field(a, "id"), "https://example.com/a");
         assert_eq!(field(a, "published"), "Fri, 30 Oct 2026 07:00:00 GMT");
+        assert_eq!(
+            published(a).unwrap().to_rfc3339(),
+            "2026-10-30T07:00:00+00:00"
+        );
+        assert_eq!(published(&feed.items[1]), None);
         assert_eq!(field(a, "summary"), "ETH left the queue.");
         assert_eq!(field(&feed.items[1], "title"), "Second <b>one</b>");
         assert_eq!(field(&feed.items[1], "id"), "tag:2");
@@ -244,6 +260,13 @@ mod tests {
         assert_eq!(field(a, "link"), "https://example.com/a");
         assert_eq!(field(a, "id"), "urn:a");
         assert_eq!(field(a, "published"), "2026-10-29T08:00:00Z");
+        assert_eq!(
+            published(a).unwrap().to_rfc3339(),
+            "2026-10-29T08:00:00+00:00"
+        );
+        let mut odd = a.clone();
+        odd.insert("published".into(), "last Tuesday".into());
+        assert_eq!(published(&odd), None);
         assert_eq!(field(a, "summary"), "Short.");
     }
 

@@ -52,7 +52,7 @@ pub fn run(
     now: DateTime<Utc>,
 ) -> Result<Outcome> {
     let mut seen_now = Vec::new();
-    let result = steps(name, pipeline, store, io, &mut seen_now);
+    let result = steps(name, pipeline, store, io, &mut seen_now, now);
     let finished = Utc::now();
     match result {
         Ok(outcome) => {
@@ -73,13 +73,17 @@ fn steps(
     store: &mut Store,
     io: &mut Io,
     seen_now: &mut Vec<String>,
+    now: DateTime<Utc>,
 ) -> Result<Outcome> {
     let mut out = Outcome::default();
     let mut items: Vec<Item> = Vec::new();
     let mut prompts = pipeline.prompts.iter();
     for (i, step) in pipeline.steps.iter().enumerate() {
         match step {
-            Step::Rss { feeds } => {
+            Step::Rss {
+                feeds,
+                max_age_days,
+            } => {
                 let mut failures = Vec::new();
                 for feed in feeds {
                     match (io.fetch)(feed) {
@@ -104,6 +108,19 @@ fn steps(
                 }
                 out.notes.extend(failures);
                 out.read = items.len();
+                if let Some(days) = max_age_days {
+                    let since = now - chrono::Duration::days(i64::from(*days));
+                    let before = items.len();
+                    // An item without a readable date is kept: dropping it
+                    // could silently empty a feed that writes no dates.
+                    items.retain(|item| rss::published(item).is_none_or(|at| at >= since));
+                    let old = before - items.len();
+                    if old > 0 {
+                        out.notes.push(format!(
+                            "{old} item(s) older than {days} day(s) were left out"
+                        ));
+                    }
+                }
             }
             Step::Dedupe { by } => {
                 let key = |item: &Item| match item.get(by) {
@@ -465,6 +482,7 @@ mod tests {
     fn rss(feeds: &[&str]) -> Step {
         Step::Rss {
             feeds: feeds.iter().map(|f| f.to_string()).collect(),
+            max_age_days: None,
         }
     }
 
@@ -534,6 +552,43 @@ mod tests {
         assert_eq!(
             runs(&store),
             vec![(true, 4, 2, None), (true, 4, 1, None), (true, 2, 1, None)]
+        );
+    }
+
+    #[test]
+    fn leaves_out_old_items_but_keeps_undated_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let p = pipeline(vec![
+            Step::Rss {
+                feeds: vec!["https://a.com/feed".into()],
+                max_age_days: Some(2),
+            },
+            Step::Dedupe { by: "link".into() },
+        ]);
+        let now = Utc::now();
+        let item = |link: &str, date: Option<DateTime<Utc>>| {
+            let date = date.map_or(String::new(), |d| {
+                format!("<pubDate>{}</pubDate>", d.to_rfc2822())
+            });
+            format!("<item><title>t</title><link>{link}</link>{date}</item>")
+        };
+        let body = format!(
+            "<rss><channel>{}{}{}</channel></rss>",
+            item("https://e.com/new", Some(now - chrono::Duration::hours(30))),
+            item("https://e.com/old", Some(now - chrono::Duration::days(90))),
+            item("https://e.com/undated", None),
+        );
+        let mut fetch = serve(body, &[]);
+        let outcome = go("watch", &p, &mut store, &mut fetch).unwrap();
+        let links: Vec<_> = outcome.kept.iter().map(|i| i["link"].clone()).collect();
+        assert_eq!(links, vec!["https://e.com/new", "https://e.com/undated"]);
+        assert_eq!(outcome.read, 3);
+        assert!(
+            outcome
+                .notes
+                .iter()
+                .any(|n| n.contains("1 item(s) older than 2 day(s)"))
         );
     }
 
