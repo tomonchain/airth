@@ -214,6 +214,18 @@ airth integration list
 
 The agent calls it by name (`http_request` with `integration: "github"`). The runtime adds the credential only to requests under the base URL, so a token can never be sent anywhere else, and the model never sees it. Without an integration, requests carry no credentials and can only reach public addresses, not your local network. Requests need approval unless the realm's `network` rule is `allow`.
 
+## Your phone
+
+The app stays on your Mac and listens on loopback only. Tailscale brings it to your own devices, at home or away, encrypted, with nothing opened to the internet (decision 37):
+
+```bash
+tailscale serve --bg 7457                  # on the Mac: prints its address, like https://mac.tail1234.ts.net
+airth phone allow mac.tail1234.ts.net      # Airth accepts that name (only *.ts.net names)
+airth phone pair                           # a QR code for the phone's camera
+```
+
+The QR code carries the app's key: whoever scans it controls Airth, so keep it to yourself. The same is in the app, under your profile → Phone. `airth phone forget <name>` stops accepting a name.
+
 ## Isolated changes
 
 In a realm whose folder is a git repository, each run works in its own git worktree, on a branch `airth/<run id>`. Your checkout is never touched while the run works. When the run finishes:
@@ -390,6 +402,7 @@ src/
   scheduler.rs    which objectives are due; cross-realm summaries
   usage.rs        token usage across realms, from each run's recorded model calls
   prices.rs       model list prices, and the owner's own, to estimate costs
+  phone.rs        the phone: Tailscale names the app accepts, the pairing link and its QR code
   notify.rs       the owner's inbox
   service.rs      the login service (launchd)
   skill.rs        skills: manifests, evaluation, installation

@@ -100,7 +100,7 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
 
 /// The app's access key, kept in the home so links keep working across
 /// restarts (and updates).
-pub(super) fn persistent_token(hub: &Hub) -> Result<String> {
+pub fn persistent_token(hub: &Hub) -> Result<String> {
     let path = hub.home().dir().join("ui-token");
     if let Ok(t) = std::fs::read_to_string(&path)
         && t.trim().len() >= 32

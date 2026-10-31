@@ -20,6 +20,7 @@ mod notify;
 mod objective;
 mod owner;
 mod permissions;
+mod phone;
 mod pipeline;
 mod prices;
 mod realm;
@@ -190,6 +191,11 @@ enum Cmd {
     Owner {
         #[command(subcommand)]
         command: cli::OwnerCmd,
+    },
+    /// Reach the app from your phone, through Tailscale
+    Phone {
+        #[command(subcommand)]
+        command: cli::PhoneCmd,
     },
     /// The pipelines the realm's business declares in business/pipelines/
     Pipeline {
@@ -439,6 +445,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Realm { command }) => cli::realm(ctx, command),
         Some(Cmd::Owner { command }) => cli::owner(ctx, command),
         Some(Cmd::Pipeline { command }) => cli::pipeline(ctx, command),
+        Some(Cmd::Phone { command }) => cli::phone(ctx, command),
         Some(Cmd::Time { command }) => cli::time(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),

@@ -143,6 +143,7 @@ const fixtures = {
     { id: "cleanup", objective: "Tidy the files", every: null, trigger: "manual", bot: null, tools: null, allow: [], max_minutes: null, wait: 10, enabled: false, running: false, next_at: null, last_run: null, last_at: null, last_status: null }] },
   "realms/acme/planning": { coming: [{ at: now, name: "weekly-article", kind: "routine", bot: "writer" }, { at: now, name: "watch", kind: "pipeline", bot: null }],
     past: [{ at: now, name: "watch", kind: "pipeline", status: "failed" }, { at: now, name: "weekly-article", kind: "routine", status: "completed", run: "r1" }] },
+  phone: { hosts: [{ host: "mac.tail1234.ts.net", link: "https://mac.tail1234.ts.net/#token=x", qr: { width: 3, cells: "101010101" } }] },
   "inbox/read": {},
 };
 
@@ -214,6 +215,12 @@ const main = body.querySelector("#main");
   await new Promise((r) => setTimeout(r, 30));
   for (const want of ["By agent", "writer", "Asked by you", "Pipelines", "113 without a known price"])
     if (!main.textContent.includes(want)) problems.push(`usage: "${want}" is missing`);
+  // Pairing the phone.
+  A.app.route = { view: "owner", tab: "phone" };
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  if (!main.textContent.includes("mac.tail1234.ts.net") || !main.textContent.includes("tailscale serve")) problems.push("phone: the pairing is missing");
+  check("phone", main);
   // The routine form, with the business's agents and extensions.
   A.app.route = { view: "routines", realm: "acme" };
   A.routineUi.form = {};

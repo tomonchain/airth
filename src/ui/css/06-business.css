@@ -48,3 +48,7 @@
 @media (max-width: 860px) {
   .biz-grid.even { grid-template-columns: minmax(0, 1fr); }
 }
+.phone-pair { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.qr-frame { background: #fff; padding: 12px; border-radius: 10px; flex: none; }
+.qr { display: grid; width: 200px; height: 200px; }
+.qr span.on { background: #000; }

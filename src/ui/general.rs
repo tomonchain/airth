@@ -79,6 +79,32 @@ impl App {
                 self.hub.home().inbox().mark_read(ids.as_deref())?;
                 ok()
             }
+            (Method::Get, ["phone"]) => {
+                let links = crate::phone::hosts(self.hub.home().dir())?
+                    .into_iter()
+                    .map(|host| {
+                        let link = crate::phone::pairing_link(&host, &self.token);
+                        let (width, cells) = crate::phone::qr(&link)?;
+                        let cells: String = cells.iter().map(|c| if *c { '1' } else { '0' }).collect();
+                        Ok(json!({"host": host, "link": link, "qr": {"width": width, "cells": cells}}))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                json_response(200, json!({"hosts": links}))
+            }
+            (Method::Post, ["phone", "hosts"]) => {
+                let body = read_json(request)?;
+                let host = crate::phone::allow(
+                    self.hub.home().dir(),
+                    body["host"].as_str().unwrap_or_default(),
+                )?;
+                json_response(200, json!({"host": host}))
+            }
+            (Method::Delete, ["phone", "hosts", host]) => {
+                if !crate::phone::forget(self.hub.home().dir(), host)? {
+                    bail!("{host} was not allowed");
+                }
+                ok()
+            }
             (Method::Get, ["usage"]) => {
                 let days: u32 = query
                     .split('&')

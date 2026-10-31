@@ -131,6 +131,18 @@ pub enum MemoryCmd {
 }
 
 #[derive(Subcommand)]
+pub enum PhoneCmd {
+    /// Show the allowed names and how to pair the phone
+    Status,
+    /// Accept requests for this Tailscale name of the Mac (`tailscale status` shows it)
+    Allow { host: String },
+    /// Stop accepting requests for this name
+    Forget { host: String },
+    /// Show the QR code that pairs the phone (it carries the app's key: keep it to yourself)
+    Pair { host: Option<String> },
+}
+
+#[derive(Subcommand)]
 pub enum PipelineCmd {
     /// Check every pipeline: its steps, schedule and prompt versions, or why it is refused
     Check,
@@ -1117,6 +1129,56 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
     }
     home.save_owner(&owner)?;
     eprintln!("\x1b[32m✓\x1b[0m profile saved");
+    Ok(true)
+}
+
+pub fn phone(ctx: &Ctx, command: PhoneCmd) -> Result<bool> {
+    let hub = ctx.hub();
+    let home = hub.home().dir().to_path_buf();
+    let serve = "tailscale serve --bg 7457";
+    match command {
+        PhoneCmd::Status => {
+            let hosts = crate::phone::hosts(&home)?;
+            if hosts.is_empty() {
+                println!("No name allowed yet. On this Mac, start Tailscale and run `{serve}`,");
+                println!("then `airth phone allow <mac>.<tailnet>.ts.net` and `airth phone pair`.");
+            }
+            for h in hosts {
+                println!("{h}");
+            }
+        }
+        PhoneCmd::Allow { host } => {
+            let host = crate::phone::allow(&home, &host)?;
+            eprintln!("\x1b[32m✓\x1b[0m Airth accepts requests for {host}");
+            eprintln!(
+                "  Serve it to your devices with `{serve}`, then pair with `airth phone pair`."
+            );
+        }
+        PhoneCmd::Forget { host } => {
+            if !crate::phone::forget(&home, &host)? {
+                bail!("{host} was not allowed");
+            }
+            eprintln!("forgot {host}");
+        }
+        PhoneCmd::Pair { host } => {
+            let hosts = crate::phone::hosts(&home)?;
+            let host = match host {
+                Some(h) => crate::phone::check(&h)?,
+                None => hosts.first().cloned().context(
+                    "no name allowed yet: run `airth phone allow <mac>.<tailnet>.ts.net` first",
+                )?,
+            };
+            if !hosts.contains(&host) {
+                bail!("{host} is not allowed: run `airth phone allow {host}` first");
+            }
+            let link = crate::phone::pairing_link(&host, &crate::ui::persistent_token(&hub)?);
+            println!("{}", crate::phone::qr_text(&link)?);
+            eprintln!("Scan it with the phone's camera (Tailscale on, signed in to your tailnet).");
+            eprintln!(
+                "It opens Airth with its key: whoever scans it controls Airth. Keep it to yourself."
+            );
+        }
+    }
     Ok(true)
 }
 

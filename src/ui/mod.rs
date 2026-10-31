@@ -8,7 +8,8 @@
 //! per-launch token in the `X-Airth-Token` header. Since a custom header cannot
 //! be sent cross-origin without a CORS preflight (which we never grant), and
 //! the Host header is checked against loopback (DNS rebinding), other websites
-//! cannot drive the agent or approve its actions.
+//! cannot drive the agent or approve its actions. The phone reaches the app
+//! through Tailscale, under a tailnet name the owner allowed (see `phone`).
 
 use crate::agent::{AgentConfig, Observer};
 use crate::business::store::Store;
@@ -53,7 +54,7 @@ use live::*;
 use server::*;
 
 pub(crate) use http::random_token;
-pub use server::{open_url, running_url, serve, start};
+pub use server::{open_url, persistent_token, running_url, serve, start};
 
 const INDEX_HTML: &str = include_str!("index.html");
 // js/ and css/, joined in name order by build.rs.
@@ -236,7 +237,9 @@ impl App {
 
     fn host_allowed(&self, request: &Request) -> bool {
         let host = header(request, "Host").unwrap_or_default();
-        host == format!("127.0.0.1:{}", self.port) || host == format!("localhost:{}", self.port)
+        // Beside loopback, the names the owner allowed for the phone (decision 37).
+        let phone = crate::phone::hosts(self.hub.home().dir()).unwrap_or_default();
+        crate::phone::host_allowed(&host, self.port, &phone)
     }
 
     fn token_valid(&self, request: &Request) -> bool {

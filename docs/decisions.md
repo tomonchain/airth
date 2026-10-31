@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 38. The phone's pairing code is drawn with qrcode
+
+Pairing the phone (decision 37) hands it the app's address and key in one QR code, shown by `airth phone pair` in the terminal and on the owner's Phone settings in the app. The code is made with the `qrcode` crate, without its default features (image, SVG, PIC): it has no dependencies of its own. The app receives the modules as data and draws them as a grid, so no image or markup is built from a string.
+
+*Why:* typing a 64-character key on a phone is not a pairing anyone would do, and encoding QR codes (Reed-Solomon error correction, masks, versions) is too much code to write and get right by hand for this.
+
+*Cost:* one more small crate to keep up to date. The QR code carries the key: whoever photographs it controls Airth, which the app and the terminal say where they show it.
+
 ## 37. The app is rebuilt around six sections, and reaches the phone through Tailscale
 
 The app's interface starts again from a blank page; the engine stays (the hub, the runtime and its boundaries, objectives, bots, connectors, approvals, usage records). A business (a realm, decision 32) opens on six sections:

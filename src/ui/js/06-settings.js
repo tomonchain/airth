@@ -421,7 +421,42 @@ const OWNER_LISTS = [
   ["commitments", "Commitments", "What you are on the hook for", "e.g. A newsletter every Friday"],
   ["boundaries", "Boundaries", "Lines Airth must never cross", "e.g. Never email a client without my OK"],
 ];
-const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"]];
+const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"], ["phone", "Phone", "send"]];
+
+/** A QR code from the server's modules ("1" dark), drawn as a grid: no image, no script. */
+function qrCode(qr, label) {
+  const grid = h("div", { class: "qr", role: "img", "aria-label": label, style: `grid-template-columns: repeat(${qr.width}, 1fr)` });
+  for (const c of qr.cells) grid.append(h("span", { class: c === "1" ? "on" : "" }));
+  return h("div", { class: "qr-frame" }, grid);
+}
+
+/** The phone (decision 37): Tailscale brings the app to the owner's devices; this pairs one. */
+async function phoneTab(inner) {
+  let d;
+  try { d = await api("phone"); } catch (e) { return flash(e.message, true); }
+  if (app.route.view !== "owner") return;
+  const again = () => { if (app.route.view === "owner") renderMain(); };
+  const host = h("input", { type: "text", placeholder: "mac.tail1234.ts.net", spellcheck: "false", autocomplete: "off" });
+  const allow = h("button", { class: "btn primary", type: "button", onclick: async () => {
+    try { await api("phone/hosts", { host: host.value }); flash("Name allowed"); again(); } catch (e) { flash(e.message, true); }
+  } }, "Allow");
+  inner.append(
+    h("p", { class: "muted lead" }, "Use Airth from your phone, at home or away. It stays on this Mac: Tailscale brings it to your own devices only, encrypted, and nothing is opened to the internet."),
+    h("div", { class: "card pad" },
+      h("ol", { class: "welcome-steps" },
+        h("li", null, "Install Tailscale on this Mac and on your phone, and sign in to the same account on both."),
+        h("li", null, "On this Mac, in a terminal: ", h("code", null, "tailscale serve --bg 7457"), ". It prints the Mac's address, like https://mac.tail1234.ts.net."),
+        h("li", null, "Give that name below, then scan the code with your phone's camera.")),
+      h("div", { class: "row-start" }, host, allow)),
+    d.hosts.map((x) => h("div", { class: "card pad phone-pair" },
+      qrCode(x.qr, `Pairing code for ${x.host}`),
+      h("div", null,
+        h("div", { class: "strong" }, x.host),
+        h("p", { class: "muted small" }, "Scan it with the phone's camera, with Tailscale on. It carries Airth's key: whoever scans it controls Airth, so keep it to yourself."),
+        h("button", { class: "btn ghost", type: "button", onclick: async () => {
+          try { await api(`phone/hosts/${enc(x.host)}`, undefined, "DELETE"); flash(`${x.host} forgotten`); again(); } catch (e) { flash(e.message, true); }
+        } }, "Forget this name")))));
+}
 
 async function renderOwner(main) {
   const tab = OWNER_TABS.find((t) => t[0] === app.route.tab) || OWNER_TABS[0];
@@ -433,6 +468,7 @@ async function renderOwner(main) {
       h("button", { type: "button", role: "tab", "aria-selected": String(id === tab[0]), class: "tab" + (id === tab[0] ? " on" : ""),
         onclick: () => go(id === "profile" ? "#/owner" : `#/owner/${id}`) }, icon(ic), label))));
   main.append(h("div", { class: "page" }, inner));
+  if (tab[0] === "phone") return phoneTab(inner);
   if (tab[0] === "appearance") {
     inner.append(h("p", { class: "muted lead" }, "Kept in this browser or app window. System follows macOS, day and night."), appearanceCard());
     return;
