@@ -58,6 +58,7 @@ impl Hub {
                     .and_then(|c| c.pull_request.clone()),
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
+                routine: s.origin.map(|o| o.objective),
                 id: s.id,
                 objective: s.objective,
                 status: s.status,
@@ -163,6 +164,8 @@ pub struct RunSummary {
     pub conflicts: bool,
     /// For open changes delivered as pull requests: the pull request.
     pub pull_request: Option<PullRequest>,
+    /// The routine (objective) that started it; None when the owner did.
+    pub routine: Option<String>,
 }
 
 impl RunSummary {

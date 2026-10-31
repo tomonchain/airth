@@ -48,7 +48,7 @@ function find(root, sel, first) {
   return out;
 }
 const body = new FakeNode("body");
-for (const id of ["app", "main", "realm-switch", "side-nav", "run-list", "sidebar-foot", "side-close", "side-open"]) {
+for (const id of ["app", "main", "realm-switch", "side-nav", "sidebar-foot", "side-close", "side-open"]) {
   const n = new FakeNode("div"); n.attrs.id = id; body.append(n);
 }
 const storage = { getItem: () => null, setItem() {} };
@@ -91,8 +91,8 @@ const state = {
   ],
 };
 const runs = [
-  { id: "r1", title: null, objective: "First run", status: "completed", live: false, updated_at: now, needs_approval: false, change: null, checks_passed: null, plan_done: 0, plan_total: 0 },
-  { id: "r2", title: "Named", objective: "Second", status: "failed", live: true, updated_at: now, needs_approval: true, change: "open", checks_passed: false, plan_done: 1, plan_total: 3 },
+  { id: "r1", title: null, objective: "First run", status: "completed", live: false, updated_at: now, needs_approval: false, change: null, checks_passed: null, plan_done: 0, plan_total: 0, routine: "weekly-article" },
+  { id: "r2", title: "Named", objective: "Second", status: "failed", live: true, updated_at: now, needs_approval: true, change: "open", checks_passed: false, plan_done: 1, plan_total: 3, routine: null },
 ];
 const realmDetail = {
   name: "acme", description: "", root: "/tmp/acme", own_root: true, isolation: "none", policy: { read: "allow", write: "ask", execute: "ask", memory: "allow", network: "ask", skill: "ask", apps: "deny" },
@@ -164,7 +164,6 @@ function check(label, nodes) {
 const main = body.querySelector("#main");
 (async () => {
   const live = { state, live: false, pending: null, checks_required: false, title: null, version: 0 };
-  A.renderRunList(); check("sidebar runs", body.querySelector("#run-list"));
   A.renderNav(); check("nav", body.querySelector("#side-nav"));
   A.renderFoot(); check("foot", body.querySelector("#sidebar-foot"));
   A.renderRealmSwitch(); check("realm switch", body.querySelector("#realm-switch"));
@@ -172,6 +171,11 @@ const main = body.querySelector("#main");
   A.app.run = live;
   A.renderMain(); A.renderRun(); check("run view", main);
   check("approval", A.approvalCard({ id: 1, tool: "write_file", capability: "write", preview: "create a.md", warnings: [], grantable: false, grant_label: null }));
+  // Tasks: the business's runs, under the box that starts one.
+  A.app.route = { view: "tasks", realm: "acme" };
+  A.renderMain();
+  if (!body.querySelector("#task-list") || body.querySelector("#task-list").children.length === 0) problems.push("tasks: the task list is empty");
+  check("tasks", main);
   for (const view of ["steering", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();

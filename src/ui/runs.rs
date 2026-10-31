@@ -192,6 +192,7 @@ impl App {
                     "pull_request": r.pull_request,
                     "plan_done": r.plan_done,
                     "plan_total": r.plan_total,
+                    "routine": r.routine,
                 })
             })
             .collect();

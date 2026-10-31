@@ -29,9 +29,9 @@ function renderStatus() {
     const fill = h("span");
     fill.style.width = pct + "%";
     items.push(
-      h("span", { class: "sb-item", title: `${last} input tokens in the last call; the chat is summarized past ${CONTEXT_LIMIT}` },
+      h("span", { class: "sb-item", title: `${last} input tokens in the last call; the task is summarized past ${CONTEXT_LIMIT}` },
         "Context", h("span", { class: "sb-meter" + (pct >= 90 ? " hot" : pct >= 70 ? " warm" : ""), "aria-hidden": "true" }, fill), `${pct}%`),
-      tokens("This chat ", s.input_tokens || 0, s.output_tokens || 0, `${s.input_tokens || 0} in / ${s.output_tokens || 0} out`));
+      tokens("This task ", s.input_tokens || 0, s.output_tokens || 0, `${s.input_tokens || 0} in / ${s.output_tokens || 0} out`));
   }
   const t = app.today;
   items.push(h("span", { class: "sb-spacer" }));
@@ -56,7 +56,7 @@ function renderNav() {
     navLink(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "count" }, String(waiting))),
     navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines" || v === "pipelines"),
     navLink(null, "calendar", "Planning", v === "planning"),
-    navLink(r ? `#/r/${r}` : null, "listCheck", "Tasks", v === "tasks" || v === "new" || v === "run"),
+    navLink(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run"),
     navLink(null, "brain", "Agents", v === "agents"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
     h("div", { class: "section-label" }, "Business"),
@@ -87,18 +87,23 @@ function runMark(r) {
   return changeBadge(r);
 }
 
+/** The business's tasks, on the Tasks page: what waits for you first, then by date. */
 function renderRunList() {
   if (app.renaming) return; // a run's name is being edited in place
-  const list = $("#run-list");
+  const list = $("#task-list");
+  if (!list) return;
   list.replaceChildren();
-  if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No chats yet."));
+  if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No tasks yet."));
   const all = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   const archivedCount = all.filter((r) => r.archived).length;
   const runs = all.filter((r) => app.showArchived ? r.archived : !r.archived);
-  if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" }, app.showArchived ? "No archived chats." : "All chats are archived."));
+  if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" }, app.showArchived ? "No archived tasks." : "All tasks are archived."));
+  // Waiting for the owner, then running, come before the rest.
+  const rank = (r) => (r.needs_approval ? 0 : r.live ? 1 : 2);
+  runs.sort((a, b) => rank(a) - rank(b));
   let group = null;
   for (const r of runs) {
-    const g = dateGroup(r.updated_at);
+    const g = r.needs_approval ? "Waiting for you" : r.live ? "Running" : dateGroup(r.updated_at);
     if (g !== group) { group = g; list.append(h("div", { class: "section-label" }, g)); }
     const active = app.route.view === "run" && app.route.id === r.id;
     const status = r.needs_approval ? "needs approval" : r.live ? "running" : r.status;
@@ -108,20 +113,21 @@ function renderRunList() {
           onclick: () => go(`#/r/${enc(app.realm)}/run/${enc(r.id)}`),
           ondblclick: (e) => { e.preventDefault(); editInPlace(e.currentTarget, r.id, runName(r)); } },
         h("span", { class: "obj" }, runName(r)),
+        r.routine && h("span", { class: "routine" }, r.routine),
         !r.live && runActions(r),
         runMark(r)));
   }
   if (archivedCount || app.showArchived) {
     list.append(h("button", { class: "run-archive-toggle", type: "button",
       onclick: () => { app.showArchived = !app.showArchived; renderRunList(); } },
-      app.showArchived ? "← Back to chats" : `Archived (${archivedCount})`));
+      app.showArchived ? "← Back to tasks" : `Archived (${archivedCount})`));
   }
 }
 
 /** Hover buttons of a sidebar chat: archive (or restore) and delete (asks twice). */
 function runActions(r) {
   const stop = (fn) => (e) => { e.preventDefault(); e.stopPropagation(); fn(e.currentTarget); };
-  const del = h("span", { class: "run-act danger", role: "button", tabindex: "0", title: "Delete this chat for good",
+  const del = h("span", { class: "run-act danger", role: "button", tabindex: "0", title: "Delete this task for good",
     onclick: stop((el) => {
       if (el.dataset.sure) { deleteRun(r.id); return; }
       el.dataset.sure = "1";
@@ -129,7 +135,7 @@ function runActions(r) {
       el.textContent = "Delete?";
       setTimeout(() => { if (el.isConnected) { delete el.dataset.sure; el.classList.remove("sure"); el.replaceChildren(icon("trash")); } }, 3000);
     }) }, icon("trash"));
-  const arch = h("span", { class: "run-act", role: "button", tabindex: "0", title: r.archived ? "Restore this chat" : "Archive this chat",
+  const arch = h("span", { class: "run-act", role: "button", tabindex: "0", title: r.archived ? "Restore this task" : "Archive this task",
     onclick: stop(() => archiveRun(r.id, !r.archived)) }, icon("archive"));
   for (const el of [arch, del]) el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") el.click(); });
   return h("span", { class: "run-acts" }, arch, del);
@@ -142,7 +148,7 @@ async function archiveRun(id, archived) {
     if (run) run.archived = archived;
     if (app.route.view === "run" && app.route.id === id && archived) go(`#/r/${enc(app.realm)}`);
     renderRunList();
-    flash(archived ? "Chat archived" : "Chat restored");
+    flash(archived ? "Task archived" : "Task restored");
   } catch (e) {
     flash(e.message, true);
   }
@@ -154,7 +160,7 @@ async function deleteRun(id) {
     app.runs = app.runs.filter((r) => r.id !== id);
     if (app.route.view === "run" && app.route.id === id) go(`#/r/${enc(app.realm)}`);
     renderRunList();
-    flash("Chat deleted");
+    flash("Task deleted");
   } catch (e) {
     flash(e.message, true);
   }
@@ -162,7 +168,7 @@ async function deleteRun(id) {
 
 /** A run's display name: the name the owner gave it, else the first line of its objective. */
 function runName(r) {
-  return (r.title || "").trim() || String(r.objective || "").split("\n")[0].trim() || "(untitled chat)";
+  return (r.title || "").trim() || String(r.objective || "").split("\n")[0].trim() || "(untitled task)";
 }
 
 async function renameRun(id, title) {
@@ -181,7 +187,7 @@ async function renameRun(id, title) {
 function editInPlace(el, id, current) {
   if (!el || app.renaming) return;
   app.renaming = id;
-  const input = h("input", { type: "text", class: "title-input", value: current, "aria-label": "Chat name", maxlength: "120" });
+  const input = h("input", { type: "text", class: "title-input", value: current, "aria-label": "Task name", maxlength: "120" });
   el.replaceWith(input);
   input.focus();
   input.select();
@@ -306,6 +312,7 @@ function renderMain() {
     case "steering": return renderSteering(main);
     case "routines":
     case "pipelines": return renderPipelines(main);
+    case "tasks":
     case "new": return renderNew(main);
     case "run": return renderRunShell(main);
     case "settings": return renderSettings(main);
@@ -399,7 +406,7 @@ function repoPicker({ onChange }) {
   const choices = repoChoices();
   if (choices.length < 2) return null;
   const label = h("span", { class: "mp-label" });
-  const btn = h("button", { class: "model-pill", type: "button", title: "Which repository the chat works in", "aria-haspopup": "true" }, icon("code"), label, h("span", { class: "mp-chev" }, "▾"));
+  const btn = h("button", { class: "model-pill", type: "button", title: "Which repository the task works in", "aria-haspopup": "true" }, icon("code"), label, h("span", { class: "mp-chev" }, "▾"));
   const refresh = () => { const c = choices.find((x) => x.value === chosenRepo()); label.textContent = c ? c.label : "Folder"; };
   const wrap = h("span", { class: "mp" }, btn);
   btn.addEventListener("click", (e) => {

@@ -64,7 +64,9 @@
 .realm-option .needs { margin-left: 0; }
 
 .section-label { font-size: 11.5px; font-weight: 500; color: var(--faint); padding: 14px 10px 4px; }
-.run-list { flex: 1; overflow-y: auto; min-height: 0; margin: 4px -4px 0; padding: 0 4px 8px; border-top: 1px solid var(--border); }
+.task-list { margin-top: 28px; }
+.new-inner.tasks { margin: 0 auto; }
+.run-item .routine { flex: none; font-size: 11.5px; color: var(--faint); }
 .run-item {
   position: relative; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
   padding: 7px 10px; border-radius: 10px; cursor: pointer; margin-bottom: 1px;
@@ -105,7 +107,7 @@
 .needs { margin-left: auto; color: var(--warn); font-weight: 600; }
 
 /* Footer: alerts, then you */
-.sidebar-foot { padding: 8px 0 0; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.sidebar-foot { margin-top: auto; padding: 8px 0 0; border-top: 1px solid var(--border); display: grid; gap: 4px; }
 .side-warn {
   display: block; width: 100%; text-align: left; border: 0; background: var(--warn-soft); color: var(--warn);
   border-radius: 10px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: default;
@@ -170,7 +172,7 @@ button.side-warn { cursor: pointer; }
   padding: 2px 8px; outline: 0; box-shadow: 0 0 0 3px var(--brand-soft);
 }
 .run-title .title-input { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
-.run-list .title-input { display: block; padding: 6px 10px; margin-bottom: 1px; font-size: 13.5px; }
+.task-list .title-input { display: block; padding: 6px 10px; margin-bottom: 1px; font-size: 13.5px; }
 .run-meta { color: var(--faint); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px;

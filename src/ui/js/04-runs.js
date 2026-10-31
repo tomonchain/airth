@@ -7,12 +7,13 @@ const SUGGESTIONS = {
 
 const POLICY_WORDS = { allow: "automatic", ask: "needs approval", deny: "disabled" };
 
+/** Tasks (decision 37): ask the team for something, and every task of the business. */
 function renderNew(main) {
   const d = app.realmDetail;
   const realm = app.realms.find((r) => r.name === app.realm);
   const modelError = d && d.model_error;
   const c = composer({
-    placeholder: `Describe an objective for ${app.realm}…`,
+    placeholder: `Describe a task for ${app.realm}…`,
     draftKey: `new:${app.realm}`,
     model: {
       get: () => storedModel(`new:${app.realm}`) || "auto",
@@ -36,7 +37,7 @@ function renderNew(main) {
   });
   if (modelError) {
     c.errorEl.replaceChildren(
-      h("span", { title: modelError }, "Airth has no model yet, so it cannot start a chat. "),
+      h("span", { title: modelError }, "Airth has no model yet, so it cannot start a task. "),
       h("a", { href: "#/welcome", onclick: () => { welcomeUi.step = WELCOME_STEPS.indexOf("model"); welcomeUi.setup = null; } }, "Connect Claude"),
       " or ",
       h("a", { href: `#/r/${enc(app.realm)}/settings/models` }, "choose another provider"), ".");
@@ -57,12 +58,15 @@ function renderNew(main) {
     h("div", { class: "new-view" },
       h("div", { class: "new-inner" },
         h("div", { class: "eyebrow" }, app.realm || ""),
-        h("h1", null, first ? `${hello}, ${first}` : "What should Airth work on?"),
-        h("p", { class: "sub", title: d ? d.root : "" }, first ? "What should Airth work on?" : d ? d.root : ""),
+        h("h1", null, "Tasks"),
+        h("p", { class: "sub", title: d ? d.root : "" }, first ? `${hello}, ${first}. What should the team do?` : "What should the team do?"),
         tools,
         c.el,
-        h("div", { class: "suggestions" },
-          suggestions.map((s) => h("button", { class: "suggestion", type: "button", onclick: () => { c.ta.value = s; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); } }, s))))));
+        !app.runs.length && h("div", { class: "suggestions" },
+          suggestions.map((s) => h("button", { class: "suggestion", type: "button", onclick: () => { c.ta.value = s; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); } }, s))),
+        h("nav", { class: "task-list", id: "task-list", "aria-label": "Tasks" }))));
+  $(".new-inner", main).classList.add("tasks");
+  renderRunList();
   if (prefill) fill(prefill);
   c.ta.focus();
 }
@@ -206,7 +210,7 @@ function renderRun() {
   const ctx = [
     h("span", { class: "rh-state " + statusClass }, STATUS_LABEL[status] || status),
     h("span", null, "updated " + ago(s.updated_at)),
-    d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this chat works in" }, icon("code"), d.repo),
+    d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this task works in" }, icon("code"), d.repo),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
     s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
   ].filter(Boolean);
@@ -252,9 +256,9 @@ function renderRun() {
   c.block(disabled);
   if (c.picker) c.picker.refresh();
   c.ta.placeholder = d.live
-    ? (d.elsewhere ? "This chat is in progress in another Airth process…" : "Airth is working… write your next message, it can be sent when it stops.")
-    : closed ? `This chat's change was ${s.change.status}. Start a new chat to keep going.`
-    : status === "interrupted" ? "This chat was interrupted. Send a message to resume it…" : "Send a follow-up…";
+    ? (d.elsewhere ? "This task is in progress in another Airth process…" : "Airth is working… write your next message, it can be sent when it stops.")
+    : closed ? `This task's change was ${s.change.status}. Start a new task to keep going.`
+    : status === "interrupted" ? "This task was interrupted. Send a message to resume it…" : "Send a follow-up…";
 }
 
 function transcriptNodes(d) {
@@ -357,9 +361,9 @@ function transcriptNodes(d) {
     const asks = last && last.role === "assistant" && numberedQuestions(last.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")).length > 0;
     const text = {
       completed: asks ? "Your turn: Airth is waiting for your answer." : `Completed after ${s.iterations} iteration${s.iterations === 1 ? "" : "s"}.`,
-      failed: "The chat failed.",
-      stopped: "The chat stopped.",
-      interrupted: "The chat was interrupted: the process exited before it finished.",
+      failed: "The task failed.",
+      stopped: "The task stopped.",
+      interrupted: "The task was interrupted: the process exited before it finished.",
     }[status];
     const showReport = status !== "completed" && s.report;
     const closed = s.change && s.change.status !== "open";
@@ -549,7 +553,7 @@ function sideNodes(d, status) {
   } else {
     nodes.push(h("section", { class: "side-section" },
       h("div", { class: "side-head" }, h("span", null, "Plan")),
-      h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this chat.")));
+      h("p", { class: "side-empty" }, d.live ? "Airth writes its plan here as soon as the work takes more than a couple of steps." : "No plan for this task.")));
   }
   // A finished chat's open change is what needs the owner: it goes first.
   if (s.change) {
@@ -574,7 +578,7 @@ function sideNodes(d, status) {
     })() : null,
     s.change && row("Change", s.change.status),
     row("Updated", ago(s.updated_at)),
-    row("Chat", s.id)));
+    row("Task", s.id)));
   return nodes;
 }
 
@@ -679,7 +683,7 @@ function approvalCard(p) {
     p.tool === "remember" ? readablePreview(p.preview) : diffView(p.preview, kind),
     h("div", { class: "approval-actions" },
       h("button", { class: "btn primary", type: "button", onclick: () => answer(true) }, "Approve ", h("kbd", null, modKey + "↵")),
-      p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this chat are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this chat`),
+      p.grantable && h("button", { class: "btn", type: "button", title: "Later requests like this one in this task are approved without asking", onclick: () => answer(true, true) }, `Allow ${p.grant_label} for this task`),
       h("button", { class: "btn danger", type: "button", onclick: () => answer(false) }, "Deny"),
       reason));
 }
