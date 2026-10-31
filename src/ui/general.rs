@@ -85,8 +85,26 @@ impl App {
                     .find_map(|kv| kv.strip_prefix("days="))
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(30);
-                let report = crate::usage::report(&self.hub, days, chrono::Local::now())?;
-                json_response(200, json!(report))
+                // `realm=<name>`: one business, with its pipelines' model
+                // calls and the agent of each routine.
+                let only = Some(param(query, "realm")).filter(|r| !r.is_empty());
+                let report =
+                    crate::usage::report(&self.hub, days, chrono::Local::now(), only.as_deref())?;
+                let mut out = json!(report);
+                if let Some(name) = &only {
+                    let realm = self.realm(name)?;
+                    let since = chrono::Utc::now() - chrono::Duration::days(i64::from(days));
+                    out["pipelines"] = json!(Store::of(&realm)?.pipeline_costs(since)?);
+                    out["agents"] = json!(
+                        realm
+                            .objectives()
+                            .list()?
+                            .into_iter()
+                            .filter_map(|o| o.bot.map(|b| (o.id, b)))
+                            .collect::<std::collections::BTreeMap<_, _>>()
+                    );
+                }
+                json_response(200, out)
             }
             _ => return Ok(None),
         }))

@@ -35,7 +35,41 @@ pub struct Week {
     pub unpriced_calls: i64,
 }
 
+/// What one pipeline's model calls cost over a period.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct PipelineCost {
+    pub pipeline: String,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    /// Estimated, from list prices; calls without a known price are left
+    /// out and counted in `unpriced`.
+    pub cost_usd: f64,
+    pub unpriced: i64,
+}
+
 impl Store {
+    /// What each pipeline's model calls cost since `since`, costliest first.
+    pub fn pipeline_costs(&self, since: DateTime<Utc>) -> Result<Vec<PipelineCost>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT pipeline, COUNT(*), SUM(input_tokens), SUM(output_tokens),
+                    COALESCE(SUM(cost_usd), 0), SUM(cost_usd IS NULL)
+             FROM model_calls WHERE at >= ?1 GROUP BY pipeline
+             ORDER BY 5 DESC, 2 DESC",
+        )?;
+        let rows = stmt.query_map(params![since.to_rfc3339()], |r| {
+            Ok(PipelineCost {
+                pipeline: r.get(0)?,
+                calls: r.get(1)?,
+                input_tokens: r.get(2)?,
+                output_tokens: r.get(3)?,
+                cost_usd: r.get(4)?,
+                unpriced: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The latest runs of `pipeline`, newest first.
     pub fn pipeline_runs(&self, pipeline: &str, limit: usize) -> Result<Vec<RunRow>> {
         let mut stmt = self.conn.prepare(
@@ -162,6 +196,18 @@ mod tests {
                 model_cost: 0.25,
                 unpriced_calls: 1,
             }
+        );
+        let costs = store.pipeline_costs(since).unwrap();
+        assert_eq!(
+            costs,
+            vec![PipelineCost {
+                pipeline: "p".into(),
+                calls: 2,
+                input_tokens: 0,
+                output_tokens: 0,
+                cost_usd: 0.25,
+                unpriced: 1,
+            }]
         );
         let runs = store.pipeline_runs("p", 10).unwrap();
         assert_eq!(runs.len(), 2);

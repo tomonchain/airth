@@ -158,7 +158,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- usage ----------
 
-const usageUi = { days: 30, show: "cost" };
+const usageUi = { days: 30, show: "cost", scope: "business" };
 
 /** 1234 → 1.2k, 4567890 → 4.57M: token counts at a glance. */
 function tok(n) {
@@ -196,10 +196,24 @@ const PURPOSES = {
   triage: ["Triage", "Deciding whether a request fits the fast model."],
   title: ["Change titles", "Naming a change before it is delivered."],
 };
-const USAGE_SOURCES = { chats: "Chats", objectives: "Objectives" };
+const USAGE_SOURCES = { chats: "Asked by you", objectives: "Routines" };
+
+/** Shares summed by a key of each: a routine's agent, say. */
+function mergeShares(items, keyOf) {
+  const out = new Map();
+  for (const s of items) {
+    const k = keyOf(s);
+    const m = out.get(k) || { name: k, input: 0, output: 0, cache_read: 0, cache_write: 0, calls: 0, unpriced: 0, cost: { input: 0, cache_read: 0, cache_write: 0, output: 0 } };
+    for (const f of ["input", "output", "cache_read", "cache_write", "calls", "unpriced"]) m[f] += s[f];
+    for (const f of Object.keys(m.cost)) m.cost[f] += s.cost[f];
+    out.set(k, m);
+  }
+  return [...out.values()].sort((a, b) => costOf(b) - costOf(a) || total(b) - total(a));
+}
 
 async function renderUsage(main) {
-  page(main, "Usage", "What your chats exchanged with the model, across every realm. Costs are estimates from public list prices; input read from the prompt cache costs a tenth of fresh input.");
+  const one = usageUi.scope === "business" && app.realm;
+  page(main, "Usage", `What running ${one ? app.realm : "your businesses"} costs: what its tasks and pipelines exchanged with the model, and who asked. Costs are estimates from public list prices; input read from the prompt cache costs a tenth of fresh input.`);
   const inner = $(".page-inner", main);
   const seg = (label, options, current, set) => h("div", { class: "seg", role: "radiogroup", "aria-label": label }, options.map(([value, text]) =>
     h("button", { type: "button", role: "radio", "aria-checked": String(current === value), class: current === value ? "on" : "",
@@ -208,7 +222,7 @@ async function renderUsage(main) {
   const body = h("div", null, h("div", { class: "working" }, h("span", { class: "orb" }), h("span", { class: "shimmer" }, "Adding up…")));
   inner.append(bar, body);
   let r;
-  try { r = await api(`usage?days=${usageUi.days}`); } catch (e) { return flash(e.message, true); }
+  try { r = await api(`usage?days=${usageUi.days}${one ? "&realm=" + enc(app.realm) : ""}`); } catch (e) { return flash(e.message, true); }
   if (app.route.view !== "usage") return;
 
   const priced = r.window.unpriced < r.window.calls;
@@ -217,7 +231,8 @@ async function renderUsage(main) {
   const fmt = cost ? usd : tok;
   bar.replaceChildren(
     priced ? seg("Show", [["cost", "Cost"], ["tokens", "Tokens"]], usageUi.show, (v) => (usageUi.show = v)) : null,
-    seg("Period", [7, 30, 90].map((d) => [d, `${d} days`]), usageUi.days, (v) => (usageUi.days = v)));
+    seg("Period", [7, 30, 90].map((d) => [d, `${d} days`]), usageUi.days, (v) => (usageUi.days = v)),
+    app.realm && seg("Scope", [["business", app.realm], ["all", "All businesses"]], usageUi.scope, (v) => (usageUi.scope = v)));
 
   const stat = (label, value, detail) => h("div", { class: "stat" },
     h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), h("div", { class: "stat-detail" }, detail));
@@ -229,8 +244,14 @@ async function renderUsage(main) {
     stat("This month", amount(r.month), amountDetail(r.month)),
     stat("From cache", cachePct(r.window) + "%", `${tok(r.window.cache_read)} of ${tok(r.window.input)} input tokens`));
 
+  // Pipelines' model calls are recorded apart, in the business's database.
+  const pipelines = (r.pipelines || []).length > 0 && h("div", { class: "card" },
+    h("div", { class: "chart-head" }, h("span", { class: "strong" }, "Pipelines")),
+    r.pipelines.map((p) => h("div", { class: "list-row" },
+      h("div", { class: "grow" }, h("div", null, p.pipeline), h("div", { class: "muted small" }, `${p.calls} model call${p.calls === 1 ? "" : "s"} · ${tok(p.input_tokens + p.output_tokens)} tokens${p.unpriced ? ` · ${p.unpriced} without a known price` : ""}`)),
+      h("div", { class: "run-amount" }, h("span", { class: "strong" }, usd(p.cost_usd))))));
   if (!r.window.calls) {
-    body.replaceChildren(stats, h("div", { class: "card muted small pad" }, "No model calls in this period."));
+    body.replaceChildren(stats, pipelines, h("div", { class: "card muted small pad" }, "No task called a model in this period."));
     return;
   }
 
@@ -283,11 +304,11 @@ async function renderUsage(main) {
     return h("span", { title: help }, label);
   });
 
-  const runDetail = (run) => [run.realm, run.scheduled ? "objective" : null, `${run.calls} calls`,
+  const runDetail = (run) => [one ? null : run.realm, run.scheduled ? "routine" : null, `${run.calls} calls`,
     `${tok(Math.round(run.input / run.calls))} avg context`, `${tok(run.peak_input)} peak`, `${cachePct(run)}% cached`,
     run.compactions ? `${run.compactions} compaction${run.compactions === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
   const top = h("div", { class: "card" },
-    h("div", { class: "chart-head" }, h("span", { class: "strong" }, priced ? "Costliest chats" : "Hungriest chats")),
+    h("div", { class: "chart-head" }, h("span", { class: "strong" }, priced ? "Costliest tasks" : "Hungriest tasks")),
     r.top_runs.map((run) => h("button", { class: "list-row link", type: "button", onclick: () => go(`#/r/${enc(run.realm)}/run/${enc(run.id)}`) },
       h("div", { class: "grow" }, h("div", { class: "clamp" }, run.objective || "(no objective)"), h("div", { class: "muted small" }, runDetail(run))),
       h("div", { class: "run-amount" }, h("span", { class: "strong" }, fmt(weight(run))),
@@ -297,11 +318,16 @@ async function renderUsage(main) {
     ? h("div", { class: "card muted small pad" }, `${r.window.unpriced} of ${r.window.calls} calls used a model without a known price and are left out of costs. Add its prices, in USD per million tokens, to prices.json in Airth's home.`)
     : null;
 
+  const agentOf = (s) => (!s.name ? "Asked by you" : (r.agents || {})[s.name] || "No agent");
+  const byModel = shareList("By model", r.by_model, (s) => h("span", null, s.name === "unrecorded" ? "before tracking" : s.name));
   body.replaceChildren(stats, chart,
-    h("div", { class: "shares" }, kinds, purposes),
-    h("div", { class: "shares" },
-      shareList("By realm", r.by_realm, (s) => h("a", { href: `#/r/${enc(s.name)}` }, s.name)),
-      shareList("By model", r.by_model, (s) => h("span", null, s.name === "unrecorded" ? "before tracking" : s.name))),
-    r.by_source.length > 1 ? h("div", { class: "shares" }, shareList("Chats and objectives", r.by_source, (s) => h("span", null, USAGE_SOURCES[s.name] || s.name))) : null,
-    top, unpriced);
+    one
+      ? h("div", { class: "shares" },
+        shareList("By agent", mergeShares(r.by_routine, agentOf), (s) => h("a", { href: `#/r/${enc(app.realm)}/agents` }, s.name)),
+        shareList("By routine", r.by_routine, (s) => h("span", null, s.name || "Asked by you")))
+      : h("div", { class: "shares" },
+        shareList("By business", r.by_realm, (s) => h("a", { href: `#/r/${enc(s.name)}` }, s.name)), byModel),
+    h("div", { class: "shares" }, kinds, one ? byModel : purposes),
+    one && h("div", { class: "shares" }, purposes, r.by_source.length > 1 ? shareList("Asked by you, and routines", r.by_source, (s) => h("span", null, USAGE_SOURCES[s.name] || s.name)) : null),
+    pipelines, top, unpriced);
 }

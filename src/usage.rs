@@ -132,15 +132,27 @@ pub struct Report {
     pub by_purpose: Vec<Share>,
     /// Chats started by hand, and runs started by a realm objective.
     pub by_source: Vec<Share>,
+    /// By the routine (objective) that started the run; "" for runs
+    /// started by hand.
+    pub by_routine: Vec<Share>,
     /// The runs that cost the most in the window (used the most tokens,
     /// when no price is known).
     pub top_runs: Vec<RunUsage>,
 }
 
-/// Usage of every realm's runs over the last `days` days, in `now`'s time zone.
-pub fn report<Tz: TimeZone>(hub: &Hub, days: u32, now: DateTime<Tz>) -> Result<Report> {
+/// Usage of every realm's runs (or only `only`'s) over the last `days` days,
+/// in `now`'s time zone.
+pub fn report<Tz: TimeZone>(
+    hub: &Hub,
+    days: u32,
+    now: DateTime<Tz>,
+    only: Option<&str>,
+) -> Result<Report> {
     let mut runs = Vec::new();
     for realm in hub.home().realms()? {
+        if only.is_some_and(|name| name != realm.name()) {
+            continue;
+        }
         for state in hub.all_runs(&realm)? {
             runs.push((realm.name().to_string(), state));
         }
@@ -245,15 +257,21 @@ pub fn aggregate<Tz: TimeZone>(
         by_model: Vec::new(),
         by_purpose: Vec::new(),
         by_source: Vec::new(),
+        by_routine: Vec::new(),
         top_runs: Vec::new(),
     };
     let mut realms: HashMap<String, Tokens> = HashMap::new();
     let mut models: HashMap<String, Tokens> = HashMap::new();
     let mut purposes: HashMap<String, Tokens> = HashMap::new();
     let mut sources: HashMap<String, Tokens> = HashMap::new();
+    let mut routines: HashMap<String, Tokens> = HashMap::new();
     let mut top = Vec::new();
     for (realm, state) in runs {
         let mut run = Tokens::default();
+        let routine = state
+            .origin
+            .as_ref()
+            .map_or(String::new(), |o| o.objective.clone());
         let source = if state.origin.is_some() {
             "objectives"
         } else {
@@ -285,6 +303,10 @@ pub fn aggregate<Tz: TimeZone>(
                 .or_default()
                 .add(&call, price);
             sources.entry(source.into()).or_default().add(&call, price);
+            routines
+                .entry(routine.clone())
+                .or_default()
+                .add(&call, price);
         }
         if run.calls > 0 {
             top.push(RunUsage {
@@ -304,6 +326,7 @@ pub fn aggregate<Tz: TimeZone>(
     report.by_model = shares(models);
     report.by_purpose = shares(purposes);
     report.by_source = shares(sources);
+    report.by_routine = shares(routines);
     report.top_runs = top;
     report
 }
@@ -458,6 +481,8 @@ mod tests {
         assert!(close(r.by_purpose[1].tokens.cost.total(), 0.1));
         assert_eq!(r.by_source[0].name, "objectives");
         assert_eq!(r.by_source[1].name, "chats");
+        let routines: Vec<&str> = r.by_routine.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(routines, vec!["digest", ""]);
         assert!(r.top_runs[0].scheduled);
         assert_eq!(r.top_runs[1].objective, "Local");
     }

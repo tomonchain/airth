@@ -146,6 +146,12 @@ const fixtures = {
   "inbox/read": {},
 };
 
+{
+  const share = (name) => ({ name, input: 10, output: 2, cache_read: 0, cache_write: 0, calls: 1, peak_input: 10, unpriced: 0, cost: { input: 0.01, cache_read: 0, cache_write: 0, output: 0.02 } });
+  fixtures["usage?days=30&realm=acme"] = { ...fixtures["usage?days=30"], by_routine: [share("weekly-article"), share("cleanup"), share("")],
+    agents: { "weekly-article": "writer" }, pipelines: [{ pipeline: "watch", calls: 113, input_tokens: 49000, output_tokens: 54000, cost_usd: 0, unpriced: 113 }] };
+}
+
 // ---------- load the app (without booting it) ----------
 // The page's app.js: src/ui/js joined in name order, as build.rs does.
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
@@ -202,6 +208,12 @@ const main = body.querySelector("#main");
   if (main.textContent.includes("Flows")) problems.push("steering: a javascript: link from a feed was rendered");
   if (!main.textContent.includes("$ git push")) problems.push("steering: the approval is missing");
   if (!main.textContent.includes("watch failed")) problems.push("steering: what needs attention is missing");
+  // Usage of one business: by agent and routine, and its pipelines.
+  A.app.route = { view: "usage" };
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  for (const want of ["By agent", "writer", "Asked by you", "Pipelines", "113 without a known price"])
+    if (!main.textContent.includes(want)) problems.push(`usage: "${want}" is missing`);
   // The routine form, with the business's agents and extensions.
   A.app.route = { view: "routines", realm: "acme" };
   A.routineUi.form = {};
