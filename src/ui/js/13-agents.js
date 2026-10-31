@@ -95,11 +95,20 @@ async function renderAgents(main) {
           h("button", { class: "btn", type: "button", onclick: () => { agentUi.editing = null; again(); } }, "Cancel"))]
         : h("div", { class: "prose agent-job", html: mdc(a.job) }),
       h("div", { class: "agent-section" }, h("div", { class: "strong small" }, "Routines"),
-        a.routines.length
-          ? a.routines.map((o) => h("a", { class: "biz-row", href: `#/r/${enc(realm)}/routines` },
-            h("span", null, o.id, !o.enabled && h("span", { class: "muted" }, " · paused")),
-            h("span", { class: "muted small" }, o.trigger)))
-          : h("div", { class: "muted small" }, "No routine yet: it only works when a routine names it.")),
+        a.routines.map((o) => h("div", { class: "biz-row" },
+          h("a", { href: `#/r/${enc(realm)}/routines` }, o.id, !o.enabled && h("span", { class: "muted" }, " · paused")),
+          h("span", { class: "row-start" }, h("span", { class: "muted small" }, o.trigger),
+            h("button", { class: "btn small", type: "button", onclick: async () => {
+              try {
+                const { id } = await api(`${realmPath(realm)}/routines/${enc(o.id)}/run`, {});
+                go(`#/r/${enc(realm)}/run/${enc(id)}`);
+              } catch (e) { flash(e.message, true); }
+            } }, "Run now")))),
+        !a.routines.length && h("div", { class: "muted small" }, "No routine yet: it only works when a routine names it."),
+        h("button", { class: "btn ghost small agent-add-routine", type: "button", onclick: () => {
+          routineUi.form = { bot: a.name };
+          go(`#/r/${enc(realm)}/routines`);
+        } }, icon("plus"), a.routines.length ? "Another routine" : "Give it a routine")),
       a.routines.map((o) => h("div", { class: "muted small agent-limits" },
         `${o.id}: tools ${o.tools ? (o.tools.length ? o.tools.join(", ") : "none of the business's") : "all of the business's"}`,
         ` · alone: ${o.approvals.length ? o.approvals.join(", ") : "only what the business allows"} · budget: ${o.budget}`)),

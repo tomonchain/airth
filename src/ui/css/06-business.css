@@ -35,6 +35,7 @@
 .agent-job { font-size: 14px; max-height: 260px; overflow-y: auto; }
 .agent-section { display: grid; gap: 2px; margin-top: 10px; }
 .agent-limits { margin-top: 4px; }
+.agent-add-routine { justify-self: start; margin-top: 4px; }
 .agent-templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
 .agent-template { display: grid; gap: 4px; text-align: left; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; min-height: 44px; }
 .agent-template:hover { background: var(--hover); }

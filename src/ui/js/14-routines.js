@@ -65,6 +65,7 @@ async function renderRoutines(main) {
 
 /** Create or change a routine. `o` is the routine being changed, or {} for a new one. */
 function routineForm(realm, d, o, again) {
+  // A routine being changed has an id; a new one may come with its agent chosen.
   const editing = !!o.id;
   const name = h("input", { type: "text", value: o.id || "", disabled: editing, autocomplete: "off", spellcheck: "false", placeholder: "weekly-article" });
   name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
