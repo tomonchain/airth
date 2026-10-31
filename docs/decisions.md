@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 41. Agents ask each other for work, within the limits of the one asked
+
+A routine's runs may ask other routines of the same business for work, if the owner allowed it on that routine (its `delegates`). Two tools carry it, offered only to those runs:
+
+- `hand_off` starts the other routine's run with a brief and returns at once; the app starts it as it starts a scheduled routine.
+- `ask_agent` starts it, waits for it to end, and returns its report.
+
+The run asked for work is the other routine's own: its agent's job, its tools, what it may do alone, its budget. Nothing of the asking run's rights passes over, so an agent cannot reach through a colleague what it may not do itself. The brief arrives as data, never as instructions, since the asking agent may have read external content. Nobody is there to approve a request inside it: what needs the owner is denied and listed in its report, as for any run that started without them. A chain of requests stops at three routines deep and never comes back to a routine already in it. Each run asked for work says which routine asked, in Tasks and in its notification.
+
+*Why:* the owner wants the team to work together: an analyst handing a finding to the writer, a writer asking the analyst for figures before it writes. Routines already carry an agent with its limits, so making them the unit of delegation adds no second place for rights.
+
+*Cost:* one request can cost several runs: the depth limit and each routine's own budget bound it, not a budget for the whole chain. An agent can only ask routines the owner listed; a routine that is already running cannot be asked until it ends.
+
 ## 40. Airth no longer develops its own skills
 
 Runs no longer propose skills (`propose_skill`), and Airth no longer develops, evaluates and installs them (`test_skill`, `airth skill`, the app's "Built by Airth" tab). This supersedes decision 14. What extends a business's agents is what the owner connects: MCP servers and connectors (decisions 18 and 20), integrations, and skills from the catalog, all still under the realm's `skill` and `network` rules. Skills installed before are no longer offered to runs; their files stay in the realm's folder until it is removed.

@@ -58,6 +58,7 @@ impl Hub {
                     .and_then(|c| c.pull_request.clone()),
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
+                asked_by: s.origin.as_ref().and_then(|o| o.chain.last().cloned()),
                 routine: s.origin.map(|o| o.objective),
                 id: s.id,
                 objective: s.objective,
@@ -166,6 +167,8 @@ pub struct RunSummary {
     pub pull_request: Option<PullRequest>,
     /// The routine (objective) that started it; None when the owner did.
     pub routine: Option<String>,
+    /// The routine that asked for it, when another one did (decision 41).
+    pub asked_by: Option<String>,
 }
 
 impl RunSummary {

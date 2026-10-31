@@ -374,6 +374,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                 repo,
                 bot,
                 tools,
+                delegates: Vec::new(),
                 next_at: None,
                 fingerprint: None,
                 last_run: None,

@@ -20,6 +20,7 @@ impl Hub {
             integrations: Vec::new(),
             skills_dir: PathBuf::from("/nonexistent"),
             allowed: None,
+            delegation: None,
         })
         .iter()
         .map(|t| {

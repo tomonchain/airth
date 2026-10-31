@@ -77,6 +77,8 @@ airth objective add weekly-article "Write and prepare this week's article" \
 airth objective run weekly-article
 ```
 
+**Agents work together** (decision 41). In the app, a routine can list the routines it may ask for work ("It may ask for work"). Its runs then get two tools: `hand_off` starts the other routine with a brief and carries on, and `ask_agent` waits for its report. The routine asked works within its own agent, tools, limits and budget, never the asking one's; its brief is data, not instructions; what needs you is left out and listed in its report. A chain of requests stops at three routines and never comes back to one already in it. Tasks shows who asked (`figures ← article`).
+
 **Pipelines** are the business's recurring work, declared as files in `business/pipelines/`, one JSON file each (decision 30). The engine is the same for every business; what is specific to one (feeds, prompts, schemas, schedule) lives in its folder, versioned with it:
 
 ```json

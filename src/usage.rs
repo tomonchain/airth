@@ -456,6 +456,7 @@ mod tests {
             objective: "digest".into(),
             trigger: "schedule: daily 08:00".into(),
             job_version: None,
+            chain: Vec::new(),
         });
         let runs = vec![
             ("acme".to_string(), scheduled),

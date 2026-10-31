@@ -42,6 +42,7 @@ fn scheduled_objective_completes_while_the_owner_is_away() {
             repo: None,
             bot: None,
             tools: None,
+            delegates: Vec::new(),
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -156,6 +157,7 @@ fn budget_of_an_objective_stops_its_run() {
             repo: None,
             bot: None,
             tools: None,
+            delegates: Vec::new(),
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -224,6 +226,7 @@ fn a_bot_runs_with_its_job_and_the_strategy() {
             repo: None,
             bot: Some("writer".into()),
             tools: None,
+            delegates: Vec::new(),
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -303,6 +306,7 @@ fn a_bot_reaches_only_the_integrations_it_was_given() {
             repo: None,
             bot: None,
             tools: Some(vec!["blog".into()]),
+            delegates: Vec::new(),
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -343,4 +347,121 @@ fn a_bot_reaches_only_the_integrations_it_was_given() {
         "{}",
         state.events[0].result
     );
+}
+
+/// Decision 41: a routine's run asks another routine for work and gets its
+/// report; it can ask only the routines the owner listed, never one already
+/// in the chain, and a hand-off waits for the app to start it.
+#[test]
+fn routines_ask_each_other_within_the_owners_list() {
+    use crate::objective::{Objective, Trigger};
+    let f = fixture();
+    let routine = |id: &str, delegates: &[&str]| Objective {
+        id: id.into(),
+        objective: format!("Do the {id} work"),
+        trigger: Trigger::Manual,
+        approvals: vec![],
+        budget: Default::default(),
+        approval_wait_minutes: 0,
+        enabled: true,
+        created_at: Utc::now(),
+        repo: None,
+        bot: None,
+        tools: None,
+        delegates: delegates.iter().map(|d| d.to_string()).collect(),
+        next_at: None,
+        fingerprint: None,
+        last_run: None,
+        last_at: None,
+        last_status: None,
+    };
+    let store = f.realm.objectives();
+    store
+        .save(routine("article", &["figures", "publish"]))
+        .unwrap();
+    store.save(routine("figures", &["article"])).unwrap();
+    store.save(routine("publish", &[])).unwrap();
+    store.save(routine("bank", &[])).unwrap();
+
+    let (hub, seen, _) = make_hub(
+        &f.home,
+        vec![
+            // article asks a routine it may not ask, then figures.
+            call("1", "ask_agent", json!({"routine": "bank", "brief": "Pay"})),
+            call(
+                "2",
+                "ask_agent",
+                json!({"routine": "figures", "brief": "Staked ETH this week"}),
+            ),
+            // figures, asked: tries to ask article back, then answers.
+            call(
+                "3",
+                "ask_agent",
+                json!({"routine": "article", "brief": "Loop"}),
+            ),
+            done("Staked ETH: 34.2M, up 1.1%."),
+            // article again: hands off, then ends.
+            call(
+                "4",
+                "hand_off",
+                json!({"routine": "publish", "brief": "Publish the article"}),
+            ),
+            done("Article written with the figures."),
+        ],
+    );
+    let (mut state, _) = hub
+        .start_objective(&f.realm, "article", "manual", None, Utc::now())
+        .unwrap();
+    hub.drive(
+        &f.realm,
+        &mut state,
+        config(20),
+        hooks(&mut NoObserver, false),
+    )
+    .unwrap();
+    assert_eq!(state.status, Status::Completed, "{:?}", state.report);
+
+    let refused = &state.events[0];
+    assert_ne!(refused.status, crate::state::EventStatus::Ok);
+    assert!(
+        refused.result.contains("you may not ask 'bank'"),
+        "{}",
+        refused.result
+    );
+    let answered = &state.events[1];
+    assert_eq!(
+        answered.status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        answered.result
+    );
+    assert!(
+        answered.result.contains("Staked ETH: 34.2M"),
+        "{}",
+        answered.result
+    );
+
+    // The run asked for work is figures' own, with the brief as data and
+    // the chain that led to it; asking article back was refused.
+    let runs = hub.all_runs(&f.realm).unwrap();
+    let figures = runs
+        .iter()
+        .find(|s| s.origin.as_ref().is_some_and(|o| o.objective == "figures"))
+        .unwrap();
+    assert_eq!(figures.origin.as_ref().unwrap().chain, vec!["article"]);
+    let brief = serde_json::to_string(&figures.messages[0]).unwrap();
+    assert!(brief.contains("Staked ETH this week"), "{brief}");
+    assert!(brief.contains("untrusted"), "{brief}");
+    assert!(
+        figures.events[0].result.contains("go round in circles"),
+        "{}",
+        figures.events[0].result
+    );
+
+    // The hand-off waits for the app, once.
+    let handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 1);
+    assert_eq!(handed[0].1.origin.as_ref().unwrap().objective, "publish");
+    assert!(hub.take_hand_offs().unwrap().is_empty());
+    assert_eq!(seen.lock().unwrap().len(), 6, "every model call was used");
 }

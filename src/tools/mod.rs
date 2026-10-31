@@ -2,6 +2,7 @@
 //! needs; the runtime checks it with the permission layer before `execute`.
 
 pub mod catalog;
+pub mod delegate;
 mod fs;
 mod http;
 pub mod mcp;
@@ -59,6 +60,8 @@ pub struct RealmTools {
     /// For a bot's run: the realm's extensions it may use, by name
     /// (integrations, MCP servers, skills). None: all of them. What is left out is not offered, so it cannot be called.
     pub allowed: Option<Vec<String>>,
+    /// For a routine's run: the routines it may ask for work (decision 41).
+    pub delegation: Option<delegate::Delegation>,
 }
 
 /// What a bot can be given, by name: the realm's integrations, MCP
@@ -111,6 +114,11 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         memory: realm.memory,
         source: realm.source,
     }));
+    if let Some(delegation) = realm.delegation {
+        let delegation = std::sync::Arc::new(delegation);
+        tools.push(Box::new(delegate::HandOff(delegation.clone())));
+        tools.push(Box::new(delegate::AskAgent(delegation)));
+    }
     // Tools of the MCP servers the owner connected to this realm.
     tools.extend(mcp::tools_of(&realm.skills_dir, allows));
     // Skills the owner installed from the catalog, read through `use_skill`.
@@ -395,6 +403,7 @@ mod tests {
             integrations: vec![integration("blog"), integration("bank")],
             skills_dir: skills.clone(),
             allowed,
+            delegation: None,
         });
         let http = tools
             .iter()

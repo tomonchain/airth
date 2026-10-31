@@ -45,6 +45,7 @@ impl Hub {
             objective: objective.id.clone(),
             trigger: trigger.to_string(),
             job_version: job.map(|j| j.version),
+            chain: Vec::new(),
         });
         state.save()?;
 
@@ -102,7 +103,10 @@ impl Hub {
             kind,
             realm.name(),
             Some(&state.id),
-            &format!("{}: {outcome}", origin.objective),
+            &match origin.chain.last() {
+                Some(asker) => format!("{} (asked by {asker}): {outcome}", origin.objective),
+                None => format!("{}: {outcome}", origin.objective),
+            },
             state.report.as_deref().unwrap_or_default(),
         )?;
         Ok(())

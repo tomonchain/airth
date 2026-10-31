@@ -244,6 +244,34 @@ pub(super) fn run_scheduler(runner: Runner) {
             }
             Err(e) => eprintln!("scheduler: {e:#}"),
         }
+        // Work a routine handed off to another (decision 41).
+        match runner.hub.take_hand_offs() {
+            Ok(handed) => {
+                for (realm, state) in handed {
+                    let Some(routine) = state.origin.as_ref().map(|o| o.objective.clone()) else {
+                        continue;
+                    };
+                    let wait = realm
+                        .objectives()
+                        .get(&routine)
+                        .map_or(0, |o| o.approval_wait_minutes);
+                    eprintln!(
+                        "hand-off {}/{routine} started run {}",
+                        realm.name(),
+                        state.id
+                    );
+                    runner.spawn(
+                        realm,
+                        state,
+                        Job::Unattended {
+                            objective: routine,
+                            wait_minutes: wait,
+                        },
+                    );
+                }
+            }
+            Err(e) => eprintln!("hand-offs: {e:#}"),
+        }
         match runner.hub.due_pipelines(chrono::Utc::now()) {
             Ok(due) => {
                 for (realm, name) in due {

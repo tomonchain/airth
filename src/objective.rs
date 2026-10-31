@@ -87,6 +87,9 @@ pub struct Objective {
     /// skills, `mac`); None: all of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
+    /// The routines its runs may ask for work (decision 41).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub delegates: Vec<String>,
     /// When the schedule fires next.
     #[serde(default)]
     pub next_at: Option<DateTime<Utc>>,
@@ -106,6 +109,12 @@ impl Objective {
         validate_name(&self.id).context("invalid objective name")?;
         if let Some(bot) = &self.bot {
             validate_name(bot).context("invalid bot name")?;
+        }
+        for d in &self.delegates {
+            validate_name(d).context("invalid routine name")?;
+            if *d == self.id {
+                bail!("a routine cannot ask itself for work");
+            }
         }
         if self.objective.trim().is_empty() {
             bail!("the objective is empty");
@@ -438,6 +447,7 @@ mod tests {
             repo: None,
             bot: None,
             tools: None,
+            delegates: Vec::new(),
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -460,6 +470,11 @@ mod tests {
             ..store.get("triage").unwrap()
         };
         assert!(store.save(bad_bot).is_err());
+        let asks_itself = Objective {
+            delegates: vec!["triage".into()],
+            ..store.get("triage").unwrap()
+        };
+        assert!(store.save(asks_itself).is_err());
         assert!(store.remove("triage").unwrap());
         assert!(store.list().unwrap().is_empty());
     }

@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod changes;
+mod delegation;
 mod delivery;
 mod models;
 mod objectives;
@@ -59,6 +60,7 @@ pub struct RunHooks<'a> {
     pub cancel: CancelToken,
 }
 
+#[derive(Clone)]
 pub struct Hub {
     home: Home,
     /// Connections used for every realm instead of each realm's configuration (tests).
@@ -214,6 +216,7 @@ impl Hub {
                 integrations: realm.config.integrations.clone(),
                 skills_dir: realm.skills_dir(),
                 allowed: state.tools.clone(),
+                delegation: self.delegation_for(realm, state)?,
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),

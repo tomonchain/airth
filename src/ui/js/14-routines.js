@@ -53,6 +53,7 @@ async function renderRoutines(main) {
       h("div", { class: "muted small" },
         `Tools: ${o.tools ? (o.tools.length ? o.tools.join(", ") : "none of the business's") : "all of the business's"}`,
         ` · alone: ${o.allow.length ? o.allow.join(", ") : "only what the business allows"}`,
+        o.delegates.length ? ` · may ask: ${o.delegates.join(", ")}` : "",
         o.max_minutes ? ` · at most ${o.max_minutes} min` : ""),
       h("div", { class: "biz-actions" }, run,
         h("button", { class: "btn", type: "button", onclick: act(enc(o.id), { enabled: !o.enabled }, "PATCH", o.enabled ? `${o.id} paused` : `${o.id} resumed`) }, o.enabled ? "Pause" : "Resume"),
@@ -78,13 +79,15 @@ function routineForm(realm, d, o, again) {
   const tools = d.extensions.map((x) => h("label", { class: "check-row" }, h("input", { type: "checkbox", value: x, checked: !!(o.tools && o.tools.includes(x)) }), x));
   const allow = allowChoices(d.extensions).map(([v, label]) => h("label", { class: "check-row" }, h("input", { type: "checkbox", value: v, checked: (o.allow || []).includes(v) }), label));
   const minutes = h("input", { type: "number", min: "1", value: o.max_minutes || "", placeholder: "30" });
+  const others = d.routines.filter((x) => x.id !== o.id);
+  const asks = others.map((x) => h("label", { class: "check-row" }, h("input", { type: "checkbox", value: x.id, checked: (o.delegates || []).includes(x.id) }), x.bot ? `${x.id} (${x.bot})` : x.id));
   const err = h("div", { class: "error-banner", hidden: true });
   const checked = (rows) => rows.map((r) => $("input", r)).filter((i) => i.checked).map((i) => i.value);
   const save = async () => {
     try {
       await api(`${realmPath(realm)}/routines`, {
         id: name.value.trim(), objective: task.value, bot: bot.value || null, every: every.value.trim() || null,
-        tools: only.checked ? checked(tools) : null, allow: checked(allow),
+        tools: only.checked ? checked(tools) : null, allow: checked(allow), delegates: checked(asks),
         max_minutes: Number(minutes.value) || null, wait: o.wait != null ? o.wait : 10,
       });
       routineUi.form = null;
@@ -101,6 +104,9 @@ function routineForm(realm, d, o, again) {
     h("div", { class: "field" }, h("label", { class: "check-row strong" }, only, "Only some of the business's tools"),
       h("div", { class: "check-grid" }, tools.length ? tools : h("span", { class: "muted small" }, "The business has no integrations, MCP servers or skills yet."))),
     h("div", { class: "field" }, h("div", { class: "strong small" }, "It may, without asking you"), h("div", { class: "check-grid" }, allow)),
+    others.length > 0 && h("div", { class: "field" }, h("div", { class: "strong small" }, "It may ask for work"),
+      h("div", null, h("div", { class: "check-grid" }, asks),
+        h("div", { class: "muted small" }, "Those routines work for it within their own tools and limits, never this one's."))),
     field("Time limit (minutes)", minutes, "A run stops past it."),
     err,
     h("div", { class: "biz-actions" },

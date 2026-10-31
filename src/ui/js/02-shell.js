@@ -141,7 +141,7 @@ function renderRunList() {
           onclick: () => go(`#/r/${enc(app.realm)}/run/${enc(r.id)}`),
           ondblclick: (e) => { e.preventDefault(); editInPlace(e.currentTarget, r.id, runName(r)); } },
         h("span", { class: "obj" }, runName(r)),
-        r.routine && h("span", { class: "routine" }, r.routine),
+        r.routine && h("span", { class: "routine", title: r.asked_by ? `${r.routine}, asked by ${r.asked_by}` : r.routine }, r.asked_by ? `${r.routine} ← ${r.asked_by}` : r.routine),
         !r.live && runActions(r),
         runMark(r)));
   }

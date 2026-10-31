@@ -123,6 +123,10 @@ pub struct Origin {
     /// The version of the bot's job this run followed, when a bot did it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_version: Option<String>,
+    /// For a run another routine asked for: the routines that led to it,
+    /// the one that asked last (decision 41).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<String>,
 }
 
 /// One model call's token usage, as the provider reported it.

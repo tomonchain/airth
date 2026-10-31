@@ -390,6 +390,7 @@ mod tests {
                 repo: None,
                 bot: Some("writer".into()),
                 tools: Some(vec![]),
+                delegates: Vec::new(),
                 next_at: None,
                 fingerprint: None,
                 last_run: None,

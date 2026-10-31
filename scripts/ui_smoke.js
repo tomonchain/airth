@@ -137,9 +137,9 @@ const fixtures = {
       tasks: [{ id: "r1", objective: "Write this week's article", status: "completed", updated_at: now }] },
     { name: "analyst", job: "Watch the markets.", version: "123456abcdef", month_cost: 0, month_calls: 0, unpriced: 2, routines: [], tasks: [] }] },
   "realms/acme/routines": { agents: ["writer"], extensions: ["blog", "gh", "mac"], routines: [
-    { id: "weekly-article", objective: "Write this week's article", every: "mon 08:00", trigger: "schedule: mon 08:00", bot: "writer", tools: ["blog"], allow: ["network", "network:gh"],
+    { id: "weekly-article", objective: "Write this week's article", every: "mon 08:00", trigger: "schedule: mon 08:00", bot: "writer", tools: ["blog"], allow: ["network", "network:gh"], delegates: ["cleanup"],
       max_minutes: 30, wait: 10, enabled: true, running: false, next_at: now, last_run: "r1", last_at: now, last_status: "completed" },
-    { id: "cleanup", objective: "Tidy the files", every: null, trigger: "manual", bot: null, tools: null, allow: [], max_minutes: null, wait: 10, enabled: false, running: false, next_at: null, last_run: null, last_at: null, last_status: null }] },
+    { id: "cleanup", objective: "Tidy the files", every: null, trigger: "manual", bot: null, tools: null, allow: [], delegates: [], max_minutes: null, wait: 10, enabled: false, running: false, next_at: null, last_run: null, last_at: null, last_status: null }] },
   "realms/acme/planning": { coming: [{ at: now, name: "weekly-article", kind: "routine", bot: "writer" }, { at: now, name: "watch", kind: "pipeline", bot: null }],
     past: [{ at: now, name: "watch", kind: "pipeline", status: "failed" }, { at: now, name: "weekly-article", kind: "routine", status: "completed", run: "r1" }] },
   phone: { hosts: [{ host: "mac.tail1234.ts.net", link: "https://mac.tail1234.ts.net/#token=x", qr: { width: 3, cells: "101010101" } }] },
@@ -255,6 +255,7 @@ const main = body.querySelector("#main");
   A.renderMain();
   await new Promise((r) => setTimeout(r, 30));
   if (!main.textContent.includes("New routine") || !main.textContent.includes("Call gh")) problems.push("routines: the form is incomplete");
+  if (!main.textContent.includes("It may ask for work") || !main.textContent.includes("may ask: cleanup")) problems.push("routines: delegation is missing");
   if (!main.textContent.includes("Morning shortlist")) problems.push("routines: the pipelines are missing");
   check("routines+form", main);
   A.routineUi.form = null;

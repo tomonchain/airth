@@ -66,6 +66,21 @@ pub(super) fn save_routine(realm: &Realm, body: &Value) -> Result<()> {
         .into_iter()
         .map(|a| crate::objective::parse_grant(realm, a))
         .collect::<Result<Vec<_>>>()?;
+    let delegates: Vec<String> = body["delegates"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let routines = realm.objectives().list()?;
+    if let Some(unknown) = delegates
+        .iter()
+        .find(|d| !routines.iter().any(|o| o.id == **d))
+    {
+        bail!("no routine {unknown} in this business");
+    }
     let minutes = body["max_minutes"].as_u64().filter(|m| *m > 0);
     let base = existing.filter(|o| o.trigger == trigger);
     realm.objectives().save(Objective {
@@ -85,6 +100,7 @@ pub(super) fn save_routine(realm: &Realm, body: &Value) -> Result<()> {
         repo: base.as_ref().and_then(|o| o.repo.clone()),
         bot,
         tools,
+        delegates,
         next_at: base.as_ref().and_then(|o| o.next_at),
         fingerprint: None,
         last_run: base.as_ref().and_then(|o| o.last_run.clone()),
@@ -578,6 +594,7 @@ impl App {
                         Some(s) => format!("{}:{}", g.capability.as_str(), s.trim_start_matches("integration ")),
                         None => g.capability.as_str().to_string(),
                     }).collect::<Vec<_>>(),
+                    "delegates": o.delegates,
                     "max_minutes": o.budget.max_minutes,
                     "wait": o.approval_wait_minutes,
                     "enabled": o.enabled,
