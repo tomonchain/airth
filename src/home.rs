@@ -347,10 +347,10 @@ mod tests {
         assert!(home.owner().unwrap().is_empty());
         let mut owner = home.owner().unwrap();
         owner.name = "Sam".into();
-        owner.goals.push("Ship v1".into());
+        owner.preferences.push("Answer in French".into());
         home.save_owner(&owner).unwrap();
         let loaded = home.owner().unwrap();
-        assert_eq!(loaded.goals, vec!["Ship v1"]);
+        assert_eq!(loaded.preferences, vec!["Answer in French"]);
         assert!(loaded.updated_at.is_some());
     }
 }

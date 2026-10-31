@@ -115,7 +115,7 @@ function renderSettings(main) {
           h("label", { class: "toggle" },
             h("input", { type: "checkbox", checked: d.share_owner_profile, onchange: (e) => save({ share_owner_profile: e.target.checked }) }),
             h("span", null, h("span", null, "Share your profile with this realm's chats"),
-              h("span", { class: "muted small block" }, "Your name, what you do, your preferences and boundaries, from ", h("a", { href: "#/owner" }, "your profile"), "."))))),
+              h("span", { class: "muted small block" }, "Your name, what you do and your preferences, from ", h("a", { href: "#/owner" }, "your profile"), "."))))),
     ];
   };
 
@@ -416,9 +416,6 @@ function pictureEditor({ path, version, text, round, done }) {
 
 const OWNER_LISTS = [
   ["preferences", "Preferences", "How you like things done", "e.g. Answer in French\nShort, direct answers"],
-  ["goals", "Goals", "Short- and long-term", "e.g. Launch my shop before December"],
-  ["commitments", "Commitments", "What you are on the hook for", "e.g. A newsletter every Friday"],
-  ["boundaries", "Boundaries", "Lines Airth must never cross", "e.g. Never email a client without my OK"],
 ];
 const OWNER_TABS = [["profile", "Profile", "notes"], ["appearance", "Appearance", "sun"], ["phone", "Phone", "send"]];
 
@@ -502,7 +499,7 @@ async function renderOwner(main) {
   const picture = field("Picture", pictureEditor({ path: "owner/avatar", version: owner.avatar, text: owner.name, round: true,
     done: (o) => { app.ownerAvatar = o.avatar; renderFoot(); renderMain(); } }), "Shown in the app only.");
   inner.append(
-    h("p", { class: "muted lead" }, "What Airth knows about you. Realms that share your profile give it to every chat; you can turn that off in a realm's settings."),
+    h("p", { class: "muted lead" }, "What Airth knows about you. Businesses that share your profile give it to every agent; goals and limits belong to each business's strategy, on Steering."),
     h("div", { class: "card" }, picture, field("Name", name), field("About", about), lists.map((l) => l.el)),
     h("div", { class: "row-end" }, status));
 }

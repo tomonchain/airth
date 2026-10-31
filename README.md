@@ -62,7 +62,7 @@ airth realm use personal           # the default realm
 airth memory add "Release notes go in CHANGELOG.md"
 airth secret set GITHUB_TOKEN      # read from stdin, not echoed
 airth owner set name "Thomas"
-airth owner add boundaries "Never push to main"
+airth owner add preferences "Answer in French"
 ```
 
 ## A realm's business

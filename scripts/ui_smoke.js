@@ -111,7 +111,7 @@ const fixtures = {
   "realms/acme/connectors": { check: null, connectors: [
     { connected: true, connector: { id: "notion", name: "Notion", category: "Productivity", description: "Pages", docs: "https://d", kind: "http", base_url: "https://api.notion.com", secret: "NOTION_TOKEN", auth: ["Authorization", "Bearer {}"], extra: [], token_url: "https://t", token_help: "Make one." } },
   ] },
-  owner: { name: "", about: "", preferences: [], goals: [], commitments: [], boundaries: [], updated_at: null },
+  owner: { name: "", about: "", preferences: [], updated_at: null },
   // The business: a pipeline that ran, one refused, one never run.
   "realms/acme/business": {
     pipelines: [

@@ -104,7 +104,7 @@ pub enum OwnerCmd {
         field: String,
         value: String,
     },
-    /// Add an item to preferences, goals, commitments or boundaries
+    /// Add a preference
     Add {
         #[arg(value_parser = LIST_FIELDS)]
         field: String,
@@ -1076,7 +1076,7 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
         OwnerCmd::Show => {
             if owner.is_empty() {
                 eprintln!(
-                    "The profile is empty. Start with:\n  airth owner set name \"Your Name\"\n  airth owner add goals \"...\""
+                    "The profile is empty. Start with:\n  airth owner set name \"Your Name\"\n  airth owner add preferences \"Answer in French\""
                 );
                 return Ok(true);
             }

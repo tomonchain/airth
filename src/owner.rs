@@ -1,6 +1,8 @@
 //! The owner profile: what Airth knows about the person it works for. Written
 //! by the owner (CLI or app), never by the agent, and shared with a realm's
-//! runs only if that realm allows it.
+//! runs only if that realm allows it. Goals and limits belong to each
+//! business, in its strategy (decision 36); a profile saved with the old
+//! goals, commitments and boundaries still loads, without them.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -11,24 +13,18 @@ pub struct Owner {
     pub name: String,
     /// Free text: who they are, what they do.
     pub about: String,
+    /// How they like things done, e.g. "Answer in French".
     pub preferences: Vec<String>,
-    pub goals: Vec<String>,
-    pub commitments: Vec<String>,
-    /// Lines Airth must not cross, whatever the objective says.
-    pub boundaries: Vec<String>,
     pub updated_at: Option<DateTime<Utc>>,
 }
 
 /// The list fields, by name, for the CLI and the app.
-pub const LIST_FIELDS: [&str; 4] = ["preferences", "goals", "commitments", "boundaries"];
+pub const LIST_FIELDS: [&str; 1] = ["preferences"];
 
 impl Owner {
     pub fn list_mut(&mut self, field: &str) -> Option<&mut Vec<String>> {
         match field {
             "preferences" => Some(&mut self.preferences),
-            "goals" => Some(&mut self.goals),
-            "commitments" => Some(&mut self.commitments),
-            "boundaries" => Some(&mut self.boundaries),
             _ => None,
         }
     }
@@ -36,14 +32,7 @@ impl Owner {
     pub fn is_empty(&self) -> bool {
         self.name.trim().is_empty()
             && self.about.trim().is_empty()
-            && [
-                &self.preferences,
-                &self.goals,
-                &self.commitments,
-                &self.boundaries,
-            ]
-            .iter()
-            .all(|l| l.iter().all(|i| i.trim().is_empty()))
+            && self.preferences.iter().all(|i| i.trim().is_empty())
     }
 
     /// The profile as given to the model, or None if there is nothing to say.
@@ -58,19 +47,15 @@ impl Owner {
         if !self.about.trim().is_empty() {
             out.push_str(&format!("About: {}\n", self.about.trim()));
         }
-        let lists = [
-            ("Preferences", &self.preferences),
-            ("Goals", &self.goals),
-            ("Commitments", &self.commitments),
-            ("Boundaries (never cross these)", &self.boundaries),
-        ];
-        for (title, items) in lists {
-            let items: Vec<&String> = items.iter().filter(|i| !i.trim().is_empty()).collect();
-            if !items.is_empty() {
-                out.push_str(&format!("{title}:\n"));
-                for item in items {
-                    out.push_str(&format!("- {}\n", item.trim()));
-                }
+        let items: Vec<&String> = self
+            .preferences
+            .iter()
+            .filter(|i| !i.trim().is_empty())
+            .collect();
+        if !items.is_empty() {
+            out.push_str("Preferences:\n");
+            for item in items {
+                out.push_str(&format!("- {}\n", item.trim()));
             }
         }
         Some(out.trim_end().to_string())
@@ -86,12 +71,23 @@ mod tests {
         assert_eq!(Owner::default().prompt_section(), None);
         let owner = Owner {
             name: "Sam".into(),
-            boundaries: vec!["Never email clients without asking".into(), " ".into()],
+            preferences: vec!["Answer in French".into(), " ".into()],
             ..Owner::default()
         };
         assert_eq!(
             owner.prompt_section().unwrap(),
-            "Name: Sam\nBoundaries (never cross these):\n- Never email clients without asking"
+            "Name: Sam\nPreferences:\n- Answer in French"
         );
+    }
+
+    #[test]
+    fn an_old_profile_with_goals_still_loads() {
+        let old: Owner = serde_json::from_str(
+            r#"{"name": "Sam", "goals": ["Ship v1"], "boundaries": ["Never push"], "preferences": ["Short"]}"#,
+        )
+        .unwrap();
+        assert_eq!(old.name, "Sam");
+        assert_eq!(old.preferences, vec!["Short"]);
+        assert!(!old.prompt_section().unwrap().contains("Ship v1"));
     }
 }
