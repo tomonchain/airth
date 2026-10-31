@@ -88,7 +88,7 @@ A realm runs one business (decision 32). What the business is lives in the realm
 |---|---|
 | `rss` | Reads items from RSS or Atom feeds (`feeds`: http or https URLs). Always first, and only first. |
 | `dedupe` | Drops items an earlier run already saw, compared by one field (`by`). |
-| `judge` | Asks the model about each item with a prompt file; its answer must be a JSON object matching the schema file. With `keep`, a boolean of that answer, only the items it marks go on. With `rank`, a number of that answer, they go on best first, and with `limit`, only that many. |
+| `judge` | Asks the model about each item with a prompt file; its answer must be a JSON object matching the schema file. With `keep`, a boolean of that answer, only the items it marks go on. With `rank`, a number of that answer, they go on best first; with `distinct`, a text of that answer, only the best for each of its values (one per pillar, say); and with `limit`, only that many. |
 | `queue` | Puts each item in the draft queue for you to approve, edit or reject. `text` names the field holding the draft (`answer.draft`, a field of the judge's answer); `kind` is what your business calls it (`post`, `reply`). |
 | `report` | Writes what is left as a report for you: one line per item, grouped by `group_by` (a field, like `answer.pillar`), with `detail` under each (like `answer.why`). Always last. |
 

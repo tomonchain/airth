@@ -44,7 +44,8 @@ pub enum Step {
     /// Ask the model about each item: the prompt, and the JSON schema its
     /// answer must match. With `keep`, only items whose answer sets that
     /// boolean go on. With `rank`, a number in the answer, they go on best
-    /// first, and with `limit`, only that many.
+    /// first; with `distinct`, a text in the answer, only the best for each
+    /// of its values (one per pillar); and with `limit`, only that many.
     Judge {
         prompt: String,
         schema: String,
@@ -52,6 +53,8 @@ pub enum Step {
         keep: Option<String>,
         #[serde(default)]
         rank: Option<String>,
+        #[serde(default)]
+        distinct: Option<String>,
         #[serde(default)]
         limit: Option<usize>,
     },
@@ -202,6 +205,7 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
             schema,
             keep,
             rank,
+            distinct,
             limit,
         } => {
             let text = std::fs::read_to_string(inside(business, prompt)?)
@@ -228,6 +232,14 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
                 )
             {
                 bail!("rank: {rank} must be a number property of {schema}");
+            }
+            if let Some(distinct) = distinct {
+                if schema_value["properties"][distinct]["type"] != "string" {
+                    bail!("distinct: {distinct} must be a string property of {schema}");
+                }
+                if rank.is_none() {
+                    bail!("distinct keeps the best item of each {distinct}: give rank too");
+                }
             }
             match limit {
                 Some(0) => bail!("limit: keep at least one item"),
@@ -292,6 +304,7 @@ impl Step {
                 schema,
                 keep,
                 rank,
+                distinct,
                 limit,
             } => {
                 let version = prompts
@@ -307,7 +320,13 @@ impl Step {
                     (Some(r), None) => format!(", best {r} first"),
                     _ => String::new(),
                 };
-                format!("judge with {prompt} ({version}), answers as {schema}{keep}{rank}")
+                let distinct = distinct
+                    .as_deref()
+                    .map(|d| format!(", one per {d}"))
+                    .unwrap_or_default();
+                format!(
+                    "judge with {prompt} ({version}), answers as {schema}{keep}{rank}{distinct}"
+                )
             }
             Step::Queue { kind, text } => format!("queue each as a {kind} draft, from {text}"),
             Step::Report {
@@ -332,7 +351,7 @@ mod tests {
             ("prompts/watch.md", "Is this item about on-chain flows?"),
             (
                 "schemas/watch.json",
-                r#"{"type": "object", "properties": {"relevant": {"type": "boolean"}}}"#,
+                r#"{"type": "object", "properties": {"relevant": {"type": "boolean"}, "pillar": {"type": "string"}}}"#,
             ),
             (
                 "pipelines/daily-watch.json",
@@ -458,6 +477,13 @@ mod tests {
         // The test schema has only a boolean: nothing to rank by.
         assert!(format!("{:#}", judge(r#", "rank": "relevant""#).unwrap_err()).contains("number"));
         assert!(format!("{:#}", judge(r#", "limit": 5"#).unwrap_err()).contains("give rank"));
+        // Nor a text to keep distinct, and distinct needs rank.
+        assert!(
+            format!("{:#}", judge(r#", "distinct": "relevant""#).unwrap_err()).contains("string")
+        );
+        assert!(
+            format!("{:#}", judge(r#", "distinct": "pillar""#).unwrap_err()).contains("give rank")
+        );
         let report = |extra: &str| {
             with_steps(&format!(
                 r#"[{RSS}, {{"type": "report", "title": "t"{extra}}}]"#
