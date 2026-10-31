@@ -2,6 +2,28 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 36. A business is run by bots, each with a job; the owner steers (Proposed)
+
+The owner sets the direction of a business; bots do the work. A realm is one business (decision 32) and has a team of bots. A bot is:
+
+- **a job**: what it is for and how it works, in `business/bots/<name>.md`, in the business's words, versioned with the rest of the business. Its version is the hash of its content, recorded with each run;
+- **its tools**: the connectors (remote MCP servers, decision 20; local ones, decision 18), integrations (decision 7) and skills it may use, a subset of the realm's;
+- **its triggers**: a schedule, a webhook, a watched file, or the owner asking (decision 11);
+- **its limits**: what it does without asking, its budget per run and per month, its model;
+- **its memory**: what it learned, kept per bot in the realm's memory.
+
+The job is in the business folder; the tools, triggers and limits are kept by Airth, out of every run's reach, as objectives are today (a bot is the objective it grows from, given a name, a job file and its own tools). A run could edit a file in the business folder, never what it is allowed to do.
+
+The owner's side is direction and decisions. `business/strategy.md` holds the goals and the line every bot follows. What a bot may not do alone waits for the owner on Today and on the phone (decision 28): by default, reading and preparing are free; anything that touches money, customers or the public (a payment, a refund, a price, a message to a customer, publishing) needs the owner's approval, and that approval is never given in advance for publishing. Today shows each bot: what it did, what it waits for, what it cost.
+
+This supersedes decision 25 (the frozen surface and the pilot's seven steps) and decision 26 (business work as fixed pipelines where the model only judges). Pipelines (decision 30) stay as a tool a bot or a schedule can run, for fixed sequences that gain from being plain code. Decision 35 (outlets) goes to the backlog.
+
+The first proof is Hedgen's **Writer**: once a week it chooses a subject (news worth explaining, or a lasting notion: a term, a mechanism), researches it, writes the article in Hedgen's voice, illustrates it (charts from Hedgen's API, an image when it helps), and prepares it on the blog as a draft; the owner approves, and the Writer publishes. The proof is reached when four weekly articles go out in a row with the owner spending only the approval, and the cost per article is known. Delegation between bots, a computer of their own and a mobile app come after.
+
+*Why:* the owner wants to steer and leave execution to Airth. Fixed pipelines make every piece of work a piece of code to write; bots with a job written in plain words let the owner add work without a release. Products built this way (Rakazo, Grok Bot) show the shape works. Most of what a bot needs exists: the agent loop, connectors, objectives with triggers, budgets and approvals, the permission gate, the phone, usage records. Airth's difference is where it runs and what it measures: on the owner's machine, credentials the model never sees, and each business's cost and owner time.
+
+*Cost:* a bot's work differs from one week to the next and cannot be proven in advance like a pipeline: it is judged on its output (the owner's edits and rejections, cost). A bot reads external content and holds tools with effects, so a page could try to steer it; the approval before anything public is the limit that holds. `CLAUDE.md` changes with this decision: the current phase becomes the Writer proof, and the rules on model calls apply to pipelines.
+
 ## 34. A pipeline's schedule is in its file, not in an objective
 
 Decision 30 had an objective name the pipeline it starts. The pipeline file already says when it runs (`schedule`), so the background runtime reads it directly: every few seconds it loads each realm's pipelines, and runs those whose time has come, each on its own thread. When each runs next, and when it last started, live in `business.db`. A schedule seen for the first time is armed for its next time; one missed while Airth was not running fires once, late, and the owner is told; a run that started and left no heartbeat (Airth stopped during it) is reported at the next one. A scheduled run has nobody to ask: what the realm's rules leave to the owner is denied at once, and the run's heartbeat says so. Each run, done or failed, lands in the owner's inbox.
