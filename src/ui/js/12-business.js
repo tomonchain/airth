@@ -27,12 +27,6 @@ function lastRun(p) {
     : h("span", { class: "biz-bad", title: r.error || "" }, `✗ failed ${ago(r.started_at)}`);
 }
 
-function noBusiness(inner) {
-  inner.append(h("div", { class: "card pad" },
-    h("div", { class: "strong" }, "This realm does not run a business yet"),
-    h("p", { class: "muted small" }, "Add a business/ folder to the realm's folder: profile.md says what the business is, archive/ holds its past work, and pipelines/ its recurring work, one JSON file each. The README shows the format; airth pipeline check checks it.")));
-}
-
 /** A draft waiting for the owner: approve, edit or reject; `after` redraws the page. */
 function draftCard(realm, draft, after) {
   if (!bizUi.shown.has(draft.id)) bizUi.shown.set(draft.id, Date.now());
@@ -126,15 +120,13 @@ async function renderSteering(main) {
   inner.append(h("div", { class: "biz-grid" }, h("div", null, decide, strategy), h("div", null, attention, week)));
 }
 
-async function renderPipelines(main) {
-  const realm = app.realm;
-  page(main, "Routines", "The business's recurring work. Pipelines are declared in business/pipelines/.");
-  const inner = $(".page-inner", main);
+/** The business's pipelines, on the Routines page: fixed sequences declared in business/pipelines/. */
+async function drawPipelines(inner, realm) {
   let d;
   try { d = await loadBusiness(); } catch (e) { return flash(e.message, true); }
-  if (app.route.view !== "pipelines" || app.realm !== realm) return;
-  if (!d.has_business) return noBusiness(inner);
-  if (!d.pipelines.length) inner.append(h("div", { class: "card muted small pad" }, "No pipeline yet: add one in business/pipelines/."));
+  if (app.route.view !== "routines" || app.realm !== realm || !d.pipelines.length) return;
+  inner.append(h("h2", { class: "section-head" }, "Pipelines"),
+    h("p", { class: "muted small" }, "Fixed sequences of steps, declared as files in business/pipelines/."));
   for (const p of d.pipelines) {
     const run = h("button", { class: "btn", type: "button", disabled: !!p.error, onclick: async () => {
       try { await api(`${realmPath(realm)}/pipelines/${enc(p.name)}/run`, {}); flash(`${p.name} started: its run shows here when it ends`); } catch (e) { flash(e.message, true); }

@@ -54,8 +54,8 @@ function renderNav() {
     h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search tasks, pages, businesses and actions" },
       icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
     navLink(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "count" }, String(waiting))),
-    navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines" || v === "pipelines"),
-    navLink(null, "calendar", "Planning", v === "planning"),
+    navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines"),
+    navLink(r ? `#/r/${r}/planning` : null, "calendar", "Planning", v === "planning"),
     navLink(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run"),
     navLink(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
@@ -310,8 +310,8 @@ function renderMain() {
   }
   switch (app.route.view) {
     case "steering": return renderSteering(main);
-    case "routines":
-    case "pipelines": return renderPipelines(main);
+    case "routines": return renderRoutines(main);
+    case "planning": return renderPlanning(main);
     case "agents": return renderAgents(main);
     case "tasks":
     case "new": return renderNew(main);

@@ -319,7 +319,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
             let tools = if tool.is_empty() {
                 None
             } else {
-                let known = extension_names(&realm);
+                let known = crate::tools::extension_names(&realm);
                 if let Some(unknown) = tool.iter().find(|t| !known.contains(t)) {
                     bail!(
                         "no integration, MCP server or skill '{unknown}' in this realm (it has: {})",
@@ -344,7 +344,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
             };
             let approvals = allow
                 .iter()
-                .map(|a| parse_grant(&realm, a))
+                .map(|a| crate::objective::parse_grant(&realm, a))
                 .collect::<Result<Vec<_>>>()?;
             store.save(Objective {
                 id: id.clone(),
@@ -408,41 +408,6 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
         }
     }
     Ok(true)
-}
-
-/// What a bot can be given, by name: the realm's integrations, MCP
-/// servers and skills, and the Mac's apps.
-fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
-    let skills = realm.skills();
-    let mut names: Vec<String> = realm
-        .config
-        .integrations
-        .iter()
-        .map(|i| i.name.clone())
-        .collect();
-    names.extend(
-        crate::tools::mcp::McpStore::new(skills.dir())
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| s.name),
-    );
-    names.extend(
-        skills
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| s.name),
-    );
-    names.extend(
-        crate::tools::catalog::installed(skills.dir())
-            .into_iter()
-            .map(|s| s.name),
-    );
-    names.push(crate::tools::MAC.into());
-    names.sort();
-    names.dedup();
-    names
 }
 
 fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()> {
@@ -510,27 +475,6 @@ fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()
         );
     }
     Ok(())
-}
-
-/// `write`, `network`, `network:github` (an integration) or `network:example.com` (a host).
-fn parse_grant(realm: &crate::realm::Realm, text: &str) -> Result<crate::permissions::Grant> {
-    let (cap, scope) = match text.split_once(':') {
-        Some((c, s)) => (c, Some(s.trim())),
-        None => (text, None),
-    };
-    let capability = Capability::parse(cap.trim())?;
-    let scope = match scope {
-        None => None,
-        Some(s) if capability == Capability::Skill => Some(s.to_string()),
-        Some(s) if capability != Capability::Network => {
-            bail!("only network and skill approvals take a scope ('{s}')")
-        }
-        Some(s) if realm.config.integrations.iter().any(|i| i.name == s) => {
-            Some(format!("integration {s}"))
-        }
-        Some(s) => Some(s.to_string()),
-    };
-    Ok(crate::permissions::Grant { capability, scope })
 }
 
 #[derive(clap::Args)]

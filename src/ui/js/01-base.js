@@ -305,7 +305,9 @@ function parseRoute() {
   if ((m = h.match(/^#\/r\/([^/]+)\/skills/))) return { view: "skills", realm: decodeURIComponent(m[1]) };
   // Today was the business's page before Steering (decision 37).
   if ((m = h.match(/^#\/r\/([^/]+)\/(?:steering|today)/))) return { view: "steering", realm: decodeURIComponent(m[1]) };
-  if ((m = h.match(/^#\/r\/([^/]+)\/(routines|pipelines|tasks|agents)/))) return { view: m[2], realm: decodeURIComponent(m[1]) };
+  // Pipelines are a part of Routines (decision 37).
+  if ((m = h.match(/^#\/r\/([^/]+)\/(?:routines|pipelines)/))) return { view: "routines", realm: decodeURIComponent(m[1]) };
+  if ((m = h.match(/^#\/r\/([^/]+)\/(planning|tasks|agents)/))) return { view: m[2], realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/r\/([^/]+)/))) return { view: "new", realm: decodeURIComponent(m[1]) };
   if ((m = h.match(/^#\/owner(?:\/([a-z]+))?/))) return { view: "owner", tab: m[1] };
   if (h.startsWith("#/usage")) return { view: "usage" };

@@ -1,4 +1,4 @@
-/* ---------- The business: Today and Pipelines ---------- */
+/* ---------- The business: Steering, Agents, Routines, Planning ---------- */
 .biz-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; margin-top: 12px; }
 .biz-card { padding: 16px 18px; margin-bottom: 16px; }
 .page-inner .biz-card h2 { margin: 0 0 10px; }
@@ -36,3 +36,15 @@
 .agent-templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
 .agent-template { display: grid; gap: 4px; text-align: left; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; min-height: 44px; }
 .agent-template:hover { background: var(--hover); }
+.biz-grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.biz-card.paused > :not(.biz-head):not(.biz-actions) { opacity: .6; }
+.routine-task { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-inner .section-head { margin: 24px 0 4px; }
+.check-grid { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.check-grid .check-row { padding: 6px 0; }
+.plan-day { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 12px 0 2px; }
+.plan-day:first-of-type { padding-top: 0; }
+.plan-time { display: inline-block; min-width: 52px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 860px) {
+  .biz-grid.even { grid-template-columns: minmax(0, 1fr); }
+}

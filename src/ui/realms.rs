@@ -21,6 +21,78 @@ pub(super) fn let_go(realm: &Realm, name: &str) -> Result<()> {
     crate::business::remove_job(&realm.root()?, name)
 }
 
+/// Create or replace a routine from the app's form. Its history (last run,
+/// schedule state) is kept when it is replaced with the same trigger.
+pub(super) fn save_routine(realm: &Realm, body: &Value) -> Result<()> {
+    use crate::objective::{Objective, Trigger};
+    let id = body["id"].as_str().unwrap_or_default().trim().to_string();
+    let existing = realm.objectives().get(&id).ok();
+    let trigger = match body["every"]
+        .as_str()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        Some(every) => Trigger::Schedule {
+            every: every.into(),
+        },
+        None => Trigger::Manual,
+    };
+    let bot = body["bot"]
+        .as_str()
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .map(String::from);
+    if let Some(bot) = &bot {
+        crate::business::job(&realm.root()?, bot)?;
+    }
+    let tools = match body["tools"].as_array() {
+        Some(list) => {
+            let names: Vec<String> = list
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            let known = crate::tools::extension_names(realm);
+            if let Some(unknown) = names.iter().find(|n| !known.contains(n)) {
+                bail!("no integration, MCP server or skill '{unknown}' in this business");
+            }
+            Some(names)
+        }
+        None => None,
+    };
+    let approvals = body["allow"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| crate::objective::parse_grant(realm, a))
+        .collect::<Result<Vec<_>>>()?;
+    let minutes = body["max_minutes"].as_u64().filter(|m| *m > 0);
+    let base = existing.filter(|o| o.trigger == trigger);
+    realm.objectives().save(Objective {
+        id,
+        objective: body["objective"].as_str().unwrap_or_default().trim().into(),
+        trigger,
+        approvals,
+        budget: crate::agent::Budget {
+            max_minutes: minutes.map(|m| m.min(24 * 60) as u32),
+            ..Default::default()
+        },
+        approval_wait_minutes: body["wait"].as_u64().unwrap_or(10).min(24 * 60) as u32,
+        enabled: true,
+        created_at: base
+            .as_ref()
+            .map_or_else(chrono::Utc::now, |o| o.created_at),
+        repo: base.as_ref().and_then(|o| o.repo.clone()),
+        bot,
+        tools,
+        next_at: base.as_ref().and_then(|o| o.next_at),
+        fingerprint: None,
+        last_run: base.as_ref().and_then(|o| o.last_run.clone()),
+        last_at: base.as_ref().and_then(|o| o.last_at),
+        last_status: base.and_then(|o| o.last_status),
+    })
+}
+
 impl App {
     /// The a realm's own routes; None when the request is not one of them.
     pub(super) fn realms_routes(
@@ -195,6 +267,55 @@ impl App {
             }
             (Method::Get, ["realms", r, "business"]) => {
                 json_response(200, self.business(&self.realm(r)?)?)
+            }
+            (Method::Get, ["realms", r, "routines"]) => {
+                json_response(200, self.routines(&self.realm(r)?)?)
+            }
+            (Method::Post, ["realms", r, "routines"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                save_routine(&realm, &body)?;
+                ok()
+            }
+            (Method::Patch, ["realms", r, "routines", id]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                if let Some(enabled) = body["enabled"].as_bool() {
+                    let found = realm.objectives().update(id, |o| {
+                        o.enabled = enabled;
+                        // Re-armed: a time missed while paused does not fire.
+                        o.next_at = None;
+                        o.fingerprint = None;
+                    })?;
+                    if !found {
+                        bail!("no routine {id}");
+                    }
+                }
+                ok()
+            }
+            (Method::Delete, ["realms", r, "routines", id]) => {
+                if !self.realm(r)?.objectives().remove(id)? {
+                    bail!("no routine {id}");
+                }
+                ok()
+            }
+            (Method::Post, ["realms", r, "routines", id, "run"]) => {
+                let realm = self.realm(r)?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let (state, _) = self.hub.start_objective(
+                    &realm,
+                    id,
+                    "started by the owner",
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                let run = state.id.clone();
+                // The owner is here: they answer approvals as for any task.
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"id": run}))
+            }
+            (Method::Get, ["realms", r, "planning"]) => {
+                json_response(200, self.planning(&self.realm(r)?, chrono::Utc::now())?)
             }
             (Method::Get, ["realms", r, "agents"]) => {
                 json_response(200, self.agents(&self.realm(r)?)?)
@@ -438,6 +559,134 @@ impl App {
             "week": store.week(chrono::Utc::now() - chrono::Duration::days(7))?,
             "notifications": notifications,
         }))
+    }
+
+    /// The business's routines (decision 37), with what the form offers:
+    /// its agents and the extensions a routine can be limited to.
+    pub(super) fn routines(&self, realm: &Realm) -> Result<Value> {
+        let list: Vec<Value> = realm
+            .objectives()
+            .list()?
+            .into_iter()
+            .map(|o| {
+                let running = o
+                    .last_run
+                    .as_deref()
+                    .is_some_and(|r| self.live(realm.name(), r).is_some() || self.hub.is_live(realm, r));
+                json!({
+                    "id": o.id,
+                    "objective": o.objective,
+                    "every": match &o.trigger {
+                        crate::objective::Trigger::Schedule { every } => Some(every.clone()),
+                        _ => None,
+                    },
+                    "trigger": o.trigger.describe(),
+                    "bot": o.bot,
+                    "tools": o.tools,
+                    "allow": o.approvals.iter().map(|g| match &g.scope {
+                        Some(s) => format!("{}:{}", g.capability.as_str(), s.trim_start_matches("integration ")),
+                        None => g.capability.as_str().to_string(),
+                    }).collect::<Vec<_>>(),
+                    "max_minutes": o.budget.max_minutes,
+                    "wait": o.approval_wait_minutes,
+                    "enabled": o.enabled,
+                    "running": running,
+                    "next_at": o.next_at,
+                    "last_run": o.last_run,
+                    "last_at": o.last_at,
+                    "last_status": o.last_status,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "routines": list,
+            "agents": crate::business::bots(&realm.root()?)?.into_iter().map(|b| b.0).collect::<Vec<_>>(),
+            "extensions": crate::tools::extension_names(realm),
+        }))
+    }
+
+    /// What runs when (decision 37): the coming week's times of every
+    /// scheduled routine and pipeline, and what ran in the last one.
+    pub(super) fn planning(
+        &self,
+        realm: &Realm,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Value> {
+        use crate::objective::{Schedule, Trigger};
+        let week = chrono::Duration::days(7);
+        let mut coming = Vec::new();
+        let mut times = |name: &str,
+                         kind: &str,
+                         bot: Option<&str>,
+                         schedule: &Schedule,
+                         first: chrono::DateTime<chrono::Utc>| {
+            let mut at = first.max(now);
+            if at > first {
+                at = schedule.next_after(now);
+            }
+            // A schedule every few minutes would fill the week: at most 50 times each.
+            for _ in 0..50 {
+                if at > now + week {
+                    break;
+                }
+                coming.push(json!({"at": at, "name": name, "kind": kind, "bot": bot}));
+                at = schedule.next_after(at);
+            }
+        };
+        let routines = realm.objectives().list()?;
+        for o in routines.iter().filter(|o| o.enabled) {
+            if let Trigger::Schedule { every } = &o.trigger
+                && let Ok(schedule) = Schedule::parse(every)
+            {
+                let first = o.next_at.unwrap_or_else(|| schedule.next_after(now));
+                times(&o.id, "routine", o.bot.as_deref(), &schedule, first);
+            }
+        }
+        let root = realm.root()?;
+        let store = Store::of(realm)?;
+        let mut past = Vec::new();
+        for (name, loaded) in crate::pipeline::load_all(&crate::business::dir(&root))? {
+            if let Ok(p) = loaded
+                && let Some(Ok(schedule)) = p.schedule.as_deref().map(Schedule::parse)
+            {
+                let first = store
+                    .next_run(&name)?
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+                    .map_or_else(
+                        || schedule.next_after(now),
+                        |t| t.with_timezone(&chrono::Utc),
+                    );
+                times(&name, "pipeline", None, &schedule, first);
+            }
+            for r in store.pipeline_runs(&name, 50)? {
+                if let Ok(at) = chrono::DateTime::parse_from_rfc3339(&r.started_at)
+                    && at.with_timezone(&chrono::Utc) > now - week
+                {
+                    past.push(json!({
+                        "at": at.with_timezone(&chrono::Utc),
+                        "name": name,
+                        "kind": "pipeline",
+                        "status": if r.ok { "completed" } else { "failed" },
+                    }));
+                }
+            }
+        }
+        for s in self.hub.runs(realm)? {
+            if s.updated_at > now - week
+                && let Some(routine) = &s.routine
+            {
+                past.push(json!({
+                    "at": s.updated_at,
+                    "name": routine,
+                    "kind": "routine",
+                    "status": s.display_status(),
+                    "run": s.id,
+                }));
+            }
+        }
+        coming.sort_by(|a, b| a["at"].as_str().cmp(&b["at"].as_str()));
+        past.sort_by(|a, b| b["at"].as_str().cmp(&a["at"].as_str()));
+        Ok(json!({"coming": coming, "past": past}))
     }
 
     /// The business's bots (decisions 36 and 37): each one's job, the

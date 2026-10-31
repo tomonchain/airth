@@ -409,6 +409,60 @@ mod tests {
         assert_eq!(crate::business::bots(&root).unwrap().len(), 1);
     }
 
+    /// A routine made in the app names a hired bot and the business's own
+    /// extensions only; Planning shows its coming week.
+    #[test]
+    fn routines_from_the_app_and_their_planning() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let routine = |bot: &str, tools: Value| {
+            json!({"id": "weekly-article", "objective": "Write this week's article", "bot": bot,
+                "every": "daily 08:00", "tools": tools, "allow": ["network"], "max_minutes": 30})
+        };
+        let err = realms::save_routine(&realm, &routine("writer", json!(null))).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("business/bots/writer.md"),
+            "{err:#}"
+        );
+        crate::business::set_job(&realm.root().unwrap(), "writer", "Write.").unwrap();
+        let err = realms::save_routine(&realm, &routine("writer", json!(["bank"]))).unwrap_err();
+        assert!(format!("{err:#}").contains("'bank'"), "{err:#}");
+        realms::save_routine(&realm, &routine("writer", json!([]))).unwrap();
+        let o = realm.objectives().get("weekly-article").unwrap();
+        assert_eq!(o.bot.as_deref(), Some("writer"));
+        assert_eq!(o.tools, Some(vec![]));
+        assert_eq!(o.budget.max_minutes, Some(30));
+        assert_eq!(o.approvals[0].capability, Capability::Network);
+
+        let app = test_app(home, 0);
+        let listed = app.routines(&realm).unwrap();
+        assert_eq!(listed["routines"][0]["allow"], json!(["network"]));
+        assert_eq!(listed["agents"], json!(["writer"]));
+        let plan = app.planning(&realm, chrono::Utc::now()).unwrap();
+        let coming = plan["coming"].as_array().unwrap();
+        assert_eq!(coming.len(), 7, "{plan}");
+        assert_eq!(coming[0]["bot"], "writer");
+        assert!(coming[0]["at"].as_str() < coming[1]["at"].as_str());
+        realm
+            .objectives()
+            .update("weekly-article", |o| o.enabled = false)
+            .unwrap();
+        let plan = app.planning(&realm, chrono::Utc::now()).unwrap();
+        assert_eq!(
+            plan["coming"],
+            json!([]),
+            "a paused routine has no coming times"
+        );
+    }
+
     /// Steering shows what waits for the owner in this business only.
     #[test]
     fn steering_lists_this_realms_approvals_and_strategy() {

@@ -73,6 +73,41 @@ pub struct RealmTools {
 /// The name that gives a bot the Mac's apps (calendar, mail, notes…).
 pub const MAC: &str = "mac";
 
+/// What a bot can be given, by name: the realm's integrations, MCP
+/// servers and skills, and the Mac's apps.
+pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
+    let skills = realm.skills();
+    let mut names: Vec<String> = realm
+        .config
+        .integrations
+        .iter()
+        .map(|i| i.name.clone())
+        .collect();
+    names.extend(
+        crate::tools::mcp::McpStore::new(skills.dir())
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.extend(
+        skills
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.extend(
+        crate::tools::catalog::installed(skills.dir())
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.push(MAC.into());
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// The tools a pipeline's steps call: HTTP, with the realm's integrations.
 pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
     vec![Box::new(http::HttpRequest { integrations })]

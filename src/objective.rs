@@ -124,6 +124,29 @@ impl Objective {
     }
 }
 
+/// An approval given in advance, as the owner writes it: `write`, `network`,
+/// `network:github` (an integration), `network:example.com` (a host) or
+/// `skill:<name>`.
+pub fn parse_grant(realm: &crate::realm::Realm, text: &str) -> Result<crate::permissions::Grant> {
+    let (cap, scope) = match text.split_once(':') {
+        Some((c, s)) => (c, Some(s.trim())),
+        None => (text, None),
+    };
+    let capability = crate::permissions::Capability::parse(cap.trim())?;
+    let scope = match scope {
+        None => None,
+        Some(s) if capability == crate::permissions::Capability::Skill => Some(s.to_string()),
+        Some(s) if capability != crate::permissions::Capability::Network => {
+            bail!("only network and skill approvals take a scope ('{s}')")
+        }
+        Some(s) if realm.config.integrations.iter().any(|i| i.name == s) => {
+            Some(format!("integration {s}"))
+        }
+        Some(s) => Some(s.to_string()),
+    };
+    Ok(crate::permissions::Grant { capability, scope })
+}
+
 /// When a scheduled objective runs, in the owner's local time:
 /// `every 30m`, `every 2h`, `every 1d`, `daily 08:30`, `weekdays 09:00`,
 /// `mon,thu 18:00`.

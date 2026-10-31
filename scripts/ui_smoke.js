@@ -137,6 +137,12 @@ const fixtures = {
       routines: [{ id: "weekly-article", objective: "Write this week's article", trigger: "schedule: mon 08:00", enabled: true, tools: ["blog"], approvals: ["network"], budget: "30 minutes", last_status: null, next_at: null }],
       tasks: [{ id: "r1", objective: "Write this week's article", status: "completed", updated_at: now }] },
     { name: "analyst", job: "Watch the markets.", version: "123456abcdef", month_cost: 0, month_calls: 0, unpriced: 2, routines: [], tasks: [] }] },
+  "realms/acme/routines": { agents: ["writer"], extensions: ["blog", "gh", "mac"], routines: [
+    { id: "weekly-article", objective: "Write this week's article", every: "mon 08:00", trigger: "schedule: mon 08:00", bot: "writer", tools: ["blog"], allow: ["network", "network:gh"],
+      max_minutes: 30, wait: 10, enabled: true, running: false, next_at: now, last_run: "r1", last_at: now, last_status: "completed" },
+    { id: "cleanup", objective: "Tidy the files", every: null, trigger: "manual", bot: null, tools: null, allow: [], max_minutes: null, wait: 10, enabled: false, running: false, next_at: null, last_run: null, last_at: null, last_status: null }] },
+  "realms/acme/planning": { coming: [{ at: now, name: "weekly-article", kind: "routine", bot: "writer" }, { at: now, name: "watch", kind: "pipeline", bot: null }],
+    past: [{ at: now, name: "watch", kind: "pipeline", status: "failed" }, { at: now, name: "weekly-article", kind: "routine", status: "completed", run: "r1" }] },
   "inbox/read": {},
 };
 
@@ -145,7 +151,7 @@ const fixtures = {
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
 const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
   .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
-const exportsCode = `\n;globalThis.__app = { app, skillUi, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
+const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
 const A = globalThis.__app;
@@ -181,7 +187,7 @@ const main = body.querySelector("#main");
   A.renderMain();
   if (!body.querySelector("#task-list") || body.querySelector("#task-list").children.length === 0) problems.push("tasks: the task list is empty");
   check("tasks", main);
-  for (const view of ["steering", "agents", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
+  for (const view of ["steering", "agents", "routines", "planning", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();
     await new Promise((r) => setTimeout(r, 30));
@@ -196,6 +202,15 @@ const main = body.querySelector("#main");
   if (main.textContent.includes("Flows")) problems.push("steering: a javascript: link from a feed was rendered");
   if (!main.textContent.includes("$ git push")) problems.push("steering: the approval is missing");
   if (!main.textContent.includes("watch failed")) problems.push("steering: what needs attention is missing");
+  // The routine form, with the business's agents and extensions.
+  A.app.route = { view: "routines", realm: "acme" };
+  A.routineUi.form = {};
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  if (!main.textContent.includes("New routine") || !main.textContent.includes("Call gh")) problems.push("routines: the form is incomplete");
+  if (!main.textContent.includes("Morning shortlist")) problems.push("routines: the pipelines are missing");
+  check("routines+form", main);
+  A.routineUi.form = null;
   A.app.route = { view: "skills", realm: "acme" };
   for (const tab of ["catalog", "mcp", "connectors"]) {
     A.skillUi.tab = tab;
