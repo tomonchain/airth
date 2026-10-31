@@ -125,6 +125,11 @@ const fixtures = {
       source: { title: "Flows", link: "javascript:alert(1)" }, model_call: 3, status: "pending", revision: 1 }],
     attention: [{ kind: "pipeline", title: "watch failed: no feed could be read", at: now }, { kind: "routine", routine: "digest", title: "digest stopped", run: null, at: null }],
     strategy: "",
+    delivered: [{ run: "r1", title: "Write this week's article", routine: "weekly-article", agent: "writer", at: now, report: "Drafted *Liquid staking* on the blog." },
+      { run: "r2", title: "Tidy", routine: null, agent: null, at: now, report: "" }],
+    team: [{ name: "writer", running: false, routines: 1, last_status: "completed", last_at: now, next_at: now },
+      { name: "analyst", running: true, routines: 1, last_status: null, last_at: null, next_at: null },
+      { name: "sales", running: false, routines: 0, last_status: null, last_at: null, next_at: null }],
     week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 } },
   "realms/acme/agents": { agents: [
     { name: "writer", job: "Write one article a week.", version: "abcdef123456", month_cost: 1.2, month_calls: 30, unpriced: 0,
@@ -204,6 +209,7 @@ const main = body.querySelector("#main");
   if (main.textContent.includes("Flows")) problems.push("steering: a javascript: link from a feed was rendered");
   if (!main.textContent.includes("$ git push")) problems.push("steering: the approval is missing");
   if (!main.textContent.includes("watch failed")) problems.push("steering: what needs attention is missing");
+  if (!main.textContent.includes("Drafted *Liquid staking*") || !main.textContent.includes("working now")) problems.push("steering: the delivered work or the team is missing");
   // Usage of one business: by agent and routine, and its pipelines.
   A.app.route = { view: "usage" };
   A.renderMain();

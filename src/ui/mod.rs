@@ -479,6 +479,7 @@ mod tests {
         let realm = home.create_realm(new("r")).unwrap();
         home.create_realm(new("rr")).unwrap();
         crate::business::set_strategy(&realm.root().unwrap(), "Four articles a month.").unwrap();
+        crate::business::set_job(&realm.root().unwrap(), "writer", "Write.").unwrap();
         let app = test_app(home, 0);
         let waiting = |preview: &str| {
             let (tx, _rx) = mpsc::channel();
@@ -516,6 +517,10 @@ mod tests {
         assert_eq!(approvals[0]["preview"], "$ git push");
         assert_eq!(d["strategy"], "Four articles a month.");
         assert_eq!(d["attention"], json!([]));
+        assert_eq!(d["delivered"], json!([]));
+        assert_eq!(d["team"][0]["name"], "writer");
+        assert_eq!(d["team"][0]["running"], false);
+        assert_eq!(d["team"][0]["routines"], 0);
     }
 
     #[test]

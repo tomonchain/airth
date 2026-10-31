@@ -798,12 +798,73 @@ impl App {
                 }));
             }
         }
+        // What the team finished this week, newest first, with the start of
+        // each report.
+        let routines = realm.objectives().list()?;
+        let bot_of = |routine: &str| {
+            routines
+                .iter()
+                .find(|o| o.id == routine)
+                .and_then(|o| o.bot.clone())
+        };
+        let mut done: Vec<State> = self
+            .hub
+            .all_runs(realm)?
+            .into_iter()
+            .filter(|s| s.status == crate::state::Status::Completed && s.updated_at > week_ago)
+            .filter(|s| !archived.contains(&s.id))
+            .collect();
+        done.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+        let delivered: Vec<Value> = done
+            .iter()
+            .take(8)
+            .map(|s| {
+                let routine = s.origin.as_ref().map(|o| o.objective.clone());
+                json!({
+                    "run": s.id,
+                    "title": s.objective.lines().next().unwrap_or_default(),
+                    "routine": routine,
+                    "agent": routine.as_deref().and_then(bot_of),
+                    "at": s.updated_at,
+                    "report": s.report.as_deref().unwrap_or_default().chars().take(280).collect::<String>(),
+                })
+            })
+            .collect();
+        // Each agent: what it is doing or did last, and when it works next.
+        let team: Vec<Value> = crate::business::bots(&root)?
+            .into_iter()
+            .map(|(name, _)| {
+                let mine: Vec<_> = routines
+                    .iter()
+                    .filter(|o| o.bot.as_deref() == Some(name.as_str()))
+                    .collect();
+                let running = mine.iter().any(|o| {
+                    o.last_run.as_deref().is_some_and(|r| {
+                        self.live(realm.name(), r).is_some() || self.hub.is_live(realm, r)
+                    })
+                });
+                let last = mine
+                    .iter()
+                    .filter(|o| o.last_at.is_some())
+                    .max_by_key(|o| o.last_at);
+                json!({
+                    "name": name,
+                    "running": running,
+                    "routines": mine.len(),
+                    "last_status": last.and_then(|o| o.last_status.clone()),
+                    "last_at": last.and_then(|o| o.last_at),
+                    "next_at": mine.iter().filter(|o| o.enabled).filter_map(|o| o.next_at).min(),
+                })
+            })
+            .collect();
         Ok(json!({
             "approvals": approvals,
             "drafts": store.drafts(&["pending"])?,
             "attention": attention,
             "strategy": crate::business::strategy(&root)?,
             "week": store.week(week_ago)?,
+            "delivered": delivered,
+            "team": team,
         }))
     }
 

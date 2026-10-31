@@ -114,7 +114,24 @@ async function renderSteering(main) {
     h("div", { class: "biz-row" }, h("span", null, "Model cost"),
       h("span", { title: w.unpriced_calls ? `${w.unpriced_calls} call(s) to a model without a known price are not counted` : "" },
         `${w.model_cost.toFixed(2)} $${w.unpriced_calls ? " +" : ""}`)));
-  inner.append(h("div", { class: "biz-grid" }, h("div", null, decide, strategy), h("div", null, attention, week)));
+  const delivered = h("div", { class: "card biz-card" }, h("h2", null, "Delivered this week"),
+    d.delivered.length
+      ? d.delivered.map((x) => h("a", { class: "biz-delivered", href: `#/r/${enc(realm)}/run/${enc(x.run)}` },
+        h("div", { class: "biz-head" }, h("span", { class: "strong biz-clip" }, x.title), h("span", { class: "grow" }),
+          h("span", { class: "muted small" }, `${x.agent || x.routine || "you"} · ${ago(x.at)}`)),
+        x.report && h("div", { class: "muted small biz-clip" }, x.report)))
+      : h("div", { class: "muted small" }, "Nothing finished this week yet."));
+  const team = h("div", { class: "card biz-card" }, h("h2", null, "The team"),
+    d.team.length
+      ? d.team.map((a) => h("a", { class: "biz-row", href: `#/r/${enc(realm)}/agents` },
+        h("span", null, h("span", { class: "agent-mark small", "aria-hidden": "true" }, a.name.slice(0, 1).toUpperCase()), " ", a.name),
+        h("span", { class: a.running ? "biz-ok small" : "muted small" },
+          a.running ? "working now"
+            : !a.routines ? "no routine yet"
+            : a.next_at ? `next ${when(a.next_at)}`
+            : a.last_status ? `${a.last_status} ${ago(a.last_at)}` : "by hand")))
+      : h("a", { class: "muted small", href: `#/r/${enc(realm)}/agents` }, "No agent yet: hire one in Agents."));
+  inner.append(h("div", { class: "biz-grid" }, h("div", null, decide, delivered, strategy), h("div", null, team, attention, week)));
 }
 
 /** The business's pipelines, on the Routines page: fixed sequences declared in business/pipelines/. */
