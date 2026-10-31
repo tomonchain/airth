@@ -35,11 +35,16 @@ function renderNewRealm(main) {
   name.focus();
 }
 
-// ---------- welcome guide ----------
+// ---------- onboarding ----------
 
-/** The first launch: what Airth is, then the few things it needs, one at a time. */
-const WELCOME_STEPS = ["hello", "you", "model", "realm", "tips"];
-const welcomeUi = { step: 0, setup: null, realm: null };
+/** The first launch, one step at a time: what Airth is, the owner, a model,
+ *  then a business with its strategy, a first agent and its first routine. */
+const WELCOME_STEPS = ["hello", "you", "model", "business", "strategy", "agent", "routine", "done"];
+const WELCOME_TITLES = { hello: "Welcome", you: "You", model: "Model", business: "Business", strategy: "Strategy", agent: "Agent", routine: "Routine", done: "Done" };
+const welcomeUi = { step: 0, setup: null, realm: null, agent: null, template: null, routine: null };
+
+/** When a routine runs, in words the owner picks from. */
+const WHEN_CHOICES = [["mon 08:00", "Every Monday at 08:00"], ["weekdays 09:00", "Every weekday at 09:00"], ["daily 07:00", "Every day at 07:00"], ["fri 17:00", "Every Friday at 17:00"], ["", "Only when I start it"]];
 
 async function renderWelcome(main) {
   if (!welcomeUi.setup) {
@@ -50,6 +55,7 @@ async function renderWelcome(main) {
   const step = WELCOME_STEPS[welcomeUi.step] || "hello";
   const next = () => { welcomeUi.step = Math.min(welcomeUi.step + 1, WELCOME_STEPS.length - 1); renderMain(); };
   const back = () => { welcomeUi.step = Math.max(welcomeUi.step - 1, 0); renderMain(); };
+  const skipTo = (name) => { welcomeUi.step = WELCOME_STEPS.indexOf(name); renderMain(); };
   const err = h("div", { class: "error-banner", hidden: true });
   const fail = (e) => { err.textContent = e.message; err.hidden = false; };
   const busy = async (btn, work) => {
@@ -59,30 +65,37 @@ async function renderWelcome(main) {
   const actions = (...items) => h("div", { class: "welcome-actions" },
     welcomeUi.step > 0 ? h("button", { class: "btn ghost", type: "button", onclick: back }, "Back") : h("span"),
     h("div", { class: "row-start" }, ...items));
-  const skip = (label) => h("button", { class: "btn ghost", type: "button", onclick: next }, label || "Skip");
+  const skip = (label, to) => h("button", { class: "btn ghost", type: "button", onclick: to ? () => skipTo(to) : next }, label || "Skip");
+  const primary = (label) => h("button", { class: "btn primary", type: "button" }, label);
+  const realm = welcomeUi.realm;
+  const finish = () => {
+    try { localStorage.setItem("airth-welcomed", "1"); } catch {}
+    const r = welcomeUi.realm || preferredRealm();
+    Object.assign(welcomeUi, { step: 0, setup: null, realm: null, agent: null, template: null, routine: null });
+    go(r ? `#/r/${enc(r)}/steering` : "#/realms/new");
+  };
 
   let body;
   if (step === "hello") {
     const point = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
     body = [
-      h("div", { class: "logo welcome-logo", "aria-hidden": "true" }),
-      h("h1", null, "Welcome to Airth"),
-      h("p", { class: "lead" }, "It runs your businesses: agents with a job do the work, you steer and decide. It works on your Mac, and asks you before anything that matters."),
+      h("h1", null, "Run your business with a team of agents"),
+      h("p", { class: "lead" }, "Airth works on your Mac. Agents with a job do the work; you set the direction and decide what matters."),
       h("div", { class: "welcome-points" },
-        point("folder", "Businesses", "Each business gets its own files, code, agents, keys and rules. Nothing crosses between them."),
-        point("send", "Chats", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own.")),
-      h("p", { class: "muted small" }, "Setting up takes about two minutes."),
+        point("compass", "You steer", "A strategy every agent follows, and the decisions that wait for you."),
+        point("brain", "Agents work", "Each has a job, its own tools and limits, and works on a schedule."),
+        point("chart", "You see the cost", "What each agent did, and what running the business costs.")),
+      h("p", { class: "muted small" }, "About five minutes. Every step can be changed later."),
       actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Get started")),
     ];
   } else if (step === "you") {
     const name = h("input", { type: "text", placeholder: "Your first name", value: app.ownerName || "" });
-    const about = h("textarea", { rows: 3, placeholder: "e.g. Freelance designer in Lyon. I sell kits online on the side." });
-    const go_on = h("button", { class: "btn primary", type: "button" }, "Continue");
+    const about = h("textarea", { rows: 2, placeholder: "e.g. Founder of a small research media. I write in French." });
+    const go_on = primary("Continue");
     go_on.onclick = () => busy(go_on, async () => {
       if (name.value.trim() || about.value.trim()) {
         const owner = await api("owner");
-        const keep = Object.fromEntries(OWNER_LISTS.map(([k]) => [k, owner[k]]));
-        await api("owner", { ...keep, name: name.value.trim() || owner.name, about: about.value.trim() || owner.about }, "PUT");
+        await api("owner", { ...owner, name: name.value.trim() || owner.name, about: about.value.trim() || owner.about }, "PUT");
         app.ownerName = name.value.trim() || owner.name;
         renderFoot();
       }
@@ -91,9 +104,9 @@ async function renderWelcome(main) {
     api("owner").then((o) => { if (!name.value) name.value = o.name || ""; if (!about.value) about.value = o.about || ""; }).catch(() => {});
     body = [
       h("h1", null, "A little about you"),
-      h("p", { class: "lead" }, "Airth uses this to write and decide the way you would. It stays on this Mac; you choose which realms see it."),
+      h("p", { class: "lead" }, "Agents write and decide the way you would. This stays on this Mac."),
       h("label", { class: "welcome-label" }, "Name", name),
-      h("label", { class: "welcome-label" }, "What you do", about),
+      h("label", { class: "welcome-label" }, "Who you are", about),
       err,
       actions(skip(), go_on),
     ];
@@ -101,13 +114,13 @@ async function renderWelcome(main) {
   } else if (step === "model") {
     if (s.model_ready) {
       body = [
-        h("h1", null, "Airth can think"),
-        h("p", { class: "lead" }, h("span", { class: "ok" }, "✓ "), "A model is set up. You can change it, or add a cheaper fast model, in each realm's settings under Models."),
+        h("h1", null, "A model is ready"),
+        h("p", { class: "lead" }, h("span", { class: "ok" }, "✓ "), "Agents can think. You can change the model, or add a cheaper fast one, in each business's settings."),
         actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
       ];
     } else {
       const key = h("input", { type: "password", placeholder: "sk-ant-…", autocomplete: "off", spellcheck: "false" });
-      const save = h("button", { class: "btn primary", type: "button" }, "Check and save");
+      const save = primary("Check and save");
       save.onclick = () => busy(save, async () => {
         welcomeUi.setup = await api("setup/key", { key: key.value });
         flash("Key saved");
@@ -116,84 +129,143 @@ async function renderWelcome(main) {
       key.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); });
       body = [
         h("h1", null, "Connect a model"),
-        h("p", { class: "lead" }, "Airth thinks with Claude, through your own Anthropic account: you pay Anthropic directly for what you use."),
-        h("ol", { class: "welcome-steps" },
-          h("li", null, "Open ", h("a", { href: "https://console.anthropic.com/settings/keys", target: "_blank", rel: "noopener" }, "console.anthropic.com/settings/keys"), " and sign in."),
-          h("li", null, "Create a key, copy it, and paste it here.")),
+        h("p", { class: "lead" }, "Agents think with a model you pay for directly. Paste an Anthropic API key, from ",
+          h("a", { href: "https://console.anthropic.com/settings/keys", target: "_blank", rel: "noopener" }, "console.anthropic.com"), "."),
         h("label", { class: "welcome-label" }, "Anthropic API key", key),
-        h("p", { class: "muted small" }, "Airth checks the key, then keeps it on this Mac only (in ~/.airth, readable by you alone) for all your realms. The model never sees it. Prefer OpenAI, Grok, DeepSeek, Mistral, OpenRouter or a local Ollama model? Skip this and pick one in a realm's settings."),
+        h("p", { class: "muted small" }, "It stays on this Mac, readable by you alone; the model never sees it. Prefer DeepSeek, OpenAI, Grok, Mistral, OpenRouter or a local model? Skip, and pick one in the business's settings."),
         err,
         actions(skip("Later"), save),
       ];
       setTimeout(() => key.focus());
     }
-  } else if (step === "realm") {
-    if (welcomeUi.realm || s.realms > 0) {
-      const n = welcomeUi.realm ? 1 : s.realms;
+  } else if (step === "business") {
+    if (realm) {
       body = [
-        h("h1", null, welcomeUi.realm ? `“${welcomeUi.realm}” is ready` : "Your realms are ready"),
-        h("p", { class: "lead" }, welcomeUi.realm ? "Your first realm exists, with a private folder of its own." : `You already have ${n} realm${n > 1 ? "s" : ""}. Add more anytime from the realm menu, top left.`),
+        h("h1", null, `${realm} is ready`),
+        h("p", { class: "lead" }, "Its own folder, rules, agents and connectors, isolated from any other business."),
         actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
       ];
     } else {
-      const name = h("input", { type: "text", value: "", placeholder: "hedgen", autocomplete: "off", spellcheck: "false" });
+      const name = h("input", { type: "text", placeholder: "my-shop", autocomplete: "off", spellcheck: "false" });
       name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
-      const desc = h("input", { type: "text", placeholder: "e.g. A finance research media on X" });
-      const create = h("button", { class: "btn primary", type: "button" }, "Create realm");
+      const what = h("textarea", { rows: 4, placeholder: "What the business does, for whom, and how it sounds.\ne.g. A finance research media on X, for informed retail investors. Calm, sourced, never hype." });
+      const root = h("input", { type: "text", placeholder: "Optional: ~/code/my-shop", spellcheck: "false" });
+      const create = primary("Create the business");
       create.onclick = () => busy(create, async () => {
-        const r = await api("realms", { name: name.value.trim(), description: desc.value.trim() });
+        const r = await api("realms", { name: name.value.trim(), description: what.value.trim().split("\n")[0].slice(0, 200), root: root.value.trim() });
+        if (what.value.trim()) await api(`${realmPath(r.name)}/profile`, { text: what.value }, "PUT");
         welcomeUi.realm = r.name;
         await refreshRealms();
         renderSidebar();
         next();
       });
+      const existing = app.realms.filter((r) => !r.archived);
       body = [
-        h("h1", null, "Your first realm"),
-        h("p", { class: "lead" }, "Start with one business; add the others whenever you like."),
+        h("h1", null, "Your business"),
+        h("p", { class: "lead" }, "One business, one space: its files, code, agents and connectors. Add others later."),
         h("label", { class: "welcome-label" }, "Name", name, h("span", { class: "muted small" }, "Lowercase letters, digits and dashes.")),
-        h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every chat of the realm.")),
+        h("label", { class: "welcome-label" }, "What it does", what, h("span", { class: "muted small" }, "Every agent reads it. You can change it in its business/profile.md.")),
+        h("label", { class: "welcome-label" }, "Its folder", root, h("span", { class: "muted small" }, "Where its files and code are. Empty: a private folder Airth creates.")),
         err,
-        actions(create),
+        actions(existing.length ? h("button", { class: "btn ghost", type: "button", onclick: () => { welcomeUi.realm = preferredRealm(); next(); } }, `Use ${preferredRealm()}`) : null, create),
       ];
-      setTimeout(() => desc.focus());
+      setTimeout(() => name.focus());
     }
-  } else {
-    const tip = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
-    const mac = document.documentElement.dataset.shell === "mac";
-    const done = h("button", { class: "btn primary", type: "button" }, "Start using Airth");
-    done.onclick = () => busy(done, async () => {
-      try { localStorage.setItem("airth-welcomed", "1"); } catch {}
-      const realm = welcomeUi.realm || preferredRealm();
-      Object.assign(welcomeUi, { step: 0, setup: null, realm: null });
-      if (!realm) return go("#/realms/new");
-      go(`#/r/${enc(realm)}`);
+  } else if (step === "strategy") {
+    const text = h("textarea", { rows: 7, placeholder: "Your goals, the line every agent follows, and what the team may do alone.\n\n- One article a week on the blog.\n- Explain, never hype. Facts and numbers first.\n- Ask me before publishing or spending money." });
+    const save = primary("Save the strategy");
+    save.onclick = () => busy(save, async () => {
+      if (text.value.trim()) await api(`${realmPath(realm)}/strategy`, { text: text.value }, "PUT");
+      next();
+    });
+    if (realm) api(`${realmPath(realm)}/steering`).then((d) => { if (!text.value) text.value = d.strategy || ""; }).catch(() => {});
+    body = [
+      h("h1", null, "Set the direction"),
+      h("p", { class: "lead" }, "This is where you steer. Every agent reads it before it works; you change it any time on Steering."),
+      text,
+      err,
+      actions(skip(), save),
+    ];
+    setTimeout(() => text.focus());
+  } else if (step === "agent") {
+    const t = welcomeUi.template;
+    if (welcomeUi.agent) {
+      body = [
+        h("h1", null, `${welcomeUi.agent} is on the team`),
+        h("p", { class: "lead" }, "It works only when a routine says so. Give it one now."),
+        actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
+      ];
+    } else if (t) {
+      const name = h("input", { type: "text", value: t.name, autocomplete: "off", spellcheck: "false" });
+      name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
+      const job = h("textarea", { rows: 10 });
+      job.value = t.job;
+      const hire = primary("Hire");
+      hire.onclick = () => busy(hire, async () => {
+        await api(`${realmPath(realm)}/agents/${enc(name.value.trim())}`, { job: job.value }, "PUT");
+        welcomeUi.agent = name.value.trim();
+        welcomeUi.routine = { task: t.task || "", every: t.every || "mon 08:00" };
+        renderMain();
+      });
+      body = [
+        h("h1", null, `Hire ${t.title ? "a " + t.title.toLowerCase() : "an agent"}`),
+        h("p", { class: "lead" }, "Its job, in your words. Adjust it to your business."),
+        h("label", { class: "welcome-label" }, "Name", name),
+        h("label", { class: "welcome-label" }, "Job", job),
+        err,
+        actions(h("button", { class: "btn ghost", type: "button", onclick: () => { welcomeUi.template = null; renderMain(); } }, "Another one"), hire),
+      ];
+    } else {
+      body = [
+        h("h1", null, "Your first agent"),
+        h("p", { class: "lead" }, "Pick a job to start from. You can hire more later, in Agents."),
+        h("div", { class: "agent-templates" },
+          AGENT_TEMPLATES.map((x) => h("button", { class: "agent-template", type: "button", onclick: () => { welcomeUi.template = x; renderMain(); } },
+            h("span", { class: "strong" }, x.title), h("span", { class: "muted small" }, x.desc)))),
+        actions(skip("Later", "done")),
+      ];
+    }
+  } else if (step === "routine") {
+    if (!welcomeUi.agent) { welcomeUi.step = WELCOME_STEPS.indexOf("done"); return renderWelcome(main); }
+    const r = welcomeUi.routine || { task: "", every: "mon 08:00" };
+    const task = h("textarea", { rows: 2 });
+    task.value = r.task;
+    const when = h("select", null, WHEN_CHOICES.map(([v, label]) => h("option", { value: v, selected: v === r.every }, label)));
+    if (!WHEN_CHOICES.some(([v]) => v === r.every)) when.prepend(h("option", { value: r.every, selected: true }, scheduleText(r.every)));
+    const create = primary("Create the routine");
+    create.onclick = () => busy(create, async () => {
+      await api(`${realmPath(realm)}/routines`, { id: `${welcomeUi.agent}-routine`, objective: task.value, bot: welcomeUi.agent, every: when.value || null, tools: null, allow: [] });
+      next();
     });
     body = [
-      h("h1", null, "You're set"),
-      h("p", { class: "lead" }, "A few things worth knowing:"),
-      h("div", { class: "welcome-points" },
-        tip("pencil", "New chat", "Ask for anything in plain words: “sort my downloads”, “draft a reply to Marc”, “plan my week”."),
-        tip("compass", "Steering", "What waits for your decision, what needs attention, and your strategy: the line every agent follows."),
-        tip("refresh", "Routines", "The business's recurring work, each with the agent that does it and when."),
-        tip("world", "Skills & connectors", "Connect Notion, Linear, Stripe… or install skills, per realm."),
-        tip("search", modKey + "K", "Find a chat, a page or an action from anywhere in the app."),
-        mac && tip("window", "⌥⇧A", "Shows or hides Airth from any app. Closing the window keeps Airth in the menu bar.")),
+      h("h1", null, `When ${welcomeUi.agent} works`),
+      h("p", { class: "lead" }, "What it does each time, and when. Anything it may not do alone waits for you on Steering."),
+      h("label", { class: "welcome-label" }, "Each time", task),
+      h("label", { class: "welcome-label" }, "When", when),
       err,
+      actions(skip("Later"), create),
+    ];
+  } else {
+    const done = h("button", { class: "btn primary", type: "button", onclick: finish }, "Open Steering");
+    const tip = (ic, title, text) => h("div", { class: "welcome-point" }, h("span", { class: "welcome-icon" }, icon(ic)), h("div", null, h("div", { class: "strong" }, title), h("div", { class: "muted small" }, text)));
+    body = [
+      h("h1", null, "You're set"),
+      h("p", { class: "lead" }, realm ? `${realm} is ready to run.` : "Airth is ready."),
+      h("div", { class: "welcome-points" },
+        tip("compass", "Steering", "What waits for your decision, what needs attention, and your strategy."),
+        tip("refresh", "Routines and Planning", "Who works when. Run one now to see it work."),
+        tip("plug", "Connectors", "Connect the business's services (Stripe, Notion, GitHub…) and give each agent only what it needs."),
+        tip("send", "Your phone", "Approve from anywhere through Tailscale: your profile → Phone.")),
       actions(done),
     ];
   }
 
   main.append(h("div", { class: "page welcome" },
     h("div", { class: "welcome-inner" },
-      h("div", { class: "welcome-dots", "aria-label": `Step ${welcomeUi.step + 1} of ${WELCOME_STEPS.length}` },
-        WELCOME_STEPS.map((_, i) => h("span", { class: i === welcomeUi.step ? "on" : i < welcomeUi.step ? "done" : "" }))),
+      h("ol", { class: "welcome-progress", "aria-label": `Step ${welcomeUi.step + 1} of ${WELCOME_STEPS.length}` },
+        WELCOME_STEPS.map((k, i) => h("li", { class: i === welcomeUi.step ? "on" : i < welcomeUi.step ? "done" : "" }, WELCOME_TITLES[k]))),
       h("div", { class: "welcome-card" }, ...body),
-      welcomeUi.step < WELCOME_STEPS.length - 1 && h("button", { class: "welcome-skip", type: "button", onclick: () => {
-        try { localStorage.setItem("airth-welcomed", "1"); } catch {}
-        Object.assign(welcomeUi, { step: 0, setup: null, realm: null });
-        const r = preferredRealm();
-        go(r ? `#/r/${enc(r)}` : "#/realms/new");
-      } }, "Skip the guide"))));
+      step !== "done" && h("button", { class: "welcome-skip", type: "button", onclick: finish }, "Skip the guide"))));
 }
 
 // ---------- polling ----------

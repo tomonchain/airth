@@ -337,6 +337,15 @@ impl App {
             (Method::Get, ["realms", r, "steering"]) => {
                 json_response(200, self.steering(&self.realm(r)?)?)
             }
+            (Method::Put, ["realms", r, "profile"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                crate::business::set_profile(
+                    &realm.root()?,
+                    body["text"].as_str().unwrap_or_default(),
+                )?;
+                ok()
+            }
             (Method::Put, ["realms", r, "strategy"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

@@ -1,8 +1,8 @@
 // ---------- agents: the business's bots (decisions 36 and 37) ----------
 
-/** Jobs to start from, by business function. The owner edits them before hiring. */
+/** Jobs to start from, by business function, with a first routine. The owner edits them before hiring. */
 const AGENT_TEMPLATES = [
-  { name: "writer", title: "Writer", desc: "Articles, posts and threads in the business's voice.", job:
+  { name: "writer", task: "Write and prepare this week's article.", every: "mon 08:00", title: "Writer", desc: "Articles, posts and threads in the business's voice.", job:
 `Write the business's articles and posts, in its voice (see the profile).
 
 Each time:
@@ -12,7 +12,7 @@ Each time:
 4. Prepare it where it is published, as a draft. Never publish without the owner's approval.
 
 In your report: the subject and why, the sources, and what the owner must decide.` },
-  { name: "analyst", title: "Analyst", desc: "Watches markets, competitors or metrics, and reports.", job:
+  { name: "analyst", task: "Watch what changed and report what matters.", every: "weekdays 08:00", title: "Analyst", desc: "Watches markets, competitors or metrics, and reports.", job:
 `Watch what matters to the business (markets, competitors, its own numbers) and report what changed.
 
 Each time:
@@ -21,7 +21,7 @@ Each time:
 3. Say what it means and what you would do about it.
 
 In your report: the few things that matter, with their source, and one recommendation.` },
-  { name: "accountant", title: "Accountant", desc: "Reads the bank and the invoices. Never pays.", job:
+  { name: "accountant", task: "Sum up the week's money in and out.", every: "fri 17:00", title: "Accountant", desc: "Reads the bank and the invoices. Never pays.", job:
 `Keep the business's books readable for the owner.
 
 Each time:
@@ -30,7 +30,7 @@ Each time:
 3. Never move money, pay, or change anything at the bank.
 
 In your report: money in, money out, what the team cost, and what looks wrong.` },
-  { name: "support", title: "Support", desc: "Answers customers within the rules you set.", job:
+  { name: "support", task: "Answer the new customer messages.", every: "every 2h", title: "Support", desc: "Answers customers within the rules you set.", job:
 `Answer the business's customers, within the rules in the strategy.
 
 Each time:
@@ -39,7 +39,7 @@ Each time:
 3. Anything about money (refunds, prices, discounts) or a complaint waits for the owner.
 
 In your report: what came in, what you answered, what waits for the owner.` },
-  { name: "sales", title: "Sales", desc: "Finds leads and drafts outreach for you to send.", job:
+  { name: "sales", task: "Find five new leads and draft a first message to each.", every: "weekdays 10:00", title: "Sales", desc: "Finds leads and drafts outreach for you to send.", job:
 `Find people the business could serve, and prepare the first message to them.
 
 Each time:

@@ -138,6 +138,7 @@ const fixtures = {
   "realms/acme/planning": { coming: [{ at: now, name: "weekly-article", kind: "routine", bot: "writer" }, { at: now, name: "watch", kind: "pipeline", bot: null }],
     past: [{ at: now, name: "watch", kind: "pipeline", status: "failed" }, { at: now, name: "weekly-article", kind: "routine", status: "completed", run: "r1" }] },
   phone: { hosts: [{ host: "mac.tail1234.ts.net", link: "https://mac.tail1234.ts.net/#token=x", qr: { width: 3, cells: "101010101" } }] },
+  setup: { realms: 1, model_ready: false },
   "inbox/read": {},
 };
 
@@ -152,7 +153,7 @@ const fixtures = {
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
 const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
   .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
-const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
+const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
 const A = globalThis.__app;
@@ -215,6 +216,25 @@ const main = body.querySelector("#main");
   await new Promise((r) => setTimeout(r, 30));
   if (!main.textContent.includes("mac.tail1234.ts.net") || !main.textContent.includes("tailscale serve")) problems.push("phone: the pairing is missing");
   check("phone", main);
+  // Onboarding: every step, then an agent being hired and its routine.
+  A.app.route = { view: "welcome" };
+  for (let i = 0; i < A.WELCOME_STEPS.length; i++) {
+    Object.assign(A.welcomeUi, { step: i, realm: i >= 4 ? "acme" : null, setup: null });
+    A.renderMain();
+    await new Promise((r) => setTimeout(r, 30));
+    if (main.textContent.trim().length < 40) problems.push(`welcome/${A.WELCOME_STEPS[i]}: rendered (almost) nothing`);
+    check("welcome/" + A.WELCOME_STEPS[i], main);
+  }
+  Object.assign(A.welcomeUi, { step: A.WELCOME_STEPS.indexOf("agent"), template: { name: "writer", title: "Writer", job: "Write.", task: "Write it.", every: "mon 08:00" } });
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  if (!main.textContent.includes("Hire a writer")) problems.push("welcome: hiring from a template is missing");
+  Object.assign(A.welcomeUi, { step: A.WELCOME_STEPS.indexOf("routine"), agent: "writer", routine: { task: "Write it.", every: "mon 08:00" } });
+  A.renderMain();
+  await new Promise((r) => setTimeout(r, 30));
+  if (!main.textContent.includes("When writer works")) problems.push("welcome: the routine step is missing");
+  check("welcome/routine+agent", main);
+  Object.assign(A.welcomeUi, { step: 0, realm: null, agent: null, template: null, routine: null, setup: null });
   // The routine form, with the business's agents and extensions.
   A.app.route = { view: "routines", realm: "acme" };
   A.routineUi.form = {};

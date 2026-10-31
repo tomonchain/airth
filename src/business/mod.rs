@@ -44,6 +44,13 @@ pub fn set_strategy(root: &Path, text: &str) -> Result<()> {
     crate::realm::write_atomic(&dir.join(STRATEGY), &format!("{}\n", text.trim()))
 }
 
+/// Write what the business is (only the owner does).
+pub fn set_profile(root: &Path, text: &str) -> Result<()> {
+    let dir = dir(root);
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    crate::realm::write_atomic(&dir.join(PROFILE), &format!("{}\n", text.trim()))
+}
+
 /// A bot's job, as the owner wrote it in `business/bots/<name>.md`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Job {
@@ -232,6 +239,19 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .contains("Four articles a month.")
+        );
+    }
+
+    #[test]
+    fn the_owner_writes_the_profile() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(briefing(root.path()).unwrap(), None);
+        set_profile(root.path(), " A finance research media on X. ").unwrap();
+        assert!(
+            briefing(root.path())
+                .unwrap()
+                .unwrap()
+                .starts_with("A finance research media on X.")
         );
     }
 

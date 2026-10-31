@@ -181,7 +181,7 @@ airth service install                               # runs in the background, st
 
 Open **Airth.app** from Spotlight, Launchpad or the Dock. It is a native app with its own window: ⌥⇧A shows or hides it from anywhere, and closing the window keeps Airth in the menu bar. Use 🎙 in the message box to dictate. `airth ui` opens the same app in your browser.
 
-The first time, a short guide walks you through it: who you are, your Anthropic API key (checked, then kept in `~/.airth/secrets.env` for every realm), and your first realm. Reopen it anytime with ⌘K → Welcome guide.
+The first time, a guide sets up your first business in a few steps: who you are, a model (an Anthropic API key, checked, then kept in `~/.airth/secrets.env` for every business; or skip and pick another provider), the business (its name, what it does, its folder), your strategy, a first agent hired from a template, and its first routine. Every step can be skipped and changed later. Reopen it anytime with ⌘K → Welcome guide.
 
 **Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version). The app downloaded from GitHub Releases updates from the published releases instead: it checks each new version's signature before offering it (see [docs/RELEASING.md](docs/RELEASING.md)).
 
