@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 36. A business is run by bots, each with a job; the owner steers (Proposed)
+## 36. A business is run by bots, each with a job; the owner steers
 
 The owner sets the direction of a business; bots do the work. A realm is one business (decision 32) and has a team of bots. A bot is:
 

@@ -4,23 +4,21 @@ Instructions for Claude Code working on Airth. Read this file, then `docs/decisi
 
 ## What Airth is, and what phase it is in
 
-Airth is a local-first agent that runs businesses, written in Rust: one owner, and one isolated realm per business, holding its documents, the code of its projects, its skills and its connectors (decision 32). The architecture is described in `README.md` (Layout) and justified in `docs/decisions.md`.
+Airth is a local-first app that runs businesses, written in Rust: one owner, and one isolated realm per business, holding its documents, the code of its projects, its skills and its connectors (decision 32). Bots do the business's work, each with a job; the owner steers and decides (decision 36). The architecture is described in `README.md` (Layout) and justified in `docs/decisions.md`.
 
-**Current phase: the Hedgen pilot.** Airth must prove that it can run a real business (Hedgen, a finance and on-chain research media on X) with a measured, small amount of the owner's time. Until the pilot's proof is reached (see decision 25), the product surface is frozen: work only on what the pilot needs.
+**Current phase: the Writer proof.** Airth must prove that a bot can do a real piece of business work week after week: Hedgen's Writer (Hedgen is a finance and on-chain research media) chooses a subject, researches it, writes and illustrates an article, and prepares it on the blog; the owner approves, the Writer publishes. The proof is four weekly articles in a row with the owner spending only the approval, and a known cost per article.
 
-Pilot scope, in build order:
+Scope, in build order:
 
-1. Business memory: the Hedgen profile and its archive, available to every run of the realm.
-2. Owner-time ledger: every owner interaction recorded with its duration.
-3. Approval queue reachable from a phone: approve, edit, reject.
-4. Daily watch: a shortlist on the editorial pillars.
-5. Production: posts and a weekly thread, drafted, approved, sent to Typefully.
-6. Replies: a radar of target accounts, drafted replies, published by the owner.
-7. Weekly report: output, engagement, owner time, share of drafts sent unedited.
+1. Bots: a job file in `business/bots/`, its tools, triggers and limits kept by Airth, grown from objectives.
+2. Strategy: `business/strategy.md`, read by every bot of the realm.
+3. Today shows each bot: what it did, what waits for the owner, what it cost.
+4. The Writer's tools: research, Hedgen's chart API, images, the blog (draft, then publish after approval).
+5. Approvals on the phone for what a bot may not do alone.
 
-Removing the features that decision 32 takes off the surface is also in scope, one feature per change.
+Removing the features that decision 32 takes off the surface is also in scope, one feature per change. Generic first: nothing about Hedgen goes in the binary; it lives in Hedgen's `business/` folder.
 
-If a task is not in this list and not a bug fix, do not build it. Write it in `docs/backlog.md` (one line: what, why, which pilot step it would help) and stop.
+If a task is not in this list and not a bug fix, do not build it. Write it in `docs/backlog.md` (one line: what, why, which step it would help) and stop.
 
 ## Non-negotiable checks
 
@@ -61,9 +59,9 @@ These restate decisions already made. Changing one needs a new decision (see bel
 
 `runtime.rs`, `permissions.rs`, `sandbox.rs`, `isolation.rs`, `integration.rs`, `tools/remote.rs`, `tools/http.rs` and secret redaction are security boundaries. Change them only when the owner asked for that specific change, never as a side effect, and always with a test proving the boundary still holds.
 
-### Model calls in business features
+### Model calls in pipelines
 
-These rules apply to everything built for the pilot (decision 26).
+These rules apply to pipelines (decisions 26 and 30). A bot's runs follow the agent loop's rules instead: its job file's version recorded with each run, its tools limited to its own, and anything public behind the owner's approval (decision 36).
 
 - **Deterministic first.** Fetching, filtering, deduplication, scheduling, state transitions and publishing are plain code, tested. A model is called only for a step that needs judgment: scoring relevance, drafting text, classifying a mention.
 - **Structured output.** A model step returns JSON checked against a schema in code. Invalid output is rejected and recorded, never repaired by string manipulation.
