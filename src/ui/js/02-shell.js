@@ -5,6 +5,7 @@ let realmMenuOpen = false;
 function renderSidebar() {
   renderRealmSwitch();
   renderNav();
+  renderTabbar();
   renderRunList();
   renderFoot();
   updateTitle();
@@ -28,6 +29,24 @@ function renderNav() {
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
     navLink(r ? `#/r/${r}/skills` : null, "plug", "Connectors & skills", v === "skills"),
   );
+}
+
+/** On a phone, the sections the thumb needs most, at the bottom; More opens the rest. */
+function renderTabbar() {
+  const bar = $("#tabbar");
+  if (!bar) return;
+  const v = app.route.view;
+  const r = app.realm && enc(app.realm);
+  const waiting = (app.realms.find((x) => x.name === app.realm) || {}).needs_approval || 0;
+  const tab = (hash, ic, label, active, extra) => h("button", { class: "tab-item" + (active ? " on" : ""), type: "button", disabled: !hash,
+    "aria-current": active ? "page" : null, onclick: () => hash && go(hash) }, icon(ic), h("span", null, label), extra);
+  const rest = ["routines", "usage", "documents", "skills", "settings", "owner"].includes(v);
+  bar.replaceChildren(
+    tab(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "tab-count" }, String(waiting))),
+    tab(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run" || v === "new"),
+    tab(r ? `#/r/${r}/planning` : null, "calendar", "Planning", v === "planning"),
+    tab(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
+    h("button", { class: "tab-item" + (rest ? " on" : ""), type: "button", onclick: (e) => { e.stopPropagation(); toggleSidebar(); } }, icon("dots"), h("span", null, "More")));
 }
 
 /** Which date group a run falls in, ChatGPT style. */

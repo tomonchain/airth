@@ -244,13 +244,21 @@ const modKey = isMac ? "⌘" : "Ctrl";
 
 // ---------- API ----------
 
+// The key lives as long as the tab on the Mac. On the phone, reached through
+// Tailscale (decision 37), it is kept on the device: iOS forgets a tab's
+// storage when an app saved to the home screen closes, and pairing again each
+// time would defeat the point.
+const keepsKey = location.hostname.endsWith(".ts.net");
 let token = null;
-try { token = sessionStorage.getItem("airth-token"); } catch {}
+try { token = sessionStorage.getItem("airth-token") || (keepsKey ? localStorage.getItem("airth-token") : null); } catch {}
 {
   const m = location.hash.match(/token=([0-9a-f]+)/);
   if (m) {
     token = m[1];
-    try { sessionStorage.setItem("airth-token", token); } catch {}
+    try {
+      sessionStorage.setItem("airth-token", token);
+      if (keepsKey) localStorage.setItem("airth-token", token);
+    } catch {}
     history.replaceState(null, "", "#/");
   }
 }

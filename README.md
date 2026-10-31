@@ -208,7 +208,7 @@ airth phone allow mac.tail1234.ts.net      # Airth accepts that name (only *.ts.
 airth phone pair                           # a QR code for the phone's camera
 ```
 
-The QR code carries the app's key: whoever scans it controls Airth, so keep it to yourself. The same is in the app, under your profile → Phone. `airth phone forget <name>` stops accepting a name.
+The QR code carries the app's key: whoever scans it controls Airth, so keep it to yourself. The phone keeps the key once paired, so Airth saved to the home screen opens straight away; on a phone the app shows a tab bar at the bottom (Steering, Tasks, Planning, Agents, More). The same is in the app, under your profile → Phone. `airth phone forget <name>` stops accepting a name.
 
 ## Isolated changes
 

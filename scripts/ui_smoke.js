@@ -48,7 +48,7 @@ function find(root, sel, first) {
   return out;
 }
 const body = new FakeNode("body");
-for (const id of ["app", "main", "realm-switch", "side-nav", "sidebar-foot", "side-close", "side-open"]) {
+for (const id of ["app", "main", "realm-switch", "side-nav", "tabbar", "sidebar-foot", "side-close", "side-open"]) {
   const n = new FakeNode("div"); n.attrs.id = id; body.append(n);
 }
 const storage = { getItem: () => null, setItem() {} };
@@ -61,7 +61,7 @@ Object.assign(globalThis, {
     querySelector: (s) => body.querySelector(s), body, activeElement: null, contains: () => false, title: "",
     documentElement: new FakeNode("html"),
   },
-  location: { hash: "", pathname: "/" }, history: { replaceState() {} },
+  location: { hash: "", pathname: "/", hostname: "127.0.0.1" }, history: { replaceState() {} },
   sessionStorage: storage, localStorage: storage,
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   addEventListener() {},
@@ -158,7 +158,7 @@ const fixtures = {
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
 const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
   .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
-const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
+const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderTabbar, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
 const A = globalThis.__app;
@@ -183,6 +183,8 @@ const main = body.querySelector("#main");
 (async () => {
   const live = { state, live: false, pending: null, checks_required: false, title: null, version: 0 };
   A.renderNav(); check("nav", body.querySelector("#side-nav"));
+  A.renderTabbar(); check("tab bar", body.querySelector("#tabbar"));
+  if (body.querySelector("#tabbar").children.length !== 5) problems.push("tab bar: five tabs expected");
   A.renderFoot(); check("foot", body.querySelector("#sidebar-foot"));
   A.renderRealmSwitch(); check("realm switch", body.querySelector("#realm-switch"));
   A.app.route = { view: "run", realm: "acme", id: state.id };
