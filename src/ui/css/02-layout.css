@@ -549,21 +549,5 @@ kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid c
 }
 .new-inner .composer { padding: 0; }
 .new-inner .composer textarea { min-height: 78px; }
-.suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px 0 34px; }
-.suggestion {
-  border: 1px solid var(--border-strong); background: transparent; border-radius: 999px;
-  padding: 6px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
-  transition: background .15s var(--ease), color .15s, border-color .15s, transform .15s var(--ease);
-  animation: blur-in .5s var(--ease) both;
-}
-.suggestion:nth-child(2) { animation-delay: .32s; }
-.suggestion:nth-child(3) { animation-delay: .38s; }
-.suggestion:nth-child(4) { animation-delay: .44s; }
-.suggestion:first-child { animation-delay: .26s; }
-.suggestion:hover { color: var(--text); background: var(--hover); transform: translateY(-1px); }
-.tool-row { display: grid; grid-template-columns: 140px auto 1fr; gap: 12px; align-items: baseline; padding: 9px 16px; border-top: 1px solid var(--border); font-size: 13px; }
-.tool-row:first-child { border-top: 0; }
-.tool-row code { font-size: 12.5px; }
-.tool-row .d { color: var(--muted); font-size: 12.5px; }
 .eyebrow { font-size: 12px; font-weight: 500; color: var(--faint); margin-bottom: 8px; }
 

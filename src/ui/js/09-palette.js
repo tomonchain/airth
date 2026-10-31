@@ -17,13 +17,6 @@ function paletteItems() {
   if (r) add("Go to", "Steering", icon("compass"), () => go(`#/r/${r}/steering`));
   if (r) add("Go to", "Routines", icon("refresh"), () => go(`#/r/${r}/routines`));
   add("Go to", "Usage", icon("chart"), () => go("#/usage"));
-  if (app.realm) add("Go to", "What can Airth do for you?", icon("compass"), () => {
-    const show = () => openCanDo((text) => {
-      const ta = $(".new-view textarea");
-      if (ta) { ta.value = text; ta.dispatchEvent(new Event("input")); ta.focus(); }
-    });
-    if (app.route.view === "new") show(); else { go(`#/r/${enc(app.realm)}`); setTimeout(show, 300); }
-  });
   add("Go to", "Welcome guide", icon("compass"), () => { welcomeUi.step = 0; welcomeUi.setup = null; go("#/welcome"); });
   if (r) {
     add("Go to", "Documents", icon("folder"), () => go(`#/r/${r}/documents`));

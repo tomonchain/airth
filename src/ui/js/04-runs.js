@@ -1,10 +1,5 @@
 // ---------- new run ----------
 
-const SUGGESTIONS = {
-  code: ["Identify and implement one small improvement", "Find and fix a bug", "Add tests for an untested module", "Review error messages and make them clearer"],
-  other: ["Organize the files in this realm", "Summarize what's in this realm", "Draft a plan for this week", "Write a checklist for an upcoming task"],
-};
-
 const POLICY_WORDS = { allow: "automatic", ask: "needs approval", deny: "disabled" };
 
 /** Tasks (decision 37): ask the team for something, and every task of the business. */
@@ -43,14 +38,9 @@ function renderNew(main) {
       h("a", { href: `#/r/${enc(app.realm)}/settings/models` }, "choose another provider"), ".");
     c.errorEl.hidden = false;
   }
-  const isCode = d && d.own_root && d.checks.length > 0;
-  const suggestions = isCode ? SUGGESTIONS.code : SUGGESTIONS.other;
   const fill = (text) => { c.ta.value = text; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); };
   const prefill = app.prefill;
   app.prefill = null;
-  const tools = d
-    ? h("button", { class: "cando-link", type: "button", onclick: () => openCanDo(fill) }, icon("compass"), "What can Airth do for you?")
-    : null;
   const hour = new Date().getHours();
   const hello = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const first = (app.ownerName || "").trim().split(/\s+/)[0];
@@ -60,10 +50,7 @@ function renderNew(main) {
         h("div", { class: "eyebrow" }, app.realm || ""),
         h("h1", null, "Tasks"),
         h("p", { class: "sub", title: d ? d.root : "" }, first ? `${hello}, ${first}. What should the team do?` : "What should the team do?"),
-        tools,
         c.el,
-        !app.runs.length && h("div", { class: "suggestions" },
-          suggestions.map((s) => h("button", { class: "suggestion", type: "button", onclick: () => { c.ta.value = s; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); } }, s))),
         h("nav", { class: "task-list", id: "task-list", "aria-label": "Tasks" }))));
   $(".new-inner", main).classList.add("tasks");
   renderRunList();
