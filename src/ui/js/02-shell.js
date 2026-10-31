@@ -184,13 +184,13 @@ function renderFoot() {
   foot.replaceChildren(
     updateWidget(),
     d && !d.model && h("button", { class: "side-warn", type: "button", title: d.model_error || "", onclick: () => go(`#/r/${enc(app.realm)}/settings/models`) }, "⚠ No model configured"),
-    app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the realm on this platform." }, "⚠ No command sandbox"),
+    app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the business on this platform." }, "⚠ No command sandbox"),
     h("div", { class: "me" },
       h("button", { class: "me-btn" + (app.route.view === "owner" ? " active" : ""), type: "button", onclick: () => go("#/owner") },
         pictureMark("avatar", "owner/avatar", app.ownerAvatar, name),
         h("span", { class: "me-name" }, name || "Your profile")),
       themeToggle(),
-      app.realm && h("button", { class: "icon-action" + (app.route.view === "settings" ? " active" : ""), type: "button", title: "Realm settings", "aria-label": "Realm settings",
+      app.realm && h("button", { class: "icon-action" + (app.route.view === "settings" ? " active" : ""), type: "button", title: "Business settings", "aria-label": "Business settings",
         onclick: () => go(`#/r/${enc(app.realm)}/settings`) }, icon("gear"))));
 }
 
@@ -219,8 +219,8 @@ function renderRealmSwitch() {
       title: current && current.description ? current.description : "",
       onclick: (e) => { e.stopPropagation(); realmMenuOpen = !realmMenuOpen; renderRealmSwitch(); } },
     pictureMark("realm-mark", `${realmPath(app.realm || "")}/image`, current && current.image, app.realm),
-    h("span", { class: "realm-name" }, app.realm || "No realm"),
-    elsewhere.length > 0 && h("span", { class: "needs-dot", title: "Approvals waiting in other realms" }),
+    h("span", { class: "realm-name" }, app.realm || "No business"),
+    elsewhere.length > 0 && h("span", { class: "needs-dot", title: "Approvals waiting in other businesses" }),
     h("span", { class: "chev" }, icon("chevrons")));
   el.append(button);
   if (elsewhere.length)
@@ -229,7 +229,7 @@ function renderRealmSwitch() {
   if (!realmMenuOpen) return;
   const close = () => { realmMenuOpen = false; };
   const d = app.realmDetail;
-  const menu = h("div", { class: "realm-menu", role: "menu" }, h("div", { class: "menu-label" }, "Realms"));
+  const menu = h("div", { class: "realm-menu", role: "menu" }, h("div", { class: "menu-label" }, "Businesses"));
   for (const r of app.realms) {
     menu.append(h("button", { class: "realm-option" + (r.name === app.realm ? " active" : "") + (r.archived ? " archived" : ""), type: "button", role: "menuitem",
         onclick: () => { close(); go(`#/r/${enc(r.name)}`); } },
@@ -239,13 +239,13 @@ function renderRealmSwitch() {
   }
   menu.append(
     h("div", { class: "menu-sep" }),
-    app.realm && h("button", { class: "realm-option", type: "button", role: "menuitem", onclick: () => { close(); go(`#/r/${enc(app.realm)}/settings`); } }, icon("gear"), h("span", { class: "grow" }, "Realm settings")),
-    h("button", { class: "realm-option", type: "button", role: "menuitem", onclick: () => { close(); go("#/realms/new"); } }, icon("plus"), h("span", { class: "grow" }, "New realm")),
+    app.realm && h("button", { class: "realm-option", type: "button", role: "menuitem", onclick: () => { close(); go(`#/r/${enc(app.realm)}/settings`); } }, icon("gear"), h("span", { class: "grow" }, "Business settings")),
+    h("button", { class: "realm-option", type: "button", role: "menuitem", onclick: () => { close(); go("#/realms/new"); } }, icon("plus"), h("span", { class: "grow" }, "New business")),
     h("div", { class: "menu-sep" }),
     h("div", { class: "menu-foot" },
       h("span", { class: "logo", "aria-hidden": "true" }),
       h("span", { class: "grow" }, "airth", app.info && h("span", { class: "muted" }, " v" + app.info.version)),
-      d && h("span", { class: "muted mono", title: "Model for this realm" }, d.model || "no model")));
+      d && h("span", { class: "muted mono", title: "Model for this business" }, d.model || "no model")));
   el.append(menu);
 }
 
@@ -354,8 +354,8 @@ document.addEventListener("mousedown", (e) => {
 /** The realm's repositories a new chat can work in ("" is the realm's folder, when it is not one). */
 function repoChoices() {
   const repos = (app.realmDetail && app.realmDetail.repos) || [];
-  const choices = repos.map((r) => ({ value: r.name, label: r.name, sub: r.main ? "this realm's folder" : tildePath(r.path) }));
-  if (!repos.some((r) => r.main)) choices.unshift({ value: "", label: "Folder", sub: "the realm's files, no repository" });
+  const choices = repos.map((r) => ({ value: r.name, label: r.name, sub: r.main ? "this business's folder" : tildePath(r.path) }));
+  if (!repos.some((r) => r.main)) choices.unshift({ value: "", label: "Folder", sub: "the business's files, no repository" });
   return choices;
 }
 
@@ -420,7 +420,7 @@ function modelPicker({ get, set, auto }) {
       const groups = [];
       groups.push(auto
         ? item("auto", auto.label, auto.sub, cur === "auto")
-        : item("auto", "Auto", opts && opts.default ? `realm default · ${opts.default}` : "the realm's model and routing", cur === "auto"));
+        : item("auto", "Auto", opts && opts.default ? `business default · ${opts.default}` : "the business's model and routing", cur === "auto"));
       for (const p of (opts && opts.providers) || []) {
         if (!p.configured) {
           if (!s || p.name.toLowerCase().includes(s)) groups.push(h("div", { class: "mp-group off" }, p.name,

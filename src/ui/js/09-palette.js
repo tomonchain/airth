@@ -8,11 +8,11 @@ function paletteItems() {
   const dark = window.airthTheme && window.airthTheme.current() === "dark";
   const items = [];
   const add = (group, label, lead, action, extra = {}) => items.push({ group, label, lead, action, ...extra });
-  if (r) add("Actions", "New chat", icon("pencil"), () => go(`#/r/${r}`), { keys: modKey + "⇧O" });
+  if (r) add("Actions", "New task", icon("pencil"), () => go(`#/r/${r}`), { keys: modKey + "⇧O" });
   add("Actions", dark ? "Switch to light mode" : "Switch to dark mode", icon(dark ? "sun" : "moon"),
     () => { window.airthTheme && window.airthTheme.set(dark ? "light" : "dark"); renderFoot(); });
   if (app.route.view === "run" && runEls) add("Actions", "Show or hide plan & details", icon("panel"), toggleSide);
-  if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this chat", icon("rename"),
+  if (app.route.view === "run" && runEls && app.run) add("Actions", "Rename this task", icon("rename"),
     () => setTimeout(() => editInPlace(runEls && runEls.header.querySelector("h1"), app.route.id, runName({ title: app.run.title, objective: app.run.state.objective })), 160));
   if (r) add("Go to", "Steering", icon("compass"), () => go(`#/r/${r}/steering`));
   if (r) add("Go to", "Routines", icon("refresh"), () => go(`#/r/${r}/routines`));
@@ -22,19 +22,19 @@ function paletteItems() {
     add("Go to", "Documents", icon("folder"), () => go(`#/r/${r}/documents`));
     add("Go to", "Skills", icon("spark"), () => go(`#/r/${r}/skills`));
     add("Go to", "Connectors (Notion, Linear, GitHub…)", icon("world"), () => { skillUi.tab = "connectors"; go(`#/r/${r}/skills`); });
-    add("Go to", "Realm settings", icon("gear"), () => go(`#/r/${r}/settings`));
+    add("Go to", "Business settings", icon("gear"), () => go(`#/r/${r}/settings`));
   }
   add("Go to", "Your profile", icon("notes"), () => go("#/owner"));
   add("Go to", "Appearance", icon("sun"), () => go("#/owner/appearance"));
   const runs = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   for (const run of runs) {
     const status = run.needs_approval ? "awaiting" : run.live ? "running" : run.status;
-    add(`Chats in ${app.realm}`, runName(run), h("span", { class: "i" }, h("span", { class: "dot " + status })),
+    add(`Tasks in ${app.realm}`, runName(run), h("span", { class: "i" }, h("span", { class: "dot " + status })),
       () => go(`#/r/${enc(app.realm)}/run/${enc(run.id)}`), { hint: `${run.live ? "running" : run.status} · ${ago(run.updated_at)}`, run: true });
   }
   for (const realm of app.realms) {
     if (realm.name === app.realm || realm.archived) continue;
-    add("Switch realm", realm.name, h("span", { class: "realm-mark small" }, realm.name.slice(0, 1).toUpperCase()),
+    add("Switch business", realm.name, h("span", { class: "realm-mark small" }, realm.name.slice(0, 1).toUpperCase()),
       () => go(`#/r/${enc(realm.name)}`), { hint: realm.description });
   }
   return items;
@@ -42,7 +42,7 @@ function paletteItems() {
 
 function openPalette() {
   if (palette || app.unauthorized) return;
-  const input = h("input", { type: "text", class: "pal-input", placeholder: "Search chats, pages, realms, actions…", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
+  const input = h("input", { type: "text", class: "pal-input", placeholder: "Search tasks, pages, businesses, actions…", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
   const list = h("div", { class: "pal-list", role: "listbox" });
   const overlay = h("div", { class: "pal-overlay", onmousedown: (e) => { if (e.target === overlay) closePalette(); } },
     h("div", { class: "pal", role: "dialog", "aria-modal": "true", "aria-label": "Command palette" },

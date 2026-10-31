@@ -3,9 +3,9 @@
 const skillUi = { tab: "connectors" };
 
 const SKILL_TABS = [
-  ["connectors", "Connectors", "world", "Connect the services you use (Notion, Linear, GitHub, Stripe…) in one step: paste a token once, and chats in this realm can call the service's official API. The token never leaves for anywhere else, and the agent never sees it."],
-  ["catalog", "Catalog", "books", "Ready-made Agent Skills (instructions, scripts, references) from Anthropic's public catalog. Install one and chats in this realm read it when a task matches."],
-  ["mcp", "MCP servers", "plug", "Model Context Protocol servers give chats new tools (GitHub, databases, browsers…). Each runs in this realm's sandbox with its credentials, and every call follows the realm's skill rule."],
+  ["connectors", "Connectors", "world", "Connect the services you use (Notion, Linear, GitHub, Stripe…) in one step: paste a token once, and tasks in this business can call the service's official API. The token never leaves for anywhere else, and the agent never sees it."],
+  ["catalog", "Catalog", "books", "Ready-made Agent Skills (instructions, scripts, references) from Anthropic's public catalog. Install one and tasks in this business read it when a task matches."],
+  ["mcp", "MCP servers", "plug", "Model Context Protocol servers give tasks new tools (GitHub, databases, browsers…). Each runs in this business's sandbox with its credentials, and every call follows the business's skill rule."],
 ];
 
 async function renderSkills(main) {
@@ -37,7 +37,6 @@ const LOGOS = {
   cloudflare: ["#F38020", "M16.509 16.845c.147-.507.09-.971-.155-1.316c-.225-.316-.605-.499-1.062-.52l-8.66-.113a.16.16 0 0 1-.133-.07a.2.2 0 0 1-.02-.156a.24.24 0 0 1 .203-.156l8.736-.113c1.035-.049 2.16-.886 2.554-1.913l.499-1.302a.27.27 0 0 0 .014-.168a5.689 5.689 0 0 0-10.937-.584a2.58 2.58 0 0 0-1.794-.498a2.56 2.56 0 0 0-2.223 3.18A3.634 3.634 0 0 0 0 16.751q.002.264.035.527a.174.174 0 0 0 .17.148h15.98a.22.22 0 0 0 .204-.155zm2.757-5.564c-.077 0-.161 0-.239.011c-.056 0-.105.042-.127.098l-.337 1.174c-.148.507-.092.971.154 1.317c.225.316.605.498 1.062.52l1.844.113c.056 0 .105.026.133.07a.2.2 0 0 1 .021.156a.24.24 0 0 1-.204.156l-1.92.112c-1.042.049-2.159.887-2.553 1.914l-.141.358c-.028.072.021.142.099.142h6.597a.174.174 0 0 0 .17-.126a5 5 0 0 0 .175-1.28a4.74 4.74 0 0 0-4.734-4.727"],
   square: [null, "M4.01 0A4.01 4.01 0 0 0 0 4.01v15.98c0 2.21 1.8 4 4.01 4.01h15.98C22.2 24 24 22.2 24 19.99V4a4.01 4.01 0 0 0-4.01-4H4zm1.62 4.36h12.74c.7 0 1.26.57 1.26 1.27v12.74c0 .7-.56 1.27-1.26 1.27H5.63c-.7 0-1.26-.57-1.26-1.27V5.63a1.27 1.27 0 0 1 1.26-1.27m3.83 4.35a.73.73 0 0 0-.73.73v5.09c0 .4.32.72.72.72h5.1a.73.73 0 0 0 .73-.72V9.44a.73.73 0 0 0-.73-.73h-5.1Z"],
   supabase: ["#3FCF8E", "M11.9 1.036c-.015-.986-1.26-1.41-1.874-.637L.764 12.05C-.33 13.427.65 15.455 2.409 15.455h9.579l.113 7.51c.014.985 1.259 1.408 1.873.636l9.262-11.653c1.093-1.375.113-3.403-1.645-3.403h-9.642z"],
-  gmail: ["#EA4335", "M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64L12 9.548l6.545-4.91l1.528-1.145C21.69 2.28 24 3.434 24 5.457"],
 };
 
 function logo(id, name) {
@@ -133,10 +132,6 @@ async function renderConnectorsTab(inner, realm) {
       st === "error" && s && h("div", { class: "warn small clamp" , title: s.error }, s.error),
       action);
   };
-  const gmail = h("div", { class: "card cat-card conn-card" },
-    h("div", { class: "cat-head" }, logo("gmail", "Gmail"), h("div", { class: "grow" }, h("div", { class: "strong" }, "Gmail & Google"), h("div", { class: "muted small" }, "through your Mac"))),
-    h("div", { class: "cat-desc" }, "Google offers no one-click sign-in for apps like Airth yet. Add your Google account in macOS (Internet Accounts): chats read your calendar and prepare Gmail drafts with the Mac app tools."),
-    h("div", { class: "row-end" }, h("a", { class: "btn", href: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension" }, "Open Internet Accounts")));
   const search = h("input", { type: "search", class: "conn-search", placeholder: "Search connectors, or the MCP Registry…", value: connUi.query, "aria-label": "Search connectors" });
   let timer = null;
   search.addEventListener("input", () => {
@@ -159,7 +154,7 @@ async function renderConnectorsTab(inner, realm) {
   const drawGrid = () => {
     const q = connUi.query.trim().toLowerCase();
     const shown = FEATURED.filter((c) => !q || (c.name + " " + c.description).toLowerCase().includes(q));
-    grid.replaceChildren(...shown.map(card), (!q || "gmail google".includes(q)) && gmail);
+    grid.replaceChildren(...shown.map(card));
   };
   const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "connector";
   const drawRegistry = () => {
@@ -204,8 +199,8 @@ async function renderConnectorsTab(inner, realm) {
     grid, registryEl,
     h("div", { class: "row-start pad-top" }, customEl),
     h("p", { class: "muted small pad-top" },
-      "Connect opens the service's sign-in page; Airth keeps the access in this realm, out of reach of commands, and renews it on its own. ",
-      "Chats use a connector's tools under the realm's skill rule (they appear as mcp__name__tool)."),
+      "Connect opens the service's sign-in page; Airth keeps the access in this business, out of reach of commands, and renews it on its own. ",
+      "Tasks use a connector's tools under the business's skill rule (they appear as mcp__name__tool)."),
     keys);
   draw(); drawCustom();
   if (connUi.query.trim().length >= 2 && !connUi.registry) searchRegistry();
@@ -276,8 +271,8 @@ async function renderKeyConnectors(inner, realm) {
     body.replaceChildren(
       h("div", { class: "cat-grid" }, sorted.map(card)),
       h("p", { class: "muted small pad-top" },
-        "A token is saved as one of this realm's credentials and only ever sent to that service's official API. Chats call a connector by its name with http_request, under the realm's network rule. ",
-        "Need something else? Add any API under Realm settings → Integrations, or an MCP server."));
+        "A token is saved as one of this business's credentials and only ever sent to that service's official API. Tasks call a connector by its name with http_request, under the business's network rule. ",
+        "Need something else? Add any API under Business settings → Integrations, or an MCP server."));
   };
   draw();
 }
@@ -338,7 +333,7 @@ async function renderCatalogTab(inner, realm, refresh = false) {
       ? h("div", { class: "cat-grid" }, cat.skills.map(card))
       : h("div", { class: "card muted small pad" }, cat.refreshing ? "Fetching the catalog from GitHub…" : "The catalog is empty."),
     h("p", { class: "muted small pad-top" },
-      "Chats in this realm see each installed skill's name and description in their use_skill tool, and read its instructions when a task matches. " +
+      "Tasks in this business see each installed skill's name and description in their use_skill tool, and read its instructions when a task matches. " +
       "It is third-party guidance: it never outranks your objective or boundaries, and its scripts only run once copied into the workspace, with your approval."));
   if (busy) refreshSkillsSoon(realm, "catalog");
 }
@@ -375,7 +370,7 @@ async function renderMcpTab(inner, realm) {
         h("div", { class: "grow" },
           h("div", null, h("span", { class: "strong mono" }, s.name), " ", status),
           s.description && h("div", { class: "muted small" }, s.description)),
-        h("label", { class: "toggle small", title: s.enabled ? "Chats can use it" : "Hidden from chats" },
+        h("label", { class: "toggle small", title: s.enabled ? "Tasks can use it" : "Hidden from tasks" },
           h("input", { type: "checkbox", checked: s.enabled, onchange: (e) => call(`${realmPath(realm)}/mcp/${enc(s.name)}`, { enabled: e.target.checked }, "PATCH") }),
           h("span", null, s.enabled ? "on" : "off"))),
       h("code", { class: "path small mcp-cmd" }, "$ " + s.command),
@@ -383,7 +378,7 @@ async function renderMcpTab(inner, realm) {
         s.server_info && h("span", null, s.server_info), s.connected_at && h("span", null, "connected " + ago(s.connected_at))),
       s.error && h("pre", { class: "out small" }, s.error),
       s.tools.length > 0 && h("details", { class: "mcp-tools" },
-        h("summary", { class: "muted small" }, `Tools chats get (${s.tools.length})`),
+        h("summary", { class: "muted small" }, `Tools tasks get (${s.tools.length})`),
         s.tools.map((t) => h("div", { class: "kv mcp-tool", title: t.description },
           h("code", { class: "k" }, t.agent_name), h("span", { class: "v" }, t.description || "")))),
       h("div", { class: "row-end" },
@@ -410,17 +405,17 @@ async function renderMcpTab(inner, realm) {
     reload();
   };
   const draw = () => listEl.replaceChildren(
-    list.length ? h("div", { class: "objectives" }, list.map(server)) : h("div", { class: "card muted small pad" }, "No MCP server in this realm yet."));
+    list.length ? h("div", { class: "objectives" }, list.map(server)) : h("div", { class: "card muted small pad" }, "No MCP server in this business yet."));
   draw();
   body.replaceChildren(
     listEl,
     h("h2", null, "Add a server"),
     h("p", { class: "muted" },
-      "A stdio server: the command that starts it. Airth starts it in this realm's sandbox, lists its tools, and stops it after each call. ",
-      "Calls follow the realm's skill rule (now: ", h("strong", null, POLICY_WORDS[rule] || rule), "). ",
-      "If it needs a token, add it under Realm settings → Access: the server gets it as an environment variable."),
+      "A stdio server: the command that starts it. Airth starts it in this business's sandbox, lists its tools, and stops it after each call. ",
+      "Calls follow the business's skill rule (now: ", h("strong", null, POLICY_WORDS[rule] || rule), "). ",
+      "If it needs a token, add it under Business settings → Access: the server gets it as an environment variable."),
     h("div", { class: "card" },
-      field("Name", f.name, "Lowercase; tools appear to chats as mcp__name__tool."),
+      field("Name", f.name, "Lowercase; tools appear to tasks as mcp__name__tool."),
       field("Command", f.command, "e.g. npx -y @modelcontextprotocol/server-filesystem .  ·  uvx mcp-server-git"),
       field("Description", f.desc),
       h("div", { class: "row-end" }, h("button", { class: "btn primary", type: "button", onclick: add }, icon("plug"), "Add and connect"))));

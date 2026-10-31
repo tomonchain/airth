@@ -272,7 +272,7 @@ async function api(path, body, method) {
 
 const enc = encodeURIComponent;
 const realmPath = (r) => `realms/${enc(r)}`;
-const runPath = (r, id) => `realms/${enc(r)}/runs/${enc(id)}`;
+const runPath = (r, id) => `businesses/${enc(r)}/runs/${enc(id)}`;
 
 // ---------- app state ----------
 

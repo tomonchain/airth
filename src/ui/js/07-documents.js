@@ -333,7 +333,7 @@ async function ideDrawBody() {
   if (!t) return ideDrawHome();
   if (t.loading) { body.replaceChildren(h("div", { class: "muted small pad" }, "Loading…")); return; }
   const banner = t.conflict && h("div", { class: "ide-banner" },
-    h("span", { class: "grow" }, "This file changed on disk since you opened it, maybe in a chat. Your changes are not saved."),
+    h("span", { class: "grow" }, "This file changed on disk since you opened it, maybe in a task. Your changes are not saved."),
     h("button", { class: "btn small", type: "button", onclick: () => ideReload(t) }, "Load theirs"),
     h("button", { class: "btn small danger", type: "button", onclick: () => ideSave(t, true) }, "Keep mine"));
   if (t.error) {
@@ -413,13 +413,13 @@ function ideDrawHome() {
         h("span", { class: "grow" }, h("span", { class: "doc-name" }, docName(m.path)),
           docParent(m.path) && h("span", { class: "muted small doc-in" }, docParent(m.path)))),
       h("div", { class: "muted small doc-from" }, m.edited ? "edited in " : "written in ",
-        h("a", { href: `#/r/${enc(realm)}/run/${enc(m.run)}` }, m.run_title || "a chat"), " · ", ago(m.at)))))) : null;
+        h("a", { href: `#/r/${enc(realm)}/run/${enc(m.run)}` }, m.run_title || "a task"), " · ", ago(m.at)))))) : null;
   ide.el.body.replaceChildren(h("div", { class: "ide-pane ide-home" }, h("div", { class: "page-inner" },
     h("h1", null, "Documents"),
     home && h("p", { class: "sub" }, home.own_root
-      ? h("span", null, "The files in ", h("code", { class: "path", title: home.root }, tildePath(home.root)), ". Airth reads and works with them in this realm's chats.")
-      : "This realm's own folder. Add the files Airth should work with; what it makes appears here too.",
-      d && d.isolation === "worktree" ? " What a chat changes appears here once you adopt it." : ""),
+      ? h("span", null, "The files in ", h("code", { class: "path", title: home.root }, tildePath(home.root)), ". Airth reads and works with them in this business's tasks.")
+      : "This business's own folder. Add the files Airth should work with; what it makes appears here too.",
+      d && d.isolation === "worktree" ? " What a task changes appears here once you adopt it." : ""),
     h("div", { class: "doc-bar" },
       h("nav", { class: "doc-crumbs", "aria-label": "Folder" },
         h("a", { href: docHash(realm, ""), class: parts.length ? "" : "here" }, icon("folder"), realm),

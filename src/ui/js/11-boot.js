@@ -9,9 +9,9 @@ function renderNewRealm(main) {
   const desc = h("input", { type: "text", placeholder: "e.g. My job at Acme Corp" });
   const root = h("input", { type: "text", placeholder: "Leave empty for a private folder, or e.g. ~/code/project", spellcheck: "false" });
   const iso = h("select", null,
-    h("option", { value: "" }, "Automatic (a worktree per chat for git repositories)"),
+    h("option", { value: "" }, "Automatic (a worktree per task for git repositories)"),
     h("option", { value: "none" }, "None: work directly in the folder"),
-    h("option", { value: "worktree" }, "Worktree per chat"));
+    h("option", { value: "worktree" }, "Worktree per task"));
   const err = h("div", { class: "error-banner", hidden: true });
   const create = async () => {
     try {
@@ -21,17 +21,17 @@ function renderNewRealm(main) {
     } catch (e) { err.textContent = e.message; err.hidden = false; }
   };
   name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
-  page(main, first ? "Welcome to Airth" : "New realm",
+  page(main, first ? "Welcome to Airth" : "New business",
     first
       ? "Each business gets its own space: its files, code, agents, connectors and rules. Nothing crosses between businesses. Create your first one."
       : "One business: its own files, code, agents, connectors and rules, isolated from the others.",
     h("div", { class: "card" },
       field("Name", name, "Lowercase letters, digits and dashes."),
-      field("Description", desc, "Airth sees this, so it knows what the realm is for."),
-      field("Folder", root, "The directory Airth works in. Other realms can never read it."),
+      field("Description", desc, "Airth sees this, so it knows what the business is for."),
+      field("Folder", root, "The directory Airth works in. Other businesses can never read it."),
       field("Isolation", iso)),
     err,
-    h("div", { class: "row-end spaced" }, h("button", { class: "btn primary", type: "button", onclick: create }, "Create realm")));
+    h("div", { class: "row-end spaced" }, h("button", { class: "btn primary", type: "button", onclick: create }, "Create business")));
   name.focus();
 }
 
@@ -349,7 +349,7 @@ async function restartToUpdate() {
   const live = app.runs.filter((r) => r.live).length;
   if (live && !app.confirmRestart) {
     app.confirmRestart = true;
-    flash(`${live} chat${live === 1 ? " is" : "s are"} in progress: they will stop (and can be resumed). Click again to restart.`);
+    flash(`${live} task${live === 1 ? " is" : "s are"} in progress: they will stop (and can be resumed). Click again to restart.`);
     return;
   }
   app.confirmRestart = false;
