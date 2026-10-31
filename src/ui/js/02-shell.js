@@ -7,42 +7,7 @@ function renderSidebar() {
   renderNav();
   renderRunList();
   renderFoot();
-  renderStatus();
   updateTitle();
-}
-
-// Past this many input tokens a chat is summarized (see AIRTH_COMPACT_AT): the context "full" mark.
-const CONTEXT_LIMIT = 150000;
-
-/** The thin footer: how full the open chat's context is, its tokens, and today's tokens. */
-function renderStatus() {
-  const el = $("#statusbar");
-  if (!el) return;
-  const sep = () => h("span", { class: "sb-sep", "aria-hidden": "true" }, "·");
-  const tokens = (label, input, output, title) =>
-    h("span", { class: "sb-item", title }, label, `${kfmt(input)} in`, sep(), `${kfmt(output)} out`);
-  const items = [];
-  const s = app.route.view === "run" && app.run ? app.run.state : null;
-  if (s) {
-    const last = s.usage && s.usage.length ? s.usage[s.usage.length - 1].input : 0;
-    const pct = Math.min(100, Math.round((100 * last) / CONTEXT_LIMIT));
-    const fill = h("span");
-    fill.style.width = pct + "%";
-    items.push(
-      h("span", { class: "sb-item", title: `${last} input tokens in the last call; the task is summarized past ${CONTEXT_LIMIT}` },
-        "Context", h("span", { class: "sb-meter" + (pct >= 90 ? " hot" : pct >= 70 ? " warm" : ""), "aria-hidden": "true" }, fill), `${pct}%`),
-      tokens("This task ", s.input_tokens || 0, s.output_tokens || 0, `${s.input_tokens || 0} in / ${s.output_tokens || 0} out`));
-  }
-  const t = app.today;
-  items.push(h("span", { class: "sb-spacer" }));
-  if (t) items.push(tokens("Today ", t.input, t.output, `${t.input} in / ${t.output} out, all realms`));
-  el.replaceChildren(...items);
-}
-
-async function refreshToday() {
-  if (app.unauthorized) return;
-  try { app.today = (await api("usage?days=1")).today; } catch { return; }
-  renderStatus();
 }
 
 /** The business's six sections (decision 37), then what it is made of. */

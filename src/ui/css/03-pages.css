@@ -78,16 +78,14 @@ details.check pre.out { margin: 4px 0 8px; max-height: 320px; font-size: 11px; }
 
 /* ---------- Pages: settings, profile, objectives, skills, inbox ---------- */
 .page { flex: 1; overflow-y: auto; }
-.page-inner { max-width: 720px; margin: 0 auto; padding: 48px 24px 72px; }
-.page-inner h1 { font-size: 28px; letter-spacing: -0.03em; margin: 0 0 8px; font-weight: 600; }
-.page-inner h2 { font-size: 15px; margin: 36px 0 6px; font-weight: 600; letter-spacing: -0.01em; }
-.page-inner > .sub { color: var(--muted); margin: 0 0 26px; line-height: 1.6; }
+.page-inner { max-width: 1040px; margin: 0 auto; padding: 36px 32px 72px; }
+.page-inner h1 { font-size: 22px; letter-spacing: -0.02em; margin: 0 0 6px; font-weight: 600; }
+.page-inner h2 { font-size: 14px; margin: 32px 0 6px; font-weight: 600; letter-spacing: -0.01em; }
+.page-inner > .sub { color: var(--muted); margin: 0 0 24px; line-height: 1.6; max-width: 720px; }
 .page-inner > p.muted { margin: 0 0 12px; font-size: 13px; line-height: 1.6; }
 .card {
-  border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 6px 18px;
-  transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 6px 18px;
 }
-.card:hover { border-color: var(--border-strong); }
 .card > textarea { width: 100%; margin: 12px 0 0; }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); align-items: baseline; }
 .field:first-child { border-top: 0; }
@@ -175,7 +173,7 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 .pal-empty { padding: 22px; text-align: center; color: var(--faint); font-size: 13px; }
 
 .nav-link .count {
-  margin-left: 8px; background: var(--brand); color: #fff;
+  margin-left: 8px; background: var(--text); color: var(--bg);
   border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 700; animation: pop-in .3s var(--ease) both;
 }
 .chip.origin { background: var(--brand-soft); color: var(--brand); }

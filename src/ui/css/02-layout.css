@@ -2,6 +2,7 @@
 .sidebar {
   min-width: 0;
   background: var(--sidebar);
+  border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   padding: 12px 10px 10px;
   min-height: 0;
@@ -17,7 +18,7 @@
 /* Primary navigation */
 .side-nav { display: grid; gap: 1px; padding: 6px 0 4px; }
 .nav-link .i, .realm-option .i, .icon-action .i { color: var(--muted); }
-.nav-link .i svg, .realm-option .i svg { width: 17px; height: 17px; }
+.nav-link .i svg, .realm-option .i svg { width: 16px; height: 16px; }
 .nav-link:disabled { opacity: .4; cursor: default; }
 .nav-link:disabled:hover { background: transparent; }
 
@@ -63,7 +64,7 @@
 .realm-option .check { color: var(--muted); font-size: 12px; }
 .realm-option .needs { margin-left: 0; }
 
-.section-label { font-size: 11.5px; font-weight: 500; color: var(--faint); padding: 14px 10px 4px; }
+.section-label { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 16px 10px 4px; }
 .task-list { margin-top: 28px; }
 .new-inner.tasks { margin: 0 auto; }
 .run-item .routine { flex: none; font-size: 11.5px; color: var(--faint); }
@@ -120,8 +121,8 @@ button.side-warn { cursor: pointer; }
 }
 .me-btn:hover, .me-btn.active { background: var(--hover); }
 .avatar {
-  width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 650; color: #fff;
-  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text);
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
 .me-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 500; }
 .icon-action {
@@ -134,10 +135,10 @@ button.side-warn { cursor: pointer; }
 .theme-toggle:hover .i svg { transform: rotate(-25deg) scale(1.08); }
 .nav-link {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer;
-  padding: 7px 10px; border-radius: 10px; color: var(--text); font-size: 13.5px; transition: background .15s var(--ease);
+  padding: 6px 10px; border-radius: 8px; color: var(--muted); font-size: 13.5px; transition: background .15s var(--ease), color .15s;
 }
-.nav-link:hover { background: var(--hover); }
-.nav-link.active { background: var(--accent-soft); font-weight: 550; }
+.nav-link:hover { background: var(--hover); color: var(--text); }
+.nav-link.active { background: var(--surface); color: var(--text); font-weight: 500; }
 .nav-link.active .i { color: var(--text); }
 .badge { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 600; display: inline-flex; align-items: center; gap: 3px; flex: none; }
 .badge .i { display: inline-flex; }
@@ -217,7 +218,7 @@ button.side-warn { cursor: pointer; }
   border: 1px solid var(--border); line-height: 1.55;
 }
 .prose pre code { background: none; padding: 0; font-size: 12.5px; }
-.prose a { color: var(--brand); }
+.prose a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
 .prose .code { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 0 0 14px; background: var(--code-bg); }
 .prose .code pre { border: 0; border-radius: 0; margin: 0; }
 .code-head {
@@ -508,8 +509,8 @@ pre.out {
 
 /* ---------- Buttons ---------- */
 .btn {
-  display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 7px 15px;
-  border: 1px solid var(--border-strong); background: transparent; cursor: pointer; font-weight: 500; font-size: 13.5px;
+  display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 6px 12px;
+  border: 1px solid var(--border-strong); background: transparent; cursor: pointer; font-weight: 500; font-size: 13px;
   white-space: nowrap; transition: background .15s var(--ease), border-color .15s, color .15s, transform .12s var(--ease), opacity .15s;
 }
 .btn:hover:not(:disabled) { background: var(--hover); }
@@ -525,15 +526,6 @@ kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid c
 
 /* ---------- New run (the home screen) ---------- */
 .new-view { flex: 1; overflow-y: auto; display: flex; position: relative; isolation: isolate; }
-.new-view::before {
-  content: ""; position: absolute; z-index: -1; width: 640px; height: 420px; left: 50%; top: 18%;
-  transform: translateX(-50%); border-radius: 50%; pointer-events: none; filter: blur(90px); opacity: .16;
-  background: radial-gradient(closest-side at 30% 40%, var(--brand), transparent),
-              radial-gradient(closest-side at 70% 50%, var(--brand-2), transparent),
-              radial-gradient(closest-side at 50% 70%, var(--brand-3), transparent);
-  animation: aurora 16s ease-in-out infinite alternate;
-}
-[data-theme="dark"] .new-view::before { opacity: .22; }
 .new-inner { max-width: 740px; width: 100%; margin: auto; padding: 56px 24px 40px; }
 .new-inner > * { animation: blur-in .6s var(--ease) both; }
 .new-inner > :nth-child(2) { animation-delay: .05s; }

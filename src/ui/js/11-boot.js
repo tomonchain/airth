@@ -349,8 +349,6 @@ async function boot() {
   try { const o = await api("owner"); app.ownerName = o.name; app.ownerAvatar = o.avatar; } catch {}
   await refreshRealms();
   await onRoute();
-  refreshToday();
-  setInterval(() => { if (!document.hidden) refreshToday(); }, 30000);
   // Background refreshes pause while the window is hidden, and catch up when it shows.
   setInterval(() => { if (!document.hidden) { refreshRealms(); refreshRuns(); } }, 2000);
   setInterval(() => { if (!document.hidden) refreshInfo(); }, 5000);

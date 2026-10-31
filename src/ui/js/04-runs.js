@@ -228,7 +228,6 @@ function renderRun() {
   if (nearBottom || app.version === null) sc.scrollTop = sc.scrollHeight;
   syncToBottom();
   updateTitle();
-  renderStatus();
 
   const c = runEls.composer;
   const closed = s.change && s.change.status !== "open";
