@@ -67,6 +67,55 @@ pub fn job(root: &Path, name: &str) -> Result<Job> {
     })
 }
 
+/// Every bot of the business with its job, by name.
+pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
+    let dir = dir(root).join(BOTS);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", dir.display())),
+    };
+    let mut out = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let Some(name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        // A file that is not a valid bot (bad name, empty) is not listed.
+        if let Ok(job) = job(root, name) {
+            out.push((name.to_string(), job));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+/// Write the job of the bot `name`, hiring it when it is new (only the owner
+/// does: runs cannot write the business folder).
+pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
+    crate::realm::validate_name(name).context("invalid bot name")?;
+    if text.trim().is_empty() {
+        anyhow::bail!("a bot needs a job");
+    }
+    let dir = dir(root).join(BOTS);
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    crate::realm::write_atomic(
+        &dir.join(format!("{name}.md")),
+        &format!("{}\n", text.trim()),
+    )
+}
+
+/// Let the bot `name` go: its job file is removed.
+pub fn remove_job(root: &Path, name: &str) -> Result<()> {
+    crate::realm::validate_name(name).context("invalid bot name")?;
+    let path = dir(root).join(BOTS).join(format!("{name}.md"));
+    std::fs::remove_file(&path).with_context(|| format!("no bot {name}"))
+}
+
 fn read_optional(dir: &Path, file: &str) -> Result<Option<String>> {
     match std::fs::read_to_string(dir.join(file)) {
         Ok(text) => Ok(Some(text.trim().to_string()).filter(|t| !t.is_empty())),
@@ -213,6 +262,32 @@ mod tests {
         assert_eq!(j.text, "Write one article a week.");
         assert_eq!(j.version.len(), 64);
         assert!(job(root.path(), "../writer").is_err());
+    }
+
+    #[test]
+    fn the_owner_hires_edits_and_lets_bots_go() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(bots(root.path()).unwrap().is_empty());
+        set_job(root.path(), "writer", "Write one article a week.").unwrap();
+        set_job(root.path(), "analyst", "Watch the markets.").unwrap();
+        std::fs::write(dir(root.path()).join("bots/notes.txt"), "not a bot").unwrap();
+        std::fs::write(dir(root.path()).join("bots/empty.md"), "").unwrap();
+        let names: Vec<String> = bots(root.path())
+            .unwrap()
+            .into_iter()
+            .map(|b| b.0)
+            .collect();
+        assert_eq!(names, vec!["analyst", "writer"]);
+        set_job(root.path(), "writer", "Write two articles a week.").unwrap();
+        assert_eq!(
+            job(root.path(), "writer").unwrap().text,
+            "Write two articles a week.\n"
+        );
+        assert!(set_job(root.path(), "writer", "  ").is_err());
+        assert!(set_job(root.path(), "../x", "job").is_err());
+        remove_job(root.path(), "analyst").unwrap();
+        assert!(remove_job(root.path(), "analyst").is_err());
+        assert_eq!(bots(root.path()).unwrap().len(), 1);
     }
 
     #[test]

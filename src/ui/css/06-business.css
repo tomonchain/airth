@@ -27,3 +27,12 @@
 @media (max-width: 860px) {
   .biz-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; margin-bottom: 16px; }
+.agent .biz-head { align-items: center; }
+.agent-mark { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex: none; }
+.agent-job { font-size: 14px; max-height: 260px; overflow-y: auto; }
+.agent-section { display: grid; gap: 2px; margin-top: 10px; }
+.agent-limits { margin-top: 4px; }
+.agent-templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.agent-template { display: grid; gap: 4px; text-align: left; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; min-height: 44px; }
+.agent-template:hover { background: var(--hover); }

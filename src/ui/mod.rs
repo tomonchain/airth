@@ -357,6 +357,58 @@ mod tests {
         assert_eq!(entries[0].note, "write_file in run run1");
     }
 
+    /// Agents lists each bot with the routines that name it; a bot a
+    /// routine still names cannot be let go.
+    #[test]
+    fn agents_and_their_routines() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "writer", "Write one article a week.").unwrap();
+        crate::business::set_job(&root, "analyst", "Watch the markets.").unwrap();
+        realm
+            .objectives()
+            .save(crate::objective::Objective {
+                id: "weekly-article".into(),
+                objective: "Write this week's article".into(),
+                trigger: crate::objective::Trigger::Manual,
+                approvals: vec![],
+                budget: Default::default(),
+                approval_wait_minutes: 0,
+                enabled: true,
+                created_at: chrono::Utc::now(),
+                repo: None,
+                bot: Some("writer".into()),
+                tools: Some(vec![]),
+                next_at: None,
+                fingerprint: None,
+                last_run: None,
+                last_at: None,
+                last_status: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        let d = app.agents(&realm).unwrap();
+        let agents = d["agents"].as_array().unwrap();
+        assert_eq!(agents.len(), 2);
+        assert_eq!(agents[1]["name"], "writer");
+        assert_eq!(agents[1]["routines"][0]["id"], "weekly-article");
+        assert_eq!(agents[1]["routines"][0]["tools"], json!([]));
+        assert_eq!(agents[0]["routines"], json!([]));
+        let err = realms::let_go(&realm, "writer").unwrap_err();
+        assert!(format!("{err:#}").contains("weekly-article"), "{err:#}");
+        realms::let_go(&realm, "analyst").unwrap();
+        assert_eq!(crate::business::bots(&root).unwrap().len(), 1);
+    }
+
     /// Steering shows what waits for the owner in this business only.
     #[test]
     fn steering_lists_this_realms_approvals_and_strategy() {

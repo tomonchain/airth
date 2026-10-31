@@ -3,6 +3,24 @@
 
 use super::*;
 
+/// Let a bot go, unless a routine still names it: that routine would fail.
+pub(super) fn let_go(realm: &Realm, name: &str) -> Result<()> {
+    let routines: Vec<String> = realm
+        .objectives()
+        .list()?
+        .into_iter()
+        .filter(|o| o.bot.as_deref() == Some(name))
+        .map(|o| o.id)
+        .collect();
+    if !routines.is_empty() {
+        bail!(
+            "{name} still does {}: remove those routines first",
+            routines.join(", ")
+        );
+    }
+    crate::business::remove_job(&realm.root()?, name)
+}
+
 impl App {
     /// The a realm's own routes; None when the request is not one of them.
     pub(super) fn realms_routes(
@@ -177,6 +195,23 @@ impl App {
             }
             (Method::Get, ["realms", r, "business"]) => {
                 json_response(200, self.business(&self.realm(r)?)?)
+            }
+            (Method::Get, ["realms", r, "agents"]) => {
+                json_response(200, self.agents(&self.realm(r)?)?)
+            }
+            (Method::Put, ["realms", r, "agents", name]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                crate::business::set_job(
+                    &realm.root()?,
+                    name,
+                    body["job"].as_str().unwrap_or_default(),
+                )?;
+                ok()
+            }
+            (Method::Delete, ["realms", r, "agents", name]) => {
+                let_go(&self.realm(r)?, name)?;
+                ok()
             }
             (Method::Get, ["realms", r, "steering"]) => {
                 json_response(200, self.steering(&self.realm(r)?)?)
@@ -403,6 +438,64 @@ impl App {
             "week": store.week(chrono::Utc::now() - chrono::Duration::days(7))?,
             "notifications": notifications,
         }))
+    }
+
+    /// The business's bots (decisions 36 and 37): each one's job, the
+    /// routines it does, its last tasks and what it cost this month.
+    pub(super) fn agents(&self, realm: &Realm) -> Result<Value> {
+        let root = realm.root()?;
+        let routines = realm.objectives().list()?;
+        let runs = self.hub.all_runs(realm)?;
+        let prices = crate::prices::Prices::load(self.hub.home());
+        let mut agents = Vec::new();
+        for (name, job) in crate::business::bots(&root)? {
+            let mine: Vec<_> = routines
+                .iter()
+                .filter(|o| o.bot.as_deref() == Some(name.as_str()))
+                .collect();
+            let ids: Vec<&str> = mine.iter().map(|o| o.id.as_str()).collect();
+            let worked: Vec<(String, State)> = runs
+                .iter()
+                .filter(|s| {
+                    s.origin
+                        .as_ref()
+                        .is_some_and(|o| ids.contains(&o.objective.as_str()))
+                })
+                .map(|s| (realm.name().to_string(), s.clone()))
+                .collect();
+            let month = crate::usage::aggregate(&worked, 1, chrono::Local::now(), &prices).month;
+            let mut last: Vec<&State> = worked.iter().map(|(_, s)| s).collect();
+            last.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+            agents.push(json!({
+                "name": name,
+                "job": job.text,
+                "version": &job.version[..12],
+                "routines": mine.iter().map(|o| json!({
+                    "id": o.id,
+                    "objective": o.objective,
+                    "trigger": o.trigger.describe(),
+                    "enabled": o.enabled,
+                    "tools": o.tools,
+                    "approvals": o.approvals.iter().map(|g| match &g.scope {
+                        Some(s) => format!("{} ({s})", g.capability.as_str()),
+                        None => g.capability.as_str().to_string(),
+                    }).collect::<Vec<_>>(),
+                    "budget": o.budget.describe(),
+                    "last_status": o.last_status,
+                    "next_at": o.next_at,
+                })).collect::<Vec<_>>(),
+                "month_cost": month.cost.total(),
+                "month_calls": month.calls,
+                "unpriced": month.unpriced,
+                "tasks": last.iter().take(5).map(|s| json!({
+                    "id": s.id,
+                    "objective": s.objective,
+                    "status": s.status.as_str(),
+                    "updated_at": s.updated_at,
+                })).collect::<Vec<_>>(),
+            }));
+        }
+        Ok(json!({"agents": agents}))
     }
 
     /// The owner's page (decision 37): what waits for a decision, what needs

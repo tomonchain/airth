@@ -132,6 +132,11 @@ const fixtures = {
     attention: [{ kind: "pipeline", title: "watch failed: no feed could be read", at: now }, { kind: "routine", routine: "digest", title: "digest stopped", run: null, at: null }],
     strategy: "",
     week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 } },
+  "realms/acme/agents": { agents: [
+    { name: "writer", job: "Write one article a week.", version: "abcdef123456", month_cost: 1.2, month_calls: 30, unpriced: 0,
+      routines: [{ id: "weekly-article", objective: "Write this week's article", trigger: "schedule: mon 08:00", enabled: true, tools: ["blog"], approvals: ["network"], budget: "30 minutes", last_status: null, next_at: null }],
+      tasks: [{ id: "r1", objective: "Write this week's article", status: "completed", updated_at: now }] },
+    { name: "analyst", job: "Watch the markets.", version: "123456abcdef", month_cost: 0, month_calls: 0, unpriced: 2, routines: [], tasks: [] }] },
   "inbox/read": {},
 };
 
@@ -176,7 +181,7 @@ const main = body.querySelector("#main");
   A.renderMain();
   if (!body.querySelector("#task-list") || body.querySelector("#task-list").children.length === 0) problems.push("tasks: the task list is empty");
   check("tasks", main);
-  for (const view of ["steering", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
+  for (const view of ["steering", "agents", "pipelines", "new", "settings", "owner", "skills", "usage", "new-realm"]) {
     A.app.route = { view, realm: "acme" };
     A.renderMain();
     await new Promise((r) => setTimeout(r, 30));

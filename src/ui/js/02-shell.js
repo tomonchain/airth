@@ -57,7 +57,7 @@ function renderNav() {
     navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines" || v === "pipelines"),
     navLink(null, "calendar", "Planning", v === "planning"),
     navLink(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run"),
-    navLink(null, "brain", "Agents", v === "agents"),
+    navLink(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
     navLink("#/usage", "chart", "Usage", v === "usage"),
     h("div", { class: "section-label" }, "Business"),
     navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
@@ -312,6 +312,7 @@ function renderMain() {
     case "steering": return renderSteering(main);
     case "routines":
     case "pipelines": return renderPipelines(main);
+    case "agents": return renderAgents(main);
     case "tasks":
     case "new": return renderNew(main);
     case "run": return renderRunShell(main);
