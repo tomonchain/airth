@@ -224,6 +224,7 @@ impl Hub {
                     )),
                     None => None,
                 },
+                allowed: state.tools.clone(),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),

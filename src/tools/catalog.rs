@@ -526,8 +526,9 @@ impl Tool for UseSkill {
 }
 
 /// The `use_skill` tool, when the realm has catalog skills installed.
-pub fn tool_for(skills_dir: &Path) -> Option<Box<dyn Tool>> {
-    let installed = installed(skills_dir);
+pub fn tool_for(skills_dir: &Path, keep: impl Fn(&str) -> bool) -> Option<Box<dyn Tool>> {
+    let mut installed = installed(skills_dir);
+    installed.retain(|s| keep(&s.name));
     (!installed.is_empty()).then(|| {
         Box::new(UseSkill {
             skills_dir: skills_dir.to_path_buf(),
@@ -621,7 +622,7 @@ mod tests {
         assert_eq!(got.skipped, ["font.ttf"]);
         assert!(!installing(dir.path(), "pdf"));
 
-        let tool = tool_for(dir.path()).unwrap();
+        let tool = tool_for(dir.path(), |_| true).unwrap();
         assert!(
             tool.spec()
                 .description
@@ -655,7 +656,7 @@ mod tests {
         );
 
         assert!(uninstall(dir.path(), "pdf").unwrap());
-        assert!(tool_for(dir.path()).is_none());
+        assert!(tool_for(dir.path(), |_| true).is_none());
     }
 
     #[test]

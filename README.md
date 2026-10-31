@@ -69,11 +69,11 @@ airth owner add boundaries "Never push to main"
 
 A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules), `strategy.md` (the owner's goals and line, which all work follows) and `archive/` (past posts and documents). Every run of the realm is told the profile, the strategy and where the archive is; runs can read the folder, never change it.
 
-**Bots** do the business's work, each with a job (decision 36). A bot's job is a file, `business/bots/<name>.md`, written in the business's words: what it is for and how it works. What it may do without asking, its budget and its trigger are kept by Airth, out of the bot's reach, on the objective it runs (see Working on its own). Each run is told its job, and records the version of the job it followed.
+**Bots** do the business's work, each with a job (decision 36). A bot's job is a file, `business/bots/<name>.md`, written in the business's words: what it is for and how it works. What it may do without asking, its budget and its trigger are kept by Airth, out of the bot's reach, on the objective it runs (see Working on its own). Each run is told its job, and records the version of the job it followed. `--tool` gives a bot only some of the realm's integrations, MCP servers and skills (`mac` for the Mac's apps): the others are not in its runs at all, so it cannot call them.
 
 ```bash
 airth objective add weekly-article "Write and prepare this week's article" \
-  --bot writer --every "mon 08:00" --allow network --max-minutes 30
+  --bot writer --tool blog --tool charts --every "mon 08:00" --allow network --max-minutes 30
 airth objective run weekly-article
 ```
 

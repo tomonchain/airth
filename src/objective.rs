@@ -83,6 +83,10 @@ pub struct Objective {
     /// The bot that does it: its job is `business/bots/<bot>.md` (decision 36).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot: Option<String>,
+    /// The realm's extensions its runs may use (integrations, MCP servers,
+    /// skills, `mac`); None: all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
     /// When the schedule fires next.
     #[serde(default)]
     pub next_at: Option<DateTime<Utc>>,
@@ -410,6 +414,7 @@ mod tests {
             created_at: Utc::now(),
             repo: None,
             bot: None,
+            tools: None,
             next_at: None,
             fingerprint: None,
             last_run: None,

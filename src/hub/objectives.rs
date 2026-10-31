@@ -40,6 +40,7 @@ impl Hub {
         append_user_text(&mut state.messages, &brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
+        state.tools = objective.tools.clone();
         state.origin = Some(Origin {
             objective: objective.id.clone(),
             trigger: trigger.to_string(),

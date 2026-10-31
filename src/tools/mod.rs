@@ -64,7 +64,14 @@ pub struct RealmTools {
     /// Set for a run developing a skill: the skill's name, and where its
     /// tests run.
     pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
+    /// For a bot's run: the realm's extensions it may use, by name
+    /// (integrations, MCP servers, skills, `mac` for the Mac's apps). None:
+    /// all of them. What is left out is not offered, so it cannot be called.
+    pub allowed: Option<Vec<String>>,
 }
+
+/// The name that gives a bot the Mac's apps (calendar, mail, notes…).
+pub const MAC: &str = "mac";
 
 /// The tools a pipeline's steps call: HTTP, with the realm's integrations.
 pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
@@ -75,10 +82,16 @@ pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
 /// memory, integrations and installed skills. A run developing a skill gets
 /// `test_skill` instead of memory and skills.
 pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
+    let allowed = realm.allowed;
+    let allows = |name: &str| allowed.as_ref().is_none_or(|a| a.iter().any(|n| n == name));
     let mut tools = default_tools();
     tools.push(Box::new(plan::UpdatePlan { plan: realm.plan }));
     tools.push(Box::new(http::HttpRequest {
-        integrations: realm.integrations,
+        integrations: realm
+            .integrations
+            .into_iter()
+            .filter(|i| allows(&i.name))
+            .collect(),
     }));
     if let Some((name, scratch, deny)) = realm.developing {
         tools.push(Box::new(skill::TestSkill {
@@ -98,14 +111,18 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         inbox: realm.inbox,
         realm: realm.realm,
     }));
-    tools.extend(mac::tools());
+    if allows(MAC) {
+        tools.extend(mac::tools());
+    }
     for (manifest, dir) in realm.skills.enabled() {
-        tools.push(Box::new(skill::SkillTool { manifest, dir }));
+        if allows(&manifest.name) {
+            tools.push(Box::new(skill::SkillTool { manifest, dir }));
+        }
     }
     // Tools of the MCP servers the owner connected to this realm.
-    tools.extend(mcp::tools_for(realm.skills.dir()));
+    tools.extend(mcp::tools_of(realm.skills.dir(), allows));
     // Skills the owner installed from the catalog, read through `use_skill`.
-    tools.extend(catalog::tool_for(realm.skills.dir()));
+    tools.extend(catalog::tool_for(realm.skills.dir(), allows));
     tools
 }
 
@@ -362,6 +379,67 @@ pub(crate) fn truncate_middle(text: String, head: usize, tail: usize) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn names(allowed: Option<Vec<String>>) -> (tempfile::TempDir, Vec<String>, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let skills = dir.path().join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+        let server = |name: &str| serde_json::json!({"name": name, "command": "true", "tools": [{"name": "act"}]});
+        std::fs::write(
+            skills.join("mcp.json"),
+            serde_json::to_string(&vec![server("gh"), server("gh_")]).unwrap(),
+        )
+        .unwrap();
+        let integration = |name: &str| Integration {
+            name: name.into(),
+            description: String::new(),
+            base_url: format!("https://{name}.example.com"),
+            headers: Default::default(),
+        };
+        let tools = realm_tools(RealmTools {
+            memory: MemoryStore::new(dir.path().join("memory.json")),
+            source: String::new(),
+            plan: PlanHandle::default(),
+            integrations: vec![integration("blog"), integration("bank")],
+            skills: SkillStore::new(&skills),
+            inbox: Inbox::new(dir.path().join("inbox.json")),
+            realm: "r".into(),
+            developing: None,
+            allowed,
+        });
+        let http = tools
+            .iter()
+            .find(|t| t.spec().name == "http_request")
+            .unwrap()
+            .spec()
+            .description;
+        let names = tools.iter().map(|t| t.spec().name).collect();
+        (dir, names, http)
+    }
+
+    #[test]
+    fn a_bot_gets_only_the_extensions_it_was_given() {
+        let (_dir, all, http) = names(None);
+        assert!(all.contains(&"mcp__gh__act".to_string()));
+        assert!(all.contains(&"mcp__gh___act".to_string()));
+        assert!(http.contains("blog") && http.contains("bank"), "{http}");
+
+        let (_dir, some, http) = names(Some(vec!["gh".into(), "blog".into()]));
+        assert!(some.contains(&"mcp__gh__act".to_string()));
+        // Not a prefix match: gh does not give gh_.
+        assert!(!some.contains(&"mcp__gh___act".to_string()), "{some:?}");
+        assert!(http.contains("blog") && !http.contains("bank"), "{http}");
+        // The core tools stay; the Mac's apps need `mac`.
+        assert!(some.contains(&"read_file".to_string()));
+        if cfg!(target_os = "macos") {
+            assert!(all.iter().any(|n| n == "calendar"), "{all:?}");
+            assert!(!some.iter().any(|n| n == "calendar"), "{some:?}");
+        }
+
+        let (_dir, none, http) = names(Some(vec![]));
+        assert!(!none.iter().any(|n| n.starts_with("mcp__")));
+        assert!(http.contains("no integrations"), "{http}");
+    }
 
     #[test]
     fn resolve_stays_inside_workspace() {

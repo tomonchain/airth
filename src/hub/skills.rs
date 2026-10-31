@@ -15,6 +15,7 @@ impl Hub {
             inbox: self.home.inbox(),
             realm: String::new(),
             developing: None,
+            allowed: None,
         })
         .iter()
         .map(|t| {

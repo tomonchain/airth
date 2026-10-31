@@ -213,6 +213,9 @@ pub struct State {
     /// The objective that started this run, when it started on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
+    /// For a bot's run: the realm's extensions it may use (see `RealmTools`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
     /// For a run developing a skill: the skill's name. Its workspace is the
     /// skill's draft folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -266,6 +269,7 @@ impl State {
             grants: Vec::new(),
             budget: Budget::default(),
             origin: None,
+            tools: None,
             skill: None,
             tier: None,
             context: None,

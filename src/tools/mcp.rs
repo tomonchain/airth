@@ -650,11 +650,12 @@ impl Tool for McpTool {
     }
 }
 
-/// The tools of a realm's enabled, connected servers.
-pub fn tools_for(skills_dir: &Path) -> Vec<Box<dyn Tool>> {
+/// The tools of a realm's enabled, connected servers whose name `keep`
+/// accepts.
+pub fn tools_of(skills_dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<Box<dyn Tool>> {
     let servers = McpStore::new(skills_dir).list().unwrap_or_default();
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
-    for server in servers.into_iter().filter(|s| s.enabled) {
+    for server in servers.into_iter().filter(|s| s.enabled && keep(&s.name)) {
         for spec in server.tools {
             tools.push(Box::new(McpTool {
                 server: server.name.clone(),
@@ -766,14 +767,14 @@ done
                 }]
             })
             .unwrap();
-        let tools = tools_for(dir.path());
+        let tools = tools_of(dir.path(), |_| true);
         assert_eq!(tools[0].spec().name, "mcp__gh__create_issue");
         assert_eq!(tools[0].capability(), Capability::Skill);
         // A new command forgets the old tools; disabling hides them.
         store.save("gh", "npx other", "GitHub").unwrap();
         assert!(store.get("gh").unwrap().tools.is_empty());
         store.update("gh", |s| s.enabled = false).unwrap();
-        assert!(tools_for(dir.path()).is_empty());
+        assert!(tools_of(dir.path(), |_| true).is_empty());
         assert!(store.remove("gh").unwrap());
         assert!(!store.remove("gh").unwrap());
         assert_eq!(tool_name("s", &"x".repeat(100)).len(), 64);

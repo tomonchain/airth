@@ -196,6 +196,18 @@ pub enum IntegrationCmd {
     Rm { name: String },
 }
 
+/// Who does an objective (decision 36), and with which of the realm's tools.
+#[derive(clap::Args)]
+pub struct BotArgs {
+    /// The bot that does it, whose job is in business/bots/<bot>.md
+    #[arg(long)]
+    bot: Option<String>,
+    /// Only these of the realm's integrations, MCP servers and skills
+    /// (`mac` for the Mac's apps); default: all. Repeatable
+    #[arg(long = "tool")]
+    tool: Vec<String>,
+}
+
 #[derive(Subcommand)]
 pub enum ObjectiveCmd {
     /// List the realm's objectives
@@ -232,9 +244,8 @@ pub enum ObjectiveCmd {
         /// The realm repository its runs work in (default: the realm's root)
         #[arg(long)]
         repo: Option<String>,
-        /// The bot that does it, whose job is in business/bots/<bot>.md
-        #[arg(long)]
-        bot: Option<String>,
+        #[command(flatten)]
+        bot: Box<BotArgs>,
     },
     /// Show an objective, with its webhook URL if it has one
     Show {
@@ -304,6 +315,19 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
             repo,
             bot,
         } => {
+            let BotArgs { bot, tool } = *bot;
+            let tools = if tool.is_empty() {
+                None
+            } else {
+                let known = extension_names(&realm);
+                if let Some(unknown) = tool.iter().find(|t| !known.contains(t)) {
+                    bail!(
+                        "no integration, MCP server or skill '{unknown}' in this realm (it has: {})",
+                        known.join(", ")
+                    );
+                }
+                Some(tool)
+            };
             if let Some(name) = &repo {
                 realm.repo(Some(name))?;
             }
@@ -337,6 +361,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                 created_at: chrono::Utc::now(),
                 repo,
                 bot,
+                tools,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,
@@ -385,6 +410,41 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
     Ok(true)
 }
 
+/// What a bot can be given, by name: the realm's integrations, MCP
+/// servers and skills, and the Mac's apps.
+fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
+    let skills = realm.skills();
+    let mut names: Vec<String> = realm
+        .config
+        .integrations
+        .iter()
+        .map(|i| i.name.clone())
+        .collect();
+    names.extend(
+        crate::tools::mcp::McpStore::new(skills.dir())
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.extend(
+        skills
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.extend(
+        crate::tools::catalog::installed(skills.dir())
+            .into_iter()
+            .map(|s| s.name),
+    );
+    names.push(crate::tools::MAC.into());
+    names.sort();
+    names.dedup();
+    names
+}
+
 fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()> {
     use crate::objective::Trigger;
     let o = realm.objectives().get(id)?;
@@ -393,6 +453,16 @@ fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()
     println!("trigger      {}", o.trigger.describe());
     if let Some(bot) = &o.bot {
         println!("bot          {bot} (business/bots/{bot}.md)");
+    }
+    if let Some(tools) = &o.tools {
+        println!(
+            "tools        {}",
+            if tools.is_empty() {
+                "(none of the realm's extensions)".to_string()
+            } else {
+                tools.join(", ")
+            }
+        );
     }
     if let Trigger::Webhook { token } = &o.trigger {
         let port = crate::ui::running_url(&ctx.hub())

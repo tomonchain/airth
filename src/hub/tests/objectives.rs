@@ -41,6 +41,7 @@ fn scheduled_objective_completes_while_the_owner_is_away() {
             created_at: Utc::now(),
             repo: None,
             bot: None,
+            tools: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -154,6 +155,7 @@ fn budget_of_an_objective_stops_its_run() {
             created_at: Utc::now(),
             repo: None,
             bot: None,
+            tools: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -221,6 +223,7 @@ fn a_bot_runs_with_its_job_and_the_strategy() {
             created_at: Utc::now(),
             repo: None,
             bot: Some("writer".into()),
+            tools: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -268,4 +271,76 @@ fn a_bot_runs_with_its_job_and_the_strategy() {
     assert_eq!(state.status, Status::Completed);
     let system = &systems.lock().unwrap()[0];
     assert!(system.contains("Explain, never hype."), "{system}");
+}
+
+/// Decision 36: a bot given some of the realm's integrations cannot reach
+/// the others, even with the network allowed: they are not in its run.
+#[test]
+fn a_bot_reaches_only_the_integrations_it_was_given() {
+    use crate::integration::Integration;
+    use crate::objective::{Objective, Trigger};
+    let mut f = fixture();
+    let integration = |name: &str| Integration {
+        name: name.into(),
+        description: String::new(),
+        base_url: format!("https://{name}.invalid"),
+        headers: Default::default(),
+    };
+    f.realm.config.integrations = vec![integration("blog"), integration("bank")];
+    f.realm.config.policy.network = Rule::Allow;
+    f.realm.save().unwrap();
+    f.realm
+        .objectives()
+        .save(Objective {
+            id: "weekly-article".into(),
+            objective: "Write this week's article".into(),
+            trigger: Trigger::Manual,
+            approvals: vec![],
+            budget: Default::default(),
+            approval_wait_minutes: 0,
+            enabled: true,
+            created_at: Utc::now(),
+            repo: None,
+            bot: None,
+            tools: Some(vec!["blog".into()]),
+            next_at: None,
+            fingerprint: None,
+            last_run: None,
+            last_at: None,
+            last_status: None,
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            call(
+                "1",
+                "http_request",
+                json!({"integration": "bank", "url": "transfers"}),
+            ),
+            done("Could not reach the bank."),
+        ],
+    );
+    let (mut state, _) = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap();
+    assert_eq!(state.tools, Some(vec!["blog".to_string()]));
+    hub.drive(
+        &f.realm,
+        &mut state,
+        config(10),
+        hooks(&mut NoObserver, false),
+    )
+    .unwrap();
+    assert_ne!(state.events[0].status, crate::state::EventStatus::Ok);
+    assert!(
+        state.events[0].result.contains("no integration 'bank'"),
+        "{}",
+        state.events[0].result
+    );
+    assert!(
+        state.events[0].result.contains("blog"),
+        "{}",
+        state.events[0].result
+    );
 }
