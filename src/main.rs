@@ -29,7 +29,6 @@ mod runtime;
 mod sandbox;
 mod scheduler;
 mod service;
-mod skill;
 mod state;
 mod term;
 mod tools;
@@ -222,14 +221,8 @@ enum Cmd {
         #[command(subcommand)]
         command: cli::IntegrationCmd,
     },
-    /// List the tools runs can use (installed skills included) and the rule for each
-    #[command(alias = "skills")]
+    /// List the tools runs can use and the rule for each
     Tools,
-    /// Skills: capabilities Airth develops for itself and you install
-    Skill {
-        #[command(subcommand)]
-        command: cli::SkillCmd,
-    },
     /// Check that the environment is ready
     Doctor,
 }
@@ -451,7 +444,6 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
-        Some(Cmd::Skill { command }) => cli::skill(ctx, command),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {
             run(
@@ -839,66 +831,7 @@ fn skills(ctx: &Ctx) -> Result<bool> {
             skill.description.lines().next().unwrap_or("")
         );
     }
-    if let Some(realm) = &realm {
-        for (m, _) in realm.skills().enabled() {
-            println!(
-                "{:<16} {:<8} {:<6} {} \x1b[2m(installed skill)\x1b[0m",
-                m.name,
-                "skill",
-                policy.rule(permissions::Capability::Skill).as_str(),
-                m.description.lines().next().unwrap_or("")
-            );
-        }
-    }
     Ok(true)
-}
-
-/// Develop a skill in this terminal, then show its evaluation.
-pub fn develop_skill(
-    ctx: &Ctx,
-    realm: &Realm,
-    name: &str,
-    description: Option<&str>,
-    feedback: Option<&str>,
-    verbose: bool,
-) -> Result<bool> {
-    let hub = ctx.hub();
-    banner(&hub, realm);
-    let record = realm.skills().get(name).ok();
-    // A skill developed before is reworked in its last run, which knows it.
-    let mut state = match (record.as_ref().and_then(|r| r.dev_run.clone()), feedback) {
-        (Some(run), Some(feedback)) => {
-            let state = hub.follow_up(realm, &run, feedback)?;
-            realm
-                .skills()
-                .update(name, |r| r.status = skill::SkillStatus::Developing)?;
-            state
-        }
-        _ => hub.develop_skill(realm, name, description)?,
-    };
-    eprintln!(
-        "developing skill {name} in {}",
-        realm.skills().draft_dir(name).display()
-    );
-    let mut observer = term::TerminalObserver::new(verbose);
-    let hooks = RunHooks {
-        approver: Box::new(TerminalApprover),
-        observer: &mut observer,
-        cancel: cancel_on_ctrl_c()?,
-    };
-    hub.drive(realm, &mut state, AgentConfig::new(50), hooks)?;
-    let record = realm.skills().get(name)?;
-    if let Some(e) = &record.evaluation {
-        eprint!("\n{}", e.report());
-    }
-    if record.status == skill::SkillStatus::Ready {
-        eprintln!(
-            "\x1b[2mreview: airth skill show {name} --source · enable: airth skill install {name}\x1b[0m"
-        );
-    } else {
-        eprintln!("\x1b[2mrework: airth skill develop {name} --feedback \"...\"\x1b[0m");
-    }
-    Ok(record.status == skill::SkillStatus::Ready)
 }
 
 fn doctor(ctx: &Ctx) -> Result<bool> {

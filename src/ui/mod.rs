@@ -28,7 +28,6 @@ use crate::permissions::{Answer, Approver, Capability, PermissionRequest, Rule};
 use crate::realm::{PROVIDER_KEYS, Realm};
 use crate::sandbox;
 use crate::scheduler;
-use crate::skill::SkillStatus;
 use crate::state::{State, Status};
 use crate::tools::catalog;
 use crate::tools::mcp::McpStore;

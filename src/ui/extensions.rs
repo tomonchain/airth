@@ -53,12 +53,12 @@ impl App {
                     .into_iter()
                     .find(|s| s.name == *name)
                     .context("this skill is not in the catalog (refresh it?)")?;
-                catalog::install_in_background(skill, realm.skills().dir().to_path_buf());
+                catalog::install_in_background(skill, realm.skills_dir());
                 json_response(200, self.catalog_installed(&realm))
             }
             (Method::Delete, ["realms", r, "catalog", name]) => {
                 let realm = self.realm(r)?;
-                if !catalog::uninstall(realm.skills().dir(), name)? {
+                if !catalog::uninstall(&realm.skills_dir(), name)? {
                     return Err(anyhow!("this skill is not installed"));
                 }
                 json_response(200, self.catalog_installed(&realm))
@@ -101,7 +101,7 @@ impl App {
                 // A remote MCP connector: save it, then open its sign-in page.
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                let dir = realm.skills().dir().to_path_buf();
+                let dir = realm.skills_dir();
                 let name = body["name"].as_str().unwrap_or_default().trim().to_string();
                 {
                     let _w = self.write_lock();
@@ -143,7 +143,7 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let name = body["name"].as_str().unwrap_or_default().trim();
-                McpStore::new(realm.skills().dir()).save(
+                McpStore::new(&realm.skills_dir()).save(
                     name,
                     body["command"].as_str().unwrap_or_default(),
                     body["description"].as_str().unwrap_or_default(),
@@ -160,104 +160,17 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 if let Some(enabled) = body["enabled"].as_bool() {
-                    McpStore::new(realm.skills().dir()).update(name, |s| s.enabled = enabled)?;
+                    McpStore::new(&realm.skills_dir()).update(name, |s| s.enabled = enabled)?;
                 }
                 json_response(200, self.mcp(&realm)?)
             }
             (Method::Delete, ["realms", r, "mcp", name]) => {
                 let realm = self.realm(r)?;
-                if !McpStore::new(realm.skills().dir()).remove(name)? {
+                if !McpStore::new(&realm.skills_dir()).remove(name)? {
                     return Err(anyhow!("no such MCP server"));
                 }
-                crate::tools::remote::forget_auth(realm.skills().dir(), name);
+                crate::tools::remote::forget_auth(&realm.skills_dir(), name);
                 json_response(200, self.mcp(&realm)?)
-            }
-            (Method::Get, ["realms", r, "skills"]) => {
-                json_response(200, self.skills(&self.realm(r)?)?)
-            }
-            (Method::Post, ["realms", r, "skills"]) => {
-                // The owner asks for a new skill: develop it right away.
-                let body = read_json(request)?;
-                let realm = self.realm(r)?;
-                self.hub.model_for(&realm).context("no model available")?;
-                let name = body["name"].as_str().unwrap_or_default().trim();
-                if realm.skills().get(name).is_ok() {
-                    return Err(anyhow!("a skill named {name} already exists"));
-                }
-                let description = body["description"].as_str().unwrap_or_default().trim();
-                if description.is_empty() {
-                    return Err(anyhow!("describe what the skill should do"));
-                }
-                let state = self.hub.develop_skill(&realm, name, Some(description))?;
-                let run = state.id.clone();
-                self.spawn(realm, state, Job::Drive);
-                json_response(200, json!({"id": run}))
-            }
-            (Method::Post, ["realms", r, "skills", name, "develop"]) => {
-                let body = read_json(request).unwrap_or(json!({}));
-                let realm = self.realm(r)?;
-                self.hub.model_for(&realm).context("no model available")?;
-                let record = realm.skills().get(name)?;
-                let feedback = body["feedback"]
-                    .as_str()
-                    .map(str::trim)
-                    .filter(|f| !f.is_empty());
-                // Rework continues the development run, which knows the skill.
-                let state = match (&record.dev_run, feedback) {
-                    (Some(run), Some(feedback)) => {
-                        self.ensure_idle(r, run)?;
-                        let state = self.hub.follow_up(&realm, run, feedback)?;
-                        realm
-                            .skills()
-                            .update(name, |s| s.status = SkillStatus::Developing)?;
-                        state
-                    }
-                    _ => self.hub.develop_skill(&realm, name, None)?,
-                };
-                let run = state.id.clone();
-                self.spawn(realm, state, Job::Drive);
-                json_response(200, json!({"id": run}))
-            }
-            (Method::Get, ["realms", r, "skills", name, "files"]) => {
-                let realm = self.realm(r)?;
-                realm.skills().get(name)?;
-                let dir = realm.skills().draft_dir(name);
-                let files: Vec<Value> = crate::skill::list_files(&dir)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|f| {
-                        let content = std::fs::read_to_string(dir.join(&f)).ok();
-                        json!({"path": f.display().to_string(), "content": content})
-                    })
-                    .collect();
-                json_response(200, json!(files))
-            }
-            (Method::Post, ["realms", r, "skills", name, action]) => {
-                let realm = self.realm(r)?;
-                let store = realm.skills();
-                match *action {
-                    "evaluate" => {
-                        self.hub.evaluate_skill(&realm, name)?;
-                    }
-                    "install" => {
-                        store.install(name)?;
-                    }
-                    "uninstall" => {
-                        store.uninstall(name)?;
-                    }
-                    "reject" => {
-                        store.update(name, |s| s.status = SkillStatus::Rejected)?;
-                    }
-                    _ => return Err(anyhow!("unknown action")),
-                }
-                json_response(200, self.skills(&realm)?)
-            }
-            (Method::Delete, ["realms", r, "skills", name]) => {
-                let realm = self.realm(r)?;
-                if !realm.skills().remove(name)? {
-                    return Err(anyhow!("no such skill"));
-                }
-                json_response(200, self.skills(&realm)?)
             }
             (Method::Post, ["realms", r, "integrations"]) => {
                 let body = read_json(request)?;
@@ -299,11 +212,10 @@ impl App {
 
     /// Catalog skills installed in the realm, those installing, and failures.
     fn catalog_installed(&self, realm: &Realm) -> Value {
-        let store = realm.skills();
-        let dir = store.dir();
-        let (installing, errors) = catalog::install_status(dir);
+        let dir = realm.skills_dir();
+        let (installing, errors) = catalog::install_status(&dir);
         json!({
-            "installed": catalog::installed(dir),
+            "installed": catalog::installed(&dir),
             "installing": installing,
             "errors": errors.into_iter().collect::<HashMap<_, _>>(),
         })
@@ -311,7 +223,7 @@ impl App {
 
     /// The realm's MCP servers, with the names the agent sees for their tools.
     fn mcp(&self, realm: &Realm) -> Result<Value> {
-        let servers: Vec<Value> = McpStore::new(realm.skills().dir())
+        let servers: Vec<Value> = McpStore::new(&realm.skills_dir())
             .list()?
             .into_iter()
             .map(|s| {
@@ -330,7 +242,7 @@ impl App {
                     "name": s.name,
                     "command": s.command,
                     "url": s.url,
-                    "signed_in": crate::tools::remote::load_auth(realm.skills().dir(), &s.name)
+                    "signed_in": crate::tools::remote::load_auth(&realm.skills_dir(), &s.name)
                         .is_some_and(|a| a.access_token.is_some()),
                     "description": s.description,
                     "enabled": s.enabled,
@@ -351,26 +263,7 @@ impl App {
         let ws = self
             .hub
             .workspace_for(realm, &State::new("connect an MCP server", None))?;
-        crate::tools::mcp::connect_in_background(realm.skills().dir(), name, ws)
-    }
-
-    fn skills(&self, realm: &Realm) -> Result<Value> {
-        let list: Vec<Value> = realm
-            .skills()
-            .list()?
-            .into_iter()
-            .map(|r| {
-                let developing = r.dev_run.as_deref().is_some_and(|run| {
-                    self.live(realm.name(), run).is_some() || self.hub.is_live(realm, run)
-                });
-                let mut v = json!(r);
-                v["developing_now"] = json!(developing);
-                v["passed"] = json!(r.evaluation.as_ref().is_some_and(|e| e.passed()));
-                v["summary"] = json!(r.evaluation.as_ref().map(|e| e.describe()));
-                v
-            })
-            .collect();
-        Ok(json!(list))
+        crate::tools::mcp::connect_in_background(&realm.skills_dir(), name, ws)
     }
 }
 

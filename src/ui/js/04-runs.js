@@ -199,7 +199,6 @@ function renderRun() {
     h("span", null, "updated " + ago(s.updated_at)),
     d.repo && ((app.realmDetail && app.realmDetail.repos) || []).length > 1 && h("span", { class: "rh-tag", title: "The repository this task works in" }, icon("code"), d.repo),
     s.origin && h("span", { class: "rh-tag", title: s.origin.trigger }, icon("clock"), s.origin.objective),
-    s.skill && h("a", { class: "rh-tag", href: `#/r/${enc(app.realm)}/skills` }, icon("spark"), "developing " + s.skill),
   ].filter(Boolean);
   if (!app.renaming) runEls.header.replaceChildren(
     h("span", { class: "rh-dot dot " + (d.pending ? "awaiting" : statusClass), title: STATUS_LABEL[status] || status }),
@@ -433,7 +432,6 @@ const DONE_VERBS = {
   execute_command: ["ran", "command", "commands"],
   http_request: ["sent", "request", "requests"],
   remember: ["saved", "memory", "memories"],
-  propose_skill: ["proposed", "skill", "skills"],
 };
 
 /** "Read 4 files, ran 2 commands, updated the plan" */

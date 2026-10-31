@@ -103,7 +103,7 @@ const ICON = {
 const TOOL_ICONS = {
   read_file: "file", list_directory: "folder", write_file: "filePlus", edit_file: "fileEdit", execute_command: "terminal",
   remember: "brain", http_request: "world", update_plan: "listCheck",
-  propose_skill: "spark", test_skill: "flask", use_skill: "books",
+  use_skill: "books",
 };
 const toolIcon = (name) => icon(TOOL_ICONS[name] || (name.startsWith("mcp__") ? "plug" : "tool"));
 

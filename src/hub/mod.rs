@@ -21,7 +21,6 @@ use crate::objective::{self, Objective, Schedule, Trigger};
 use crate::permissions::{Approver, Capability, PermissionGate};
 use crate::realm::{PROVIDER_KEYS, Realm, Repo};
 use crate::runtime::Runtime;
-use crate::skill::{self, SkillRecord, SkillStatus, SkillStore};
 use crate::state::{Origin, State, Status, render_plan};
 use crate::tools::{self, Access, PlanHandle, RealmTools, Workspace};
 use anyhow::{Context, Result, bail};
@@ -213,17 +212,7 @@ impl Hub {
                 source: format!("run:{}", state.id),
                 plan: plan.clone(),
                 integrations: realm.config.integrations.clone(),
-                skills: realm.skills(),
-                inbox: self.home.inbox(),
-                realm: realm.name().to_string(),
-                developing: match &state.skill {
-                    Some(name) => Some((
-                        name.clone(),
-                        self.skill_scratch(realm, &state.id),
-                        self.denied_to_skills(realm)?,
-                    )),
-                    None => None,
-                },
+                skills_dir: realm.skills_dir(),
                 allowed: state.tools.clone(),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
@@ -282,14 +271,6 @@ impl Hub {
             state.save()?;
             observer.changed(state);
         }
-        if state.skill.is_some()
-            && let Err(e) = self.skill_run_ended(realm, state, &hooks.cancel)
-        {
-            eprintln!(
-                "warning: could not evaluate skill of run {}: {e:#}",
-                state.id
-            );
-        }
         if state.origin.is_some()
             && let Err(e) = self.objective_run_ended(realm, state)
         {
@@ -346,20 +327,6 @@ impl Hub {
     /// the owner's checkout, and write only its worktree and the git data it
     /// needs.
     pub fn workspace_for(&self, realm: &Realm, state: &State) -> Result<Workspace> {
-        if let Some(name) = &state.skill {
-            // A skill is built in its own folder, with nothing else of the
-            // realm in reach and no credentials.
-            let draft = realm.skills().draft_dir(name);
-            std::fs::create_dir_all(&draft)?;
-            let mut ws = Workspace::new(&draft)?;
-            for denied in self.denied_to_skills(realm)? {
-                ws = ws.with_rule(denied, Access::None);
-            }
-            return Ok(ws
-                .with_secrets(Vec::new(), self.redactions(realm)?)
-                .with_sandbox(true)
-                .with_network(!realm.config.offline));
-        }
         let root = match &state.change {
             Some(c) if c.status == ChangeStatus::Open => c.path.clone(),
             Some(c) => bail!("this run's change was {}", c.status.as_str()),
@@ -369,8 +336,6 @@ impl Hub {
         for denied in self.denied_to(realm)? {
             ws = ws.with_rule(denied, Access::None);
         }
-        // Installed skills run from the home: readable, never writable.
-        ws = ws.with_rule(realm.skills().installed_root(), Access::Read);
         // What the business is belongs to the owner: runs read it only.
         ws = ws.with_rule(crate::business::dir(&root), Access::Read);
         // The realm's other repositories can be read, to work across them.
@@ -415,16 +380,6 @@ impl Hub {
         Ok(out)
     }
 
-    /// What a skill being developed or evaluated may not reach: the above,
-    /// and its own realm's folder too.
-    fn denied_to_skills(&self, realm: &Realm) -> Result<Vec<PathBuf>> {
-        let mut out = self.denied_to(realm)?;
-        if let Some(root) = &realm.config.root {
-            out.push(root.clone());
-        }
-        Ok(out)
-    }
-
     /// Credential values to hide from the model, with their names.
     fn redactions(&self, realm: &Realm) -> Result<Vec<(String, String)>> {
         // Provider settings like the model name are not secret; keys are.
@@ -459,10 +414,7 @@ impl Hub {
             realm: Some(realm.name().to_string()),
             realm_description: realm.config.description.clone(),
             owner,
-            business: match &state.skill {
-                Some(_) => None,
-                None => crate::business::briefing(&realm.root()?)?,
-            },
+            business: crate::business::briefing(&realm.root()?)?,
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
             pull_requests: state.change.is_some()

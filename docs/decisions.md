@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 40. Airth no longer develops its own skills
+
+Runs no longer propose skills (`propose_skill`), and Airth no longer develops, evaluates and installs them (`test_skill`, `airth skill`, the app's "Built by Airth" tab). This supersedes decision 14. What extends a business's agents is what the owner connects: MCP servers and connectors (decisions 18 and 20), integrations, and skills from the catalog, all still under the realm's `skill` and `network` rules. Skills installed before are no longer offered to runs; their files stay in the realm's folder until it is removed.
+
+*Why:* a business needs its agents to use its own services, which connectors give, more than tools Airth writes for itself. Self-development was the largest feature left from the personal agent (decision 32), with its own runs, workspace, sandboxed evaluation and pages to maintain and secure.
+
+*Cost:* a capability no connector or catalog skill offers must be built outside Airth, as an MCP server or a script in the business's code.
+
 ## 39. The Mac app tools and the `apps` capability are removed
 
 The tools that drove the owner's Mac apps (`calendar`, `reminders`, `notes`, `mail_draft`, `safari`, `clipboard`, `open_on_mac`), the `apps` capability that governed them, and the Google and iCloud connectors that went through them are removed, with their pages. This supersedes the Mac apps half of decision 16; the Mac app itself stays. A realm saved with an `apps` rule still loads: the rule is ignored, and nothing can be approved for `apps` any more.

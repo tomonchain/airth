@@ -216,10 +216,6 @@ pub struct State {
     /// For a bot's run: the realm's extensions it may use (see `RealmTools`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
-    /// For a run developing a skill: the skill's name. Its workspace is the
-    /// skill's draft folder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skill: Option<String>,
     /// Which model connection the run uses, when the realm has a fast one
     /// (see models/router.rs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -270,7 +266,6 @@ impl State {
             budget: Budget::default(),
             origin: None,
             tools: None,
-            skill: None,
             tier: None,
             context: None,
             context_update: None,

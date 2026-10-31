@@ -157,29 +157,15 @@ airth inbox        # new notifications
 airth summary      # the last 24 h across realms: what ran, what waits for review, what's next
 ```
 
-## Skills: Airth extends itself
+## Connectors and skills
 
-When a run needs a capability Airth lacks, it can **propose a skill**: a small program with tests that would become a new tool. You decide what happens next:
+A business reaches its services, and its agents gain tools, from the app's **Connectors & skills** page:
 
-1. **Develop:** Airth builds it in the skill's own folder, which cannot reach the rest of the realm or its credentials.
-2. **Evaluate:** the runtime runs the skill's tests in the sandbox, and you get a notification with the result.
-3. **Install:** you review the files and the test results, then install it. Only exactly the files that passed can be installed, and from then on runs in that realm can use it as a tool, under the realm's `skill` rule.
-
-```bash
-airth skill list
-airth skill develop word_count               # a proposed skill (or --description "..." for a new one)
-airth skill show word_count --source         # review it
-airth skill install word_count
-airth skill develop word_count --feedback "Also count lines"   # rework it, then install again
-```
-
-The app's **Skills** page does the same: develop, review files and test results, ask for changes, install, uninstall. `airth tools` lists every tool a run has, installed skills included.
-
-The same page has more tabs:
-
-- **Connectors:** like the connectors of Claude or ChatGPT. Click **Connect** on Notion, Linear, Stripe, Vercel, Sentry, PayPal, Canva, Intercom, Figma, Webflow, Cloudflare, Square or Supabase: the service's sign-in page opens in your browser, and once you accept, Airth keeps the access in the realm (renewed on its own, never readable by commands or the model) and runs get the service's tools. Search the official [MCP Registry](https://registry.modelcontextprotocol.io) for more, or add a custom server URL. Services that only issue API keys (Lemon Squeezy, Qonto, Brevo, GitHub…) are below: paste a token once, and Airth binds it to the service's official API and checks it. Gmail and Google go through macOS (System Settings → Internet Accounts) and the Mac app tools.
-- **Catalog:** ready-made Agent Skills from [github.com/anthropics/skills](https://github.com/anthropics/skills) (PDF, Word, slides, design, MCP building…). Install one in a realm and its runs see it in their `use_skill` tool: they read its instructions when a task matches, as guidance that never outranks your boundaries. Binaries and very large files are left out, and a skill's scripts run only once copied into the workspace, with your approval.
+- **Connectors:** like the connectors of Claude or ChatGPT. Click **Connect** on Notion, Linear, Stripe, Vercel, Sentry, PayPal, Canva, Intercom, Figma, Webflow, Cloudflare, Square or Supabase: the service's sign-in page opens in your browser, and once you accept, Airth keeps the access in the realm (renewed on its own, never readable by commands or the model) and runs get the service's tools. Search the official [MCP Registry](https://registry.modelcontextprotocol.io) for more, or add a custom server URL. Services that only issue API keys (Lemon Squeezy, Qonto, Brevo, GitHub…) are below: paste a token once, and Airth binds it to the service's official API and checks it.
+- **Catalog:** ready-made Agent Skills from [github.com/anthropics/skills](https://github.com/anthropics/skills) (PDF, Word, slides, design, MCP building…). Install one in a realm and its runs see it in their `use_skill` tool: they read its instructions when a task matches, as guidance that never outranks your objective. Binaries and very large files are left out, and a skill's scripts run only once copied into the workspace, with your approval.
 - **MCP servers:** add a stdio [Model Context Protocol](https://modelcontextprotocol.io) server by the command that starts it (e.g. `npx -y @modelcontextprotocol/server-memory`). Airth connects it in the realm's sandbox, with the realm's credentials (put its token under Realm settings → Access), and lists its tools. Runs get them as `mcp__<server>__<tool>`, under the realm's `skill` rule. Each call starts the server and stops it afterwards.
+
+`airth tools` lists every tool a run has, and the business's rule for each.
 
 In the app, a run is a **chat**. Chats can be renamed: click a chat's title, or double-click it in the sidebar. The name is only for you; the objective the agent works on does not change. What you type in a message box stays there as a draft (per chat, and per realm on the new-chat screen) when you switch chats or reload; you can write your next message while Airth works, and send it when it stops.
 
@@ -295,7 +281,7 @@ airth send last "Now add docs"    # continue a run (by id or `last`)
 airth resume last                 # resume a run that was interrupted, stopped or failed
 airth runs                        # the realm's runs: status, plan progress, checks, objective
 airth serve                       # the app and the scheduler, without opening a browser
-airth tools                       # the tools (installed skills included), and this realm's rule for each
+airth tools                       # the tools runs have, and this realm's rule for each
 ```
 
 Approvals happen in the terminal: answer `y`, `a` to allow it for the rest of the run, or type a reason to deny, and the agent sees that reason. Ctrl-C stops a run cleanly; press it twice to quit at once. A run whose process was killed shows as `interrupted` and can still be continued.
@@ -403,7 +389,6 @@ src/
   phone.rs        the phone: Tailscale names the app accepts, the pairing link and its QR code
   notify.rs       the owner's inbox
   service.rs      the login service (launchd)
-  skill.rs        skills: manifests, evaluation, installation
   integration.rs  integrations: base URLs with credentials bound to them
   isolation.rs    git worktrees per run: create, commit, diff, update with the base, conflicts, adopt, discard
   github.rs       pull requests on GitHub: push, open, follow, close
@@ -421,7 +406,7 @@ src/
   runtime.rs      the single path from a tool call to execution (permission check, redaction, event)
   permissions.rs  capabilities, rules, policy, run grants, terminal approval
   tools/          read_file, list_directory, write_file, edit_file, execute_command, http_request,
-                  update_plan, remember, propose_skill, test_skill, installed skills; workspace access rules
+                  update_plan, remember, MCP servers, use_skill (catalog); workspace access rules
   models/         provider-neutral Model trait; Anthropic and OpenAI-compatible (OpenAI, xAI, Ollama) providers;
                   router.rs: fast/main/fallback connections, triage, failover
   state.rs        persisted run state, plans

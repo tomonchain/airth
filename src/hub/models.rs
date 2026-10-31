@@ -244,7 +244,7 @@ impl Hub {
             // Runs from before routing, and skill development, use the main model.
             let current = state
                 .tier
-                .or((state.iterations > 0 || state.skill.is_some()).then_some(Tier::Strong));
+                .or((state.iterations > 0).then_some(Tier::Strong));
             let mut tier = current;
             if current != Some(Tier::Strong)
                 && let Some(ask) = latest_ask(state)

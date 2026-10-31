@@ -15,7 +15,6 @@ mod models;
 mod objectives;
 mod pipelines;
 mod runs;
-mod skills;
 
 #[derive(Default)]
 struct Scripted {

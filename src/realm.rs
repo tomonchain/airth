@@ -377,8 +377,9 @@ impl Realm {
         MemoryStore::new(self.dir.join("memory.json"))
     }
 
-    pub fn skills(&self) -> crate::skill::SkillStore {
-        crate::skill::SkillStore::new(self.dir.join("skills"))
+    /// Where the realm's MCP servers and catalog skills are kept.
+    pub fn skills_dir(&self) -> PathBuf {
+        self.dir.join("skills")
     }
 
     pub fn objectives(&self) -> ObjectiveStore {

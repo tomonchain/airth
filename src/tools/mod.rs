@@ -9,15 +9,13 @@ mod memory;
 mod plan;
 pub mod remote;
 mod shell;
-mod skill;
 
 use crate::cancel::CancelToken;
 use crate::integration::Integration;
 use crate::memory::MemoryStore;
 use crate::models::ToolSpec;
-use crate::notify::Inbox;
+
 use crate::permissions::Capability;
-use crate::skill::SkillStore;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
@@ -56,23 +54,17 @@ pub struct RealmTools {
     pub source: String,
     pub plan: PlanHandle,
     pub integrations: Vec<Integration>,
-    pub skills: SkillStore,
-    /// Where proposals are announced to the owner.
-    pub inbox: Inbox,
-    pub realm: String,
-    /// Set for a run developing a skill: the skill's name, and where its
-    /// tests run.
-    pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
+    /// Where the realm's MCP servers and catalog skills are kept.
+    pub skills_dir: PathBuf,
     /// For a bot's run: the realm's extensions it may use, by name
-    /// (integrations, MCP servers, skills). None:
-    /// all of them. What is left out is not offered, so it cannot be called.
+    /// (integrations, MCP servers, skills). None: all of them. What is left out is not offered, so it cannot be called.
     pub allowed: Option<Vec<String>>,
 }
 
 /// What a bot can be given, by name: the realm's integrations, MCP
 /// servers and skills.
 pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
-    let skills = realm.skills();
+    let skills = realm.skills_dir();
     let mut names: Vec<String> = realm
         .config
         .integrations
@@ -80,21 +72,14 @@ pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
         .map(|i| i.name.clone())
         .collect();
     names.extend(
-        crate::tools::mcp::McpStore::new(skills.dir())
+        crate::tools::mcp::McpStore::new(&skills)
             .list()
             .unwrap_or_default()
             .into_iter()
             .map(|s| s.name),
     );
     names.extend(
-        skills
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| s.name),
-    );
-    names.extend(
-        crate::tools::catalog::installed(skills.dir())
+        crate::tools::catalog::installed(&skills)
             .into_iter()
             .map(|s| s.name),
     );
@@ -109,8 +94,7 @@ pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
 }
 
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
-/// memory, integrations and installed skills. A run developing a skill gets
-/// `test_skill` instead of memory and skills.
+/// memory and integrations, its MCP servers and catalog skills.
 pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
     let allowed = realm.allowed;
     let allows = |name: &str| allowed.as_ref().is_none_or(|a| a.iter().any(|n| n == name));
@@ -123,38 +107,19 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
             .filter(|i| allows(&i.name))
             .collect(),
     }));
-    if let Some((name, scratch, deny)) = realm.developing {
-        tools.push(Box::new(skill::TestSkill {
-            name,
-            scratch,
-            deny,
-        }));
-        return tools;
-    }
     tools.push(Box::new(memory::Remember {
         memory: realm.memory,
-        source: realm.source.clone(),
-    }));
-    tools.push(Box::new(skill::ProposeSkill {
-        store: realm.skills.clone(),
         source: realm.source,
-        inbox: realm.inbox,
-        realm: realm.realm,
     }));
-    for (manifest, dir) in realm.skills.enabled() {
-        if allows(&manifest.name) {
-            tools.push(Box::new(skill::SkillTool { manifest, dir }));
-        }
-    }
     // Tools of the MCP servers the owner connected to this realm.
-    tools.extend(mcp::tools_of(realm.skills.dir(), allows));
+    tools.extend(mcp::tools_of(&realm.skills_dir, allows));
     // Skills the owner installed from the catalog, read through `use_skill`.
-    tools.extend(catalog::tool_for(realm.skills.dir(), allows));
+    tools.extend(catalog::tool_for(&realm.skills_dir, allows));
     tools
 }
 
 pub use plan::PlanHandle;
-pub use shell::{run_shell, run_shell_with_input};
+pub use shell::run_shell;
 
 /// How much of the filesystem a path grants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -428,10 +393,7 @@ mod tests {
             source: String::new(),
             plan: PlanHandle::default(),
             integrations: vec![integration("blog"), integration("bank")],
-            skills: SkillStore::new(&skills),
-            inbox: Inbox::new(dir.path().join("inbox.json")),
-            realm: "r".into(),
-            developing: None,
+            skills_dir: skills.clone(),
             allowed,
         });
         let http = tools
