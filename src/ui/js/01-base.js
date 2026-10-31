@@ -290,7 +290,8 @@ const app = {
   realm: null, // current realm name
   realmDetail: null, // settings of the current realm
   runs: [],
-  showArchived: false, // the sidebar lists archived chats instead
+  showArchived: false, // the task list shows archived tasks instead
+  taskFilter: "all", // which tasks the list shows (see TASK_FILTERS)
   route: { view: "home" },
   run: null, // last full response for the current run
   version: null,

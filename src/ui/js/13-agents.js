@@ -50,11 +50,15 @@ Each time:
 In your report: the leads, why each one, and the drafts.` },
 ];
 
-const agentUi = { editing: null, hiring: null, letGo: null };
+/** `hiring`: "pick" while choosing a template, then the template being hired. */
+const agentUi = { editing: null, hiring: null, letGo: null, open: new Set() };
 
 async function renderAgents(main) {
   const realm = app.realm;
-  page(main, "Agents", "Each agent has a job, written in plain words, and only the tools and limits you give it. Its job is in business/bots/; its routines say when it works.");
+  const hireBtn = h("button", { class: "btn primary", type: "button", onclick: () => { agentUi.hiring = "pick"; again(); } }, icon("plus"), "Hire an agent");
+  main.append(h("div", { class: "page" }, h("div", { class: "page-inner" },
+    h("div", { class: "page-head" }, h("h1", null, "Agents"), hireBtn),
+    h("p", { class: "sub" }, "Each agent has a job in plain words, and only the tools and limits its routines give it."))));
   const inner = $(".page-inner", main);
   let d;
   try { d = await api(`${realmPath(realm)}/agents`); } catch (e) { return flash(e.message, true); }
@@ -93,7 +97,11 @@ async function renderAgents(main) {
         ? [ta, h("div", { class: "biz-actions" },
           h("button", { class: "btn primary", type: "button", onclick: () => save(a.name, ta.value) }, "Save job"),
           h("button", { class: "btn", type: "button", onclick: () => { agentUi.editing = null; again(); } }, "Cancel"))]
-        : h("div", { class: "prose agent-job", html: mdc(a.job) }),
+        : [h("div", { class: "prose agent-job" + (agentUi.open.has(a.name) ? " open" : ""), html: mdc(a.job) }),
+          h("button", { class: "btn ghost small agent-more", type: "button", onclick: () => {
+            if (agentUi.open.has(a.name)) agentUi.open.delete(a.name); else agentUi.open.add(a.name);
+            again();
+          } }, agentUi.open.has(a.name) ? "Show less" : "Show the whole job")],
       h("div", { class: "agent-section" }, h("div", { class: "strong small" }, "Routines"),
         a.routines.map((o) => h("div", { class: "biz-row" },
           h("a", { href: `#/r/${enc(realm)}/routines` }, o.id, !o.enabled && h("span", { class: "muted" }, " · paused")),
@@ -123,7 +131,7 @@ async function renderAgents(main) {
 
   const hire = () => {
     const t = agentUi.hiring;
-    if (t) {
+    if (t && t !== "pick") {
       const name = h("input", { type: "text", value: t.name, "aria-label": "Name", autocomplete: "off", spellcheck: "false" });
       name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
       const job = h("textarea", { class: "biz-edit", rows: 14, "aria-label": "Job" });
@@ -135,7 +143,10 @@ async function renderAgents(main) {
           h("button", { class: "btn primary", type: "button", onclick: () => save(name.value.trim(), job.value) }, "Hire"),
           h("button", { class: "btn", type: "button", onclick: () => { agentUi.hiring = null; again(); } }, "Cancel")));
     }
-    return h("div", { class: "card biz-card" }, h("h2", null, "Hire an agent"),
+    if (agentUi.hiring !== "pick") return null;
+    return h("div", { class: "card biz-card" },
+      h("div", { class: "biz-head" }, h("h2", null, "Hire an agent"), h("span", { class: "grow" }),
+        h("button", { class: "btn ghost small", type: "button", onclick: () => { agentUi.hiring = null; again(); } }, "Cancel")),
       h("div", { class: "agent-templates" },
         AGENT_TEMPLATES.map((x) => h("button", { class: "agent-template", type: "button", onclick: () => { agentUi.hiring = x; again(); } },
           h("span", { class: "strong" }, x.title), h("span", { class: "muted small" }, x.desc))),
@@ -143,6 +154,8 @@ async function renderAgents(main) {
           h("span", { class: "strong" }, "Your own"), h("span", { class: "muted small" }, "Write its job from scratch."))));
   };
 
-  if (!d.agents.length && !agentUi.hiring) inner.append(h("p", { class: "muted" }, "No agent yet. Hire one to start: give it a job, then a routine that says when it works."));
-  inner.append(h("div", { class: "agent-grid" }, d.agents.map(card)), hire());
+  // Hiring comes first while it is under way; the team follows.
+  inner.append(hire());
+  if (!d.agents.length && !agentUi.hiring) inner.append(h("div", { class: "card pad muted" }, "No agent yet. Hire one: give it a job, then a routine that says when it works."));
+  inner.append(h("div", { class: "agent-grid" }, d.agents.map(card)));
 }

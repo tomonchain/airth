@@ -65,8 +65,10 @@
 .realm-option .needs { margin-left: 0; }
 
 .section-label { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 16px 10px 4px; }
-.task-list { margin-top: 28px; }
-.new-inner.tasks { margin: 0 auto; }
+.task-list { margin-top: 8px; }
+.task-ask { padding: 12px 14px; margin-bottom: 20px; }
+.task-ask .composer { padding: 0; }
+.task-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; overflow-x: auto; scrollbar-width: none; }
 .run-item .routine { flex: none; font-size: 11.5px; color: var(--faint); }
 .run-item {
   position: relative; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
@@ -524,22 +526,5 @@ pre.out {
 .btn.ghost:hover:not(:disabled) { background: var(--hover); }
 kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid currentColor; opacity: .6; line-height: 1.5; }
 
-/* ---------- New run (the home screen) ---------- */
-.new-view { flex: 1; overflow-y: auto; display: flex; position: relative; isolation: isolate; }
-.new-inner { max-width: 740px; width: 100%; margin: auto; padding: 56px 24px 40px; }
-.new-inner > * { animation: blur-in .6s var(--ease) both; }
-.new-inner > :nth-child(2) { animation-delay: .05s; }
-.new-inner > :nth-child(3) { animation-delay: .1s; }
-.new-inner > :nth-child(4) { animation-delay: .15s; }
-.new-inner > :nth-child(5) { animation-delay: .22s; }
-.new-inner > :nth-child(6) { animation-delay: .3s; }
-.new-inner h1 { font-size: 30px; letter-spacing: -0.03em; margin: 0 0 8px; font-weight: 600; text-align: center; }
-.new-inner .eyebrow { text-align: center; }
-.new-inner .sub {
-  color: var(--muted); margin: 0 auto 28px; text-align: center; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px;
-}
-.new-inner .composer { padding: 0; }
-.new-inner .composer textarea { min-height: 78px; }
-.eyebrow { font-size: 12px; font-weight: 500; color: var(--faint); margin-bottom: 8px; }
+.task-ask .composer textarea { min-height: 64px; }
 

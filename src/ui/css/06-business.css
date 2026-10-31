@@ -32,7 +32,9 @@
 .biz-delivered:first-of-type { border-top: 0; padding-top: 0; }
 .biz-delivered:hover .strong { text-decoration: underline; }
 .agent-mark { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex: none; }
-.agent-job { font-size: 14px; max-height: 260px; overflow-y: auto; }
+.agent-job { font-size: 14px; max-height: 7.5em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.agent-job.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.agent-more { justify-self: start; padding-left: 0; }
 .agent-section { display: grid; gap: 2px; margin-top: 10px; }
 .agent-limits { margin-top: 4px; }
 .agent-add-routine { justify-self: start; margin-top: 4px; }
@@ -69,3 +71,6 @@
 .qr-frame { background: #fff; padding: 12px; border-radius: 10px; flex: none; }
 .qr { display: grid; width: 200px; height: 200px; }
 .qr span.on { background: #000; }
+.page-inner .stats { margin-bottom: 16px; }
+.biz-card.decide { border-color: var(--border-strong); }
+.strategy-text { font-size: 14px; max-height: 220px; overflow-y: auto; }

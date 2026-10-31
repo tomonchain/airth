@@ -166,7 +166,7 @@ a.rh-tag { color: var(--brand); }
   .icon-action.side-open, .app.side-hidden .icon-action.side-open { display: none; }
   .app.side-hidden .run-header { padding-left: 16px; }
   .run-header { padding-top: calc(10px + env(safe-area-inset-top)); }
-  .page-inner, .new-inner, .welcome-inner { padding-top: calc(20px + env(safe-area-inset-top)) !important; }
+  .page-inner, .welcome-inner { padding-top: calc(20px + env(safe-area-inset-top)) !important; }
   .page-inner h1 { font-size: 24px; }
   /* Thumb-sized controls, and text iOS does not zoom into. */
   .btn { min-height: 44px; padding: 8px 14px; font-size: 14px; }
@@ -217,7 +217,6 @@ a.rh-tag { color: var(--brand); }
   .field { grid-template-columns: 1fr; gap: 4px; }
   .inline-form { flex-wrap: wrap; }
   .page-inner { padding: 28px 16px 48px; }
-  .new-inner h1 { font-size: 24px; }
 }
 
 /* The star before Airth's runtime notes in a chat. */

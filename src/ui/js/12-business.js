@@ -1,7 +1,7 @@
 // ---------- the business: Steering and Pipelines (decision 37) ----------
 
 /** What the business pages keep between renders: when each draft was first shown, the one being edited. */
-const bizUi = { shown: new Map(), editing: null };
+const bizUi = { shown: new Map(), editing: null, strategy: null };
 
 async function loadBusiness() {
   return api(`${realmPath(app.realm)}/business`);
@@ -80,40 +80,54 @@ async function renderSteering(main) {
   if (app.route.view !== "steering" || app.realm !== realm) return;
   const again = () => { if (app.route.view === "steering") { main.replaceChildren(); renderSteering(main); } };
   const waiting = d.approvals.length + d.drafts.length;
-  inner.append(h("p", { class: "sub" },
-    `${waiting ? `${waiting} decision${waiting === 1 ? "" : "s"} wait for you` : "Nothing waits for you"} · your time this week: ${duration(d.week.owner_seconds)}`));
+  inner.append(h("p", { class: "sub" }, "Decide what waits for you, see what the team did, and set the direction."));
 
-  const decide = h("div", { class: "card biz-card" }, h("h2", null, `Decide · ${waiting}`),
-    waiting
-      ? [d.approvals.map((a) => approvalItem(realm, a, again)), d.drafts.map((x) => draftCard(realm, x, again))]
-      : h("div", { class: "muted small" }, "Nothing waits for you. The team carries on."));
+  const w = d.week;
+  const stat = (label, value, detail) => h("div", { class: "stat" },
+    h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), h("div", { class: "stat-detail" }, detail));
+  const stats = h("div", { class: "stats" },
+    stat("Waiting for you", String(waiting), waiting ? "decisions below" : "nothing to decide"),
+    stat("Delivered", String(d.delivered.length), "finished this week"),
+    stat("Your time", duration(w.owner_seconds), "this week"),
+    stat("Model cost", `${w.model_cost.toFixed(2)} $${w.unpriced_calls ? " +" : ""}`,
+      w.unpriced_calls ? `${w.unpriced_calls} call(s) without a known price` : "this week"));
+
+  const decide = waiting > 0 && h("div", { class: "card biz-card decide" }, h("h2", null, `Decide · ${waiting}`),
+    d.approvals.map((a) => approvalItem(realm, a, again)), d.drafts.map((x) => draftCard(realm, x, again)));
   const attention = h("div", { class: "card biz-card" }, h("h2", null, "Needs attention"),
     d.attention.length
       ? d.attention.map((x) => h(x.run ? "a" : "div", { class: "biz-row", href: x.run ? `#/r/${enc(realm)}/run/${enc(x.run)}` : null },
         h("span", { class: "biz-bad biz-clip" }, x.title), x.at && h("span", { class: "muted small" }, ago(x.at))))
       : h("div", { class: "muted small" }, "All went well this week."));
 
-  const text = h("textarea", { class: "biz-edit", rows: 10, "aria-label": "Strategy",
+  // The strategy reads as text; it opens for editing on demand.
+  const editing = bizUi.strategy === realm || !d.strategy.trim();
+  const text = editing && h("textarea", { class: "biz-edit", rows: 10, "aria-label": "Strategy",
     placeholder: "Your goals, the line every agent follows, and what the team may do alone.\n\nFor example:\n- One article a week on the blog.\n- Explain, never hype. Facts and numbers first.\n- Ask me before publishing or spending money." });
-  text.value = d.strategy;
-  const save = h("button", { class: "btn primary", type: "button", onclick: async () => {
-    try { await api(`${realmPath(realm)}/strategy`, { text: text.value }, "PUT"); flash("Strategy saved: every agent reads it from its next run"); }
-    catch (e) { flash(e.message, true); }
-  } }, "Save strategy");
-  const strategy = h("div", { class: "card biz-card" }, h("h2", null, "Strategy"),
-    h("p", { class: "muted small" }, "Where you steer: every agent of this business reads it before it works."), text,
-    h("div", { class: "biz-actions" }, save));
+  if (text) text.value = d.strategy;
+  const save = async () => {
+    try {
+      await api(`${realmPath(realm)}/strategy`, { text: text.value }, "PUT");
+      bizUi.strategy = null;
+      flash("Strategy saved: every agent reads it from its next run");
+    } catch (e) { return flash(e.message, true); }
+    again();
+  };
+  const strategy = h("div", { class: "card biz-card" },
+    h("div", { class: "biz-head" }, h("h2", null, "Strategy"), h("span", { class: "grow" }),
+      !editing && h("button", { class: "btn small", type: "button", onclick: () => { bizUi.strategy = realm; again(); } }, icon("pencil"), "Edit")),
+    editing
+      ? [h("p", { class: "muted small" }, "Every agent of this business reads it before it works."), text,
+        h("div", { class: "biz-actions" }, h("button", { class: "btn primary", type: "button", onclick: save }, "Save strategy"),
+          d.strategy.trim() && h("button", { class: "btn", type: "button", onclick: () => { bizUi.strategy = null; again(); } }, "Cancel"))]
+      : h("div", { class: "prose strategy-text", html: mdc(d.strategy) }));
 
-  const w = d.week;
+  // Drafts' numbers matter once there are drafts.
   const decided = w.approved + w.rejected;
-  const week = h("div", { class: "card biz-card" }, h("h2", null, "Last 7 days"),
-    h("div", { class: "biz-row" }, h("span", null, "Your time"), h("span", null, duration(w.owner_seconds))),
-    h("div", { class: "biz-row" }, h("span", null, "Drafts sent unedited"),
+  const week = decided > 0 && h("div", { class: "card biz-card" }, h("h2", null, "Drafts this week"),
+    h("div", { class: "biz-row" }, h("span", null, "Sent unedited"),
       h("span", null, w.approved ? `${Math.round((100 * w.unedited) / w.approved)} % of ${w.approved}` : "–")),
-    h("div", { class: "biz-row" }, h("span", null, "Drafts rejected"), h("span", null, decided ? `${w.rejected} of ${decided}` : "–")),
-    h("div", { class: "biz-row" }, h("span", null, "Model cost"),
-      h("span", { title: w.unpriced_calls ? `${w.unpriced_calls} call(s) to a model without a known price are not counted` : "" },
-        `${w.model_cost.toFixed(2)} $${w.unpriced_calls ? " +" : ""}`)));
+    h("div", { class: "biz-row" }, h("span", null, "Rejected"), h("span", null, `${w.rejected} of ${decided}`)));
   const delivered = h("div", { class: "card biz-card" }, h("h2", null, "Delivered this week"),
     d.delivered.length
       ? d.delivered.map((x) => h("a", { class: "biz-delivered", href: `#/r/${enc(realm)}/run/${enc(x.run)}` },
@@ -131,7 +145,7 @@ async function renderSteering(main) {
             : a.next_at ? `next ${when(a.next_at)}`
             : a.last_status ? `${a.last_status} ${ago(a.last_at)}` : "by hand")))
       : h("a", { class: "muted small", href: `#/r/${enc(realm)}/agents` }, "No agent yet: hire one in Agents."));
-  inner.append(h("div", { class: "biz-grid" }, h("div", null, decide, delivered, strategy), h("div", null, team, attention, week)));
+  inner.append(stats, decide, h("div", { class: "biz-grid" }, h("div", null, delivered, strategy), h("div", null, team, attention, week)));
 }
 
 /** The business's pipelines, on the Routines page: fixed sequences declared in business/pipelines/. */

@@ -124,8 +124,9 @@ function renderRunList() {
   if (app.realm && !app.runs.length) list.append(h("div", { class: "run-empty" }, "No tasks yet."));
   const all = [...app.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   const archivedCount = all.filter((r) => r.archived).length;
-  const runs = all.filter((r) => app.showArchived ? r.archived : !r.archived);
-  if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" }, app.showArchived ? "No archived tasks." : "All tasks are archived."));
+  const runs = all.filter((r) => (app.showArchived ? r.archived : !r.archived) && taskShown(r, app.taskFilter || "all"));
+  if (app.realm && app.runs.length && !runs.length) list.append(h("div", { class: "run-empty" },
+    app.showArchived ? "No archived tasks." : (app.taskFilter || "all") !== "all" ? "No task here right now." : "All tasks are archived."));
   // Waiting for the owner, then running, come before the rest.
   const rank = (r) => (r.needs_approval ? 0 : r.live ? 1 : 2);
   runs.sort((a, b) => rank(a) - rank(b));

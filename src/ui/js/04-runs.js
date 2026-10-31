@@ -2,6 +2,14 @@
 
 const POLICY_WORDS = { allow: "automatic", ask: "needs approval", deny: "disabled" };
 
+/** Which tasks the list shows. */
+const TASK_FILTERS = [["all", "All"], ["waiting", "Waiting for you"], ["running", "Running"], ["done", "Done"], ["failed", "Failed"]];
+const taskShown = (r, filter) => filter === "waiting" ? r.needs_approval
+  : filter === "running" ? r.live && !r.needs_approval
+  : filter === "done" ? !r.live && r.status === "completed"
+  : filter === "failed" ? !r.live && (r.status === "failed" || r.status === "stopped" || r.status === "interrupted")
+  : true;
+
 /** Tasks (decision 37): ask the team for something, and every task of the business. */
 function renderNew(main) {
   const d = app.realmDetail;
@@ -41,18 +49,17 @@ function renderNew(main) {
   const fill = (text) => { c.ta.value = text; c.ta.dispatchEvent(new Event("input")); c.ta.focus(); };
   const prefill = app.prefill;
   app.prefill = null;
-  const hour = new Date().getHours();
-  const hello = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const first = (app.ownerName || "").trim().split(/\s+/)[0];
-  main.append(
-    h("div", { class: "new-view" },
-      h("div", { class: "new-inner" },
-        h("div", { class: "eyebrow" }, app.realm || ""),
-        h("h1", null, "Tasks"),
-        h("p", { class: "sub", title: d ? d.root : "" }, first ? `${hello}, ${first}. What should the team do?` : "What should the team do?"),
-        c.el,
-        h("nav", { class: "task-list", id: "task-list", "aria-label": "Tasks" }))));
-  $(".new-inner", main).classList.add("tasks");
+  const filters = h("div", { class: "seg task-filters", role: "radiogroup", "aria-label": "Show" });
+  const drawFilters = () => filters.replaceChildren(...TASK_FILTERS.map(([id, label]) =>
+    h("button", { type: "button", role: "radio", "aria-checked": String(app.taskFilter === id), class: app.taskFilter === id ? "on" : "",
+      onclick: () => { app.taskFilter = id; drawFilters(); renderRunList(); } }, label)));
+  drawFilters();
+  main.append(h("div", { class: "page" }, h("div", { class: "page-inner" },
+    h("h1", null, "Tasks"),
+    h("p", { class: "sub" }, "Ask the team for something, and follow every task of the business: yours, and those its routines started."),
+    h("div", { class: "card task-ask" }, c.el),
+    h("div", { class: "task-bar" }, filters),
+    h("nav", { class: "task-list", id: "task-list", "aria-label": "Tasks" }))));
   renderRunList();
   if (prefill) fill(prefill);
   c.ta.focus();
