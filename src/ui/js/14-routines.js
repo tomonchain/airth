@@ -131,7 +131,24 @@ async function renderPlanning(main) {
       : h("span", { class: "muted small" }, x.kind));
   const column = (title, items, past, empty) => h("div", { class: "card biz-card" }, h("h2", null, title),
     items.length ? byDay(items).map((g) => [h("div", { class: "plan-day" }, g.k), g.items.map((x) => row(x, past))]) : h("div", { class: "muted small" }, empty));
-  inner.append(h("div", { class: "biz-grid even" },
+  // The coming week at a glance: one column per day, today first.
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: 7 }, (_, i) => new Date(start.getTime() + i * 86400000));
+  const calendar = h("section", { class: "card plan-calendar", "aria-label": "The coming 7 days" },
+    days.map((day, i) => {
+      const next = new Date(day.getTime() + 86400000);
+      const items = d.coming.filter((x) => { const t = new Date(x.at); return t >= day && t < next; });
+      return h("div", { class: "plan-col" + (i === 0 ? " today" : "") },
+        h("div", { class: "plan-col-head" },
+          h("span", null, day.toLocaleDateString([], { weekday: "short" })),
+          h("span", { class: "plan-date" }, String(day.getDate()))),
+        items.length
+          ? items.map((x) => h("div", { class: "plan-item " + x.kind, title: `${x.name}${x.bot ? " · " + x.bot : ""} · ${x.kind}` },
+            h("span", { class: "plan-time" }, time(x.at)), h("span", { class: "plan-name" }, x.name)))
+          : h("div", { class: "plan-empty" }, "—"));
+    }));
+  inner.append(calendar, h("div", { class: "biz-grid even" },
     column("Coming", d.coming, false, "Nothing scheduled this week. Give a routine a time in Routines."),
     column("Last 7 days", d.past, true, "Nothing ran this week.")));
 }

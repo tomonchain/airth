@@ -43,6 +43,18 @@
 .plan-day { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 12px 0 2px; }
 .plan-day:first-of-type { padding-top: 0; }
 .plan-time { display: inline-block; min-width: 52px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-calendar { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding: 0; overflow-x: auto; margin-bottom: 16px; }
+.plan-col { min-height: 150px; padding: 10px 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.plan-col:first-child { border-left: 0; }
+.plan-col-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); text-transform: capitalize; padding: 0 4px 6px; }
+.plan-date { font-size: 15px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.plan-col.today .plan-date { background: var(--text); color: var(--bg); border-radius: 999px; min-width: 24px; text-align: center; padding: 0 6px; }
+.plan-item { display: flex; gap: 6px; align-items: baseline; font-size: 12px; padding: 4px 6px; border-radius: 6px; background: var(--surface); overflow: hidden; }
+.plan-item .plan-time { min-width: 0; flex: none; }
+.plan-item.pipeline { box-shadow: inset 2px 0 0 var(--faint); }
+.plan-item.routine { box-shadow: inset 2px 0 0 var(--text); }
+.plan-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-empty { color: var(--faint); font-size: 12px; padding: 4px 6px; }
 @media (max-width: 860px) {
   .biz-grid.even { grid-template-columns: minmax(0, 1fr); }
 }
