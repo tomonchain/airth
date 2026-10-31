@@ -141,12 +141,14 @@ async function renderPlanning(main) {
       const items = d.coming.filter((x) => { const t = new Date(x.at); return t >= day && t < next; });
       return h("div", { class: "plan-col" + (i === 0 ? " today" : "") },
         h("div", { class: "plan-col-head" },
-          h("span", null, day.toLocaleDateString([], { weekday: "short" })),
-          h("span", { class: "plan-date" }, String(day.getDate()))),
+          h("span", { class: "plan-weekday" }, i === 0 ? "Today" : i === 1 ? "Tomorrow" : day.toLocaleDateString([], { weekday: "long" })),
+          h("span", { class: "plan-date" }, day.toLocaleDateString([], { day: "numeric", month: "short" }))),
         items.length
-          ? items.map((x) => h("div", { class: "plan-item " + x.kind, title: `${x.name}${x.bot ? " · " + x.bot : ""} · ${x.kind}` },
-            h("span", { class: "plan-time" }, time(x.at)), h("span", { class: "plan-name" }, x.name)))
-          : h("div", { class: "plan-empty" }, "—"));
+          ? items.map((x) => h("div", { class: "plan-item " + x.kind },
+            h("div", { class: "plan-item-time" }, time(x.at)),
+            h("div", { class: "plan-item-name" }, x.name),
+            h("div", { class: "plan-item-who" }, x.bot || x.kind)))
+          : h("div", { class: "plan-empty" }, "Nothing planned"));
     }));
   inner.append(calendar, h("div", { class: "biz-grid even" },
     column("Coming", d.coming, false, "Nothing scheduled this week. Give a routine a time in Routines."),
