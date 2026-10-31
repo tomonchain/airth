@@ -15,6 +15,7 @@ Scope, in build order:
 3. Today shows each bot: what it did, what waits for the owner, what it cost.
 4. The Writer's tools: research, Hedgen's chart API, images, the blog (draft, then publish after approval).
 5. Approvals on the phone for what a bot may not do alone.
+6. The app's six sections (decision 37): Steering, Routines, Planning, Tasks, Agents, Usage, each replacing the page it supersedes; the phone through Tailscale.
 
 Removing the features that decision 32 takes off the surface is also in scope, one feature per change. Generic first: nothing about Hedgen goes in the binary; it lives in Hedgen's `business/` folder.
 

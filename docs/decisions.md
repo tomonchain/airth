@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 37. The app is rebuilt around six sections, and reaches the phone through Tailscale
+
+The app's interface starts again from a blank page; the engine stays (the hub, the runtime and its boundaries, objectives, bots, connectors, approvals, usage records). A business (a realm, decision 32) opens on six sections:
+
+- **Steering**: the owner's page. What waits for a decision, with what is needed to decide; what needs attention (a failed run, a missed time, a budget nearly spent, a bot stuck); the goals from the strategy and where they stand; the strategy itself, the only text the owner writes for the team.
+- **Routines**: the recurring work, each with its bot, its trigger, its limits; created, changed, paused, run now. A routine is an objective (decision 11); a pipeline (decision 30) is a routine whose work is a fixed sequence.
+- **Planning**: what runs when, past and coming: each routine's times, what ran, what was missed.
+- **Tasks**: the work itself, one-off or from a routine: what is running, what is done, each with its plan, its approvals, its report and what it produced. Asking Airth for something is starting a task.
+- **Agents**: the business's bots (decision 36): job, tools, limits, budget, memory, what each produced; hiring one from a template by business function.
+- **Usage**: what running the business costs: tokens and money by agent, routine and model, and the owner's time.
+
+The business's settings (documents, connectors, skills, access) sit behind these, under Settings. The pages of decision 32 (Today, Pipelines, Ask Airth, Costs) are replaced by these, each removed in the change that replaces it. The interface stays in English.
+
+The app stays on the owner's Mac, listening on loopback only. The phone reaches it through Tailscale: `tailscale serve` publishes it over HTTPS to the owner's own devices (their tailnet), at home or away; nothing is opened to the local network or the internet. Airth accepts that one host name, set by the owner (`airth ui allow-host <name>.ts.net`), beside loopback; the token is still required on every call, and the phone is paired once by scanning a QR code that carries it.
+
+*Why:* the current pages grew from a personal agent and were patched toward a business; the owner finds them hard to follow. These six sections are the shape of products built for bots that work on their own (OpenBot), which the owner finds clear, plus the one thing they lack for a business: a page to steer and decide. The engine already matches them one for one (routines are objectives, tasks are runs, agents are bots, usage is the usage record), so only the interface is new. Tailscale gives the phone access without exposing a program that controls the Mac: the traffic is encrypted end to end, and only the owner's devices can reach it.
+
+*Cost:* the interface is written again, page by page, and pages that work today go away while their replacements are built. The phone needs Tailscale installed and signed in on both devices. A host name allowed by mistake would let pages on that host reach the app's API; the token still stands in the way, which is why it is never put in a URL a third party can see.
+
 ## 36. A business is run by bots, each with a job; the owner steers
 
 The owner sets the direction of a business; bots do the work. A realm is one business (decision 32) and has a team of bots. A bot is:
