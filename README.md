@@ -34,7 +34,7 @@ See [CLAUDE.md](CLAUDE.md) for the current phase (the Hedgen pilot), [docs/decis
 
 ## Realms
 
-A realm is an isolated area of your life: personal, a job, a company, a side project. Each realm has its own:
+A realm is one business, isolated from the others (decision 32). Each realm has its own:
 
 - **folder**: a directory you choose (`--root`), or a private one in Airth's home;
 - **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`, `apps`), each `allow`, `ask` or `deny`;

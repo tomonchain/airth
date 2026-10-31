@@ -49,7 +49,7 @@ use state::{State, Status};
 use std::io::{BufRead, Write};
 use std::process::{Command, ExitCode};
 
-/// Airth — a persistent, local-first personal agent.
+/// Airth — a local-first app that runs businesses.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -182,7 +182,7 @@ enum Cmd {
         #[arg(long, default_value_t = 24)]
         hours: i64,
     },
-    /// Manage realms: isolated areas of your life Airth works in
+    /// Manage realms: one isolated realm per business
     Realm {
         #[command(subcommand)]
         command: cli::RealmCmd,

@@ -521,9 +521,7 @@ impl App {
         }))
     }
 
-    /// The business page's data: drafts waiting, each pipeline with its
-    /// last runs and next time, the last seven days, and the realm's latest
-    /// notifications.
+    /// The business's pipelines, each with its last runs and next time.
     fn business(&self, realm: &Realm) -> Result<Value> {
         let business = crate::business::dir(&realm.root()?);
         let store = Store::of(realm)?;
@@ -542,23 +540,7 @@ impl App {
                 Err(e) => json!({"name": name, "error": format!("{e:#}"), "runs": runs}),
             });
         }
-        let notifications: Vec<_> = self
-            .hub
-            .home()
-            .inbox()
-            .list()?
-            .into_iter()
-            .rev()
-            .filter(|n| n.realm == realm.name())
-            .take(20)
-            .collect();
-        Ok(json!({
-            "has_business": business.is_dir(),
-            "drafts": store.drafts(&["pending"])?,
-            "pipelines": pipelines,
-            "week": store.week(chrono::Utc::now() - chrono::Duration::days(7))?,
-            "notifications": notifications,
-        }))
+        Ok(json!({ "pipelines": pipelines }))
     }
 
     /// The business's routines (decision 37), with what the form offers:

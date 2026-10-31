@@ -121,10 +121,6 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 .list-row:first-child { border-top: 0; }
 
 /* Inbox */
-.inbox-kind { flex: none; width: 18px; text-align: center; color: var(--muted); font-weight: 700; font-size: 14px; }
-.inbox-kind.approval, .inbox-kind.review { color: var(--warn); }
-.inbox-kind.completed { color: var(--ok); }
-.inbox-kind.failed { color: var(--err); }
 .icon-btn { border: 0; background: transparent; cursor: pointer; color: var(--faint); font-size: 18px; line-height: 1; padding: 3px 7px; border-radius: 8px; transition: background .15s, color .15s; }
 .icon-btn:hover { color: var(--err); background: var(--err-soft); }
 .inline-form { display: flex; gap: 8px; padding: 12px 0 14px; border-top: 1px solid var(--border); }

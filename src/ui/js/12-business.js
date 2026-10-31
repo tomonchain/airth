@@ -1,13 +1,10 @@
 // ---------- the business: Steering and Pipelines (decision 37) ----------
 
 /** What the business pages keep between renders: when each draft was first shown, the one being edited. */
-const bizUi = { shown: new Map(), editing: null, data: null };
+const bizUi = { shown: new Map(), editing: null };
 
 async function loadBusiness() {
-  const realm = app.realm;
-  const data = await api(`${realmPath(realm)}/business`);
-  if (app.realm === realm) bizUi.data = data;
-  return data;
+  return api(`${realmPath(app.realm)}/business`);
 }
 
 /** "1 h 40", "12 min", "42 s" */

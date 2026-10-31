@@ -1,12 +1,11 @@
 // ---------- notifications ----------
 
-const KIND_MARK = { completed: "✓", failed: "✗", stopped: "■", approval: "?", review: "⧗" };
 
 // ---------- new realm ----------
 
 function renderNewRealm(main) {
   const first = app.realms.length === 0;
-  const name = h("input", { type: "text", placeholder: "personal, acme, freelance…", autocomplete: "off", spellcheck: "false" });
+  const name = h("input", { type: "text", placeholder: "hedgen, my-shop, studio…", autocomplete: "off", spellcheck: "false" });
   const desc = h("input", { type: "text", placeholder: "e.g. My job at Acme Corp" });
   const root = h("input", { type: "text", placeholder: "Leave empty for a private folder, or e.g. ~/code/project", spellcheck: "false" });
   const iso = h("select", null,
@@ -24,8 +23,8 @@ function renderNewRealm(main) {
   name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
   page(main, first ? "Welcome to Airth" : "New realm",
     first
-      ? "Airth keeps each area of your life in its own realm, with its own files, memory, credentials and permissions. Nothing crosses between realms. Create your first one."
-      : "A realm is an isolated area of your life: its own files, memory, credentials and permissions.",
+      ? "Each business gets its own space: its files, code, agents, connectors and rules. Nothing crosses between businesses. Create your first one."
+      : "One business: its own files, code, agents, connectors and rules, isolated from the others.",
     h("div", { class: "card" },
       field("Name", name, "Lowercase letters, digits and dashes."),
       field("Description", desc, "Airth sees this, so it knows what the realm is for."),
@@ -68,9 +67,9 @@ async function renderWelcome(main) {
     body = [
       h("div", { class: "logo welcome-logo", "aria-hidden": "true" }),
       h("h1", null, "Welcome to Airth"),
-      h("p", { class: "lead" }, "Your personal agent. It works on your Mac with your files, apps and services, and asks you before anything that matters."),
+      h("p", { class: "lead" }, "It runs your businesses: agents with a job do the work, you steer and decide. It works on your Mac, and asks you before anything that matters."),
       h("div", { class: "welcome-points" },
-        point("folder", "Realms", "Each area of your life (work, a project, home) gets its own files, memory, keys and rules. Nothing crosses between them."),
+        point("folder", "Businesses", "Each business gets its own files, code, agents, keys and rules. Nothing crosses between them."),
         point("send", "Chats", "Ask for something; Airth plans it, does it, and shows you each step. You approve what it may not do on its own.")),
       h("p", { class: "muted small" }, "Setting up takes about two minutes."),
       actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Get started")),
@@ -137,9 +136,9 @@ async function renderWelcome(main) {
         actions(h("button", { class: "btn primary", type: "button", onclick: next }, "Continue")),
       ];
     } else {
-      const name = h("input", { type: "text", value: "personal", autocomplete: "off", spellcheck: "false" });
+      const name = h("input", { type: "text", value: "", placeholder: "hedgen", autocomplete: "off", spellcheck: "false" });
       name.addEventListener("input", () => (name.value = name.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-")));
-      const desc = h("input", { type: "text", placeholder: "e.g. My personal life: admin, health, side projects" });
+      const desc = h("input", { type: "text", placeholder: "e.g. A finance research media on X" });
       const create = h("button", { class: "btn primary", type: "button" }, "Create realm");
       create.onclick = () => busy(create, async () => {
         const r = await api("realms", { name: name.value.trim(), description: desc.value.trim() });
@@ -150,7 +149,7 @@ async function renderWelcome(main) {
       });
       body = [
         h("h1", null, "Your first realm"),
-        h("p", { class: "lead" }, "A realm is one area of your life. Start with one; add others (work, a client, a project) whenever you like."),
+        h("p", { class: "lead" }, "Start with one business; add the others whenever you like."),
         h("label", { class: "welcome-label" }, "Name", name, h("span", { class: "muted small" }, "Lowercase letters, digits and dashes.")),
         h("label", { class: "welcome-label" }, "What it is for", desc, h("span", { class: "muted small" }, "Airth reads this in every chat of the realm.")),
         err,

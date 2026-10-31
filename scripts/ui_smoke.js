@@ -113,18 +113,14 @@ const fixtures = {
     { connected: false, connector: { id: "google", name: "Google", category: "Productivity", description: "Via the Mac", docs: "https://d", kind: "mac", setup_url: "x-apple.systempreferences:x" } },
   ] },
   owner: { name: "", about: "", preferences: [], goals: [], commitments: [], boundaries: [], updated_at: null },
-  // The business: a draft from a feed (with an unsafe link), a pipeline that ran, one refused, one never run.
-  "realms/acme/business": { has_business: true,
-    drafts: [{ id: 1, created_at: now, pipeline: "production", kind: "post", text: "ETH left the queue.", original: "ETH left the queue.",
-      source: { title: "Flows", link: "javascript:alert(1)" }, model_call: 3, status: "pending", revision: 1 }],
+  // The business: a pipeline that ran, one refused, one never run.
+  "realms/acme/business": {
     pipelines: [
       { name: "watch", description: "Morning shortlist", schedule: "daily 07:00", steps: ["read 2 feed(s)", "report \"Watch\""], next_at: now,
         runs: [{ started_at: now, finished_at: now, ok: true, items_read: 4, items_kept: 2, report: "# Watch\n\n- [a](https://e.com)", notes: "", error: null },
           { started_at: now, finished_at: now, ok: false, items_read: 0, items_kept: 0, report: null, notes: "", error: "no feed could be read" }] },
       { name: "broken", error: "step 2: unknown field", runs: [] },
-      { name: "replies", description: "", schedule: null, steps: ["read 1 feed(s)"], next_at: null, runs: [] }],
-    week: { owner_seconds: 6000, approved: 8, unedited: 5, rejected: 2, model_calls: 40, model_cost: 1.8, unpriced_calls: 0 },
-    notifications: [{ id: 2, kind: "failed", realm: "acme", run: null, title: "watch failed", body: "no feed could be read", read: false, created_at: now }] },
+      { name: "replies", description: "", schedule: null, steps: ["read 1 feed(s)"], next_at: null, runs: [] }] },
   "realms/acme/steering": {
     approvals: [{ run: "r1", objective: "Publish the article", routine: "weekly-article", approval_id: 4, tool: "execute_command", capability: "execute", preview: "$ git push", warnings: [] }],
     drafts: [{ id: 1, created_at: now, pipeline: "production", kind: "post", text: "ETH left the queue.", original: "ETH left the queue.",

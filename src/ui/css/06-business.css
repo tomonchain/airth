@@ -21,9 +21,6 @@
 .biz-runs { margin-top: 10px; }
 .biz-report { margin-top: 10px; }
 .biz-report summary { cursor: pointer; font-size: 13px; color: var(--muted); }
-.biz-note { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
-.biz-note:first-of-type { border-top: 0; }
-.biz-note.unread { font-weight: 500; }
 @media (max-width: 860px) {
   .biz-grid { grid-template-columns: minmax(0, 1fr); }
 }

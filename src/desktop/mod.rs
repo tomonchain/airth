@@ -77,7 +77,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
             Some(AboutMetadata {
                 name: Some("Airth".into()),
                 version: Some(crate::update::version()),
-                comments: Some("Your personal agent.".into()),
+                comments: Some("Runs your businesses.".into()),
                 ..Default::default()
             }),
         ),
