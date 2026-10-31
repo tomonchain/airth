@@ -144,7 +144,11 @@ fn steps(
                 seen_now.extend(this_run);
             }
             Step::Judge {
-                keep, rank, limit, ..
+                keep,
+                rank,
+                distinct,
+                limit,
+                ..
             } => {
                 let Some(prompt) = prompts.next() else {
                     bail!("step {}: its prompt was not loaded", i + 1);
@@ -175,6 +179,22 @@ fn steps(
                     let score = |item: &Item| item["answer"][rank].as_f64().unwrap_or(f64::MIN);
                     // Stable: equal scores keep the feeds' order.
                     kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
+                }
+                if let Some(distinct) = distinct {
+                    let before = kept.len();
+                    let mut values = HashSet::new();
+                    // Best first: the first of each value is its best.
+                    kept.retain(|item| match item["answer"][distinct].as_str() {
+                        Some(v) => values.insert(v.trim().to_lowercase()),
+                        None => true,
+                    });
+                    if kept.len() < before {
+                        out.notes.push(format!(
+                            "step {}: kept the best of each {distinct}, {} of {before}",
+                            i + 1,
+                            kept.len()
+                        ));
+                    }
                 }
                 if let Some(limit) = limit
                     && kept.len() > *limit
@@ -667,6 +687,7 @@ mod tests {
                     schema: "schemas/watch.json".into(),
                     keep: Some("relevant".into()),
                     rank: None,
+                    distinct: None,
                     limit: None,
                 },
             ])
@@ -756,6 +777,7 @@ mod tests {
                     schema: "schemas/post.json".into(),
                     keep: None,
                     rank: None,
+                    distinct: None,
                     limit: None,
                 },
                 Step::Queue {
@@ -810,6 +832,7 @@ mod tests {
                     schema: "schemas/watch.json".into(),
                     keep: None,
                     rank: Some("score".into()),
+                    distinct: None,
                     limit: Some(2),
                 },
                 Step::Report {
@@ -858,6 +881,61 @@ mod tests {
     }
 
     #[test]
+    fn keeps_only_the_best_of_each_value_before_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let p = Pipeline {
+            prompts: vec![Prompt {
+                path: "prompts/watch.md".into(),
+                text: "Score it.".into(),
+                version: "v1".into(),
+                schema: serde_json::json!({"type": "object"}),
+            }],
+            ..pipeline(vec![
+                rss(&["https://a.com/feed"]),
+                Step::Judge {
+                    prompt: "prompts/watch.md".into(),
+                    schema: "schemas/watch.json".into(),
+                    keep: None,
+                    rank: Some("score".into()),
+                    distinct: Some("pillar".into()),
+                    limit: Some(2),
+                },
+            ])
+        };
+        let links = [
+            "https://e.com/1",
+            "https://e.com/2",
+            "https://e.com/3",
+            "https://e.com/4",
+        ];
+        let mut fetch = serve(feed(&links), &[]);
+        let mut answers = vec![
+            answer(r#"{"score": 4, "pillar": "Flows"}"#),
+            answer(r#"{"score": 5, "pillar": "flows"}"#),
+            answer(r#"{"score": 2, "pillar": "macro"}"#),
+            answer(r#"{"score": 3, "pillar": "staking"}"#),
+        ]
+        .into_iter();
+        let mut ask = |_: &ModelRequest| Ok(answers.next().unwrap());
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+        };
+        let out = run("watch", &p, &mut store, &mut io, Utc::now()).unwrap();
+        // Two flows items: only the better one; then the limit takes the two best left.
+        let kept: Vec<_> = out.kept.iter().map(|i| i["link"].clone()).collect();
+        assert_eq!(kept, vec!["https://e.com/2", "https://e.com/4"]);
+        assert!(
+            out.notes
+                .iter()
+                .any(|n| n.contains("best of each pillar, 3 of 4"))
+        );
+        assert!(out.notes.iter().any(|n| n.contains("kept the 2 best of 3")));
+    }
+
+    #[test]
     fn a_model_that_fails_fails_the_run() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(&dir.path().join(FILE)).unwrap();
@@ -876,6 +954,7 @@ mod tests {
                     schema: "s.json".into(),
                     keep: None,
                     rank: None,
+                    distinct: None,
                     limit: None,
                 },
             ])
