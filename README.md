@@ -37,7 +37,7 @@ See [CLAUDE.md](CLAUDE.md) for the current phase (the Hedgen pilot), [docs/decis
 A realm is one business, isolated from the others (decision 32). Each realm has its own:
 
 - **folder**: a directory you choose (`--root`), or a private one in Airth's home;
-- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`, `apps`), each `allow`, `ask` or `deny`;
+- **permissions**: per capability (`read`, `write`, `execute`, `memory`, `network`, `skill`), each `allow`, `ask` or `deny`;
 - **memory**: facts Airth keeps between runs, each with where it came from;
 - **credentials**: given to that realm's commands as environment variables, never shown to the model;
 - **integrations**: services its runs may call, with credentials bound to them (see below);
@@ -69,7 +69,7 @@ airth owner add boundaries "Never push to main"
 
 A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules), `strategy.md` (the owner's goals and line, which all work follows) and `archive/` (past posts and documents). Every run of the realm is told the profile, the strategy and where the archive is; runs can read the folder, never change it.
 
-**Bots** do the business's work, each with a job (decision 36). A bot's job is a file, `business/bots/<name>.md`, written in the business's words: what it is for and how it works. What it may do without asking, its budget and its trigger are kept by Airth, out of the bot's reach, on the objective it runs (see Working on its own). Each run is told its job, and records the version of the job it followed. `--tool` gives a bot only some of the realm's integrations, MCP servers and skills (`mac` for the Mac's apps): the others are not in its runs at all, so it cannot call them.
+**Bots** do the business's work, each with a job (decision 36). A bot's job is a file, `business/bots/<name>.md`, written in the business's words: what it is for and how it works. What it may do without asking, its budget and its trigger are kept by Airth, out of the bot's reach, on the objective it runs (see Working on its own). Each run is told its job, and records the version of the job it followed. `--tool` gives a bot only some of the realm's integrations, MCP servers and skills: the others are not in its runs at all, so it cannot call them.
 
 ```bash
 airth objective add weekly-article "Write and prepare this week's article" \
@@ -196,8 +196,6 @@ airth service install                               # runs in the background, st
 Open **Airth.app** from Spotlight, Launchpad or the Dock. It is a native app with its own window: ⌥⇧A shows or hides it from anywhere, and closing the window keeps Airth in the menu bar. Use 🎙 in the message box to dictate. `airth ui` opens the same app in your browser.
 
 The first time, a short guide walks you through it: who you are, your Anthropic API key (checked, then kept in `~/.airth/secrets.env` for every realm), and your first realm. Reopen it anytime with ⌘K → Welcome guide.
-
-With your approval, Airth works with your Mac apps: Calendar, Reminders, Notes, Mail (it only prepares drafts; you send them), Safari tabs, the clipboard, and opening apps and links. The realm's `apps` rule decides; answer "Allow Calendar for this run" to stop being asked about one app.
 
 **Updates.** When the Airth checkout you installed from gets new commits (your own, an Airth improvement you adopted, or its upstream's), the app builds and tests the new version in the background. If the tests pass, it shows **New update available · Restart to update**. Nothing changes until you click. From the terminal: `airth update` (`--check` to only look, `--rollback` to go back one version). The app downloaded from GitHub Releases updates from the published releases instead: it checks each new version's signature before offering it (see [docs/RELEASING.md](docs/RELEASING.md)).
 

@@ -95,7 +95,7 @@ const runs = [
   { id: "r2", title: "Named", objective: "Second", status: "failed", live: true, updated_at: now, needs_approval: true, change: "open", checks_passed: false, plan_done: 1, plan_total: 3, routine: null },
 ];
 const realmDetail = {
-  name: "acme", description: "", root: "/tmp/acme", own_root: true, isolation: "none", policy: { read: "allow", write: "ask", execute: "ask", memory: "allow", network: "ask", skill: "ask", apps: "deny" },
+  name: "acme", description: "", root: "/tmp/acme", own_root: true, isolation: "none", policy: { read: "allow", write: "ask", execute: "ask", memory: "allow", network: "ask", skill: "ask" },
   checks: [], share_owner_profile: true, archived: false, default: true, model: null, model_error: null,
   memory: [{ id: "m1", text: "fact", source: "owner", created_at: now }], secrets: [{ key: "K", provider: false }],
   integrations: [{ name: "gh", base_url: "https://api.github.com", description: null, headers: {}, missing_secrets: [] }],
@@ -108,9 +108,8 @@ const fixtures = {
   catalog: { source: "https://github.com/anthropics/skills", fetched_at: null, error: null, refreshing: false, skills: [{ name: "pdf", title: "", description: "", files: 2, skipped: 0 }] },
   "realms/acme/catalog": { installed: [], installing: [], errors: {} },
   "realms/acme/mcp": [{ name: "gh", command: "npx x", description: "", enabled: true, connecting: false, server_info: null, connected_at: null, error: null, tools: [] }],
-  "realms/acme/connectors": { check: null, apps_rule: "ask", connectors: [
+  "realms/acme/connectors": { check: null, connectors: [
     { connected: true, connector: { id: "notion", name: "Notion", category: "Productivity", description: "Pages", docs: "https://d", kind: "http", base_url: "https://api.notion.com", secret: "NOTION_TOKEN", auth: ["Authorization", "Bearer {}"], extra: [], token_url: "https://t", token_help: "Make one." } },
-    { connected: false, connector: { id: "google", name: "Google", category: "Productivity", description: "Via the Mac", docs: "https://d", kind: "mac", setup_url: "x-apple.systempreferences:x" } },
   ] },
   owner: { name: "", about: "", preferences: [], goals: [], commitments: [], boundaries: [], updated_at: null },
   // The business: a pipeline that ran, one refused, one never run.

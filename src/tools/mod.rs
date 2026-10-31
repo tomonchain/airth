@@ -4,7 +4,6 @@
 pub mod catalog;
 mod fs;
 mod http;
-mod mac;
 pub mod mcp;
 mod memory;
 mod plan;
@@ -65,16 +64,13 @@ pub struct RealmTools {
     /// tests run.
     pub developing: Option<(String, PathBuf, Vec<PathBuf>)>,
     /// For a bot's run: the realm's extensions it may use, by name
-    /// (integrations, MCP servers, skills, `mac` for the Mac's apps). None:
+    /// (integrations, MCP servers, skills). None:
     /// all of them. What is left out is not offered, so it cannot be called.
     pub allowed: Option<Vec<String>>,
 }
 
-/// The name that gives a bot the Mac's apps (calendar, mail, notes…).
-pub const MAC: &str = "mac";
-
 /// What a bot can be given, by name: the realm's integrations, MCP
-/// servers and skills, and the Mac's apps.
+/// servers and skills.
 pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
     let skills = realm.skills();
     let mut names: Vec<String> = realm
@@ -102,7 +98,6 @@ pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
             .into_iter()
             .map(|s| s.name),
     );
-    names.push(MAC.into());
     names.sort();
     names.dedup();
     names
@@ -146,9 +141,6 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         inbox: realm.inbox,
         realm: realm.realm,
     }));
-    if allows(MAC) {
-        tools.extend(mac::tools());
-    }
     for (manifest, dir) in realm.skills.enabled() {
         if allows(&manifest.name) {
             tools.push(Box::new(skill::SkillTool { manifest, dir }));
@@ -464,12 +456,8 @@ mod tests {
         // Not a prefix match: gh does not give gh_.
         assert!(!some.contains(&"mcp__gh___act".to_string()), "{some:?}");
         assert!(http.contains("blog") && !http.contains("bank"), "{http}");
-        // The core tools stay; the Mac's apps need `mac`.
+        // The core tools stay.
         assert!(some.contains(&"read_file".to_string()));
-        if cfg!(target_os = "macos") {
-            assert!(all.iter().any(|n| n == "calendar"), "{all:?}");
-            assert!(!some.iter().any(|n| n == "calendar"), "{some:?}");
-        }
 
         let (_dir, none, http) = names(Some(vec![]));
         assert!(!none.iter().any(|n| n.starts_with("mcp__")));

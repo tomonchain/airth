@@ -22,9 +22,6 @@ pub enum Capability {
     Network,
     /// Using a skill the owner installed (scoped to that skill).
     Skill,
-    /// Working with the owner's Mac apps: Calendar, Reminders, Notes, Mail,
-    /// Safari, the clipboard (scoped to the app).
-    Apps,
     /// Bookkeeping inside the run itself (its plan). Touches nothing outside
     /// the run, so it is always allowed and not part of a policy.
     Internal,
@@ -32,14 +29,13 @@ pub enum Capability {
 
 impl Capability {
     /// The capabilities a realm's policy governs.
-    pub const ALL: [Capability; 7] = [
+    pub const ALL: [Capability; 6] = [
         Capability::Read,
         Capability::Write,
         Capability::Execute,
         Capability::Memory,
         Capability::Network,
         Capability::Skill,
-        Capability::Apps,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -50,7 +46,6 @@ impl Capability {
             Capability::Memory => "memory",
             Capability::Network => "network",
             Capability::Skill => "skill",
-            Capability::Apps => "apps",
             Capability::Internal => "internal",
         }
     }
@@ -59,9 +54,7 @@ impl Capability {
         match Self::ALL.into_iter().find(|c| c.as_str() == s) {
             Some(c) => Ok(c),
             None => {
-                bail!(
-                    "unknown capability '{s}' (read, write, execute, memory, network, skill, apps)"
-                )
+                bail!("unknown capability '{s}' (read, write, execute, memory, network, skill)")
             }
         }
     }
@@ -103,7 +96,6 @@ pub struct Policy {
     pub memory: Rule,
     pub network: Rule,
     pub skill: Rule,
-    pub apps: Rule,
 }
 
 impl Default for Policy {
@@ -115,7 +107,6 @@ impl Default for Policy {
             memory: Rule::Ask,
             network: Rule::Ask,
             skill: Rule::Ask,
-            apps: Rule::Ask,
         }
     }
 }
@@ -129,7 +120,6 @@ impl Policy {
             Capability::Memory => self.memory,
             Capability::Network => self.network,
             Capability::Skill => self.skill,
-            Capability::Apps => self.apps,
             Capability::Internal => Rule::Allow,
         }
     }
@@ -142,7 +132,6 @@ impl Policy {
             Capability::Memory => &mut self.memory,
             Capability::Network => &mut self.network,
             Capability::Skill => &mut self.skill,
-            Capability::Apps => &mut self.apps,
             Capability::Internal => return,
         } = rule;
     }
@@ -172,7 +161,6 @@ impl PermissionRequest {
     /// Plain-language description of what a grant for this request covers.
     pub fn grant_label(&self) -> String {
         match (&self.scope, self.capability) {
-            (Some(app), Capability::Apps) => app.clone(),
             (Some(skill), Capability::Skill) => format!("the {skill} skill"),
             (Some(scope), _) => format!("{} requests to {scope}", self.capability.as_str()),
             (None, Capability::Write) => "all file changes".into(),
@@ -384,6 +372,19 @@ mod tests {
             gate.check(&req(Capability::Write)).unwrap(),
             Verdict::Approved
         );
+    }
+
+    /// The Mac apps capability is gone (decision 39): a realm saved with an
+    /// `apps` rule still loads, its other rules intact, and nothing can be
+    /// approved for `apps` any more.
+    #[test]
+    fn an_old_apps_rule_is_ignored_and_cannot_be_granted() {
+        let old: Policy =
+            serde_json::from_str(r#"{"read":"allow","write":"deny","apps":"allow"}"#).unwrap();
+        assert_eq!(old.write, Rule::Deny);
+        assert_eq!(old.network, Rule::Ask);
+        assert!(Capability::parse("apps").is_err());
+        assert!(!serde_json::to_string(&old).unwrap().contains("apps"));
     }
 
     #[test]

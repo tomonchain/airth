@@ -34,8 +34,6 @@ pub enum Kind {
         token_url: &'static str,
         token_help: &'static str,
     },
-    /// Reached through the macOS account and Airth's Mac app tools.
-    Mac { setup_url: &'static str },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -76,18 +74,6 @@ pub struct Connector {
 pub fn catalog() -> Vec<Connector> {
     use Kind::*;
     vec![
-        Connector {
-            id: "google", name: "Google", category: "Productivity",
-            description: "Google Calendar, Gmail and Contacts, through your Mac: add the Google account in System Settings → Internet Accounts, and runs use it with the Calendar, Reminders, Notes and Mail tools (Mail only prepares drafts).",
-            agent_hint: "", docs: "https://support.apple.com/guide/mac-help/add-an-internet-account-mchl1b6b2a9b/mac",
-            kind: Mac { setup_url: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension" },
-        },
-        Connector {
-            id: "icloud", name: "iCloud", category: "Productivity",
-            description: "iCloud Calendar, Reminders, Notes and Mail, through your Mac and Airth's Mac app tools, under this realm's apps rule.",
-            agent_hint: "", docs: "https://support.apple.com/guide/mac-help/add-an-internet-account-mchl1b6b2a9b/mac",
-            kind: Mac { setup_url: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension" },
-        },
         Connector {
             id: "notion", name: "Notion", category: "Productivity",
             description: "Search, read and write pages and databases the integration is shared with.",
@@ -290,10 +276,7 @@ pub fn integration_for(c: &Connector) -> Result<Integration> {
         auth,
         extra,
         ..
-    } = &c.kind
-    else {
-        bail!("{} connects through macOS, not with a token", c.name);
-    };
+    } = &c.kind;
     let mut headers = BTreeMap::new();
     headers.insert(
         auth.0.to_string(),
@@ -322,7 +305,6 @@ pub fn status(realm: &Realm, c: &Connector) -> Value {
             realm.config.integrations.iter().any(|i| i.name == c.id)
                 && realm.secret(secret).is_some()
         }
-        Kind::Mac { .. } => false,
     };
     json!({"connector": c, "connected": connected})
 }
@@ -337,9 +319,7 @@ pub fn connect(realm: &mut Realm, c: &Connector, token: &str) -> Result<()> {
         bail!("a token fits on one line");
     }
     let integration = integration_for(c)?;
-    let Kind::Http { secret, .. } = &c.kind else {
-        bail!("{} connects through macOS, not with a token", c.name);
-    };
+    let Kind::Http { secret, .. } = &c.kind;
     realm.set_secret(secret, token)?;
     realm.set_integration(integration)
 }
@@ -347,15 +327,14 @@ pub fn connect(realm: &mut Realm, c: &Connector, token: &str) -> Result<()> {
 /// Remove the integration, and its credential unless another integration uses it.
 pub fn disconnect(realm: &mut Realm, c: &Connector) -> Result<bool> {
     let removed = realm.remove_integration(c.id)?;
-    if let Kind::Http { secret, .. } = &c.kind {
-        let still_used = realm
-            .config
-            .integrations
-            .iter()
-            .any(|i| i.secret_names().iter().any(|s| s == secret));
-        if !still_used {
-            realm.remove_secret(secret)?;
-        }
+    let Kind::Http { secret, .. } = &c.kind;
+    let still_used = realm
+        .config
+        .integrations
+        .iter()
+        .any(|i| i.secret_names().iter().any(|s| s == secret));
+    if !still_used {
+        realm.remove_secret(secret)?;
     }
     Ok(removed)
 }
@@ -433,7 +412,6 @@ mod tests {
                         i.url_for(check.path).unwrap();
                     }
                 }
-                Kind::Mac { .. } => assert!(integration_for(c).is_err()),
             }
         }
     }

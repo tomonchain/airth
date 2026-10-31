@@ -102,8 +102,7 @@ const ICON = {
 /** The icon of each tool the agent can call (MCP tools get a plug). */
 const TOOL_ICONS = {
   read_file: "file", list_directory: "folder", write_file: "filePlus", edit_file: "fileEdit", execute_command: "terminal",
-  remember: "brain", http_request: "world", update_plan: "listCheck", calendar: "calendar", reminders: "checkbox",
-  notes: "notes", mail_draft: "mail", safari: "compass", clipboard: "clipboard", open_on_mac: "window",
+  remember: "brain", http_request: "world", update_plan: "listCheck",
   propose_skill: "spark", test_skill: "flask", use_skill: "books",
 };
 const toolIcon = (name) => icon(TOOL_ICONS[name] || (name.startsWith("mcp__") ? "plug" : "tool"));

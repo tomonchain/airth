@@ -214,8 +214,8 @@ pub struct BotArgs {
     /// The bot that does it, whose job is in business/bots/<bot>.md
     #[arg(long)]
     bot: Option<String>,
-    /// Only these of the realm's integrations, MCP servers and skills
-    /// (`mac` for the Mac's apps); default: all. Repeatable
+    /// Only these of the realm's integrations, MCP servers and skills;
+    /// default: all. Repeatable
     #[arg(long = "tool")]
     tool: Vec<String>,
 }

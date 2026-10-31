@@ -325,13 +325,7 @@ async function renderKeyConnectors(inner, realm) {
     const c = s.connector;
     const failed = data.check && data.check.id === c.id && !data.check.ok ? data.check.message : null;
     let actions;
-    if (c.kind === "mac") {
-      actions = h("div", { class: "stack" },
-        h("div", { class: "muted small" }, "Mac apps in this realm: ", h("strong", null, POLICY_WORDS[data.apps_rule] || data.apps_rule)),
-        h("div", { class: "row-end" },
-          h("a", { class: "btn ghost", href: c.docs, target: "_blank", rel: "noopener noreferrer" }, "How it works"),
-          h("a", { class: "btn", href: c.setup_url }, "Open Internet Accounts")));
-    } else if (busy === c.id) {
+    if (busy === c.id) {
       actions = h("div", { class: "row-end" }, h("span", { class: "working small" }, h("span", { class: "spinner" }), "Checking…"));
     } else if (s.connected) {
       actions = h("div", { class: "row-end" },
@@ -363,7 +357,7 @@ async function renderKeyConnectors(inner, realm) {
       actions);
   };
   const draw = () => {
-    const sorted = [...data.connectors].filter((s) => s.connector.kind !== "mac").sort((a, b) =>
+    const sorted = [...data.connectors].sort((a, b) =>
       (b.connected - a.connected) || (CONNECTOR_ORDER.indexOf(a.connector.category) - CONNECTOR_ORDER.indexOf(b.connector.category)) || a.connector.name.localeCompare(b.connector.name));
     body.replaceChildren(
       h("div", { class: "cat-grid" }, sorted.map(card)),

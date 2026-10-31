@@ -7,11 +7,10 @@ const CAP_HELP = {
   memory: "Save facts to this realm's memory",
   network: "Call integrations and websites",
   skill: "Use skills you installed",
-  apps: "Calendar, Reminders, Notes, Mail, Safari and the clipboard",
 };
 const CAP_NAME = {
   read: "Read files", write: "Change files", execute: "Run commands", memory: "Remember things",
-  network: "Use the web and integrations", skill: "Use skills", apps: "Use your Mac apps",
+  network: "Use the web and integrations", skill: "Use skills",
 };
 
 const MODEL_TIERS = [

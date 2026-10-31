@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 39. The Mac app tools and the `apps` capability are removed
+
+The tools that drove the owner's Mac apps (`calendar`, `reminders`, `notes`, `mail_draft`, `safari`, `clipboard`, `open_on_mac`), the `apps` capability that governed them, and the Google and iCloud connectors that went through them are removed, with their pages. This supersedes the Mac apps half of decision 16; the Mac app itself stays. A realm saved with an `apps` rule still loads: the rule is ignored, and nothing can be approved for `apps` any more.
+
+*Why:* a business reaches its services through its connectors (MCP servers, integrations), each given to the agents that need it (decision 36). Tools acting in the owner's personal apps, shared by every realm, belong to the personal agent Airth no longer is (decision 32), and were one more way for a run to reach outside its realm.
+
+*Cost:* a business that kept its calendar or mail in the Mac apps must connect the service itself (Google, Microsoft) through a connector.
+
 ## 38. The phone's pairing code is drawn with qrcode
 
 Pairing the phone (decision 37) hands it the app's address and key in one QR code, shown by `airth phone pair` in the terminal and on the owner's Phone settings in the app. The code is made with the `qrcode` crate, without its default features (image, SVG, PIC): it has no dependencies of its own. The app receives the modules as data and draws them as a grid, so no image or markup is built from a string.

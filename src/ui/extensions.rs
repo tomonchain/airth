@@ -294,7 +294,6 @@ impl App {
         json!({
             "connectors": list,
             "check": check,
-            "apps_rule": realm.config.policy.rule(Capability::Apps).as_str(),
         })
     }
 
