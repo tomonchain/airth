@@ -120,6 +120,9 @@ pub struct Origin {
     pub objective: String,
     /// What fired it, e.g. "schedule: daily 08:00".
     pub trigger: String,
+    /// The version of the bot's job this run followed, when a bot did it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_version: Option<String>,
 }
 
 /// One model call's token usage, as the provider reported it.

@@ -232,6 +232,9 @@ pub enum ObjectiveCmd {
         /// The realm repository its runs work in (default: the realm's root)
         #[arg(long)]
         repo: Option<String>,
+        /// The bot that does it, whose job is in business/bots/<bot>.md
+        #[arg(long)]
+        bot: Option<String>,
     },
     /// Show an objective, with its webhook URL if it has one
     Show {
@@ -299,9 +302,13 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
             max_tokens,
             max_minutes,
             repo,
+            bot,
         } => {
             if let Some(name) = &repo {
                 realm.repo(Some(name))?;
+            }
+            if let Some(name) = &bot {
+                crate::business::job(&realm.root()?, name)?;
             }
             let trigger = match (every, watch, webhook) {
                 (Some(every), _, _) => Trigger::Schedule { every },
@@ -329,6 +336,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                 enabled: true,
                 created_at: chrono::Utc::now(),
                 repo,
+                bot,
                 next_at: None,
                 fingerprint: None,
                 last_run: None,
@@ -383,6 +391,9 @@ fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()
     println!("objective    {}", o.id);
     println!("goal         {}", o.objective);
     println!("trigger      {}", o.trigger.describe());
+    if let Some(bot) = &o.bot {
+        println!("bot          {bot} (business/bots/{bot}.md)");
+    }
     if let Trigger::Webhook { token } = &o.trigger {
         let port = crate::ui::running_url(&ctx.hub())
             .and_then(|u| {

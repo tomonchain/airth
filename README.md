@@ -67,7 +67,15 @@ airth owner add boundaries "Never push to main"
 
 ## A realm's business
 
-A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules) and `archive/` (past posts and documents). Every run of the realm is told the profile and where the archive is; runs can read the folder, never change it.
+A realm runs one business (decision 32). What the business is lives in the realm's folder, under `business/`, versioned with it: `profile.md` (what the business does, its voice, its rules), `strategy.md` (the owner's goals and line, which all work follows) and `archive/` (past posts and documents). Every run of the realm is told the profile, the strategy and where the archive is; runs can read the folder, never change it.
+
+**Bots** do the business's work, each with a job (decision 36). A bot's job is a file, `business/bots/<name>.md`, written in the business's words: what it is for and how it works. What it may do without asking, its budget and its trigger are kept by Airth, out of the bot's reach, on the objective it runs (see Working on its own). Each run is told its job, and records the version of the job it followed.
+
+```bash
+airth objective add weekly-article "Write and prepare this week's article" \
+  --bot writer --every "mon 08:00" --allow network --max-minutes 30
+airth objective run weekly-article
+```
 
 **Pipelines** are the business's recurring work, declared as files in `business/pipelines/`, one JSON file each (decision 30). The engine is the same for every business; what is specific to one (feeds, prompts, schemas, schedule) lives in its folder, versioned with it:
 

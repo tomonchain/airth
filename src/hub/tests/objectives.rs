@@ -40,6 +40,7 @@ fn scheduled_objective_completes_while_the_owner_is_away() {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
+            bot: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -152,6 +153,7 @@ fn budget_of_an_objective_stops_its_run() {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
+            bot: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -194,4 +196,76 @@ fn budget_of_an_objective_stops_its_run() {
             .as_deref(),
         Some("stopped")
     );
+}
+
+/// Decision 36: a bot's run is told its job and the owner's strategy, and
+/// records which version of the job it followed. A bot whose job file is
+/// missing does not start.
+#[test]
+fn a_bot_runs_with_its_job_and_the_strategy() {
+    use crate::objective::{Objective, Trigger};
+    let f = fixture();
+    let business = f.root.path().join("business");
+    std::fs::create_dir_all(business.join("bots")).unwrap();
+    std::fs::write(business.join("strategy.md"), "Explain, never hype.").unwrap();
+    f.realm
+        .objectives()
+        .save(Objective {
+            id: "weekly-article".into(),
+            objective: "Write this week's article".into(),
+            trigger: Trigger::Manual,
+            approvals: vec![],
+            budget: Default::default(),
+            approval_wait_minutes: 0,
+            enabled: true,
+            created_at: Utc::now(),
+            repo: None,
+            bot: Some("writer".into()),
+            next_at: None,
+            fingerprint: None,
+            last_run: None,
+            last_at: None,
+            last_status: None,
+        })
+        .unwrap();
+    let (hub, _, systems) = make_hub(&f.home, vec![done("Drafted.")]);
+    let err = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("business/bots/writer.md"),
+        "{err:#}"
+    );
+
+    std::fs::write(
+        business.join("bots/writer.md"),
+        "Write one article a week for the blog.",
+    )
+    .unwrap();
+    let (mut state, _) = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap();
+    let brief = serde_json::to_string(&state.messages[0]).unwrap();
+    assert!(
+        brief.contains("You are writer, one of the business's bots. Your job, as the owner wrote it:\\nWrite one article a week for the blog."),
+        "{brief}"
+    );
+    assert!(brief.contains("started by the objective"), "{brief}");
+    let version = crate::business::job(f.root.path(), "writer")
+        .unwrap()
+        .version;
+    assert_eq!(
+        state.origin.as_ref().unwrap().job_version.as_deref(),
+        Some(version.as_str())
+    );
+    hub.drive(
+        &f.realm,
+        &mut state,
+        config(10),
+        hooks(&mut NoObserver, false),
+    )
+    .unwrap();
+    assert_eq!(state.status, Status::Completed);
+    let system = &systems.lock().unwrap()[0];
+    assert!(system.contains("Explain, never hype."), "{system}");
 }

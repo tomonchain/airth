@@ -432,6 +432,7 @@ mod tests {
         scheduled.origin = Some(crate::state::Origin {
             objective: "digest".into(),
             trigger: "schedule: daily 08:00".into(),
+            job_version: None,
         });
         let runs = vec![
             ("acme".to_string(), scheduled),

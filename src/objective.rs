@@ -80,6 +80,9 @@ pub struct Objective {
     /// The realm repository its runs work in (None: the realm's root).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// The bot that does it: its job is `business/bots/<bot>.md` (decision 36).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
     /// When the schedule fires next.
     #[serde(default)]
     pub next_at: Option<DateTime<Utc>>,
@@ -97,6 +100,9 @@ pub struct Objective {
 impl Objective {
     pub fn validate(&self) -> Result<()> {
         validate_name(&self.id).context("invalid objective name")?;
+        if let Some(bot) = &self.bot {
+            validate_name(bot).context("invalid bot name")?;
+        }
         if self.objective.trim().is_empty() {
             bail!("the objective is empty");
         }
@@ -403,6 +409,7 @@ mod tests {
             enabled: true,
             created_at: Utc::now(),
             repo: None,
+            bot: None,
             next_at: None,
             fingerprint: None,
             last_run: None,
@@ -420,6 +427,11 @@ mod tests {
             ..o
         };
         assert!(store.save(bad).is_err());
+        let bad_bot = Objective {
+            bot: Some("../writer".into()),
+            ..store.get("triage").unwrap()
+        };
+        assert!(store.save(bad_bot).is_err());
         assert!(store.remove("triage").unwrap());
         assert!(store.list().unwrap().is_empty());
     }

@@ -23,17 +23,27 @@ impl Hub {
         {
             bail!("objective '{id}' is already running (run {last})");
         }
+        // A bot without its job does not run: it would not know what it is for.
+        let job = match &objective.bot {
+            Some(bot) => Some(crate::business::job(&realm.root()?, bot)?),
+            None => None,
+        };
         let mut state =
             self.create_run_in(realm, &objective.objective, objective.repo.as_deref())?;
-        append_user_text(
-            &mut state.messages,
-            &objective_brief(realm, &objective, trigger, payload),
-        );
+        let mut brief = objective_brief(realm, &objective, trigger, payload);
+        if let (Some(bot), Some(job)) = (&objective.bot, &job) {
+            brief = format!(
+                "You are {bot}, one of the business's bots. Your job, as the owner wrote it:\n{}\n\n{brief}",
+                job.text.trim()
+            );
+        }
+        append_user_text(&mut state.messages, &brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
         state.origin = Some(Origin {
             objective: objective.id.clone(),
             trigger: trigger.to_string(),
+            job_version: job.map(|j| j.version),
         });
         state.save()?;
 

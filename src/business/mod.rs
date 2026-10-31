@@ -1,9 +1,11 @@
 //! A business run from a realm (decision 30). What belongs to it lives in
 //! the realm's `business/` folder, versioned with the realm: its profile
-//! (`profile.md`) and its archive (`archive/`, past posts and documents).
-//! Every run of the realm is told the profile and where the archive is;
-//! runs may read the folder but never write it, so only the owner changes
-//! what the business is.
+//! (`profile.md`), the owner's strategy (`strategy.md`), the jobs of its
+//! bots (`bots/<name>.md`, decision 36) and its archive (`archive/`, past
+//! posts and documents). Every run of the realm is told the profile, the
+//! strategy and where the archive is; runs may read the folder but never
+//! write it, so only the owner changes what the business is and what its
+//! bots are for.
 
 pub mod drafts;
 pub mod status;
@@ -16,6 +18,8 @@ use std::path::{Path, PathBuf};
 /// The business folder, under the realm's root.
 pub const DIR: &str = "business";
 const PROFILE: &str = "profile.md";
+const STRATEGY: &str = "strategy.md";
+const BOTS: &str = "bots";
 const ARCHIVE: &str = "archive";
 /// Beyond this, the profile is cut in the run's context; the run can read
 /// the rest from the file.
@@ -27,30 +31,66 @@ pub fn dir(root: &Path) -> PathBuf {
     root.join(DIR)
 }
 
+/// A bot's job, as the owner wrote it in `business/bots/<name>.md`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Job {
+    pub text: String,
+    /// SHA-256 of the text: recorded with each of the bot's runs.
+    pub version: String,
+}
+
+/// The job of the bot `name`.
+pub fn job(root: &Path, name: &str) -> Result<Job> {
+    crate::realm::validate_name(name).context("invalid bot name")?;
+    let path = format!("{DIR}/{BOTS}/{name}.md");
+    let text = std::fs::read_to_string(root.join(&path))
+        .with_context(|| format!("the bot {name} has no job: write it in {path}"))?;
+    if text.trim().is_empty() {
+        anyhow::bail!("the bot {name} has no job: {path} is empty");
+    }
+    Ok(Job {
+        version: crate::update::sha256_hex(text.as_bytes()),
+        text,
+    })
+}
+
+fn read_optional(dir: &Path, file: &str) -> Result<Option<String>> {
+    match std::fs::read_to_string(dir.join(file)) {
+        Ok(text) => Ok(Some(text.trim().to_string()).filter(|t| !t.is_empty())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading {DIR}/{file}")),
+    }
+}
+
+/// `text`, or its beginning and where to read the rest.
+fn capped(text: &str, file: &str) -> String {
+    if text.chars().count() > MAX_PROFILE_CHARS {
+        let cut: String = text.chars().take(MAX_PROFILE_CHARS).collect();
+        format!("{cut}\n[cut here: read {DIR}/{file} for the rest]\n")
+    } else {
+        format!("{text}\n")
+    }
+}
+
 /// What a run of the realm is told about its business, or None when the
-/// realm runs none (no profile and no archive).
+/// realm runs none (no profile, no strategy and no archive).
 pub fn briefing(root: &Path) -> Result<Option<String>> {
     let dir = dir(root);
-    let profile = match std::fs::read_to_string(dir.join(PROFILE)) {
-        Ok(text) => Some(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e).context("reading business/profile.md"),
-    };
+    let profile = read_optional(&dir, PROFILE)?;
+    let strategy = read_optional(&dir, STRATEGY)?;
     let archived = count_files(&dir.join(ARCHIVE));
-    if profile.as_deref().is_none_or(|p| p.trim().is_empty()) && archived == 0 {
+    if profile.is_none() && strategy.is_none() && archived == 0 {
         return Ok(None);
     }
     let mut out = String::new();
-    if let Some(p) = profile.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-        if p.chars().count() > MAX_PROFILE_CHARS {
-            let cut: String = p.chars().take(MAX_PROFILE_CHARS).collect();
-            out.push_str(&format!(
-                "{cut}\n[cut here: read {DIR}/{PROFILE} for the rest]\n"
-            ));
-        } else {
-            out.push_str(p);
-            out.push('\n');
-        }
+    if let Some(p) = &profile {
+        out.push_str(&capped(p, PROFILE));
+    }
+    if let Some(s) = &strategy {
+        out.push_str(&format!(
+            "\nThe owner's strategy, which all work for the business follows:\n{}",
+            capped(s, STRATEGY)
+        ));
     }
     if archived > 0 {
         out.push_str(&format!(
@@ -110,6 +150,42 @@ mod tests {
         assert!(b.starts_with("Hedgen: on-chain research on X."), "{b}");
         assert!(b.contains("business/archive/: 2 files"), "{b}");
         assert!(b.contains("not change it"), "{b}");
+        assert!(!b.contains("strategy"), "{b}");
+        std::fs::write(business.join(STRATEGY), "Grow the newsletter first.").unwrap();
+        let b = briefing(root.path()).unwrap().unwrap();
+        assert!(
+            b.contains("The owner's strategy, which all work for the business follows:\nGrow the newsletter first."),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn a_strategy_alone_is_a_business() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir(root.path())).unwrap();
+        std::fs::write(dir(root.path()).join(STRATEGY), "Sell more.").unwrap();
+        assert!(
+            briefing(root.path())
+                .unwrap()
+                .unwrap()
+                .contains("Sell more.")
+        );
+    }
+
+    #[test]
+    fn a_bot_has_a_job_with_a_version() {
+        let root = tempfile::tempdir().unwrap();
+        let bots = dir(root.path()).join(BOTS);
+        std::fs::create_dir_all(&bots).unwrap();
+        let err = job(root.path(), "writer").unwrap_err();
+        assert!(format!("{err:#}").contains("write it in business/bots/writer.md"));
+        std::fs::write(bots.join("writer.md"), " \n").unwrap();
+        assert!(format!("{:#}", job(root.path(), "writer").unwrap_err()).contains("empty"));
+        std::fs::write(bots.join("writer.md"), "Write one article a week.").unwrap();
+        let j = job(root.path(), "writer").unwrap();
+        assert_eq!(j.text, "Write one article a week.");
+        assert_eq!(j.version.len(), 64);
+        assert!(job(root.path(), "../writer").is_err());
     }
 
     #[test]
