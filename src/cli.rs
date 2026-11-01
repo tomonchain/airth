@@ -195,6 +195,15 @@ pub enum ActionsCmd {
         after_help = "Example file:\n  {\"name\": \"create_draft\", \"method\": \"POST\", \"path\": \"/v1/drafts\",\n   \"fields\": [{\"name\": \"content\", \"place\": \"body\", \"required\": true}],\n   \"class\": \"reversible\"}"
     )]
     Declare { integration: String, file: PathBuf },
+    /// Give an MCP server's tool its risk class (read, reversible, commits)
+    Class {
+        /// <server>.<tool>
+        action: String,
+        class: String,
+        /// A lower ceiling than the class's, for a fixed rule
+        #[arg(long)]
+        max_level: Option<u8>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -591,9 +600,10 @@ pub fn summary(ctx: &Ctx, hours: i64) -> Result<bool> {
 
 pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
     let mut realm = ctx.realm()?;
+    let mcp = crate::tools::mcp::McpStore::new(&realm.skills_dir());
     match command.unwrap_or(ActionsCmd::List) {
         ActionsCmd::List => {
-            let all = crate::actions::all(&realm.config.integrations);
+            let all = crate::actions::all(&realm.config.integrations, &mcp.list()?);
             for a in all {
                 let note = if a.confirmed {
                     ""
@@ -616,6 +626,22 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
             let name = action.name.clone();
             realm.declare_action(&integration, action)?;
             println!("declared {integration}.{name}");
+        }
+        ActionsCmd::Class {
+            action,
+            class,
+            max_level,
+        } => {
+            let (server, tool) = action
+                .split_once('.')
+                .context("name the action as <server>.<tool>")?;
+            mcp.classify(
+                server,
+                tool,
+                crate::actions::Class::parse(&class)?,
+                max_level,
+            )?;
+            println!("{action} is {class}, for its schema as it is now");
         }
     }
     Ok(true)

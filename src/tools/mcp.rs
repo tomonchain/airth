@@ -76,6 +76,11 @@ pub struct McpServer {
     /// Set while a connection is in progress (cleared when it ends).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connecting_since: Option<DateTime<Utc>>,
+    /// The risk class the founder gave each tool, for the schema they saw
+    /// (decision 49). Kept when the server reconnects; a changed schema
+    /// voids it.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub classes: std::collections::BTreeMap<String, crate::actions::ToolClass>,
 }
 
 impl McpServer {
@@ -119,6 +124,36 @@ impl McpStore {
         Ok(())
     }
 
+    /// The founder classes one of `server`'s tools, for its input schema as
+    /// it is now (decision 49).
+    pub fn classify(
+        &self,
+        server: &str,
+        tool: &str,
+        class: crate::actions::Class,
+        max_level: Option<u8>,
+    ) -> Result<()> {
+        let mut servers = self.list()?;
+        let s = servers
+            .iter_mut()
+            .find(|s| s.name == server)
+            .ok_or_else(|| anyhow!("no MCP server named {server}"))?;
+        let spec = s.tools.iter().find(|t| t.name == tool).ok_or_else(|| {
+            anyhow!("{server} has no tool named {tool}: connect it, then class its tools")
+        })?;
+        if max_level.is_some_and(|l| l > 3) {
+            bail!("a level is 0 to 3");
+        }
+        let class = crate::actions::ToolClass {
+            class,
+            max_level,
+            schema: crate::actions::schema_hash(&spec.input_schema),
+            confirmed_at: Utc::now(),
+        };
+        s.classes.insert(tool.to_string(), class);
+        self.write(&servers)
+    }
+
     pub fn get(&self, name: &str) -> Result<McpServer> {
         self.list()?
             .into_iter()
@@ -156,6 +191,7 @@ impl McpStore {
                 server_info: None,
                 connected_at: None,
                 error: None,
+                classes: Default::default(),
                 connecting_since: None,
             }),
         }
@@ -196,6 +232,7 @@ impl McpStore {
                 server_info: None,
                 connected_at: None,
                 error: None,
+                classes: Default::default(),
                 connecting_since: None,
             }),
         }
@@ -671,6 +708,33 @@ pub fn tools_of(skills_dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<Box<dyn T
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 49: only a tool the server has can be classed, and the
+    /// class holds the schema the founder saw.
+    #[test]
+    fn the_founder_classes_a_connected_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = McpStore::new(dir.path());
+        store.save("stripe", "npx stripe-mcp", "").unwrap();
+        let class = crate::actions::Class::Read;
+        let err = store.classify("stripe", "refund", class, None).unwrap_err();
+        assert!(format!("{err:#}").contains("connect it"), "{err:#}");
+        let mut servers = store.list().unwrap();
+        servers[0].tools = vec![McpToolSpec {
+            name: "refund".into(),
+            description: String::new(),
+            input_schema: json!({"type": "object"}),
+        }];
+        store.write(&servers).unwrap();
+        assert!(store.classify("stripe", "refund", class, Some(4)).is_err());
+        store.classify("stripe", "refund", class, None).unwrap();
+        let c = &store.get("stripe").unwrap().classes["refund"];
+        assert_eq!(
+            c.schema,
+            crate::actions::schema_hash(&json!({"type": "object"}))
+        );
+        assert!(store.classify("nope", "refund", class, None).is_err());
+    }
 
     /// A tiny MCP server in sh: it answers initialize, tools/list and
     /// tools/call (echoing `text`, failing on `fail`, and asking the client
