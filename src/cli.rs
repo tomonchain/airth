@@ -670,6 +670,46 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
     Ok(true)
 }
 
+pub fn routines(ctx: &Ctx) -> Result<bool> {
+    let realm = ctx.realm()?;
+    let root = realm.root()?;
+    let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+    let actions = crate::actions::all(&realm.config.integrations, &servers);
+    let store = crate::business::store::Store::of(&realm)?;
+    let level = |agent: &str, action: &str| {
+        let ceiling = actions
+            .iter()
+            .find(|a| a.id == action)
+            .map_or(1, |a| a.ceiling);
+        store.level(agent, action, ceiling).unwrap_or(1)
+    };
+    let checks = crate::routine::Checks {
+        root: &root,
+        actions: &actions,
+        level: &level,
+    };
+    let all = crate::routine::load_all(&checks)?;
+    if all.is_empty() {
+        eprintln!("no routine yet: write one in {}/", crate::routine::DIR);
+    }
+    let mut ok = true;
+    for (name, graph) in all {
+        match graph {
+            Ok(g) => println!(
+                "✓ {name}: {} block(s), agent {}. {}",
+                g.blocks.len(),
+                g.agent,
+                g.description
+            ),
+            Err(e) => {
+                ok = false;
+                println!("✗ {name}: {e:#}");
+            }
+        }
+    }
+    Ok(ok)
+}
+
 pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
     let mut realm = ctx.realm()?;
     match command {

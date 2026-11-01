@@ -27,6 +27,7 @@ mod pipeline;
 mod prices;
 mod realm;
 mod release;
+mod routine;
 mod runtime;
 mod sandbox;
 mod scheduler;
@@ -228,6 +229,9 @@ enum Cmd {
         #[command(subcommand)]
         command: Option<cli::ActionsCmd>,
     },
+    /// Check the business's routines (routines/<name>.json): each is loaded
+    /// or refused with why
+    Routines,
     /// List the tools runs can use and the rule for each
     Tools,
     /// Check that the environment is ready
@@ -451,6 +455,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),
         Some(Cmd::Actions { command }) => cli::actions(ctx, command),
+        Some(Cmd::Routines) => cli::routines(ctx),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {

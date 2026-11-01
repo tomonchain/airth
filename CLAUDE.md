@@ -190,7 +190,7 @@ Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass.
 ## How to work
 
 - **One change per branch.** One feature or one fix. No drive-by refactoring, renaming or reformatting.
-- **Small diffs.** Aim under 400 changed lines. If a change needs more, propose a split first and wait.
+- **Small diffs.** Aim under 400 changed lines of non-test code; tests do not count toward the limit. If a change needs more, propose a split first and wait.
 - **Read before you write.** Find how the codebase already does a thing (errors, state files, threads, tests) and do it the same way. Do not introduce a second way.
 - **Tests first for deterministic logic:** state machines, the queue, idempotence, graph validation, permission paths, the access layer.
 - **Model steps are covered by evaluations, not unit tests:** replay a reference set when a prompt or model changes.
