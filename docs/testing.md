@@ -87,3 +87,61 @@ Nothing is sent to Typefully, and nothing goes to your queue. The model calls ar
 - A routine refused that should load, or the reverse.
 - A report that is hard to read or misses something you need to judge the run.
 - Drafts or picks that are off: that is the prompts' work, in `prompts/` of the Hedgen folder.
+
+## Point B: a routine waits for you on Telegram (milestone 3, steps 5 and 6)
+
+A real run of `daily-posts`: it reads, drafts, and each draft waits for you on Telegram; what you approve goes to Typefully as a draft, once. Nothing is published: Typefully only receives drafts, and you publish from there.
+
+### 1. The build
+
+As for point A, from an up-to-date `main`: `cargo build --release`, then `./target/release/airth service install`, and reopen Airth.app. The service now runs the Telegram bot, the scheduled routines and the delayed actions.
+
+### 2. Your bot
+
+1. In Telegram, talk to @BotFather: `/newbot`, give it a name. Keep the token it gives you to yourself.
+2. On the Mac:
+
+   ```bash
+   airth telegram connect
+   ```
+
+   Paste the token when asked (it is read from the keyboard, never from the command line). Airth prints a link: open it **on your phone**, in Telegram, and press Start. The bot answers "Paired."
+3. `airth telegram status` says `connected and paired`.
+
+Only your chat and your user count; a forwarded message never does.
+
+### 3. Run the routine
+
+The Hedgen folder on `routines/migrate`, Typefully declared (point A, step 3), then:
+
+```bash
+airth routines run daily-posts --realm hedgen
+```
+
+The report says, for each draft, `asked the founder (item N)`. Within half a minute each one reaches Telegram: `hedgen · Needs you`, its title, the whole draft (a long one comes in several messages, the buttons under the last), and **Approve / Edit / Reject**.
+
+### 4. Answer from the phone
+
+- **Edit**: tap it, then **reply to the item's message** (swipe it in Telegram) with the new text. A message that is not a reply, or a reply to another item, is ignored and the bot asks again. The edited draft comes back with new buttons; the old ones no longer work.
+- **Approve**: the draft goes to Typefully once; the bot answers `hedgen · done: …` with what the routine did. Approve again: nothing happens twice.
+- **Reject**: nothing is sent.
+
+### 5. Check what was kept
+
+```bash
+airth queue --realm hedgen          # nothing left waiting
+airth time --realm hedgen           # your answers, with their time
+```
+
+In Typefully: one draft per approval, with your edits.
+
+### 6. Scheduled runs
+
+`daily-posts` runs every morning at its time (`daily 07:30`) as long as the service runs. The first time the service sees it, it only arms it; a time missed while the Mac was off runs once, late, and you are told. A failed run comes to Telegram too.
+
+### What to report
+
+- An item that does not reach Telegram, reaches it twice, or arrives cut.
+- An edit taken from a message that was not a reply to its item.
+- A draft in Typefully you did not approve, or one approved that is not there.
+- Your time looking wrong in `airth time`.
