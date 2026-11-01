@@ -646,7 +646,7 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
                 .find(|a| a.id == action)
                 .with_context(|| format!("no action {action} (see `airth actions`)"))?;
             let mut store = crate::business::store::Store::of(&realm)?;
-            let was = store.level(&agent, &action, declared.ceiling)?;
+            let was = store.level(&agent, &action, declared.ceiling, declared.start)?;
             store.set_level(&agent, &action, level, declared.ceiling, "founder", "")?;
             println!("{agent} may now take {action} at level {level} (was {was})");
         }
@@ -677,11 +677,11 @@ pub fn routines(ctx: &Ctx) -> Result<bool> {
     let actions = crate::actions::all(&realm.config.integrations, &servers);
     let store = crate::business::store::Store::of(&realm)?;
     let level = |agent: &str, action: &str| {
-        let ceiling = actions
+        let (ceiling, start) = actions
             .iter()
             .find(|a| a.id == action)
-            .map_or(1, |a| a.ceiling);
-        store.level(agent, action, ceiling).unwrap_or(1)
+            .map_or((1, 1), |a| (a.ceiling, a.start));
+        store.level(agent, action, ceiling, start).unwrap_or(1)
     };
     let checks = crate::routine::Checks {
         root: &root,

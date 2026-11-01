@@ -50,8 +50,9 @@ pub struct NewItem<'a> {
 }
 
 impl Store {
-    /// The agent's level for `action`, never above `ceiling`.
-    pub fn level(&self, agent: &str, action: &str, ceiling: u8) -> Result<u8> {
+    /// The agent's level for `action`: `start` until the founder sets one,
+    /// never above `ceiling`.
+    pub fn level(&self, agent: &str, action: &str, ceiling: u8, start: u8) -> Result<u8> {
         let set: Option<u8> = self
             .conn
             .query_row(
@@ -60,7 +61,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(set.unwrap_or(DEFAULT_LEVEL).min(ceiling))
+        Ok(set.unwrap_or(start).min(ceiling))
     }
 
     /// Set a level, as the founder (`by`) or an incident does. A level above
@@ -201,8 +202,8 @@ mod tests {
     fn levels_start_at_one_never_pass_the_ceiling_and_keep_their_history() {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::open(&dir.path().join(FILE)).unwrap();
-        assert_eq!(s.level("writer", "blog.publish", 1).unwrap(), 1);
-        assert_eq!(s.level("writer", "x.reply", 0).unwrap(), 0);
+        assert_eq!(s.level("writer", "blog.publish", 1, 1).unwrap(), 1);
+        assert_eq!(s.level("writer", "x.reply", 0, 0).unwrap(), 0);
         assert!(
             s.set_level("writer", "blog.publish", 2, 1, "founder", "")
                 .is_err()
@@ -216,9 +217,15 @@ mod tests {
             "trusted",
         )
         .unwrap();
-        assert_eq!(s.level("writer", "typefully.create_draft", 3).unwrap(), 3);
+        assert_eq!(
+            s.level("writer", "typefully.create_draft", 3, 1).unwrap(),
+            3
+        );
         // A lower ceiling applies at once, without rewriting the level.
-        assert_eq!(s.level("writer", "typefully.create_draft", 1).unwrap(), 1);
+        assert_eq!(
+            s.level("writer", "typefully.create_draft", 1, 1).unwrap(),
+            1
+        );
         s.set_level(
             "writer",
             "typefully.create_draft",

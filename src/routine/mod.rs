@@ -383,8 +383,12 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
         let after = match &graph.blocks[i].kind {
             Kind::Read { source, .. } => outside || source != "business",
             Kind::Approval { .. } => false,
-            Kind::Act { action, .. } => {
-                if outside && (cx.level)(&graph.agent, action) < 2 {
+            Kind::Act { action, fields } => {
+                // A task for the founder is the founder's to judge; one for
+                // an agent becomes its instructions, so it is checked.
+                let for_founder = action == "airth.create_task"
+                    && fields.get("assignee").map(String::as_str) == Some("founder");
+                if outside && !for_founder && (cx.level)(&graph.agent, action) < 2 {
                     bail!(
                         "block '{}': content from outside reaches {action} without an approval, and {} may not take it alone (level {})",
                         graph.blocks[i].id,
