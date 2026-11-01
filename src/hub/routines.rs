@@ -204,7 +204,8 @@ impl Hub {
                 // Held by the levels (proposed, queued, prepared): not a failure.
                 crate::state::EventStatus::Denied => bail!("{}", event.result),
                 // It was tried and did not work: an incident, and the agent
-                // takes this action down a level.
+                // takes this action down a level if it was the agent's
+                // fault (decision 55).
                 _ => {
                     let detail = format!("{name}: {action} [{key}] failed: {}", event.result);
                     super::incidents::record(
@@ -215,6 +216,7 @@ impl Hub {
                             agent: Some(&graph.agent),
                             routine: Some(name),
                             action: Some(action),
+                            demote: super::retries::demotes(event.status, &event.result),
                         },
                     )?;
                     bail!("{detail}")
@@ -385,6 +387,7 @@ impl Hub {
                     agent: item.agent.as_deref(),
                     routine: item.routine.as_deref(),
                     action: Some(action),
+                    demote: super::retries::demotes(event.status, &event.result),
                 },
             )?;
             bail!("{}", event.result);
@@ -458,6 +461,7 @@ impl Hub {
                         agent: None,
                         routine: Some(&name),
                         action: None,
+                        demote: false,
                     };
                     super::incidents::record(&realm, &incident)?;
                 }
@@ -499,6 +503,7 @@ impl Hub {
                 agent: None,
                 routine: Some(name),
                 action: None,
+                demote: false,
             };
             if let Err(e) = super::incidents::record(realm, &incident) {
                 eprintln!(

@@ -157,16 +157,17 @@ fn a_scheduled_routine_runs_at_its_time() {
     );
 }
 
-/// `CLAUDE.md`: an act that fails becomes an incident in Needs you, and its
-/// agent takes that action down a level; the founder's "seen" closes it.
+/// `CLAUDE.md`: an act the service refuses for what the agent wrote becomes
+/// an incident in Needs you, and its agent takes that action down a level
+/// (decision 55); the founder's "seen" closes it.
 #[test]
 fn a_failed_act_is_an_incident_and_demotes_its_agent() {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let base = format!("http://{}", server.server_addr().to_ip().unwrap());
     std::thread::spawn(move || {
         for req in server.incoming_requests() {
-            let refused =
-                tiny_http::Response::from_string("{\"error\": \"down\"}").with_status_code(500);
+            let refused = tiny_http::Response::from_string("{\"error\": \"text too long\"}")
+                .with_status_code(422);
             req.respond(refused).unwrap();
         }
     });
@@ -225,7 +226,7 @@ fn a_failed_act_is_an_incident_and_demotes_its_agent() {
         .unwrap();
     assert!(
         report.unwrap().contains("failed"),
-        "the act's 500 is a failure"
+        "the act's 422 is a failure"
     );
     assert_eq!(item.status, "done", "the routine ran; its act failed");
     let incidents: Vec<_> = Store::of(&f.realm)

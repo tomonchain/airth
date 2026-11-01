@@ -1,7 +1,7 @@
 //! Incidents (`CLAUDE.md`, decision 45): what went wrong without the
 //! founder, put in the queue where it waits until the founder has seen it,
-//! and so on Telegram. One about an agent's action also takes that action
-//! down one level, at once.
+//! and so on Telegram. One the agent's output caused also takes that
+//! action down one level, at once (decision 55).
 
 use super::*;
 use crate::business::store::Store;
@@ -13,8 +13,11 @@ pub struct Incident<'a> {
     pub detail: &'a str,
     pub agent: Option<&'a str>,
     pub routine: Option<&'a str>,
-    /// The action that failed: demoted for `agent`.
+    /// The action that failed.
     pub action: Option<&'a str>,
+    /// Whether `agent` takes `action` down a level: only when the failure
+    /// came from what the agent wrote, never from the service.
+    pub demote: bool,
 }
 
 /// Whether an HTTP call's result says it worked: a 2xx status.
@@ -22,12 +25,12 @@ pub fn succeeded(result: &str) -> bool {
     result.starts_with("HTTP 2")
 }
 
-/// Record `incident` in `realm`'s queue; when it names an agent's action,
-/// take that action down one level. Its id in the queue.
+/// Record `incident` in `realm`'s queue; when it demotes, take the agent's
+/// action down one level. Its id in the queue.
 pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
     let mut store = Store::of(realm)?;
     let mut detail = incident.detail.to_string();
-    if let (Some(agent), Some(action)) = (incident.agent, incident.action) {
+    if let (true, Some(agent), Some(action)) = (incident.demote, incident.agent, incident.action) {
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let declared = crate::actions::all(&realm.config.integrations, &servers);
         let (ceiling, start) = declared
