@@ -1,5 +1,15 @@
 use super::*;
+use crate::actions::{Class, Declared};
 use serde_json::json;
+
+fn declared(id: &str, class: Class) -> Declared {
+    Declared {
+        id: id.into(),
+        class,
+        ceiling: class.ceiling(),
+        confirmed: true,
+    }
+}
 
 fn business() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
@@ -16,11 +26,33 @@ fn business() -> tempfile::TempDir {
     root
 }
 
-/// Checks `graph` written as routines/test.json.
+/// Checks `graph` written as routines/test.json; the agent may create
+/// drafts and reports alone (level 3), and nothing else.
 fn try_graph(root: &Path, graph: Value) -> Result<Graph> {
     std::fs::create_dir_all(root.join(DIR)).unwrap();
     std::fs::write(root.join("routines/test.json"), graph.to_string()).unwrap();
-    load(&Checks { root }, "test")
+    let actions = [
+        declared("airth.launch_mission", Class::Reversible),
+        declared("airth.report", Class::Reversible),
+        declared("typefully.create_draft", Class::Reversible),
+        declared("blog.publish", Class::Commits),
+        declared("stats.read", Class::Read),
+    ];
+    let level = |_: &str, action: &str| {
+        if action == "typefully.create_draft" || action == "airth.report" {
+            3
+        } else {
+            1
+        }
+    };
+    load(
+        &Checks {
+            root,
+            actions: &actions,
+            level: &level,
+        },
+        "test",
+    )
 }
 
 fn posts(blocks: Value) -> Value {
@@ -52,6 +84,43 @@ fn a_routine_of_six_blocks_loads() {
         {"id": "ok", "type": "approval", "show": "result.report"},
         {"id": "publish", "type": "act", "action": "blog.publish"}
     ]}))
+    .unwrap();
+}
+
+#[test]
+fn content_from_outside_reaches_no_act_without_an_approval() {
+    let root = business();
+    let err = |g: Value| format!("{:#}", try_graph(root.path(), g).unwrap_err());
+    let e = err(posts(
+        json!([rss(), {"id": "send", "type": "act", "action": "blog.publish"}]),
+    ));
+    assert!(
+        e.contains("without an approval") && e.contains("'send'"),
+        "{e}"
+    );
+    // A mission's result is from outside too.
+    let e = err(posts(json!([
+        {"id": "write", "type": "act", "action": "airth.launch_mission"},
+        {"id": "publish", "type": "act", "action": "blog.publish"}
+    ])));
+    assert!(e.contains("'publish'"), "{e}");
+    // A webhook's body as well.
+    let e = err(
+        json!({"agent": "writer", "trigger": {"webhook": "orders"}, "blocks": [
+        {"id": "send", "type": "act", "action": "blog.publish"}]}),
+    );
+    assert!(e.contains("without an approval"), "{e}");
+    // Through a condition's other branch, too.
+    let e = err(posts(json!([rss(),
+        {"id": "c", "type": "condition", "if": {"field": "x", "op": "exists"}, "else": "send"},
+        {"id": "ok", "type": "approval", "show": "x", "next": null},
+        {"id": "send", "type": "act", "action": "blog.publish"}])));
+    assert!(e.contains("'send'"), "{e}");
+    // An action the agent may take alone (level 2 or more) is allowed.
+    try_graph(
+        root.path(),
+        posts(json!([rss(), {"id": "d", "type": "act", "action": "typefully.create_draft"}])),
+    )
     .unwrap();
 }
 
@@ -102,8 +171,10 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
             "unknown source",
         ),
         (
-            posts(json!([{"id": "a", "type": "read", "source": "connector"}])),
-            "names its action",
+            posts(
+                json!([{"id": "a", "type": "read", "source": "connector", "action": "blog.publish"}]),
+            ),
+            "not a read action",
         ),
         (
             posts(json!([{"id": "a", "type": "ai", "prompt": "../secrets.md"}])),
@@ -119,7 +190,10 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
             ),
             "unknown operator",
         ),
-        (posts(json!([act("a", "bankpay")])), "not an action like"),
+        (
+            posts(json!([act("a", "bank.pay")])),
+            "not a declared action",
+        ),
         (
             posts(json!([{"id": "a", "type": "shell", "command": "rm"}])),
             "not a valid routine",

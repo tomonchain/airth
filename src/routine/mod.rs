@@ -1,14 +1,16 @@
 //! Routines as graphs of six blocks (decision 49): `routines/<name>.json` in
 //! the business folder, read-only to runs (decision 44). A graph is checked
 //! whole when it is loaded, and refused, naming the block, if it is wrong:
-//! its shape (no cycle, every block reachable), its fields, its prompts and
-//! its agent.
+//! its shape (no cycle, every block reachable), its references (blocks,
+//! prompts, declared actions, the agent), and the rule that content from
+//! outside never reaches an `act` without an `approval` on the way, unless
+//! that action's level for the agent is at least 2.
 
 use crate::objective::Schedule;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 /// Where a business's routines live, at the root of its folder.
@@ -97,9 +99,13 @@ pub struct Test {
 
 const OPS: &[&str] = &["==", "!=", "<", "<=", ">", ">=", "exists"];
 
-/// What a graph is checked against: the business's folder.
+/// What a graph is checked against: the business's folder, its declared
+/// actions, and the routine's agent's level for each action.
 pub struct Checks<'a> {
     pub root: &'a Path,
+    pub actions: &'a [crate::actions::Declared],
+    /// The level of (agent, action), clamped to its ceiling.
+    pub level: &'a dyn Fn(&str, &str) -> u8,
 }
 
 /// Load and check `routines/<name>.json`.
@@ -233,7 +239,7 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
     if let Some(i) = state.iter().position(|s| *s == 0) {
         bail!("block '{}' is never reached", graph.blocks[i].id);
     }
-    Ok(())
+    check_outside(cx, graph, &edges)
 }
 
 /// A field of an item, dotted for nested ones: `answer.draft`.
@@ -262,14 +268,6 @@ fn template(t: &str) -> Result<()> {
     Ok(())
 }
 
-/// An action's id: `<connector>.<action>`.
-fn action_name(id: &str) -> Result<()> {
-    match id.split_once('.') {
-        Some((c, a)) if !c.is_empty() && !a.is_empty() => Ok(()),
-        _ => bail!("'{id}' is not an action like typefully.create_draft"),
-    }
-}
-
 fn positive(what: &str, n: Option<usize>) -> Result<()> {
     if n == Some(0) {
         bail!("{what} is at least 1");
@@ -278,6 +276,12 @@ fn positive(what: &str, n: Option<usize>) -> Result<()> {
 }
 
 fn check_block(cx: &Checks, block: &Block) -> Result<()> {
+    let declared = |action: &str| {
+        cx.actions
+            .iter()
+            .find(|a| a.id == action)
+            .with_context(|| format!("'{action}' is not a declared action (see `airth actions`)"))
+    };
     match &block.kind {
         Kind::Read {
             source,
@@ -294,11 +298,14 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
                 "rss" if feeds.is_empty() => bail!("an rss read needs feeds"),
                 "web" if url.is_none() => bail!("a web read needs a url"),
                 "connector" => {
-                    action_name(
+                    let a = declared(
                         action
                             .as_deref()
                             .context("a connector read names its action")?,
                     )?;
+                    if a.class != crate::actions::Class::Read {
+                        bail!("'{}' is not a read action", a.id);
+                    }
                 }
                 "rss" | "web" | "business" => {}
                 other => bail!("unknown source '{other}' (rss, web, connector, business)"),
@@ -353,12 +360,43 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             positive("expires_after", expires_after.map(|h| h as usize))?;
         }
         Kind::Act { action, fields } => {
-            action_name(action)?;
+            declared(action)?;
             for (name, value) in fields {
                 crate::realm::validate_name(name).with_context(|| format!("field '{name}'"))?;
                 template(value).with_context(|| format!("field '{name}'"))?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Content from outside (a read of rss, web or a connector, a mission's
+/// result, a webhook's body) reaches no `act` without an `approval` on the
+/// way, unless the agent's level for that action is at least 2.
+fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
+    let mut seen = HashSet::new();
+    let mut todo = vec![(0usize, graph.trigger.webhook.is_some())];
+    while let Some((i, outside)) = todo.pop() {
+        if !seen.insert((i, outside)) {
+            continue;
+        }
+        let after = match &graph.blocks[i].kind {
+            Kind::Read { source, .. } => outside || source != "business",
+            Kind::Approval { .. } => false,
+            Kind::Act { action, .. } => {
+                if outside && (cx.level)(&graph.agent, action) < 2 {
+                    bail!(
+                        "block '{}': content from outside reaches {action} without an approval, and {} may not take it alone (level {})",
+                        graph.blocks[i].id,
+                        graph.agent,
+                        (cx.level)(&graph.agent, action)
+                    );
+                }
+                outside || action == "airth.launch_mission"
+            }
+            _ => outside,
+        };
+        todo.extend(edges[i].iter().map(|&j| (j, after)));
     }
     Ok(())
 }
