@@ -4,19 +4,25 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 55. A failed action is retried only when a retry cannot do it twice
 
-**Proposed.**
+**Accepted**, with the founder's amendments (writes, idempotency keys, demotion).
 
-`CLAUDE.md` says a failed action is retried a few times, then becomes an incident. Today an `Act`, an approved action and a delayed one become an incident at the first failure. A retry is safe only when the first attempt certainly did nothing, or when doing it twice changes nothing. So:
+`CLAUDE.md` says a failed action is retried a few times, then becomes an incident. Until now an `Act`, an approved action and a delayed one became an incident at the first failure. A retry is safe only when the first attempt certainly did nothing, or when doing it twice changes nothing. So, for a declared action:
 
-- **What is retried:** a failure where the request never reached the service (connection refused, DNS, TLS), or an answer that says it was not done (HTTP 429, 502, 503, 504). Any other failure becomes an incident at once.
-- **A timeout or a reset after sending is never retried** for an action that is not a read: the service may have done it. It becomes an incident that says so, and the founder checks before retrying by hand.
-- **Actions that commit money or a contract are never retried automatically**, whatever the failure: an incident at once.
-- **How:** up to three attempts in all, one minute then five minutes apart, honouring `Retry-After` when it is shorter than 15 minutes. The retry waits in the action journal (the key stays the same, decision 47), and the scheduler picks it up, so a restart of Airth does not lose it. Each attempt is recorded; only the last failure becomes an incident and demotes (decision 45).
-- **Reads** (`Read` blocks, the class read) are retried the same way, with no limit on what failed after sending.
+| Failure | Read | Write | Write with an idempotency key | Commits |
+| --- | --- | --- | --- | --- |
+| Never sent: connection refused, DNS, TLS | retried | retried | retried | incident |
+| HTTP 429 or 503 | retried | retried | retried | incident |
+| Sent then cut (timeout, reset), HTTP 502, 504, any other 5xx | retried | incident: ambiguous, the founder checks before retrying by hand | retried | incident |
+| HTTP 4xx other than 429 | incident | incident | incident | incident |
 
-*Why:* an incident for a passing network error wakes the founder and demotes an agent for nothing, which would make autonomy hard to earn. But a retry that publishes twice, or pays twice, is worse than an incident.
+- **Idempotency.** A connector's action may declare that its service accepts an idempotency key, and the header that carries it. Airth then sends the action's journal key in that header, the same on every attempt, and the write may be retried on any failure of the service. Actions of the commits class are never retried automatically, key or not.
+- **How.** Up to three attempts in all, one minute then five minutes apart. A `Retry-After` in seconds is honoured when it is under 15 minutes; a longer one ends the retries. The retry waits in the action journal, under the same key (decision 47), and the scheduler picks it up, so a restart of Airth does not lose it. Each attempt is recorded. When the last attempt fails, the failure becomes an incident.
+- **Demotion.** A failure caused by the service (network, 5xx, 429, retries exhausted) creates an incident but never demotes the agent. Only a failure attributable to the agent's output demotes (decision 45): a 4xx answer other than 401, 403, 407, 408 and 429, which say something about the credentials or the service, not the content.
+- **Scope.** This covers a routine's `Act`, an action the founder approved and a delayed one. A mission's own calls at level 3 are not retried: the agent sees the error and decides. A `Read` block keeps its behaviour: a source that fails is noted, and the next scheduled run reads it again; the deduplication of reads means nothing is lost.
 
-*Cost:* a new state in the action journal (waiting to retry, with its time) and its handling in the scheduler. A result reaches the founder up to six minutes later. Telling a refused connection from a timeout after sending depends on the HTTP client's errors, which `tools/http.rs` must expose to the runtime: that is security code.
+*Why:* an incident for a passing network error wakes the founder and demotes an agent for nothing, which would make autonomy hard to earn. But a retry that publishes twice, or pays twice, is worse than an incident. An agent should lose autonomy for what it wrote, not for a service that was down.
+
+*Cost:* the action journal gains the time of the next attempt, and the scheduler a task. A result reaches the founder up to six minutes later. Telling a request that never left from one cut after sending needs `tools/http.rs` to say which it was (security code, changed at the founder's request). An ambiguous failure of a write without a key always reaches the founder, even when the service did nothing.
 
 ## 54. One bank in the beta, read-only: Revolut Business
 
