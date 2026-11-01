@@ -38,26 +38,42 @@ Each routine is `✓` with its blocks and agent, or `✗` with the block at faul
 
 ### 3. Declare Typefully, for `daily-posts`
 
-`daily-posts` ends by sending the approved post to Typefully, so the action must be declared in the realm before the routine loads. The key is yours to enter; Airth never sees it in clear:
+`daily-posts` ends by sending the approved post to Typefully as a draft, through Typefully's API v2 (v1 stopped on 15 June 2026). The action must be declared in the realm before the routine loads.
+
+Create a v2 API key in Typefully, then give it to Airth (you type it; Airth never shows it):
 
 ```bash
 airth secret set TYPEFULLY_API_KEY --realm hedgen
 airth integration add typefully https://api.typefully.com --realm hedgen \
-  --header "X-API-KEY: Bearer [secret:TYPEFULLY_API_KEY]" \
+  --header "Authorization: Bearer [secret:TYPEFULLY_API_KEY]" \
   --description "Typefully: drafts of posts for X"
 ```
 
-Check the header and path against Typefully's API documentation before you rely on them. Then declare the action from a file, for example `/tmp/create_draft.json`:
+Find the id of Hedgen's social set (the account drafts go to). Paste the key when asked; it stays in this terminal only:
+
+```bash
+read -rs "TF?Typefully v2 key: " && echo && \
+  curl -s -H "Authorization: Bearer $TF" https://api.typefully.com/v2/social-sets; unset TF
+```
+
+Note the `id` of Hedgen's X account. Then declare the action from a file, for example `/tmp/create_draft.json`, with that id in place of `123`:
 
 ```json
 {
   "name": "create_draft",
   "method": "POST",
-  "path": "/v1/drafts/",
-  "fields": [{"name": "content", "place": "body", "required": true}],
+  "path": "/v2/social-sets/{social_set_id}/drafts",
+  "fields": [
+    {"name": "social_set_id", "place": "path", "value": "123"},
+    {"name": "text", "place": "body", "required": true}
+  ],
+  "body": {"platforms": {"x": {"enabled": true, "posts": [{"text": "{text}"}]}}},
   "class": "reversible"
 }
 ```
+
+- `value` fixes the social set: no routine or agent can send a draft elsewhere.
+- `body` is the only body ever sent, the post's text in its slot: nothing else can be added, a `publish_at` that would publish included. That is what makes the action `reversible`.
 
 ```bash
 airth actions declare typefully /tmp/create_draft.json --realm hedgen
@@ -138,6 +154,17 @@ In Typefully: one draft per approval, with your edits.
 ### 6. Scheduled runs
 
 `daily-posts` runs every morning at its time (`daily 07:30`) as long as the service runs. The first time the service sees it, it only arms it; a time missed while the Mac was off runs once, late, and you are told. A failed run comes to Telegram too.
+
+### The old pipelines are off
+
+The Hedgen folder's `business/pipelines/` is gone on `routines/migrate`, so the service no longer runs them beside the routines (that would draft twice). To check:
+
+```bash
+airth pipeline check --realm hedgen        # "No pipelines"
+grep "pipeline hedgen" ~/.airth/logs/serve.log | tail -3
+```
+
+The last `pipeline hedgen/… started` lines are from before you switched the folder to `routines/migrate`; none should come after.
 
 ### What to report
 
