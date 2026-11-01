@@ -19,6 +19,9 @@ pub struct NewAction<'a> {
     pub agent: Option<&'a str>,
     pub routine: Option<&'a str>,
     pub run: Option<&'a str>,
+    /// The queue item the founder approved it in, closed when a later
+    /// attempt ends it (decision 55).
+    pub item: Option<i64>,
     pub level: u8,
     /// The founder approved this very action.
     pub approved: bool,
@@ -148,9 +151,9 @@ impl Store {
                 }
             }
             tx.execute(
-                "INSERT INTO actions (key, action, connector, agent, routine, run, level, approved, args, status, attempts, started_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'in_flight', 1, ?10)",
-                params![a.key, a.action, a.connector, a.agent, a.routine, a.run, a.level, a.approved, a.args, Utc::now().to_rfc3339()],
+                "INSERT INTO actions (key, action, connector, agent, routine, run, item, level, approved, args, status, attempts, started_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'in_flight', 1, ?11)",
+                params![a.key, a.action, a.connector, a.agent, a.routine, a.run, a.item, a.level, a.approved, a.args, Utc::now().to_rfc3339()],
             )?;
             let id = tx.last_insert_rowid();
             tx.execute(
@@ -224,6 +227,7 @@ mod tests {
             agent: Some("writer"),
             routine: None,
             run: None,
+            item: None,
             level,
             approved,
             args: "{}",

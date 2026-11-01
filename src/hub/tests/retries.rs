@@ -1,4 +1,5 @@
-//! Decision 55: a failure of the service never demotes the agent.
+//! Decision 55: a failed action is tried again only when that cannot do it
+//! twice, and a failure of the service never demotes the agent.
 
 use super::*;
 use crate::business::store::Store;
@@ -58,12 +59,21 @@ fn read_request(stream: &mut TcpStream) -> String {
     String::from_utf8_lossy(&buf).to_lowercase()
 }
 
-/// A realm whose agent proposed a write to `base`, waiting in the queue as
-/// item 1; the agent is at level 2.
-fn proposed(base: &str) -> Fixture {
+/// An address where nothing listens: a request there never leaves.
+fn nowhere() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    format!("http://{}", listener.local_addr().unwrap())
+}
+
+/// A realm whose agent proposed a write to `base` (with an idempotency key
+/// when `keyed`), waiting in the queue as item 1; the agent is at level 2.
+fn proposed(base: &str, keyed: bool) -> Fixture {
     let mut f = fixture();
-    let action = json!({"name": "create", "method": "POST", "path": "/v1/items",
+    let mut action = json!({"name": "create", "method": "POST", "path": "/v1/items",
         "fields": [{"name": "text", "place": "body"}], "class": "reversible"});
+    if keyed {
+        action["idempotency_header"] = "Idempotency-Key".into();
+    }
     f.realm
         .set_integration(crate::integration::Integration {
             name: "svc".into(),
@@ -105,6 +115,13 @@ fn approve(hub: &Hub, f: &Fixture) -> (Item, String) {
     (item, report.unwrap_or_default())
 }
 
+fn item(f: &Fixture) -> Item {
+    let all = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["approved", "done", "failed"]);
+    all.unwrap().into_iter().find(|i| i.id == 1).unwrap()
+}
+
 fn incidents(f: &Fixture) -> Vec<Item> {
     let pending = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
     pending
@@ -118,26 +135,124 @@ fn level(f: &Fixture) -> u8 {
     store.level("writer", "svc.create", 3, 1).unwrap()
 }
 
+fn in_secs(s: i64) -> DateTime<Utc> {
+    Utc::now() + chrono::Duration::seconds(s)
+}
+
 #[test]
-fn a_write_cut_after_sending_is_an_incident_that_does_not_demote() {
+fn a_request_that_never_left_is_tried_three_times_then_is_an_incident_that_does_not_demote() {
+    let f = proposed(&nowhere(), false);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let (waiting, report) = approve(&hub, &f);
+    assert!(report.contains("tried again at"), "{report}");
+    assert_eq!(waiting.status, "approved", "open until its last attempt");
+    assert!(incidents(&f).is_empty());
+    assert!(hub.retry_due(in_secs(30)).unwrap().is_empty(), "a minute");
+    let second = hub.retry_due(in_secs(61)).unwrap();
+    assert!(second[0].contains("failed, tried again at"), "{second:?}");
+    assert!(hub.retry_due(in_secs(240)).unwrap().is_empty(), "five more");
+    let third = hub.retry_due(in_secs(370)).unwrap();
+    assert!(third[0].contains("an incident"), "{third:?}");
+    assert!(
+        hub.retry_due(in_secs(3600)).unwrap().is_empty(),
+        "no fourth"
+    );
+    let found = incidents(&f);
+    assert_eq!(found.len(), 1);
+    let detail = found[0].args["detail"].as_str().unwrap();
+    assert!(detail.contains("failed three times"), "{detail}");
+    assert_eq!(level(&f), 2, "the service failed, not the agent");
+    assert_eq!(item(&f).status, "failed");
+}
+
+#[test]
+fn a_write_cut_after_sending_is_an_incident_never_tried_again() {
     let (base, got) = service(vec![Reply::Cut]);
-    let f = proposed(&base);
+    let f = proposed(&base, false);
     let (hub, _, _) = make_hub(&f.home, vec![]);
     let (closed, _) = approve(&hub, &f);
     assert_eq!(closed.status, "failed");
-    assert_eq!(incidents(&f).len(), 1);
+    let found = incidents(&f);
+    assert_eq!(found.len(), 1);
+    let detail = found[0].args["detail"].as_str().unwrap();
+    assert!(detail.contains("may have been done"), "{detail}");
+    assert!(hub.retry_due(in_secs(3600)).unwrap().is_empty());
     assert_eq!(got.lock().unwrap().len(), 1);
-    assert_eq!(level(&f), 2, "the service failed, not the agent");
+    assert_eq!(level(&f), 2);
+}
+
+#[test]
+fn a_write_with_an_idempotency_key_is_tried_again_after_a_cut_with_the_same_key() {
+    let (base, got) = service(vec![Reply::Cut, Reply::Status(201, "")]);
+    let f = proposed(&base, true);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let (waiting, _) = approve(&hub, &f);
+    assert_eq!(waiting.status, "approved");
+    let done = hub.retry_due(in_secs(61)).unwrap();
+    assert!(done[0].ends_with("done"), "{done:?}");
+    assert_eq!(item(&f).status, "done");
+    let requests = got.lock().unwrap().clone();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|r| r.contains("idempotency-key: item/1\r\n")),
+        "{requests:?}"
+    );
+    assert!(incidents(&f).is_empty());
+}
+
+#[test]
+fn a_429_is_tried_again_after_its_retry_after() {
+    let (base, got) = service(vec![
+        Reply::Status(429, "retry-after: 30\r\n"),
+        Reply::Status(201, ""),
+    ]);
+    let f = proposed(&base, false);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    approve(&hub, &f);
+    assert!(hub.retry_due(in_secs(20)).unwrap().is_empty(), "not before");
+    let done = hub.retry_due(in_secs(31)).unwrap();
+    assert!(done[0].ends_with("done"), "{done:?}");
+    assert_eq!(item(&f).status, "done");
+    assert_eq!(got.lock().unwrap().len(), 2);
+    assert!(incidents(&f).is_empty());
+    assert_eq!(level(&f), 2);
 }
 
 #[test]
 fn a_504_on_a_write_is_an_incident_that_does_not_demote() {
     let (base, got) = service(vec![Reply::Status(504, "")]);
-    let f = proposed(&base);
+    let f = proposed(&base, false);
     let (hub, _, _) = make_hub(&f.home, vec![]);
     let (closed, _) = approve(&hub, &f);
     assert_eq!(closed.status, "failed");
-    assert_eq!(incidents(&f).len(), 1);
+    let found = incidents(&f);
+    assert_eq!(found.len(), 1);
+    let detail = found[0].args["detail"].as_str().unwrap();
+    assert!(detail.contains("may have been done"), "{detail}");
+    assert!(hub.retry_due(in_secs(3600)).unwrap().is_empty());
     assert_eq!(got.lock().unwrap().len(), 1);
     assert_eq!(level(&f), 2);
+}
+
+#[test]
+fn a_retry_waiting_when_airth_restarts_is_still_done_once() {
+    let (base, got) = service(vec![Reply::Status(503, ""), Reply::Status(201, "")]);
+    let f = proposed(&base, false);
+    {
+        let (hub, _, _) = make_hub(&f.home, vec![]);
+        approve(&hub, &f);
+    }
+    // Airth restarts: a new hub, nothing in memory.
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let done = hub.retry_due(in_secs(61)).unwrap();
+    assert!(done[0].ends_with("done"), "{done:?}");
+    assert!(hub.retry_due(in_secs(3600)).unwrap().is_empty());
+    assert_eq!(item(&f).status, "done");
+    assert_eq!(got.lock().unwrap().len(), 2);
+    assert_eq!(
+        Store::of(&f.realm).unwrap().journal().unwrap(),
+        vec![("item/1".to_string(), "confirmed".to_string(), true)]
+    );
 }
