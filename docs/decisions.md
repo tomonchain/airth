@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 42. The surface is frozen on the beta's scope
+
+This supersedes decision 25. Until the beta is reached (`CLAUDE.md`, *Scope: the beta*), Airth gets bug fixes and the current milestone's work only. Milestones are taken in order; one starts when the previous one's gate is passed. Anything outside the beta goes to `docs/backlog.md`: what, why, which milestone it would serve. The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own.
+
+*Why:* the pilot's seven steps were replaced (decision 36), then the frame changed again: Airth is a business headquarters, each business a company. The beta has a measurable end (Hedgen four weeks on its own, founder time below the baseline, Numirama by configuration only), which makes it a better line to freeze on than a list of steps.
+
+*Cost:* the beta is wider than the pilot (mail, the VPS, Numirama), so the freeze lasts longer and more work counts as in scope.
+
 ## 41. Agents ask each other for work, within the limits of the one asked
 
 A routine's runs may ask other routines of the same business for work, if the owner allowed it on that routine (its `delegates`). Two tools carry it, offered only to those runs:
