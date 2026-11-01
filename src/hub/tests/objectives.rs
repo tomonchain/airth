@@ -286,6 +286,7 @@ fn a_bot_reaches_only_the_integrations_it_was_given() {
         description: String::new(),
         base_url: format!("https://{name}.invalid"),
         headers: Default::default(),
+        actions: Vec::new(),
     };
     f.realm.config.integrations = vec![integration("blog"), integration("bank")];
     f.realm.config.policy.network = Rule::Allow;

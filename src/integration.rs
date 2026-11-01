@@ -23,6 +23,9 @@ pub struct Integration {
     /// credential NAME when the request is sent.
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    /// The calls a routine's `act` may make through it (decision 49).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<crate::actions::HttpAction>,
 }
 
 impl Integration {
@@ -39,6 +42,12 @@ impl Integration {
                 if secret.is_empty() {
                     bail!("header '{name}' has an empty [secret:] reference");
                 }
+            }
+        }
+        for (i, a) in self.actions.iter().enumerate() {
+            a.validate()?;
+            if self.actions[..i].iter().any(|b| b.name == a.name) {
+                bail!("action '{}' is declared twice", a.name);
             }
         }
         Ok(())
@@ -152,6 +161,7 @@ mod tests {
                 "Authorization".into(),
                 "Bearer [secret:GITHUB_TOKEN]".into(),
             )]),
+            actions: Vec::new(),
         }
     }
 

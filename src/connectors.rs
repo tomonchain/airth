@@ -293,6 +293,7 @@ pub fn integration_for(c: &Connector) -> Result<Integration> {
         ),
         base_url: base_url.to_string(),
         headers,
+        actions: Vec::new(),
     };
     integration.validate()?;
     Ok(integration)

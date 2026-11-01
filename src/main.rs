@@ -1,3 +1,4 @@
+mod actions;
 mod agent;
 mod business;
 mod cancel;
@@ -222,6 +223,11 @@ enum Cmd {
         #[command(subcommand)]
         command: cli::IntegrationCmd,
     },
+    /// The actions routines may take, their risk class and highest level
+    Actions {
+        #[command(subcommand)]
+        command: Option<cli::ActionsCmd>,
+    },
     /// List the tools runs can use and the rule for each
     Tools,
     /// Check that the environment is ready
@@ -444,6 +450,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),
+        Some(Cmd::Actions { command }) => cli::actions(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {

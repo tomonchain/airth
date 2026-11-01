@@ -187,6 +187,17 @@ pub enum SecretCmd {
 }
 
 #[derive(Subcommand)]
+pub enum ActionsCmd {
+    /// List every action with its risk class and highest autonomy level
+    List,
+    /// Declare (or replace) an action of an integration, from a JSON file
+    #[command(
+        after_help = "Example file:\n  {\"name\": \"create_draft\", \"method\": \"POST\", \"path\": \"/v1/drafts\",\n   \"fields\": [{\"name\": \"content\", \"place\": \"body\", \"required\": true}],\n   \"class\": \"reversible\"}"
+    )]
+    Declare { integration: String, file: PathBuf },
+}
+
+#[derive(Subcommand)]
 pub enum IntegrationCmd {
     /// List the realm's integrations
     List,
@@ -578,6 +589,38 @@ pub fn summary(ctx: &Ctx, hours: i64) -> Result<bool> {
     Ok(true)
 }
 
+pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
+    let mut realm = ctx.realm()?;
+    match command.unwrap_or(ActionsCmd::List) {
+        ActionsCmd::List => {
+            let all = crate::actions::all(&realm.config.integrations);
+            for a in all {
+                let note = if a.confirmed {
+                    ""
+                } else {
+                    "  (not classed: commits until you class it)"
+                };
+                println!(
+                    "{:<36} {:<11} up to level {}{note}",
+                    a.id,
+                    a.class.as_str(),
+                    a.ceiling
+                );
+            }
+        }
+        ActionsCmd::Declare { integration, file } => {
+            let text = std::fs::read_to_string(&file)
+                .with_context(|| format!("reading {}", file.display()))?;
+            let action: crate::actions::HttpAction =
+                serde_json::from_str(&text).context("reading the action")?;
+            let name = action.name.clone();
+            realm.declare_action(&integration, action)?;
+            println!("declared {integration}.{name}");
+        }
+    }
+    Ok(true)
+}
+
 pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
     let mut realm = ctx.realm()?;
     match command {
@@ -616,6 +659,7 @@ pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
                 description,
                 base_url,
                 headers: map,
+                actions: Vec::new(),
             };
             let missing: Vec<String> = integration
                 .secret_names()
