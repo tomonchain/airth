@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>daily-posts · Routine</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1011}
+a{color:#8FA6FF}a:hover{color:#B8C6FF}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:720px){.rail{flex-direction:row !important;flex-wrap:wrap;flex-basis:100% !important}}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; min-height: 100vh; font-family: Inter, system-ui, sans-serif; color: #ECEDEE; background: #0F1011">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px">
+  <div style="display: flex; align-items: center; gap: 16px">
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 0; background: transparent; color: #ECEDEE; font: inherit; font-size: 15px; font-weight: 600">
+      <span aria-hidden="true" style="width: 26px; height: 26px; border-radius: 8px; background: #1E3A2E; color: #5BD08D; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700">H</span>Hedgen Ltd
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B929B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 9 5-5 5 5M7 15l5 5 5-5"/></svg>
+    </button>
+    <span style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #A3A9B1"><span aria-hidden="true" style="width: 22px; height: 22px; border-radius: 7px; background: #F39C4A; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2A1404" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>Post writer</span>
+  </div>
+  <div style="display: flex; gap: 8px">
+    <button type="button" style="display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #34383D; background: transparent; color: #ECEDEE; font: inherit; font-size: 14px; font-weight: 500">Dry run</button>
+    <button type="button" style="display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #ECEDEE; color: #0F1011; font: inherit; font-size: 14px; font-weight: 600"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>Run now</button>
+  </div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto; align-items: stretch">
+  <nav aria-label="Main" class="rail" style="flex: 0 0 72px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 16px">
+    <a href="hq.html" aria-label="HQ" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V21H3z"/></svg></a>
+    <a href="needs-you.html" aria-label="Needs you, 3 items" style="position: relative; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v7H2v-7z"/></svg><span aria-hidden="true" style="position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 4px; background: #F5B353"></span></a>
+    <a href="team.html" aria-label="Team" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.9.4 5 2.8 5 5.8"/></svg></a>
+    <a href="routine-editor.html" aria-label="Routines" aria-current="page" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #23262A; color: #ECEDEE"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/></svg></a>
+    <a href="tasks.html" aria-label="Tasks" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l2 2 3-3M3 13l2 2 3-3M12 6h9M12 13h9M12 20h9"/></svg></a>
+    <a href="calendar.html" aria-label="Calendar" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></a>
+    <div style="flex: 1 1 auto"></div>
+    <a href="#" aria-label="Workshop" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></a>
+    <a href="#" aria-label="Settings" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; margin: 0 12px 12px 0; background: #17181A; border: 1px solid #24272B; border-radius: 16px; overflow: hidden; display: flex; flex-wrap: wrap; align-items: stretch">
+
+    <section aria-label="Routine graph" style="flex: 999 1 560px; min-width: 0; position: relative; background-color: #141517; background-image: radial-gradient(#2A2D31 1px, transparent 1px); background-size: 20px 20px; display: flex; flex-direction: column; align-items: center; padding: 20px 20px 24px; box-sizing: border-box; gap: 20px; min-height: 640px">
+
+      <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid #2A2D31; background: #1D1F22; color: #ECEDEE; font: inherit; font-size: 15px; font-weight: 500">
+        <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; background: #F5B353"></span><span style="font-family: 'JetBrains Mono', monospace">daily-posts</span>
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B929B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 9 5-5 5 5M7 15l5 5 5-5"/></svg>
+      </button>
+
+      <div style="flex: 1 1 auto; width: 100%; display: flex; align-items: center; overflow-x: auto">
+        <div style="display: flex; align-items: center; margin: 0 auto; padding: 8px">
+          <div style="width: 140px; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #8B929B; letter-spacing: 0.06em">TRIGGER</span>
+            <span style="font-size: 13px; font-weight: 600">Every day</span>
+            <span style="font-size: 12px; color: #A3A9B1">07:30</span>
+          </div>
+          <div aria-hidden="true" style="width: 24px; height: 2px; background: #3A3E44"></div>
+          <div style="width: 140px; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #8B929B; letter-spacing: 0.06em">READ</span>
+            <span style="font-size: 13px; font-weight: 600">News feeds</span>
+            <span style="font-size: 12px; color: #A3A9B1">Last 2 days, no repeats</span>
+            <span style="font-size: 11.5px; color: #5BD08D; font-family: 'JetBrains Mono', monospace">✓ 54 → 22 · 2 s</span>
+          </div>
+          <div aria-hidden="true" style="width: 24px; height: 2px; background: #3A3E44"></div>
+          <div style="width: 140px; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #8B929B; letter-spacing: 0.06em">AI</span>
+            <span style="font-size: 13px; font-weight: 600">Pick</span>
+            <span style="font-size: 12px; color: #A3A9B1">Best 3, one per story</span>
+            <span style="font-size: 11.5px; color: #5BD08D; font-family: 'JetBrains Mono', monospace">✓ 22 → 3 · 8 s</span>
+          </div>
+          <div aria-hidden="true" style="width: 24px; height: 2px; background: #3A3E44"></div>
+          <div style="width: 140px; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #8B929B; letter-spacing: 0.06em">AI</span>
+            <span style="font-size: 13px; font-weight: 600">Draft</span>
+            <span style="font-size: 12px; color: #A3A9B1">One post per story</span>
+            <span style="font-size: 11.5px; color: #5BD08D; font-family: 'JetBrains Mono', monospace">✓ 3 → 3 · 6 s</span>
+          </div>
+          <div aria-hidden="true" style="width: 24px; height: 2px; background: #3A3E44"></div>
+          <div style="width: 140px; background: #2A2213; border: 1px solid #5A4520; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #F5B353; letter-spacing: 0.06em">APPROVAL</span>
+            <span style="font-size: 13px; font-weight: 600">You, on Telegram</span>
+            <span style="font-size: 12px; color: #D9C29A">Editable, 6 h</span>
+            <span style="font-size: 11.5px; color: #F5B353; font-family: 'JetBrains Mono', monospace">2 of 3 answered</span>
+          </div>
+          <div aria-hidden="true" style="width: 24px; height: 2px; background: #3A3E44"></div>
+          <div aria-current="true" style="width: 140px; background: #1D2233; border: 2px solid #8FA6FF; border-radius: 12px; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+            <span style="font-size: 10.5px; font-weight: 600; color: #B8C6FF; letter-spacing: 0.06em">ACT</span>
+            <span style="font-size: 13px; font-weight: 600">Typefully draft</span>
+            <span style="font-size: 12px; color: #B9C3E6">Reversible · level 1</span>
+            <span style="font-size: 11.5px; color: #5BD08D; font-family: 'JetBrains Mono', monospace">✓ 2 sent</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; width: 100%; max-width: 640px">
+        <form style="flex: 1 1 auto; display: flex; align-items: center; gap: 10px; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 24px; padding: 4px 4px 4px 16px">
+          <label for="ask" class="sr-only">Ask an agent to change this routine</label>
+          <input id="ask" type="text" placeholder="Ask an agent to change this routine…" style="flex: 1 1 auto; min-width: 0; border: 0; outline: none; background: transparent; color: #ECEDEE; font: inherit; font-size: 15px; height: 40px">
+        </form>
+        <div role="group" aria-label="Zoom" style="display: flex; flex-direction: column; gap: 6px">
+          <button type="button" aria-label="Zoom in" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #2A2D31; background: #1D1F22; color: #ECEDEE; font: inherit; font-size: 18px">+</button>
+          <button type="button" aria-label="Zoom out" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #2A2D31; background: #1D1F22; color: #ECEDEE; font: inherit; font-size: 18px">−</button>
+        </div>
+      </div>
+    </section>
+
+    <aside aria-labelledby="rd" style="flex: 1 1 320px; min-width: 0; border-left: 1px solid #24272B; padding: 22px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px">
+      <h2 id="rd" style="margin: 0; font-size: 17px; font-weight: 600">Routine details</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px"><span style="font-size: 12px; font-weight: 600; background: #3A2C14; color: #F5B353; border-radius: 8px; padding: 4px 10px">Waiting for you</span><span style="font-size: 14px">Started 07:30 today</span></div>
+        <span style="font-size: 13px; color: #A3A9B1">Started by its schedule · owned by Post writer</span>
+      </div>
+      <div style="display: flex; flex-direction: column">
+        <span style="font-size: 13px; color: #8B929B; padding-bottom: 6px">Steps</span>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24272B; font-size: 14px"><span>1 · Read</span><span style="color: #5BD08D">✓ 2 s</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24272B; font-size: 14px"><span>2 · AI pick</span><span style="color: #5BD08D">✓ 8 s</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24272B; font-size: 14px"><span>3 · AI draft</span><span style="color: #5BD08D">✓ 6 s</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24272B; font-size: 14px"><span>4 · Approval</span><span style="color: #F5B353">2 of 3</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; font-size: 14px"><span>5 · Act</span><span style="color: #5BD08D">✓ 2 sent</span></div>
+      </div>
+      <div style="background: #1D1F22; border: 1px solid #2A2D31; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <span style="font-size: 13px; font-weight: 600">Act · Typefully draft</span>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px"><span style="color: #A3A9B1">Action</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px">typefully.create_draft</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px"><span style="color: #A3A9B1">text</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #B8C6FF">{answer.draft}</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px"><span style="color: #A3A9B1">publish_at</span><span style="color: #FF9A9A">Never sent</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px"><span style="color: #A3A9B1">Level</span><span>1 · proposes · ceiling 3</span></div>
+        <span style="font-size: 12px; color: #5BD08D">✓ Outside content passes an approval first</span>
+      </div>
+    </aside>
+  </main>
+</div>
+</div>
+</x-dc>
+</body>
+</html>

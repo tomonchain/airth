@@ -152,6 +152,7 @@ Each business can have developer agents working on its own platforms, using the 
 - UI copy in English, plain, consistent with the glossary.
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
+- Visual reference: `docs/design/DESIGN.md` and `docs/design/mockups/`. Build pages from the tokens and components in `DESIGN.md`, never by copying the mockups' inline styles.
 
 ## Scope: the beta
 
@@ -221,6 +222,8 @@ A structural choice (new module, new dependency, new stored state, a change to a
 No decision ahead of need: a decision is written when a step of the current milestone needs it, not before. The legal calendars' rules (UK, France) are written at milestone 2.
 
 Decided at the start of their milestone: the interface stack and what the HQ aggregates (milestone 5); the IMAP and SMTP integration (milestone 7).
+
+The interface stack is still open: keep the current vanilla JavaScript and CSS in `src/ui`, or a new front end. Weigh it against the routine editor, the page that would need a front end most. Do not decide it before milestone 5.
 
 ## Writing
 
