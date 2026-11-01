@@ -171,7 +171,7 @@ Milestones, in order. One starts only when the previous one's gate is passed.
 
 **Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting and banking, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
 
-**Current milestone: 1.** Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
+**Current milestone: 2.** Milestone 1 is closed: its decisions are 42 to 49. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
 ## Non-negotiable checks
 
@@ -218,7 +218,7 @@ These restate decisions already made. Changing one needs a new decision, never a
 
 A structural choice (new module, new dependency, new stored state, a change to a boundary or to a rule above) gets an entry at the top of `docs/decisions.md`, in the existing format: what was decided, *Why*, *Cost*. Numbers increase by one. When you propose rather than implement, mark the entry **Proposed** and stop for the founder's answer.
 
-Pending decisions for milestone 1, in this order: the routine graph format and how connectors declare their actions. The reconciliation with `business-autonomy` is written (`docs/reconciliation.md`). The legal calendars' rules (UK, France) are written at milestone 2.
+No decision ahead of need: a decision is written when a step of the current milestone needs it, not before. The legal calendars' rules (UK, France) are written at milestone 2.
 
 Decided at the start of their milestone: the interface stack and what the HQ aggregates (milestone 5); the IMAP and SMTP integration (milestone 7).
 
