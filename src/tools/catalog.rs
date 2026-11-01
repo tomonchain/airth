@@ -81,40 +81,11 @@ pub struct Index {
 /// `name` and `description` from a SKILL.md's YAML front matter (plain,
 /// quoted, or folded `>`/`|` values).
 pub fn front_matter(text: &str) -> (String, String) {
-    let mut name = String::new();
-    let mut description = String::new();
-    let Some(rest) = text.trim_start_matches('\u{feff}').strip_prefix("---") else {
-        return (name, description);
-    };
-    let block = rest.split("\n---").next().unwrap_or("");
-    let lines: Vec<&str> = block.lines().collect();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        if let Some((key, value)) = line.split_once(':')
-            && !line.starts_with(' ')
-        {
-            let mut value = value.trim().to_string();
-            if value == ">" || value == "|" || value == ">-" || value == "|-" {
-                let mut parts = Vec::new();
-                while i + 1 < lines.len()
-                    && (lines[i + 1].starts_with(' ') || lines[i + 1].is_empty())
-                {
-                    i += 1;
-                    parts.push(lines[i].trim());
-                }
-                value = parts.join(" ").trim().to_string();
-            }
-            let value = value.trim_matches(|c| c == '"' || c == '\'').to_string();
-            match key.trim() {
-                "name" => name = value,
-                "description" => description = value,
-                _ => {}
-            }
-        }
-        i += 1;
-    }
-    (name, description)
+    let doc = crate::frontmatter::parse(text);
+    (
+        doc.text("name").unwrap_or_default(),
+        doc.text("description").unwrap_or_default(),
+    )
 }
 
 /// The catalog's skills, from the repository tree (GitHub's recursive tree
