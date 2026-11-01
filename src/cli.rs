@@ -671,6 +671,59 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
 }
 
 #[derive(Subcommand)]
+pub enum QueueCmd {
+    /// What waits for you
+    List,
+    /// Approve an item
+    Approve { id: i64 },
+    /// Change what an item proposes (its editable text), before approving it
+    Edit { id: i64, text: String },
+    /// Reject an item, saying why
+    Reject {
+        id: i64,
+        #[arg(default_value = "")]
+        why: String,
+    },
+}
+
+pub fn queue(ctx: &Ctx, command: Option<QueueCmd>) -> Result<bool> {
+    use crate::business::store::queue::Answer;
+    let realm = ctx.realm()?;
+    let mut store = crate::business::store::Store::of(&realm)?;
+    let (id, answer) = match command.unwrap_or(QueueCmd::List) {
+        QueueCmd::List => {
+            let pending = store.queue(&["pending"])?;
+            if pending.is_empty() {
+                println!("nothing waits for you");
+            }
+            for item in pending {
+                println!("{:>5}  {:<9} {}", item.id, item.kind, item.title);
+            }
+            return Ok(true);
+        }
+        QueueCmd::Approve { id } => (id, Answer::Approve),
+        QueueCmd::Edit { id, text } => (id, Answer::Edit(text)),
+        QueueCmd::Reject { id, why } => (id, Answer::Reject(why)),
+    };
+    let asked = store
+        .queue(&["pending"])?
+        .into_iter()
+        .find(|i| i.id == id)
+        .and_then(|i| chrono::DateTime::parse_from_rfc3339(&i.created_at).ok());
+    // From the question to the answer, as the ledger counts it.
+    let seconds = asked.map_or(0, |at| {
+        crate::business::time::answer_seconds(
+            (chrono::Utc::now() - at.to_utc())
+                .to_std()
+                .unwrap_or_default(),
+        )
+    });
+    let item = store.answer(id, None, answer, "cli", seconds)?;
+    println!("{} is {}", item.id, item.status);
+    Ok(true)
+}
+
+#[derive(Subcommand)]
 pub enum RoutinesCmd {
     /// List the business's routines, each loaded or refused with why
     List,

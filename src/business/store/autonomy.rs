@@ -47,6 +47,11 @@ pub struct NewItem<'a> {
     pub action: Option<&'a str>,
     pub args: &'a str,
     pub execute_at: Option<DateTime<Utc>>,
+    /// Where it comes from, as JSON: for a routine's approval, its block
+    /// and the field the founder may edit.
+    pub source: &'a str,
+    /// The model call that produced what is asked, if any.
+    pub model_call: Option<i64>,
 }
 
 impl Store {
@@ -163,10 +168,10 @@ impl Store {
         self.write(|tx| {
             let now = Utc::now().to_rfc3339();
             tx.execute(
-                "INSERT INTO queue (created_at, kind, title, agent, routine, run, action, args, original_args, execute_at, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, 'pending')",
+                "INSERT INTO queue (created_at, kind, title, agent, routine, run, action, args, original_args, execute_at, source, model_call, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, ?10, ?11, 'pending')",
                 params![now, item.kind, item.title, item.agent, item.routine, item.run, item.action, item.args,
-                    item.execute_at.map(|t| t.to_rfc3339())],
+                    item.execute_at.map(|t| t.to_rfc3339()), item.source, item.model_call],
             )?;
             let id = tx.last_insert_rowid();
             tx.execute(
@@ -275,6 +280,8 @@ mod tests {
             action: Some("blog.publish"),
             args: "{\"id\": 1}",
             execute_at: None,
+            source: "{}",
+            model_call: None,
         };
         assert!(s.propose(&item).unwrap() > 0);
     }
