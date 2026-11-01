@@ -216,6 +216,46 @@ mod tests {
         assert!(home.join("b").exists());
     }
 
+    /// Decision 50: in the owner's home, a command reads only the realm and
+    /// the developer tools it uses; personal folders, browser profiles and
+    /// mail stay closed.
+    #[test]
+    fn commands_read_only_the_realm_and_dev_tools_in_the_home() {
+        if !available() {
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path().canonicalize().unwrap();
+        let files = [
+            ("Documents/taxes.txt", "personal"),
+            ("Library/Mail/V10/inbox.emlx", "personal"),
+            ("Library/Application Support/Google/Chrome/Default/Cookies", "personal"),
+            (".zsh_history", "personal"),
+            ("realm/notes.md", "realm"),
+            (".cargo/config.toml", "tool"),
+            (".rustup/settings.toml", "tool"),
+            (".gitconfig", "tool"),
+            (".config/git/ignore", "tool"),
+            (".npm/_cacache/index", "tool"),
+        ];
+        for (path, text) in files {
+            std::fs::create_dir_all(home.join(path).parent().unwrap()).unwrap();
+            std::fs::write(home.join(path), text).unwrap();
+        }
+        let rules = vec![(home.join("realm"), Access::ReadWrite)];
+        for (path, text) in files {
+            let out = std::process::Command::new(SANDBOX_EXEC)
+                .arg("-p")
+                .arg(profile(&rules, &[], true, Some(&home)))
+                .args(["cat", path])
+                .current_dir(&home)
+                .output()
+                .unwrap();
+            let read = String::from_utf8_lossy(&out.stdout) == text;
+            assert_eq!(read, text != "personal", "{path}: read {read}");
+        }
+    }
+
     #[test]
     fn keychain_services_are_out_of_reach() {
         let p = profile(&[], &[], true, None);
