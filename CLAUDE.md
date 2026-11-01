@@ -171,7 +171,7 @@ Milestones, in order. One starts only when the previous one's gate is passed.
 
 **Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting and banking, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
 
-**Current milestone: 2.** Milestone 1 is closed: its decisions are 42 to 49. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
+**Current milestone: 3.** Milestone 1 is closed: its decisions are 42 to 49. Exception, decided by the founder: milestone 2's code is done, but its gate (Hedgen Ltd fully described in config) stays open until the founder fills the config; milestone 3 goes ahead in parallel because it does not depend on that config technically. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
 ## Non-negotiable checks
 
