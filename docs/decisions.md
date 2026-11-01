@@ -25,6 +25,7 @@ The lists live in `sandbox.rs`, beside the profile they produce. File tools are 
 *Why:* the sandbox is the only thing between a command and the owner's machine; a rule that only lists what is denied leaves every path nobody thought of open. Denying by default turns the question into what a run needs, which is short. A business's agents read external content; a command they run must not be able to persist outside the run, nor take the owner's keys.
 
 *Cost:* a tool that writes elsewhere (another package manager's cache, an editor's state, `~/Library/Caches`) fails inside a run until its folder is added. Each run's temporary folder stays until the run is deleted. On Linux, commands stay unconfined until milestone 9 (decision 29).
+
 ## 47. The business database: one access layer, evidence append-only, tables added with their milestone
 
 Decision 31 put business state in one SQLite database per business, `business.db`, in the Airth home. This decision says how it is reached and what it holds for the beta.
