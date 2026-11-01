@@ -4,6 +4,9 @@
 //!
 //! - an integration declares its actions: method, path under its base URL,
 //!   fields, risk class;
+//! - each tool of an MCP server is an action; the founder confirms its class,
+//!   and the class holds only while the tool's input schema is the one the
+//!   founder saw (its hash is kept with the class);
 //! - Airth's own actions are declared here, in code.
 //!
 //! An action with no confirmed class is `commits`: what nobody classed may
@@ -11,8 +14,11 @@
 
 use crate::integration::Integration;
 use crate::realm::validate_name;
+use crate::tools::mcp::McpServer;
 use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// How serious an action is; it sets the highest autonomy level it can get.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +146,23 @@ impl HttpAction {
     }
 }
 
+/// The class the founder gave an MCP tool, for the schema they saw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolClass {
+    pub class: Class,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_level: Option<u8>,
+    /// SHA-256 of the tool's input schema when it was classed.
+    pub schema: String,
+    pub confirmed_at: DateTime<Utc>,
+}
+
+/// The hash of a tool's input schema: keys sorted, so the same schema
+/// always hashes the same.
+pub fn schema_hash(schema: &Value) -> String {
+    crate::update::sha256_hex(serde_json::to_string(schema).unwrap_or_default().as_bytes())
+}
+
 /// Airth's own actions (decision 49), with their class.
 const AIRTH: &[(&str, Class)] = &[
     ("launch_mission", Class::Reversible),
@@ -172,8 +195,8 @@ fn declared(id: String, class: Option<Class>, max_level: Option<u8>) -> Declared
     }
 }
 
-/// Every action of a realm: Airth's, then each integration's.
-pub fn all(integrations: &[Integration]) -> Vec<Declared> {
+/// Every action of a realm: Airth's, each integration's, each MCP tool's.
+pub fn all(integrations: &[Integration], servers: &[McpServer]) -> Vec<Declared> {
     let mut out: Vec<Declared> = AIRTH
         .iter()
         .map(|(name, class)| declared(format!("airth.{name}"), Some(*class), None))
@@ -187,13 +210,29 @@ pub fn all(integrations: &[Integration]) -> Vec<Declared> {
             ));
         }
     }
+    for s in servers {
+        for tool in &s.tools {
+            // A class confirmed for another schema no longer holds: the tool
+            // may have been widened since.
+            let c = s
+                .classes
+                .get(&tool.name)
+                .filter(|c| c.schema == schema_hash(&tool.input_schema));
+            out.push(declared(
+                format!("{}.{}", s.name, tool.name),
+                c.map(|c| c.class),
+                c.and_then(|c| c.max_level),
+            ));
+        }
+    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
+    use crate::tools::mcp::McpToolSpec;
+    use serde_json::json;
 
     fn action(path: &str, fields: Value) -> HttpAction {
         serde_json::from_value(json!({
@@ -243,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unclassed_action_commits_and_fixed_ceilings_hold() {
+    fn an_unclassed_action_commits_and_a_changed_tool_must_be_classed_again() {
         let mut publish = action("/v1/posts", json!([]));
         publish.name = "publish".into();
         let mut draft = action("/v1/drafts", json!([]));
@@ -259,8 +298,27 @@ mod tests {
             headers: Default::default(),
             actions: vec![publish, draft, reply],
         };
+        let schema = json!({"type": "object", "properties": {"q": {"type": "string"}}});
+        let mut server: McpServer = serde_json::from_value(json!({"name": "stripe"})).unwrap();
+        server.tools = vec![McpToolSpec {
+            name: "refund".into(),
+            description: String::new(),
+            input_schema: schema.clone(),
+        }];
+        server.classes.insert(
+            "refund".into(),
+            ToolClass {
+                class: Class::Read,
+                max_level: None,
+                schema: schema_hash(&schema),
+                confirmed_at: Utc::now(),
+            },
+        );
         let find = |all: &[Declared], id: &str| all.iter().find(|d| d.id == id).cloned().unwrap();
-        let all1 = all(std::slice::from_ref(&integration));
+        let all1 = all(
+            std::slice::from_ref(&integration),
+            std::slice::from_ref(&server),
+        );
         assert_eq!(find(&all1, "airth.adopt_change").ceiling, 1);
         assert_eq!(find(&all1, "airth.launch_mission").ceiling, 3);
         let p = find(&all1, "typefully.publish");
@@ -270,5 +328,14 @@ mod tests {
         );
         assert_eq!(find(&all1, "typefully.create_draft").ceiling, 3);
         assert_eq!(find(&all1, "typefully.reply").ceiling, 0);
+        assert_eq!(find(&all1, "stripe.refund").class, Class::Read);
+        // The server widens the tool: the founder's class no longer holds.
+        server.tools[0].input_schema =
+            json!({"type": "object", "properties": {"q": {}, "amount": {}}});
+        let r = find(&all(&[integration], &[server]), "stripe.refund");
+        assert_eq!(
+            (r.class, r.ceiling, r.confirmed),
+            (Class::Commits, 1, false)
+        );
     }
 }
