@@ -2,6 +2,45 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 45. Autonomy per agent and action, under a ceiling set by the action's risk class
+
+**Actions.** An action is one thing done outside the business's folder through a connector: one tool of an MCP server, one declared call of an integration, or one of Airth's own (launch a mission, send a mail, adopt a change). Each has an id, `<connector>.<action>` (`typefully.create_draft`, `blog.publish`, `airth.launch_mission`). Reading and writing the business's folder, running commands there, and memory stay under the realm's rules (decision 4) and the workspace (decision 44): they are not actions.
+
+**Risk classes.** Every action has one of three classes: `read`, `reversible` (a write that can be undone: a draft, a label, a scheduled post not yet sent) or `commits` (money, a contract, a deadline, a legal obligation). Publishing in the business's name (a post, an article, a thread) is `commits`. The class is declared in Airth's record of the connector, which the founder confirms when connecting it, never by the connector itself: what an MCP server says about its own tools (its annotations) is shown as a hint and never trusted. An action with no declared class is `commits`.
+
+**Levels and ceilings.** The four levels of `CLAUDE.md` (0 prepare, 1 propose, 2 act with delay, 3 act). The class sets the ceiling:
+
+| Class | Ceiling |
+| --- | --- |
+| `read` | 3 |
+| `reversible` | 3 |
+| `commits` | 1 |
+
+Fixed ceilings, whatever the class: replies on X 0; publishing in the business's name 1 during the beta; payments, refunds, contracts, mails that commit money, a deadline or a legal obligation, merging code and deploying to production 1; a mail to a correspondent the agent never wrote to 1 (`CLAUDE.md`, *Mail*). A level is never stored above its ceiling, and is clamped to it when read, so lowering a ceiling takes effect at once.
+
+**Where levels live.** Per agent and per action, in the business's `business.db`, never in the folder (decision 43). A new action starts at 1, or at its ceiling when that is 0. Each change is a row (who, when, from, to, why), so the history of what was delegated, and when, is kept. A run works with its agent's levels; a mission the founder starts and watches asks the founder, as today.
+
+**What each level does, also in a mission.** The same rule applies to an `Act` block and to a tool call inside a mission (the agent loop), through the permission gate in `runtime.rs`:
+
+- 0: the action is not executed. What it would do is prepared (a pre-filled link, a text to paste) and put in Needs you; the founder executes it outside and marks it done.
+- 1: the action is not executed. It goes to the approval queue with its exact arguments. If the founder approves it, Airth executes it as it was proposed, once (the action journal of the reconciliation, `actions.rs`); an edit changes the arguments, not the action. A mission that proposes an action is told so and carries on; it does not wait.
+- 2: the action is queued with a cancellation window (30 minutes by default), shown in Needs you and on Telegram with a Cancel button, then executed.
+- 3: executed, then reported.
+
+The gate reads the level from `business.db` before each action, so a demotion applies to the runs already going. If it cannot read it, the action is treated as level 1.
+
+**Daily limits per service.** Each connector has a limit on actions executed without the founder's approval (levels 2 and 3) over the last 24 hours: 20 by default. Past it, that connector's actions fall to level 1 until the window clears, and Needs you says the limit was reached. The count and the journal entry of the action are written in one transaction, so runs acting at the same moment cannot pass the limit together. Actions the founder approved do not count: they are the founder's decision. The daily limit and the cancellation window are defaults the founder changes per connector; the values set are kept in the Airth home, with the connector's record, never in the business folder.
+
+**Promotion and demotion.** Only the founder promotes. Airth proposes a promotion in Needs you when an action of an agent has been approved without edit 20 times in a row, over at least two weeks, with no incident. An edit or an incident sets the count back to zero; the founder accepts or ignores it. An incident demotes the agent's action by one level, at once, and says so in Needs you: an action that failed after its retries, an action at level 2 the founder cancelled, or an action the founder marks as wrong after the fact.
+
+**Today's rules and approvals.** The realm's rules (`network`, `skill`) and a routine's approvals given in advance (decision 11) keep governing calls that are not declared actions. Once a connector's actions are declared, its calls go through levels: a routine that acted alone through it moves to level 1 until the founder sets levels. In the beta that is only Hedgen, set up again anyway.
+
+**Implementation.** With the approval queue, at milestone 3. It changes the permission gate, `runtime.rs` and `tools/http.rs`: security code, changed on this decision's acceptance, with tests proving that an undeclared action is `commits`, that no level passes its ceiling, that level 0 and 1 never execute, that an approved action executes once, that the daily limit holds under concurrent runs, and that a demotion stops a mission already running.
+
+*Why:* `CLAUDE.md` earns delegation per action class, never wholesale. Today's model has the opposite shape: rules per capability for the whole realm, and approvals per routine given in advance, with no notion of how serious an action is. Declaring the class with Airth and not with the connector keeps a third-party server from calling a payment a read. A count per service is generic and bounds a runaway agent even inside its allowed actions.
+
+*Cost:* each connector's actions must be declared and classed before they can act alone: until then, everything a connector does is proposed. Two systems coexist (rules for local work, levels for actions), and the app must show both on an agent's card. The promotion threshold is a guess, to tune on Hedgen's first weeks. A proposal at level 1 inside a mission means the mission ends before its effect happens, so its report must say what is pending.
+
 ## 44. A run never writes the business config; it proposes a change
 
 `business/`, `agents/`, `routines/` and `prompts/` at the root of a business's folder are read-only for every run working in that folder (decision 43). The rule is one of the workspace's access rules, so the file tools refuse the write and, on macOS, the command sandbox denies it to any command. It holds for folders that do not exist yet: a run cannot create `routines/` either.

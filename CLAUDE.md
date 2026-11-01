@@ -218,7 +218,7 @@ These restate decisions already made. Changing one needs a new decision, never a
 
 A structural choice (new module, new dependency, new stored state, a change to a boundary or to a rule above) gets an entry at the top of `docs/decisions.md`, in the existing format: what was decided, *Why*, *Cost*. Numbers increase by one. When you propose rather than implement, mark the entry **Proposed** and stop for the founder's answer.
 
-Pending decisions for milestone 1, in this order: autonomy and risk classes, with daily limits per service; the database schema and access layer; the routine graph format and how connectors declare their actions. The reconciliation with `business-autonomy` is written (`docs/reconciliation.md`). The legal calendars' rules (UK, France) are written at milestone 2.
+Pending decisions for milestone 1, in this order: the database schema and access layer; the routine graph format and how connectors declare their actions. The reconciliation with `business-autonomy` is written (`docs/reconciliation.md`). The legal calendars' rules (UK, France) are written at milestone 2.
 
 Decided at the start of their milestone: the interface stack and what the HQ aggregates (milestone 5); the IMAP and SMTP integration (milestone 7).
 
