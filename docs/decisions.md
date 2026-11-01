@@ -2,6 +2,30 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 48. Commands write only where the run may; they never read the owner's keys
+
+The command sandbox (decision 4) allowed everything by default and denied only the Airth home and the other realms. A command could therefore write anywhere else on the Mac. Two ways out followed from it, both shown by a test:
+
+- move the business's folder aside (its parent was writable), rewrite `agents/` or `.git/hooks` under the new name, and move it back: around decisions 44 and 46;
+- write `~/.zshrc` or a file in `~/Library/LaunchAgents`, which the owner's shell or login then runs, outside every sandbox.
+
+So the profile now denies **writes by default**, everywhere. A command may write only:
+
+- where the run's workspace allows it (its folder or worktree, the git data a change needs, the realm's shared Cargo build folder);
+- its own temporary folder, in the realm's cache in the Airth home, one per run; `TMPDIR` points there;
+- `/dev` (null, the terminal);
+- the caches of the tools runs actually use: Cargo's downloads (`~/.cargo/registry`, `~/.cargo/git` and their lock files) and npm's (`~/.npm`, where `npx` puts the MCP servers it starts). Never `~/.cargo/bin` or another folder on the owner's `PATH`.
+
+A tool that needs another cache is added to this list by a change of its own, when a routine needs it.
+
+**Reads** stay allowed outside the workspace (compilers, toolchains and system libraries live there), except the owner's credentials, denied to every command: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, Cargo's credentials, and the keychain: its files (`~/Library/Keychains`) and the system services that answer keychain queries. HTTPS still works: certificates are checked by another service.
+
+The lists live in `sandbox.rs`, beside the profile they produce. File tools are unchanged: they already reach nothing outside the workspace.
+
+*Why:* the sandbox is the only thing between a command and the owner's machine; a rule that only lists what is denied leaves every path nobody thought of open. Denying by default turns the question into what a run needs, which is short. A business's agents read external content; a command they run must not be able to persist outside the run, nor take the owner's keys.
+
+*Cost:* a tool that writes elsewhere (another package manager's cache, an editor's state, `~/Library/Caches`) fails inside a run until its folder is added. Each run's temporary folder stays until the run is deleted. On Linux, commands stay unconfined until milestone 9 (decision 29).
+
 ## 47. The business database: one access layer, evidence append-only, tables added with their milestone
 
 Decision 31 put business state in one SQLite database per business, `business.db`, in the Airth home. This decision says how it is reached and what it holds for the beta.

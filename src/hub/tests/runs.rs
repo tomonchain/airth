@@ -711,3 +711,68 @@ fn runs_in_place_cannot_plant_git_hooks_or_config() {
         );
     }
 }
+
+/// Decision 48: a command writes only where the run may. It cannot move the
+/// business's folder aside to rewrite an agent's job, nor plant code the
+/// owner's shell or login would run.
+#[test]
+fn commands_cannot_write_outside_the_workspace() {
+    if !crate::sandbox::available() {
+        return;
+    }
+    let mut f = fixture();
+    let root = f.root.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "Write one article a week.").unwrap();
+    // Stands for the owner's home: any folder outside the workspace.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let elsewhere = elsewhere.path().canonicalize().unwrap();
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+
+    let moved = format!("{}.moved", root.display());
+    let command = format!(
+        "echo evil >> {e}/.zshrc; mkdir -p {e}/Library/LaunchAgents && echo evil > {e}/Library/LaunchAgents/x.plist; \
+         cd / && mv {r} {m} && echo evil > {m}/agents/writer.md; mv {m} {r}; \
+         cd {r} && echo here > notes.md && echo $TMPDIR > tmp.txt && echo t > \"$TMPDIR/t\" && cat \"$TMPDIR/t\"",
+        e = elsewhere.display(),
+        r = root.display(),
+        m = moved,
+    );
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            call("1", "execute_command", json!({ "command": command })),
+            done("done"),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &f.realm,
+            "Make yourself at home",
+            config(10),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+    let out = &state.events[0].result;
+    assert!(!elsewhere.join(".zshrc").exists(), "{out}");
+    assert!(!elsewhere.join("Library").exists(), "{out}");
+    assert!(!std::path::Path::new(&moved).exists(), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("agents/writer.md")).unwrap(),
+        "Write one article a week.",
+        "{out}"
+    );
+    // The workspace and the run's own temporary folder stay writable.
+    assert_eq!(
+        std::fs::read_to_string(root.join("notes.md")).unwrap(),
+        "here\n"
+    );
+    let tmp = std::fs::read_to_string(root.join("tmp.txt")).unwrap();
+    assert!(
+        tmp.trim()
+            .starts_with(&f.realm.dir().canonicalize().unwrap().display().to_string()),
+        "{tmp} {out}"
+    );
+    assert!(out.contains("\nt\n") || out.ends_with("\nt"), "{out}");
+}

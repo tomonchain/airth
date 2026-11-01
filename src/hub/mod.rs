@@ -361,6 +361,13 @@ impl Hub {
             }
         }
         let mut env = realm.command_env()?;
+        // Commands write nowhere else than the workspace (decision 48), so
+        // each run gets its own temporary folder, in the realm's cache.
+        let tmp = self.run_tmp(realm, &state.id);
+        std::fs::create_dir_all(&tmp)?;
+        let tmp = tmp.canonicalize()?;
+        ws = ws.with_rule(&tmp, Access::ReadWrite);
+        env.push(("TMPDIR".into(), tmp.display().to_string()));
         if let Some(change) = &state.change {
             ws = ws.with_rule(&change.repo, Access::Read);
             let common = isolation::common_dir(&change.repo)?;
@@ -380,6 +387,11 @@ impl Hub {
             .with_secrets(env, self.redactions(realm)?)
             .with_sandbox(true)
             .with_network(!realm.config.offline))
+    }
+
+    /// A run's temporary folder: `TMPDIR` for its commands.
+    fn run_tmp(&self, realm: &Realm, run: &str) -> PathBuf {
+        realm.cache_dir().join("tmp").join(run)
     }
 
     /// What no run of `realm` may reach: Airth's home and other realms' folders.
