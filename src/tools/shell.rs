@@ -132,14 +132,14 @@ pub fn run_shell(
 /// `sh -c command` in the workspace root, under the workspace's sandbox, with
 /// only the passed-through variables and the workspace's own environment, in
 /// its own process group. Streams are left for the caller to set up.
-pub(super) fn sandboxed_command(command: &str, ws: &Workspace) -> Command {
+pub(super) fn sandboxed_command(command: &str, ws: &Workspace, network: bool) -> Command {
     let mut cmd = if ws.sandboxed() && sandbox::available() {
         let mut c = Command::new(sandbox::program());
         c.arg("-p")
             .arg(sandbox::profile(
                 ws.rules(),
                 ws.pinned(),
-                ws.network(),
+                network,
                 std::env::var_os("HOME")
                     .map(std::path::PathBuf::from)
                     .as_deref(),
@@ -176,7 +176,7 @@ pub fn run_shell_with_input(
     timeout: Duration,
     input: Option<&str>,
 ) -> Result<ShellOutput> {
-    let mut cmd = sandboxed_command(command, ws);
+    let mut cmd = sandboxed_command(command, ws, ws.command_network());
     cmd.stdin(if input.is_some() {
         Stdio::piped()
     } else {
