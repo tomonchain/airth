@@ -257,8 +257,27 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
     Ok(())
 }
 
-/// One update from Telegram. Before pairing, only the pairing link counts.
-pub fn handle(api: &dyn Api, config: &mut Config, update: &Value) -> Result<()> {
+/// Whether `message` is the founder's own, in the paired chat: not
+/// forwarded, from the founder's user id.
+fn from_founder(config: &Config, message: &Value) -> bool {
+    let forwarded = ["forward_origin", "forward_from", "forward_date"]
+        .iter()
+        .any(|k| !message[k].is_null());
+    !forwarded
+        && config
+            .chat
+            .is_some_and(|c| message["chat"]["id"].as_i64() == Some(c))
+        && config
+            .user
+            .is_some_and(|u| message["from"]["id"].as_i64() == Some(u))
+}
+
+/// One update from Telegram. Before pairing, only the pairing link counts;
+/// after, only the founder's messages and taps, as answers to the queue.
+pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> Result<()> {
+    if !update["callback_query"].is_null() {
+        return tap(hub, api, config, &update["callback_query"]);
+    }
     let message = &update["message"];
     if message.is_null() {
         return Ok(());
@@ -281,7 +300,146 @@ pub fn handle(api: &dyn Api, config: &mut Config, update: &Value) -> Result<()> 
                 None,
             )?;
         }
+        return Ok(());
     }
+    if !from_founder(config, message) {
+        return Ok(());
+    }
+    let chat = config.chat.unwrap_or_default();
+    let Some(key) = config.editing.clone() else {
+        return Ok(());
+    };
+    // The new text counts only as a reply to that item's message.
+    let replied = message["reply_to_message"]["message_id"].as_i64();
+    let sent = config.sent.get(&key).cloned();
+    let Some(sent) = sent.filter(|s| replied.is_some_and(|r| s.messages.contains(&r))) else {
+        send(
+            api,
+            chat,
+            "To change the item, reply to its message with the new text.",
+            None,
+        )?;
+        return Ok(());
+    };
+    let (realm, id) = item_of(hub, &key)?;
+    let seconds = answer_seconds(&sent);
+    let answer = crate::business::store::queue::Answer::Edit(text.to_string());
+    config.editing = None;
+    match hub.answer_item(&realm, id, Some(sent.revision), answer, "telegram", seconds) {
+        Ok((item, _)) => {
+            let messages = send(
+                api,
+                chat,
+                &item_text(realm.name(), &item),
+                Some(buttons(realm.name(), &item)),
+            )?;
+            config.sent.insert(
+                key,
+                Sent {
+                    messages,
+                    at: sent.at,
+                    revision: item.revision,
+                },
+            );
+        }
+        Err(e) => {
+            send(api, chat, &format!("Not changed: {e:#}"), None)?;
+        }
+    }
+    Ok(())
+}
+
+/// The realm and item id a sent key names.
+fn item_of(hub: &Hub, key: &str) -> Result<(crate::realm::Realm, i64)> {
+    let (name, id) = key.rsplit_once('/').context("not an item")?;
+    let realm = hub
+        .home()
+        .realms()?
+        .into_iter()
+        .find(|r| r.name() == name)
+        .context("no such business")?;
+    Ok((realm, id.parse()?))
+}
+
+/// From the moment the founder was shown the item to now.
+fn answer_seconds(sent: &Sent) -> u64 {
+    crate::business::time::answer_seconds((Utc::now() - sent.at).to_std().unwrap_or_default())
+}
+
+/// A tap on one of an item's buttons: `op/realm/id/revision`.
+fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<()> {
+    let ours = config
+        .user
+        .is_some_and(|u| query["from"]["id"].as_i64() == Some(u))
+        && config
+            .chat
+            .is_some_and(|c| query["message"]["chat"]["id"].as_i64() == Some(c));
+    if !ours {
+        return Ok(());
+    }
+    // Stops the button's spinner, whatever happens next.
+    api.call(
+        "answerCallbackQuery",
+        &json!({"callback_query_id": query["id"]}),
+    )?;
+    let chat = config.chat.unwrap_or_default();
+    let data = query["data"].as_str().unwrap_or_default();
+    let mut parts = data.splitn(2, '/');
+    let (op, rest) = (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    );
+    let Some((key, revision)) = rest.rsplit_once('/') else {
+        return Ok(());
+    };
+    let revision: i64 = revision.parse()?;
+    let (realm, id) = item_of(hub, key)?;
+    let Some(sent) = config.sent.get(key).cloned() else {
+        return Ok(());
+    };
+    use crate::business::store::queue::Answer;
+    let answer = match op {
+        "e" => {
+            if sent.revision != revision {
+                send(
+                    api,
+                    chat,
+                    "That button is out of date: use the item's latest message.",
+                    None,
+                )?;
+                return Ok(());
+            }
+            config.editing = Some(key.to_string());
+            let last = sent.messages.last().copied().unwrap_or_default();
+            let body = json!({"chat_id": chat, "text": "Reply to the item's message with the new text.",
+                "reply_to_message_id": last, "reply_markup": {"force_reply": true}});
+            let asked = api.call("sendMessage", &body)?["message_id"]
+                .as_i64()
+                .unwrap_or_default();
+            // A reply to this question is a reply to the item.
+            if let Some(s) = config.sent.get_mut(key) {
+                s.messages.push(asked);
+            }
+            return Ok(());
+        }
+        "a" => Answer::Approve,
+        _ => Answer::Reject("from Telegram".into()),
+    };
+    let text = match hub.answer_item(
+        &realm,
+        id,
+        Some(revision),
+        answer,
+        "telegram",
+        answer_seconds(&sent),
+    ) {
+        Ok((item, report)) => {
+            let report = report.map(|r| format!("\n{r}")).unwrap_or_default();
+            format!("{} · {}: {}{report}", realm.name(), item.status, item.title)
+        }
+        Err(e) => format!("Not done: {e:#}"),
+    };
+    send(api, chat, &text, None)?;
     Ok(())
 }
 
@@ -293,7 +451,7 @@ pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
     )?;
     for update in updates.as_array().into_iter().flatten() {
         config.offset = update["update_id"].as_i64().unwrap_or_default() + 1;
-        if let Err(e) = handle(api, config, update) {
+        if let Err(e) = handle(hub, api, config, update) {
             eprintln!("telegram: {e:#}");
         }
     }
