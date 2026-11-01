@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 46. A run in place cannot plant git hooks or change the git config (Proposed)
+## 46. A run in place cannot plant git hooks or change the git config
 
 A run that works in the business's folder itself (not in a worktree) may write that folder's `.git`, since committing needs it. Two parts of it run code as the founder, outside any sandbox, the next time the founder or Airth uses git there: `.git/hooks/` (scripts git runs on commit, checkout, merge) and `.git/config` (it can name a hooks folder, filters, an editor, a pager, an SSH command). So for every run in place:
 
