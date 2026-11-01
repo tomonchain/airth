@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 52. One Telegram bot for the founder, held by Airth, never by a business
+
+Decision 28 made the bot's token an integration credential bound to api.telegram.org. An integration belongs to one business and puts its secrets in headers only (decision 10); Telegram's API carries the token in the URL's path (`/bot<token>/sendMessage`). Followed to the letter, decision 28 means a bot per business, or a change to the integration code (security code) to put a secret in a path. Instead:
+
+- **One bot, the founder's**, like the model keys and the phone: the founder creates it with @BotFather and gives its token to `airth telegram connect`. The token is kept in the Airth home (`telegram.json`, mode 600), sent only to api.telegram.org by the module that talks to Telegram, and never reaches a model, a run or a business folder. It replaces decision 28's integration credential.
+- **Pairing** by a link with a one-time code (`t.me/<bot>?start=<code>`): only the chat that opened it **and** the founder's user id in it are listened to; anything else is ignored, and so are forwarded messages and edited ones. Outbound requests only: Airth long-polls, nothing on the Mac is reachable from outside (decision 28 unchanged).
+- **What it sends**: each item that waits for the founder, from every business, once, its business named first, with buttons: Approve, Edit, Reject, and Cancel for a delayed action. A text is **never cut**: one too long for a message (4,096 characters) goes as several, the buttons under the last. Failures and incidents in the founder's notifications are forwarded as plain messages.
+- **Answers**: a tap is the same answer as in the app, through the same queue state machine (`Hub::answer_item`, channel `telegram`): a stale button (the item answered elsewhere, or changed since) is refused and the message says so. Edit asks for the new text as a reply: it is accepted **only as a reply to that item's message**; a free message is ignored and the bot asks again. The reply is the edit, and the buttons come back under it. The founder's time counts from the moment the message was sent to the answer (decision 27).
+- **A business's content goes only to its own items**: the bot relays each item and answer to its own realm; nothing of one business is read into another (the HQ aggregates, `CLAUDE.md`).
+
+*Why:* the founder steers every business from one phone, so one bot is the right shape; a bot per business would mean as many chats as companies. Keeping the token out of every business keeps it out of every run's reach without touching the integration boundary. The rest of decision 28 (outbound polling, owner's chat only, one state machine for all channels) is what the branch's `telegram.rs` already does, and is ported from it.
+
+*Cost:* items that hold customers' personal data (mails, at milestone 7) should send only a summary and a link to the app; that is decided then. The bot is the founder's, not a business's: if a business is handed to someone else, its items must move to their own bot then. Message contents transit through Telegram, as decision 28 says. The token in the home is protected by its file mode, like `phone-hosts.json` and the app's key; whoever reads the home can drive the bot.
+
 ## 51. A routine's commands run offline; its network goes through declared actions
 
 In a routine's run, every command (`execute_command`, and the checks run the same way) runs with the network cut by the sandbox. What the run needs from outside goes through `http_request` and MCP tools, which the runtime sees, so the autonomy levels apply to it (decision 45): reading a public page stays free, and anything that changes something outside is an action, declared or not. A run the founder starts and watches keeps the realm's network rule, as today. Local MCP servers keep the network: each of their calls is already an action under the levels.
