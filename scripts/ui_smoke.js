@@ -286,6 +286,12 @@ const main = body.querySelector("#main");
   if (!main.textContent.includes("deepseek-chat")) problems.push("run: the picked model is not shown in the model menu");
   if (!main.textContent.includes("Run this command?")) problems.push("run: the approval card is missing");
   check("live run + approval", main);
+  // A change that edits the business's config says so before it is adopted.
+  A.app.run = { ...live, config: { files: ["agents/writer.md"], agents: ["writer"] },
+    state: { ...state, change: { status: "open", base: "a1", head: "b2", base_branch: "main", branch: "airth/x", files: ["M\tagents/writer.md"], checks: null, conflicts: [], merging: null, pull_request: null } } };
+  A.renderMain(); A.renderRun();
+  if (!main.textContent.includes("edits the business's config") || !main.textContent.includes("Agents: writer")) problems.push("review: a config change is not flagged");
+  check("change editing the config", main);
   if (problems.length) { console.log(problems.join("\n")); process.exit(1); }
   console.log("ui smoke: no leaked null/undefined/false/true/NaN in rendered text");
   process.exit(0); // pages that follow a live run keep polling

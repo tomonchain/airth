@@ -35,6 +35,37 @@ pub fn config_dirs(root: &Path) -> Vec<PathBuf> {
     CONFIG.iter().map(|d| root.join(d)).collect()
 }
 
+/// What a change does to the business's config: the config files it
+/// touches and the agents whose job it changes, so the owner sees it before
+/// adopting (decision 44). `files` are git name-status lines.
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct ConfigChanges {
+    pub files: Vec<String>,
+    pub agents: Vec<String>,
+}
+
+pub fn config_changes(files: &[String]) -> ConfigChanges {
+    let mut out = ConfigChanges::default();
+    // A rename lists both paths, after the status.
+    for path in files.iter().flat_map(|f| f.split('\t').skip(1)) {
+        let mut parts = path.splitn(2, '/');
+        let (Some(top), Some(rest)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if !CONFIG.contains(&top) || out.files.iter().any(|f| f == path) {
+            continue;
+        }
+        out.files.push(path.to_string());
+        if let Some(agent) = rest.strip_suffix(".md")
+            && top == "agents"
+            && !agent.contains('/')
+        {
+            out.agents.push(agent.to_string());
+        }
+    }
+    out
+}
+
 pub fn dir(root: &Path) -> PathBuf {
     root.join(DIR)
 }
@@ -247,6 +278,39 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .contains("Four articles a month.")
+        );
+    }
+
+    #[test]
+    fn a_change_to_the_config_is_named_with_its_agents() {
+        let files: Vec<String> = [
+            "M\tagents/writer.md",
+            "A\tbusiness/goal.md",
+            "R100\tagents/old.md\tagents/new.md",
+            "D\tprompts/post.md",
+            "M\tagents/notes/x.txt",
+            "M\tsrc/main.rs",
+            "M\tagentsx/y.md",
+            "M\tbusiness",
+        ]
+        .map(String::from)
+        .to_vec();
+        let c = config_changes(&files);
+        assert_eq!(
+            c.files,
+            vec![
+                "agents/writer.md",
+                "business/goal.md",
+                "agents/old.md",
+                "agents/new.md",
+                "prompts/post.md",
+                "agents/notes/x.txt"
+            ]
+        );
+        assert_eq!(c.agents, vec!["writer", "old", "new"]);
+        assert_eq!(
+            config_changes(&["M\tREADME.md".into()]),
+            ConfigChanges::default()
         );
     }
 

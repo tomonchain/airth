@@ -48,6 +48,14 @@ function changePanel(d) {
       }))
     : h("div", { class: "change-empty" }, d.live ? "Changes appear here when Airth finishes." : "No files changed.");
 
+  // A change to how the business runs is said plainly before adopting (decision 44).
+  const cfg = d.config || { files: [], agents: [] };
+  const configNote = hasChanges && cfg.files.length > 0 && h("div", { class: "change-note warn" }, icon("alert"),
+    h("div", { class: "grow" },
+      h("div", { class: "strong" }, "This change edits the business's config"),
+      cfg.agents.length > 0 && h("div", null, `Agents: ${cfg.agents.join(", ")}`),
+      h("div", null, cfg.files.join(", "))));
+
   let checkList = null;
   if (checks) {
     checkList = h("div", { class: "checks" },
@@ -96,7 +104,7 @@ function changePanel(d) {
   }
   const err = app.changeError ? h("div", { class: "error-banner" }, app.changeError) : null;
 
-  return h("div", { class: "change" }, head, standing, overlapNote, err, files, checkList, main && h("div", { class: "change-actions" }, main));
+  return h("div", { class: "change" }, head, standing, configNote, overlapNote, err, files, checkList, main && h("div", { class: "change-actions" }, main));
 }
 
 /** A run's pull request: its state on GitHub (refreshed every 30 seconds while shown), merge and open. */

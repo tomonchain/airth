@@ -285,6 +285,11 @@ fn pull_requests_are_opened_followed_and_merged() {
                 "execute_command",
                 json!({"command": "echo token=${GITHUB_TOKEN:-none}"}),
             ),
+            call(
+                "3",
+                "write_file",
+                json!({"path": "agents/seller.md", "content": "Sell b.\n"}),
+            ),
             done("Added b.txt."),
             // The pull request's title.
             done("\"Add b.txt to the shop.\""),
@@ -323,6 +328,12 @@ fn pull_requests_are_opened_followed_and_merged() {
         opened.contains("\"title\":\"Add b.txt to the shop\"") && opened.contains("Added b.txt."),
         "{opened}"
     );
+    // A change to the business's config says so, and which agent.
+    assert!(
+        opened.contains("Business config changed") && opened.contains("`agents/seller.md`"),
+        "{opened}"
+    );
+    assert!(opened.contains("Agents: seller"), "{opened}");
     assert!(
         hub.adopt(&realm, &state.id).is_err(),
         "merged on GitHub, not here"
@@ -348,7 +359,7 @@ fn pull_requests_are_opened_followed_and_merged() {
     let state = hub.load_run(&realm, &state.id).unwrap();
     let change = state.change.clone().unwrap();
     assert!(change.path.join("c.txt").exists());
-    assert_eq!(change.files, vec!["A\tb.txt"]);
+    assert_eq!(change.files, vec!["A\tagents/seller.md", "A\tb.txt"]);
     let pushed = String::from_utf8(branch_on_github(&change.branch).stdout).unwrap();
     assert_eq!(pushed.trim(), change.head);
 

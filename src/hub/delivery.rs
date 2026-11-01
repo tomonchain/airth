@@ -353,6 +353,23 @@ Answer with the title only.";
 /// A pull request's description: what the chat reported, and its checks.
 fn pull_request_body(state: &State) -> String {
     let mut body = state.report.clone().unwrap_or_default().trim().to_string();
+    let config = crate::business::config_changes(
+        state
+            .change
+            .as_ref()
+            .map_or(&[][..], |c| c.files.as_slice()),
+    );
+    if !config.files.is_empty() {
+        body.push_str(
+            "\n\n**Business config changed**\nThis changes how the business runs: read these files before merging.\n",
+        );
+        if !config.agents.is_empty() {
+            body.push_str(&format!("- Agents: {}\n", config.agents.join(", ")));
+        }
+        for f in &config.files {
+            body.push_str(&format!("- `{f}`\n"));
+        }
+    }
     if let Some(checks) = state.change.as_ref().and_then(|c| c.checks.as_ref()) {
         body.push_str("\n\n**Checks**\n");
         for r in &checks.results {
