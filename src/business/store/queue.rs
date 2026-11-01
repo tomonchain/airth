@@ -119,6 +119,21 @@ impl Store {
             .collect())
     }
 
+    /// What became of an approved item, as Airth records it: `done` or
+    /// `failed`.
+    pub fn close_item(&mut self, id: i64, status: &str, detail: &str) -> Result<()> {
+        self.write(|tx| {
+            let changed = tx.execute(
+                "UPDATE queue SET status = ?2, revision = revision + 1 WHERE id = ?1 AND status = 'approved'",
+                params![id, status],
+            )?;
+            if changed == 0 {
+                bail!("item {id} is not approved");
+            }
+            log(tx, id, status, "airth", None, detail)
+        })
+    }
+
     /// The founder answers item `id`, from `channel`, after `seconds`.
     pub fn answer(
         &mut self,

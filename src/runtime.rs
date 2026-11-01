@@ -12,8 +12,14 @@ use serde_json::Value;
 /// What an agent may do alone with a declared action (decision 45),
 /// decided before each one, from the levels as they are now.
 pub trait Authority: Send {
-    /// `call` is the tool call's id, unique in the run.
-    fn decide(&mut self, action: &str, arguments: &Value, call: &str) -> anyhow::Result<Decision>;
+    /// `tool` is the tool called, `call` the call's id, unique in the run.
+    fn decide(
+        &mut self,
+        tool: &str,
+        action: &str,
+        arguments: &Value,
+        call: &str,
+    ) -> anyhow::Result<Decision>;
     /// What became of an action decided `Act`.
     fn finish(&mut self, journal: i64, error: Option<&str>);
 }
@@ -116,7 +122,7 @@ impl Runtime {
         };
         let mut journal = None;
         if let (Some(action), Some(authority)) = (&action, self.authority.as_mut()) {
-            match authority.decide(action, arguments, call) {
+            match authority.decide(name, action, arguments, call) {
                 Ok(Decision::Act(id)) => journal = Some(id),
                 Ok(Decision::Held(why)) => return (why, EventStatus::Denied),
                 // Unsure what the agent may do: it does not act alone.

@@ -83,7 +83,13 @@ impl BusinessAuthority {
 }
 
 impl Authority for BusinessAuthority {
-    fn decide(&mut self, action: &str, arguments: &Value, call: &str) -> Result<Decision> {
+    fn decide(
+        &mut self,
+        tool: &str,
+        action: &str,
+        arguments: &Value,
+        call: &str,
+    ) -> Result<Decision> {
         // Not declared at all: it commits.
         let (ceiling, start) = self
             .declared
@@ -96,6 +102,9 @@ impl Authority for BusinessAuthority {
             .level(&self.agent, action, ceiling, start)
             .unwrap_or(1);
         let args = arguments.to_string();
+        // The tool to call again with these arguments once the founder
+        // approves.
+        let source = serde_json::json!({"tool": tool}).to_string();
         let mut queue = |kind: &str, execute_at: Option<DateTime<Utc>>| {
             store.propose(&NewItem {
                 kind,
@@ -106,7 +115,7 @@ impl Authority for BusinessAuthority {
                 action: Some(action),
                 args: &args,
                 execute_at,
-                source: "{}",
+                source: &source,
                 model_call: None,
             })
         };
@@ -161,7 +170,7 @@ impl Authority for BusinessAuthority {
                             action: Some(action),
                             args: &args,
                             execute_at: None,
-                            source: "{}",
+                            source: &source,
                             model_call: None,
                         })?
                     ),
