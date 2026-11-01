@@ -104,7 +104,7 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
     let (item, report) = hub
         .answer_item(&f.realm, 1, Answer::Approve, "app", 5)
         .unwrap();
-    assert_eq!(item.status, "approved");
+    assert_eq!(item.status, "done");
     let report = report.unwrap();
     let key = format!("posts/{base}/news/1/send");
     assert!(
@@ -116,10 +116,10 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
         vec![r#"{"content":"ETH left. Calmly."}"#]
     );
 
-    // Approved again: the routine resumes, but the act is not done twice.
-    let (_, again) = hub
+    // Approved again: it is done already, nothing runs twice.
+    let (item, again) = hub
         .answer_item(&f.realm, 1, Answer::Approve, "app", 5)
         .unwrap();
-    assert!(again.unwrap().contains("already started"), "not done twice");
+    assert_eq!((item.status.as_str(), again), ("done", None));
     assert_eq!(posted.lock().unwrap().len(), 1);
 }

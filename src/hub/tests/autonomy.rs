@@ -282,3 +282,37 @@ fn a_routines_commands_cannot_reach_the_network() {
         "the founder's run keeps the network"
     );
 }
+
+/// Decision 45: an action a routine's mission proposed is done once the
+/// founder approves it, exactly as proposed, and only once.
+#[test]
+fn an_approved_proposal_is_done_once() {
+    let (base, hits) = service(|_| {});
+    let f = business(base);
+    let state = routine_run(&f, vec![post("1", "posts"), done("done")]);
+    assert!(
+        state.events[0]
+            .result
+            .contains("proposed to the founder for approval (item 1)"),
+        "{}",
+        state.events[0].result
+    );
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let approve = || {
+        hub.answer_item(
+            &f.realm,
+            1,
+            crate::business::store::queue::Answer::Approve,
+            "app",
+            5,
+        )
+        .unwrap()
+    };
+    let (item, report) = approve();
+    assert_eq!(item.status, "done", "{report:?}");
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let (item, report) = approve();
+    assert_eq!((item.status.as_str(), report), ("done", None));
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "done once");
+}

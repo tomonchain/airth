@@ -90,11 +90,31 @@ impl Hub {
         let mut as_approved = runtime();
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let declared = crate::actions::all(&realm.config.integrations, &servers);
+        let inbox = self.home.inbox();
         let mut act = |action: &str,
                        fields: &BTreeMap<String, String>,
                        key: &str,
                        approved: bool|
          -> Result<String> {
+            if action == "airth.report" {
+                let title = fields
+                    .get("title")
+                    .cloned()
+                    .unwrap_or_else(|| name.to_string());
+                let body: Vec<String> = fields
+                    .iter()
+                    .filter(|(k, _)| *k != "title")
+                    .map(|(k, v)| format!("{k}: {v}"))
+                    .collect();
+                inbox.push(
+                    crate::notify::Kind::Completed,
+                    realm.name(),
+                    None,
+                    &title,
+                    &body.join("\n"),
+                )?;
+                return Ok("reported".into());
+            }
             let (connector, action_name) = action
                 .split_once('.')
                 .context("an action is <connector>.<action>")?;
@@ -206,26 +226,99 @@ impl Hub {
         channel: &str,
         seconds: u64,
     ) -> Result<(crate::business::store::queue::Item, Option<String>)> {
-        let item = Store::of(realm)?.answer(id, None, answer, channel, seconds)?;
-        let (Some(routine), Some(block), "approved") = (
-            &item.routine,
-            item.source["block"].as_str(),
-            item.status.as_str(),
-        ) else {
+        let mut store = Store::of(realm)?;
+        let item = store.answer(id, None, answer, channel, seconds)?;
+        if item.status != "approved" {
             return Ok((item, None));
+        }
+        let routine_block = item.source["block"].as_str();
+        let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {
+            // A routine's item: the routine resumes after its approval.
+            (Some(routine), Some(block), _) => {
+                let Value::Object(fields) = item.args.clone() else {
+                    bail!("item {id} does not hold the routine's item");
+                };
+                let start = crate::routine::run::Start::After {
+                    block: block.to_string(),
+                    item: fields,
+                };
+                let run = item
+                    .run
+                    .clone()
+                    .unwrap_or_else(|| format!("{routine}-{id}"));
+                self.run_routine(realm, routine, &run, start)
+            }
+            // An action a mission proposed: done as it was proposed, once.
+            (_, None, Some(tool)) => self.do_approved(realm, &item, tool),
+            _ => return Ok((item, None)),
         };
-        let Value::Object(fields) = item.args.clone() else {
-            bail!("item {id} does not hold the routine's item");
+        let (status, detail) = match &outcome {
+            Ok(report) => (
+                "done",
+                report.lines().last().unwrap_or_default().to_string(),
+            ),
+            Err(e) => ("failed", format!("{e:#}")),
         };
-        let start = crate::routine::run::Start::After {
-            block: block.to_string(),
-            item: fields,
+        store.close_item(id, status, &detail)?;
+        let report = outcome.unwrap_or_else(|e| format!("failed: {e:#}"));
+        let closed = store.queue(&[status])?.into_iter().find(|i| i.id == id);
+        Ok((closed.unwrap_or(item), Some(report)))
+    }
+
+    /// Do the action the founder approved in queue item `item`, exactly as
+    /// it was proposed, once: it is journaled under the item.
+    fn do_approved(
+        &self,
+        realm: &Realm,
+        item: &crate::business::store::queue::Item,
+        tool: &str,
+    ) -> Result<String> {
+        let action = item.action.as_deref().context("the item names no action")?;
+        if tool != "http_request" {
+            bail!(
+                "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions only, for now"
+            );
+        }
+        let key = format!("item/{}", item.id);
+        let mut store = Store::of(realm)?;
+        let begin = store.begin_action(&crate::business::store::autonomy::NewAction {
+            key: &key,
+            action,
+            connector: action.split('.').next().unwrap_or(action),
+            agent: item.agent.as_deref(),
+            routine: item.routine.as_deref(),
+            run: item.run.as_deref(),
+            level: 1,
+            approved: true,
+            args: &item.args.to_string(),
+            daily_limit: u32::MAX,
+        })?;
+        let crate::business::store::autonomy::Begin::Started(journal) = begin else {
+            bail!("not done again: item {} was already acted on", item.id);
         };
-        let run = item
-            .run
-            .clone()
-            .unwrap_or_else(|| format!("{routine}-{id}"));
-        let report = self.run_routine(realm, routine, &run, start)?;
-        Ok((item, Some(report)))
+        let root = realm.root()?;
+        let workspace = Workspace::new(&root)?
+            .with_secrets(realm.command_env()?, self.redactions(realm)?)
+            .with_network(!realm.config.offline);
+        let mut runtime = Runtime::new(
+            tools::pipeline_tools(realm.config.integrations.clone()),
+            PermissionGate::new(
+                realm.config.policy.clone(),
+                Box::new(super::pipelines::Unattended),
+            ),
+            workspace,
+            CancelToken::default(),
+        );
+        let event = runtime.invoke(&key, tool, &item.args);
+        let ok = event.status == crate::state::EventStatus::Ok;
+        let error = (!ok).then_some(event.result.as_str());
+        store.finish_action(journal, if ok { "confirmed" } else { "failed" }, error)?;
+        if !ok {
+            bail!("{}", event.result);
+        }
+        Ok(format!(
+            "{action}: {}",
+            event.result.lines().next().unwrap_or_default()
+        ))
     }
 }
