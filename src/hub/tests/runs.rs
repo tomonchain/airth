@@ -764,10 +764,14 @@ fn commands_cannot_write_outside_the_workspace() {
         "{out}"
     );
     // The workspace and the run's own temporary folder stay writable.
-    assert_eq!(std::fs::read_to_string(root.join("notes.md")).unwrap(), "here\n");
+    assert_eq!(
+        std::fs::read_to_string(root.join("notes.md")).unwrap(),
+        "here\n"
+    );
     let tmp = std::fs::read_to_string(root.join("tmp.txt")).unwrap();
     assert!(
-        tmp.trim().starts_with(&f.realm.dir().canonicalize().unwrap().display().to_string()),
+        tmp.trim()
+            .starts_with(&f.realm.dir().canonicalize().unwrap().display().to_string()),
         "{tmp} {out}"
     );
     assert!(out.contains("\nt\n") || out.ends_with("\nt"), "{out}");

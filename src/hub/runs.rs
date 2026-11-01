@@ -17,6 +17,7 @@ impl Hub {
         }
         let path = state.path().context("this run is not saved")?.to_path_buf();
         std::fs::remove_file(path)?;
+        let _ = std::fs::remove_dir_all(self.run_tmp(realm, &state.id));
         realm.set_run_title(&state.id, "")?;
         realm.set_run_archived(&state.id, false)?;
         Ok(())
