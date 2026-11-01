@@ -8,6 +8,7 @@ fn declared(id: &str, class: Class) -> Declared {
         class,
         ceiling: class.ceiling(),
         confirmed: true,
+        start: 1,
     }
 }
 
@@ -33,7 +34,8 @@ fn try_graph(root: &Path, graph: Value) -> Result<Graph> {
     std::fs::write(root.join("routines/test.json"), graph.to_string()).unwrap();
     let actions = [
         declared("airth.launch_mission", Class::Reversible),
-        declared("airth.report", Class::Reversible),
+        declared("airth.report", Class::Read),
+        declared("airth.create_task", Class::Reversible),
         declared("typefully.create_draft", Class::Reversible),
         declared("blog.publish", Class::Commits),
         declared("stats.read", Class::Read),
@@ -116,6 +118,16 @@ fn content_from_outside_reaches_no_act_without_an_approval() {
         {"id": "ok", "type": "approval", "show": "x", "next": null},
         {"id": "send", "type": "act", "action": "blog.publish"}])));
     assert!(e.contains("'send'"), "{e}");
+    // A task born of outside content and given to an agent is its
+    // instructions: checked. One for the founder is not.
+    let task = |assignee: &str| {
+        posts(
+            json!([rss(), {"id": "t", "type": "act", "action": "airth.create_task",
+            "fields": {"title": "{{title}}", "assignee": assignee}}]),
+        )
+    };
+    assert!(err(task("writer")).contains("airth.create_task"));
+    try_graph(root.path(), task("founder")).unwrap();
     // An action the agent may take alone (level 2 or more) is allowed.
     try_graph(
         root.path(),

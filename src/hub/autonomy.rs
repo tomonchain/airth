@@ -68,14 +68,16 @@ impl BusinessAuthority {
 impl Authority for BusinessAuthority {
     fn decide(&mut self, action: &str, arguments: &Value, call: &str) -> Result<Decision> {
         // Not declared at all: it commits.
-        let ceiling = self
+        let (ceiling, start) = self
             .declared
             .iter()
             .find(|d| d.id == action)
-            .map_or(1, |d| d.ceiling);
+            .map_or((1, 1), |d| (d.ceiling, d.start));
         let (daily_limit, _window) = self.limits(action);
         let mut store = Store::of(&self.realm)?;
-        let level = store.level(&self.agent, action, ceiling).unwrap_or(1);
+        let level = store
+            .level(&self.agent, action, ceiling, start)
+            .unwrap_or(1);
         let args = arguments.to_string();
         let mut queue = |kind: &str, execute_at: Option<DateTime<Utc>>| {
             store.propose(&NewItem {
