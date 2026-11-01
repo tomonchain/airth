@@ -589,15 +589,16 @@ fn chats_work_in_the_realms_repositories() {
         .is_err(),
         "a clone never lands in a folder that has files"
     );
+    // A repository inside Airth's home is refused for where it is, not for
+    // what it lacks: this one is a real repository, in the realm's skills.
+    let inside = realm.skills_dir().join("repo");
+    crate::isolation::clone(&url, &inside).unwrap();
+    let refused = hub
+        .connect_repo(&mut realm, inside.to_str().unwrap(), Some("h"), None)
+        .unwrap_err();
     assert!(
-        hub.connect_repo(
-            &mut realm,
-            home_dir.path().to_str().unwrap(),
-            Some("h"),
-            None
-        )
-        .is_err(),
-        "nor in Airth's home"
+        refused.to_string().contains("inside the Airth home"),
+        "{refused:#}"
     );
     let name = lib.name.clone();
     realm
