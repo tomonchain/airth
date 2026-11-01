@@ -431,10 +431,7 @@ mod tests {
                 "every": "daily 08:00", "tools": tools, "allow": ["network"], "max_minutes": 30})
         };
         let err = realms::save_routine(&realm, &routine("writer", json!(null))).unwrap_err();
-        assert!(
-            format!("{err:#}").contains("business/bots/writer.md"),
-            "{err:#}"
-        );
+        assert!(format!("{err:#}").contains("agents/writer.md"), "{err:#}");
         crate::business::set_job(&realm.root().unwrap(), "writer", "Write.").unwrap();
         let err = realms::save_routine(&realm, &routine("writer", json!(["bank"]))).unwrap_err();
         assert!(format!("{err:#}").contains("'bank'"), "{err:#}");

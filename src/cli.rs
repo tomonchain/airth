@@ -211,7 +211,7 @@ pub enum IntegrationCmd {
 /// Who does an objective (decision 36), and with which of the realm's tools.
 #[derive(clap::Args)]
 pub struct BotArgs {
-    /// The bot that does it, whose job is in business/bots/<bot>.md
+    /// The agent that does it, whose job is in agents/<bot>.md
     #[arg(long)]
     bot: Option<String>,
     /// Only these of the realm's integrations, MCP servers and skills;
@@ -430,7 +430,7 @@ fn show_objective(ctx: &Ctx, realm: &crate::realm::Realm, id: &str) -> Result<()
     println!("goal         {}", o.objective);
     println!("trigger      {}", o.trigger.describe());
     if let Some(bot) = &o.bot {
-        println!("bot          {bot} (business/bots/{bot}.md)");
+        println!("agent        {bot} (agents/{bot}.md)");
     }
     if let Some(tools) = &o.tools {
         println!(
