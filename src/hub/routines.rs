@@ -223,14 +223,21 @@ impl Hub {
         &self,
         realm: &Realm,
         id: i64,
+        revision: Option<i64>,
         answer: crate::business::store::queue::Answer,
         channel: &str,
         seconds: u64,
     ) -> Result<(crate::business::store::queue::Item, Option<String>)> {
         let mut store = Store::of(realm)?;
-        let item = store.answer(id, None, answer, channel, seconds)?;
+        let item = store.answer(id, revision, answer, channel, seconds)?;
         if item.status != "approved" {
             return Ok((item, None));
+        }
+        // Prepared for the founder (level 0): the founder did it; nothing
+        // runs.
+        if item.kind == "prepared" {
+            store.close_item(id, "done", "done by the founder")?;
+            return Ok((item, Some("marked done: the founder did it".into())));
         }
         let routine_block = item.source["block"].as_str();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {

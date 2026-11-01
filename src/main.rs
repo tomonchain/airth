@@ -33,6 +33,7 @@ mod sandbox;
 mod scheduler;
 mod service;
 mod state;
+mod telegram;
 mod term;
 mod tools;
 mod ui;
@@ -228,6 +229,11 @@ enum Cmd {
     Actions {
         #[command(subcommand)]
         command: Option<cli::ActionsCmd>,
+    },
+    /// Your Telegram bot: what waits for you, on your phone
+    Telegram {
+        #[command(subcommand)]
+        command: cli::TelegramCmd,
     },
     /// What waits for you: approve, edit or reject it
     Queue {
@@ -465,6 +471,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Actions { command }) => cli::actions(ctx, command),
         Some(Cmd::Routines { command }) => cli::routines(ctx, command),
         Some(Cmd::Queue { command }) => cli::queue(ctx, command),
+        Some(Cmd::Telegram { command }) => cli::telegram(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {
