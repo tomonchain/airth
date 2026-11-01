@@ -4,19 +4,23 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 54. One bank in the beta, read-only: Revolut Business
 
-**Proposed.** Refines decision 53's finance part.
+**Accepted.** Refines decision 53's finance part.
 
-At milestone 5, Airth connects one bank, Revolut Business (Hedgen's bank), **read-only**: the READ scope only, for balances and transactions. The signing key that authenticates Airth to Revolut's API lives in the Airth home, like the other credentials (decision 52), never in the business folder, and never reaches a model or a run. Accounting, payments and transfers stay out of the beta: Airth never moves money.
+At milestone 5, Airth connects one bank, Revolut Business (Hedgen's bank), **read-only**: the READ scope only, for balances and transactions. Accounting, payments and transfers stay out of the beta: Airth never moves money.
+
+- **Signing.** Revolut authenticates Airth with a client assertion (a JWT signed RS256 by the business's private key), traded for a short-lived access token and a refresh token. `aws-lc-rs`, already a direct dependency (release signing, OAuth PKCE), signs it (`RsaKeyPair`, `RSA_PKCS1_SHA256`): no new crate. The key is stored as PKCS#8 DER. Revolut's setup produces a PEM key; the founder converts it once with `openssl pkcs8 -topk8 -nocrypt -in privatecert.pem -outform DER -out revolut.pk8`.
+- **Tokens.** Stored and refreshed like a remote MCP server's (`skills/mcp-auth/<name>.json` in the realm's Airth home, mode 600), not as a new kind of state.
+- **Runtime-only credentials.** The private key and the refresh token are files in the realm's Airth home, mode 600. They are never in `secrets.env` as `command_env` passes it, never in any command's environment, and never readable by an agent, a routine or a model. A test proves that a command run in a business's realm cannot see either of them.
 
 What it feeds is decision 53's finance part (cash, money in and out this month, runway) and the runway criterion of health. A business with no bank connected (Numirama today) shows its finance part empty and its runway as unknown.
 
-*Why:* runway is one of the three health criteria, and without a bank the HQ cannot say whether a business is at risk. Revolut is the bank of the first business; the READ scope cannot move money, so it adds no way for an agent or an instruction in content to commit the business.
+*Why:* runway is one of the three health criteria, and without a bank the HQ cannot say whether a business is at risk. Revolut is the bank of the first business; the READ scope cannot move money, so it adds no way for an agent or an instruction in content to commit the business. Reusing the crypto crate and the token store keeps one way of doing each.
 
-*Cost:* Revolut Business authenticates with a client assertion signed by the business's private key and a short-lived access token renewed with a refresh token. Signing it likely needs a cryptography crate, which needs a decision of its own (`CLAUDE.md`, *Architecture rules*), and storing tokens that renew is new state in the home. The integration code is security code. A second bank, or Numirama's, is another connector. A business's bank figures are among the few things the HQ reads; they stay in its section.
+*Cost:* the integration code is security code. The founder converts the key once by hand. A second bank, or Numirama's, is another connector. A business's bank figures are among the few things the HQ reads; they stay in its section.
 
 ## 53. The HQ shows one section per business: health, vitals, finance, latest activity
 
-**Proposed.** Amended with the founder's answers on its first costs (health criteria with no data, goal on pace, quality flag); the bank is decision 54.
+**Accepted**, amended with the founder's answers on its first costs (health criteria with no data, goal on pace, quality flag, who may override it); the bank is decision 54.
 
 The HQ never adds up figures across businesses. It shows one section per business, each with four parts:
 
@@ -32,7 +36,7 @@ The HQ never adds up figures across businesses. It shows one section per busines
 
 **Goal on pace.** A goal may carry a metric (a vital's key), a start (a value and a date) and a target (a value and a deadline). The expected value is linear between start and target; the goal is on pace when the current value is at least the expected value minus a tolerance (10% by default, in the business config). A goal made of steps is on pace when its steps are done by their planned dates. A goal with neither a metric nor dated steps does not count in health.
 
-**Quality flag.** A mark set on an item of the approval queue by a check step of its routine, with a reason. A blocking flag prevents Approve until the item is edited or the founder explicitly overrides it; the override is recorded. Nothing in it is specific to one business. The check step itself is defined with the internal quality check planned for milestone 4; if it needs a block of its own, that is a decision then (the six blocks, `CLAUDE.md`).
+**Quality flag.** A mark set on an item of the approval queue by a check step of its routine, with a reason. A blocking flag prevents Approve until the item is edited or the founder explicitly overrides it. **Only the founder can override**, from the app or Telegram; no agent, routine or MCP tool can. The override is logged with who and when. Nothing in it is specific to one business. The check step itself is defined with the internal quality check planned for milestone 4; if it needs a block of its own, that is a decision then (the six blocks, `CLAUDE.md`).
 
 Open points, not decided here:
 
