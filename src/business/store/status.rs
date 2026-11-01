@@ -54,7 +54,7 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT pipeline, COUNT(*), SUM(input_tokens), SUM(output_tokens),
                     COALESCE(SUM(cost_usd), 0), SUM(cost_usd IS NULL)
-             FROM model_calls WHERE at >= ?1 GROUP BY pipeline
+             FROM model_calls WHERE at >= ?1 AND dry_run = 0 GROUP BY pipeline
              ORDER BY 5 DESC, 2 DESC",
         )?;
         let rows = stmt.query_map(params![since.to_rfc3339()], |r| {
@@ -124,14 +124,14 @@ impl Store {
             approved: decided("approved", false)?,
             unedited: decided("approved", true)?,
             rejected: decided("rejected", false)?,
-            model_calls: one("SELECT COUNT(*) FROM model_calls WHERE at >= ?1")?,
+            model_calls: one("SELECT COUNT(*) FROM model_calls WHERE at >= ?1 AND dry_run = 0")?,
             model_cost: self.conn.query_row(
-                "SELECT COALESCE(SUM(cost_usd), 0) FROM model_calls WHERE at >= ?1",
+                "SELECT COALESCE(SUM(cost_usd), 0) FROM model_calls WHERE at >= ?1 AND dry_run = 0",
                 params![since],
                 |r| r.get(0),
             )?,
             unpriced_calls: one(
-                "SELECT COUNT(*) FROM model_calls WHERE at >= ?1 AND cost_usd IS NULL",
+                "SELECT COUNT(*) FROM model_calls WHERE at >= ?1 AND dry_run = 0 AND cost_usd IS NULL",
             )?,
         })
     }

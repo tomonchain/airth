@@ -236,6 +236,7 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                     name,
                     step: i + 1,
                     prompt: &p,
+                    dry_run: true,
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),

@@ -45,6 +45,8 @@ pub struct NewCall<'a> {
     pub latency_ms: i64,
     pub error: Option<&'a str>,
     pub answer: &'a str,
+    /// Made by a dry run: kept apart from statistics and evidence.
+    pub dry_run: bool,
 }
 
 /// A recorded model call, as tests read it back.
@@ -60,6 +62,7 @@ pub struct ModelCall {
     pub valid: bool,
     pub error: Option<String>,
     pub answer: Option<String>,
+    pub dry_run: bool,
 }
 
 fn parse(at: &str) -> Result<DateTime<Utc>> {
@@ -163,8 +166,8 @@ impl Store {
         self.write(|tx| {
             tx.execute(
                 "INSERT INTO model_calls (at, pipeline, step, prompt, prompt_version, model, input_tokens, output_tokens,
-                    cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, error, answer)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, error, answer, dry_run)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     Utc::now().to_rfc3339(),
                     call.pipeline,
@@ -181,6 +184,7 @@ impl Store {
                     call.error.is_none(),
                     call.error,
                     call.answer,
+                    call.dry_run,
                 ],
             )?;
             Ok(tx.last_insert_rowid())
@@ -216,7 +220,7 @@ impl Store {
     #[cfg(test)]
     pub fn model_calls(&self) -> Result<Vec<ModelCall>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, pipeline, prompt_version, model, input_tokens, cost_usd, valid, error, answer
+            "SELECT id, pipeline, prompt_version, model, input_tokens, cost_usd, valid, error, answer, dry_run
              FROM model_calls ORDER BY id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -230,6 +234,7 @@ impl Store {
                 valid: r.get(6)?,
                 error: r.get(7)?,
                 answer: r.get(8)?,
+                dry_run: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

@@ -138,6 +138,7 @@ fn steps(
                     name,
                     step: i + 1,
                     prompt,
+                    dry_run: false,
                 };
                 items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?.0;
             }
@@ -265,6 +266,8 @@ pub(crate) struct Asking<'a> {
     pub name: &'a str,
     pub step: usize,
     pub prompt: &'a Prompt,
+    /// Calls of a dry run are marked so in the journal.
+    pub dry_run: bool,
 }
 
 /// Ask the model about each item, then keep, rank, keep the best of each
@@ -280,8 +283,7 @@ pub(crate) fn judge_all(
     let mut stats = Judged::default();
     let mut kept = Vec::new();
     for mut item in items {
-        let (answer, call, used) =
-            judge(asking.name, asking.step, asking.prompt, &item, store, io)?;
+        let (answer, call, used) = judge(asking, &item, store, io)?;
         stats.input_tokens += used.input;
         stats.output_tokens += used.output;
         match used.cost {
@@ -355,13 +357,12 @@ struct Used {
 /// record the call. None when the answer does not fit: it is recorded as
 /// invalid, never repaired.
 fn judge(
-    pipeline: &str,
-    step: usize,
-    prompt: &Prompt,
+    asking: &Asking,
     item: &Item,
     store: &mut Store,
     io: &mut Io,
 ) -> Result<(Option<Value>, i64, Used)> {
+    let prompt = asking.prompt;
     let system = format!(
         "{}\n\nAnswer with one JSON object that matches this JSON schema, and nothing else: no code fence, no comment.\n{}",
         prompt.text.trim(),
@@ -404,8 +405,8 @@ fn judge(
     let error = answer.as_ref().err().cloned();
     store
         .record_call(&NewCall {
-            pipeline,
-            step,
+            pipeline: asking.name,
+            step: asking.step,
             prompt: &prompt.path,
             prompt_version: &prompt.version,
             model: &r.model,
@@ -417,6 +418,7 @@ fn judge(
             latency_ms,
             error: error.as_deref(),
             answer: &text,
+            dry_run: asking.dry_run,
         })
         .map(|call| {
             let used = Used {
