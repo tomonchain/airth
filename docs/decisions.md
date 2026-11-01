@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 55. A failed action is retried only when a retry cannot do it twice
+
+**Proposed.**
+
+`CLAUDE.md` says a failed action is retried a few times, then becomes an incident. Today an `Act`, an approved action and a delayed one become an incident at the first failure. A retry is safe only when the first attempt certainly did nothing, or when doing it twice changes nothing. So:
+
+- **What is retried:** a failure where the request never reached the service (connection refused, DNS, TLS), or an answer that says it was not done (HTTP 429, 502, 503, 504). Any other failure becomes an incident at once.
+- **A timeout or a reset after sending is never retried** for an action that is not a read: the service may have done it. It becomes an incident that says so, and the founder checks before retrying by hand.
+- **Actions that commit money or a contract are never retried automatically**, whatever the failure: an incident at once.
+- **How:** up to three attempts in all, one minute then five minutes apart, honouring `Retry-After` when it is shorter than 15 minutes. The retry waits in the action journal (the key stays the same, decision 47), and the scheduler picks it up, so a restart of Airth does not lose it. Each attempt is recorded; only the last failure becomes an incident and demotes (decision 45).
+- **Reads** (`Read` blocks, the class read) are retried the same way, with no limit on what failed after sending.
+
+*Why:* an incident for a passing network error wakes the founder and demotes an agent for nothing, which would make autonomy hard to earn. But a retry that publishes twice, or pays twice, is worse than an incident.
+
+*Cost:* a new state in the action journal (waiting to retry, with its time) and its handling in the scheduler. A result reaches the founder up to six minutes later. Telling a refused connection from a timeout after sending depends on the HTTP client's errors, which `tools/http.rs` must expose to the runtime: that is security code.
+
 ## 54. One bank in the beta, read-only: Revolut Business
 
 **Accepted.** Refines decision 53's finance part.
