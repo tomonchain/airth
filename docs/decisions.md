@@ -2,6 +2,43 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 47. The business database: one access layer, evidence append-only, tables added with their milestone
+
+Decision 31 put business state in one SQLite database per business, `business.db`, in the Airth home. This decision says how it is reached and what it holds for the beta.
+
+**One access layer.** All SQL lives in one module, `src/business/store/`: opening, migrations, transactions, and one file per area (founder time, queue, actions, autonomy, routines, model calls, tasks). Only that module uses `rusqlite`; its connection is private; other modules call typed functions (`queue::propose`, `actions::begin`, `autonomy::level`), never a query. A test reads `src/` and fails if SQL or `rusqlite` appears outside it. The access layer is security code (`CLAUDE.md`). Today `pipeline/run.rs`, `pipeline/schedule.rs`, `business/drafts.rs`, `business/status.rs` and `business/time.rs` write their own SQL: the first change of milestone 2 moves it into the layer, with no change to the schema or to behaviour, and the tests that read the database through SQL read it through the layer.
+
+**How it is written.** Unchanged from decision 31, and now required of every table:
+
+- every write is one immediate transaction, in WAL mode, `synchronous = FULL`, a busy timeout, and foreign keys enforced;
+- evidence is append-only, and the database enforces it, not only the code: on every evidence table, triggers refuse `UPDATE` and `DELETE`. Evidence is the founder-time ledger, heartbeats, every log of a record's moves, the action journal's events and the history of autonomy levels. Each migration that adds one adds its triggers, and its test checks that an update and a delete are refused;
+- a record that changes carries a revision: a write against a stale revision fails instead of overwriting, and every move is also written to that record's log, in the same transaction;
+- times are UTC, RFC 3339 text; JSON columns (arguments, sources) are checked in code before they are written;
+- migrations are numbered and never edited once released; each has a test that migrates a database of the previous version holding rows; a database newer than the binary is refused; before migrating, the file is copied beside itself (`business.db.<version>.bak`).
+
+**What it holds for the beta.** A table enters with the change that first needs it, by a migration, at the milestone that needs it; nothing is created ahead.
+
+| Area | Tables | Milestone | From |
+| --- | --- | --- | --- |
+| Founder time | `owner_time`, gains the queue item and the channel (app, Telegram) an answer came from | 2 | exists (decision 27) |
+| Heartbeats | `pipeline_runs`, `pipeline_seen`, `pipeline_schedule`, renamed `routine_runs`, `routine_seen`, `routine_schedule` when routines become graphs | 3 | exist (decision 34) |
+| Model calls | `model_calls`, gains the agent, the routine, the run and the block | 3 | exists |
+| Queue | `queue` and `queue_log`: what waits for the founder, of one kind among approval, prepared (level 0), delayed (level 2), incident, proposed promotion; its exact action and arguments, its source, its deadline or execution time, its status. `drafts` and `draft_log` become rows of it | 3 | replaces drafts |
+| Actions | `actions` and `action_log`: each action executed or attempted, its idempotency key (unique), the level it ran at, whether the founder approved it, its outcome (`in_flight`, `confirmed`, `failed`, `unknown`). It makes `Act` idempotent and counts the daily limits (decision 45) | 3 | the branch's `actions.rs` |
+| Autonomy | `autonomy` (agent, action, level) and `autonomy_log` (who, when, from, to, why) | 3 | decision 45 |
+| Tasks | `tasks` and `task_log`: title, assigned to the founder or an agent, status, due date, the run that does it | 5 | rebuilt (`CLAUDE.md`) |
+| Mail | sent mail: agent, approval, thread, archive copy | 7 | decided with the IMAP and SMTP integration |
+
+Agents' statistics are not stored: the layer computes them from model calls, the queue and the actions. What a connector's daily limit and cancellation window are set to stays with the connector's record in the realm's config (decision 45), not in the database.
+
+**Backups.** Once a day, the background runtime copies `business.db` with SQLite's online backup (consistent while Airth writes) to `backups/business-<date>.db` in the realm's folder in the Airth home, and keeps the last 14 days. `airth doctor` says, for each business, when the last backup was made and whether it opens and passes the integrity check; a missing or failed backup is reported in Needs you. Backups stay in the Airth home, out of every run's reach.
+
+**Reading it from outside.** `airth db <business> export` writes every table as JSON lines, read-only; `airth doctor` runs SQLite's integrity check. No tool gives a run access to the database: runs reach business state only through Airth's tools, which call the layer, under the runtime's checks.
+
+*Why:* `CLAUDE.md` asks for one access layer and makes it a security boundary: a single place where every rule on business state (append-only evidence, revisions, idempotence, limits) is written once and tested once. Adding tables with their milestone keeps the schema from holding guesses about features not built.
+
+*Cost:* a backup a day takes up to fourteen copies of the database per business. Moving the SQL that exists is a change of its own, touching the pipeline engine and its tests before anything new is built. Each table is a migration to write and test, and a later change to a table's shape is another migration. Statistics computed on read cost more queries than stored counters, which is acceptable at one founder's volume.
+
 ## 46. A run in place cannot plant git hooks or change the git config
 
 A run that works in the business's folder itself (not in a worktree) may write that folder's `.git`, since committing needs it. Two parts of it run code as the founder, outside any sandbox, the next time the founder or Airth uses git there: `.git/hooks/` (scripts git runs on commit, checkout, merge) and `.git/config` (it can name a hooks folder, filters, an editor, a pager, an SSH command). So for every run in place:
