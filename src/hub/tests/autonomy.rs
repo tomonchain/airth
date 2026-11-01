@@ -195,3 +195,55 @@ fn a_run_the_founder_starts_is_asked_as_before() {
     );
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
+
+/// Decision 45: what nobody declared commits, so an agent trusted with one
+/// action cannot act through an undeclared integration or a public URL;
+/// and level 2 is proposed until delayed actions have an executor.
+#[test]
+fn undeclared_calls_and_level_two_are_proposed_not_done() {
+    let (base, hits) = service(|_| {});
+    let mut f = business(base.clone());
+    f.realm
+        .set_integration(crate::integration::Integration {
+            name: "stats".into(),
+            description: String::new(),
+            base_url: base.clone(),
+            headers: Default::default(),
+            actions: Vec::new(),
+        })
+        .unwrap();
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("writer", "blog.create_draft", 2, 3, "founder", "")
+        .unwrap();
+    let state = routine_run(
+        &f,
+        vec![
+            call(
+                "1",
+                "http_request",
+                json!({"integration": "stats", "method": "POST", "url": "x"}),
+            ),
+            call(
+                "2",
+                "http_request",
+                json!({"integration": "stats", "url": "y"}),
+            ),
+            call(
+                "3",
+                "http_request",
+                json!({"method": "POST", "url": format!("{base}/x")}),
+            ),
+            post("4", "drafts"),
+            done("done"),
+        ],
+    );
+    for e in &state.events[..4] {
+        assert!(e.result.contains("proposed to the founder"), "{}", e.result);
+    }
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "nothing reached the services"
+    );
+}

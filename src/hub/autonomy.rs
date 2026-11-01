@@ -73,7 +73,7 @@ impl Authority for BusinessAuthority {
             .iter()
             .find(|d| d.id == action)
             .map_or(1, |d| d.ceiling);
-        let (daily_limit, window) = self.limits(action);
+        let (daily_limit, _window) = self.limits(action);
         let mut store = Store::of(&self.realm)?;
         let level = store.level(&self.agent, action, ceiling).unwrap_or(1);
         let args = arguments.to_string();
@@ -94,18 +94,18 @@ impl Authority for BusinessAuthority {
                 "not done: prepared for the founder, who does it (item {}). Say so in your report.",
                 queue("prepared", None)?
             ),
-            1 => format!(
+            // Until delayed actions have an executor (step 5), level 2 is
+            // proposed like level 1: nothing is announced as done later
+            // without something to do it.
+            1 | 2 => format!(
                 "not done: proposed to the founder for approval (item {}). Say so in your report.",
                 queue("approval", None)?
             ),
-            2 => {
-                let at = Utc::now() + chrono::Duration::minutes(window as i64);
-                format!(
-                    "queued: done in {window} minutes unless the founder cancels it (item {}).",
-                    queue("delayed", Some(at))?
-                )
-            }
             _ => {
+                // Limit: in a mission, a run that is resumed and makes the
+                // same action again under a new call id gets a new key, so
+                // this does not stop it. Graphs key acts by the item's
+                // source id instead (decision 49).
                 let key = format!("{}/{call}", self.run);
                 let connector = action.split('.').next().unwrap_or(action);
                 let begin = store.begin_action(&NewAction {

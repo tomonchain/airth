@@ -127,16 +127,24 @@ impl HttpRequest {
 
 impl Tool for HttpRequest {
     /// Through an integration with declared actions, only those may be
-    /// called (decision 49).
+    /// called (decision 49). Any other call that changes something outside
+    /// is an action nobody declared, so it commits (decision 45): a call
+    /// through an integration that declares nothing, or anything but a read
+    /// of a public URL.
     fn action(&self, input: &Value) -> Result<Option<String>> {
+        let method = input["method"]
+            .as_str()
+            .unwrap_or("GET")
+            .to_ascii_uppercase();
         let Some(name) = input["integration"].as_str().filter(|s| !s.is_empty()) else {
-            return Ok(None);
+            let read = method == "GET" || method == "HEAD";
+            return Ok((!read).then(|| format!("web.{}", method.to_ascii_lowercase())));
         };
         let integration = self.integration(name)?;
         if integration.actions.is_empty() {
-            return Ok(None);
+            return Ok(Some(format!("{name}.undeclared")));
         }
-        let method = input["method"].as_str().unwrap_or("GET");
+        let method = method.as_str();
         let url = integration.url_for(str_arg(input, "url")?)?;
         let base = integration.base()?;
         let path = url
