@@ -92,43 +92,9 @@ fn steps(
                 feeds,
                 max_age_days,
             } => {
-                let mut failures = Vec::new();
-                for feed in feeds {
-                    match (io.fetch)(feed) {
-                        Ok(fetched) => {
-                            let parsed = rss::parse(&fetched.body);
-                            if fetched.truncated || !parsed.complete {
-                                out.notes.push(format!(
-                                    "{feed} was cut or malformed: kept the {} item(s) before the break",
-                                    parsed.items.len()
-                                ));
-                            }
-                            for mut item in parsed.items {
-                                item.insert("feed".into(), feed.clone().into());
-                                items.push(item);
-                            }
-                        }
-                        Err(e) => failures.push(format!("{feed}: {e:#}")),
-                    }
-                }
-                if failures.len() == feeds.len() {
-                    bail!("no feed could be read: {}", failures.join("; "));
-                }
-                out.notes.extend(failures);
-                out.read = items.len();
-                if let Some(days) = max_age_days {
-                    let since = now - chrono::Duration::days(i64::from(*days));
-                    let before = items.len();
-                    // An item without a readable date is kept: dropping it
-                    // could silently empty a feed that writes no dates.
-                    items.retain(|item| rss::published(item).is_none_or(|at| at >= since));
-                    let old = before - items.len();
-                    if old > 0 {
-                        out.notes.push(format!(
-                            "{old} item(s) older than {days} day(s) were left out"
-                        ));
-                    }
-                }
+                let (read, kept) = read_rss(feeds, *max_age_days, io, now, &mut out.notes)?;
+                out.read = read;
+                items = kept;
             }
             Step::Dedupe { by } => {
                 let key = |item: &Item| match item.get(by) {
@@ -161,60 +127,19 @@ fn steps(
                 let Some(prompt) = prompts.next() else {
                     bail!("step {}: its prompt was not loaded", i + 1);
                 };
-                let mut rejected = 0;
-                let mut kept = Vec::new();
-                for mut item in std::mem::take(&mut items) {
-                    let (answer, call) = judge(name, i + 1, prompt, &item, store, io)?;
-                    let Some(answer) = answer else {
-                        rejected += 1;
-                        continue;
-                    };
-                    item.insert("model_call".into(), call.into());
-                    let goes_on = keep.as_ref().is_none_or(|k| answer[k] == true);
-                    item.insert("answer".into(), answer);
-                    if goes_on {
-                        kept.push(item);
-                    }
-                }
-                if rejected > 0 {
-                    out.notes.push(format!(
-                        "step {}: {rejected} answer(s) did not match {} and were dropped",
-                        i + 1,
-                        prompt.path
-                    ));
-                }
-                if let Some(rank) = rank {
-                    let score = |item: &Item| item["answer"][rank].as_f64().unwrap_or(f64::MIN);
-                    // Stable: equal scores keep the feeds' order.
-                    kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
-                }
-                if let Some(distinct) = distinct {
-                    let before = kept.len();
-                    let mut values = HashSet::new();
-                    // Best first: the first of each value is its best.
-                    kept.retain(|item| match item["answer"][distinct].as_str() {
-                        Some(v) => values.insert(v.trim().to_lowercase()),
-                        None => true,
-                    });
-                    if kept.len() < before {
-                        out.notes.push(format!(
-                            "step {}: kept the best of each {distinct}, {} of {before}",
-                            i + 1,
-                            kept.len()
-                        ));
-                    }
-                }
-                if let Some(limit) = limit
-                    && kept.len() > *limit
-                {
-                    out.notes.push(format!(
-                        "step {}: kept the {limit} best of {}",
-                        i + 1,
-                        kept.len()
-                    ));
-                    kept.truncate(*limit);
-                }
-                items = kept;
+                let filters = Filters {
+                    keep: keep.as_deref(),
+                    rank: rank.as_deref(),
+                    distinct: distinct.as_deref(),
+                    limit: *limit,
+                };
+                let all = std::mem::take(&mut items);
+                let asking = Asking {
+                    name,
+                    step: i + 1,
+                    prompt,
+                };
+                items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?;
             }
             Step::Queue { kind, text } => {
                 let mut missing = 0;
@@ -259,6 +184,136 @@ fn steps(
     }
     out.kept = items;
     Ok(out)
+}
+
+/// Read `feeds`, leaving out items older than `max_age_days`: how many
+/// were read, and those kept. A feed down is a note; all of them down fails.
+pub(crate) fn read_rss(
+    feeds: &[String],
+    max_age_days: Option<u32>,
+    io: &mut Io,
+    now: DateTime<Utc>,
+    notes: &mut Vec<String>,
+) -> Result<(usize, Vec<Item>)> {
+    let mut items: Vec<Item> = Vec::new();
+    let mut failures = Vec::new();
+    for feed in feeds {
+        match (io.fetch)(feed) {
+            Ok(fetched) => {
+                let parsed = rss::parse(&fetched.body);
+                if fetched.truncated || !parsed.complete {
+                    notes.push(format!(
+                        "{feed} was cut or malformed: kept the {} item(s) before the break",
+                        parsed.items.len()
+                    ));
+                }
+                for mut item in parsed.items {
+                    item.insert("feed".into(), feed.clone().into());
+                    items.push(item);
+                }
+            }
+            Err(e) => failures.push(format!("{feed}: {e:#}")),
+        }
+    }
+    if failures.len() == feeds.len() {
+        bail!("no feed could be read: {}", failures.join("; "));
+    }
+    notes.extend(failures);
+    let read = items.len();
+    if let Some(days) = max_age_days {
+        let since = now - chrono::Duration::days(i64::from(days));
+        let before = items.len();
+        // An item without a readable date is kept: dropping it could
+        // silently empty a feed that writes no dates.
+        items.retain(|item| rss::published(item).is_none_or(|at| at >= since));
+        let old = before - items.len();
+        if old > 0 {
+            notes.push(format!(
+                "{old} item(s) older than {days} day(s) were left out"
+            ));
+        }
+    }
+    Ok((read, items))
+}
+
+/// What a judgement keeps (see `Step::Judge`).
+pub(crate) struct Filters<'a> {
+    pub keep: Option<&'a str>,
+    pub rank: Option<&'a str>,
+    pub distinct: Option<&'a str>,
+    pub limit: Option<usize>,
+}
+
+/// The prompt a judgement asks with, and where it is recorded from.
+pub(crate) struct Asking<'a> {
+    pub name: &'a str,
+    pub step: usize,
+    pub prompt: &'a Prompt,
+}
+
+/// Ask the model about each item, then keep, rank, keep the best of each
+/// value and cut, as `filters` say. Each item kept gets its `answer`.
+pub(crate) fn judge_all(
+    asking: &Asking,
+    items: Vec<Item>,
+    filters: &Filters,
+    store: &mut Store,
+    io: &mut Io,
+    notes: &mut Vec<String>,
+) -> Result<Vec<Item>> {
+    let mut rejected = 0;
+    let mut kept = Vec::new();
+    for mut item in items {
+        let (answer, call) = judge(asking.name, asking.step, asking.prompt, &item, store, io)?;
+        let Some(answer) = answer else {
+            rejected += 1;
+            continue;
+        };
+        item.insert("model_call".into(), call.into());
+        let goes_on = filters.keep.is_none_or(|k| answer[k] == true);
+        item.insert("answer".into(), answer);
+        if goes_on {
+            kept.push(item);
+        }
+    }
+    if rejected > 0 {
+        notes.push(format!(
+            "step {}: {rejected} answer(s) did not match {} and were dropped",
+            asking.step, asking.prompt.path
+        ));
+    }
+    if let Some(rank) = filters.rank {
+        let score = |item: &Item| item["answer"][rank].as_f64().unwrap_or(f64::MIN);
+        // Stable: equal scores keep the feeds' order.
+        kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
+    }
+    if let Some(distinct) = filters.distinct {
+        let before = kept.len();
+        let mut values = HashSet::new();
+        // Best first: the first of each value is its best.
+        kept.retain(|item| match item["answer"][distinct].as_str() {
+            Some(v) => values.insert(v.trim().to_lowercase()),
+            None => true,
+        });
+        if kept.len() < before {
+            notes.push(format!(
+                "step {}: kept the best of each {distinct}, {} of {before}",
+                asking.step,
+                kept.len()
+            ));
+        }
+    }
+    if let Some(limit) = filters.limit
+        && kept.len() > limit
+    {
+        notes.push(format!(
+            "step {}: kept the {limit} best of {}",
+            asking.step,
+            kept.len()
+        ));
+        kept.truncate(limit);
+    }
+    Ok(kept)
 }
 
 /// Ask the model about one item, check its answer against the schema, and
@@ -332,14 +387,14 @@ fn judge(
 }
 
 /// A field of an item, dotted for nested ones: `answer.draft`.
-fn field<'a>(item: &'a Item, path: &str) -> Option<&'a Value> {
+pub(crate) fn field<'a>(item: &'a Item, path: &str) -> Option<&'a Value> {
     let mut keys = path.split('.');
     let first = item.get(keys.next().unwrap_or_default());
     keys.fold(first, |v, key| v.and_then(|v| v.get(key)))
 }
 
 /// A field as text: strings as they are, numbers and the rest as JSON.
-fn field_text(item: &Item, path: &str) -> String {
+pub(crate) fn field_text(item: &Item, path: &str) -> String {
     match field(item, path) {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Null) | None => String::new(),
