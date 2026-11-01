@@ -7,6 +7,7 @@
 //! write it, so only the owner changes what the business is and what its
 //! bots are for.
 
+pub mod config;
 pub mod store;
 
 // The access layer's areas, under the names the rest of Airth uses.
