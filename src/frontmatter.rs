@@ -5,6 +5,8 @@
 //! or `TODO` is not known yet. What each kind of file may hold is checked by
 //! its reader, which refuses keys it does not know.
 
+use anyhow::{Result, bail};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Text(String),
@@ -102,6 +104,19 @@ fn value_of(raw: &str) -> Option<Value> {
 }
 
 impl Doc {
+    /// Refuse a key the file may not hold: a typo must not drop a field.
+    pub fn only(&self, allowed: &[&str]) -> Result<()> {
+        for (key, _) in &self.fields {
+            if !allowed.contains(&key.as_str()) {
+                bail!(
+                    "unknown field '{key}' (expected one of: {})",
+                    allowed.join(", ")
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn get(&self, key: &str) -> Option<&Value> {
         self.fields
             .iter()
@@ -116,6 +131,23 @@ impl Doc {
             Some(Value::List(l)) => (!l.is_empty()).then(|| l.join(", ")),
             None => None,
         }
+    }
+
+    /// A list field; a single text is a list of one.
+    pub fn list(&self, key: &str) -> Vec<String> {
+        match self.get(key) {
+            Some(Value::List(l)) => l.clone(),
+            Some(Value::Text(t)) => vec![t.clone()],
+            None => Vec::new(),
+        }
+    }
+
+    /// Of `keys`, those not known yet.
+    pub fn unknown(&self, keys: &[&str]) -> Vec<String> {
+        keys.iter()
+            .filter(|k| self.get(k).is_none_or(|v| v == &Value::List(Vec::new())))
+            .map(|k| k.to_string())
+            .collect()
     }
 }
 
@@ -133,15 +165,26 @@ mod tests {
         assert_eq!(doc.text("legal_name").as_deref(), Some("Hedgen Ltd"));
         assert_eq!(doc.text("vat_number"), None);
         assert_eq!(doc.text("domain"), None);
-        assert_eq!(
-            doc.fields[4].1,
-            Some(Value::List(vec![
-                "https://x.com/hedgen".into(),
-                "a, b".into()
-            ]))
-        );
+        assert_eq!(doc.list("links"), vec!["https://x.com/hedgen", "a, b"]);
         assert_eq!(doc.text("description").as_deref(), Some("two lines"));
         assert_eq!(doc.body, "# Hedgen\n\nProse.\n");
+        assert_eq!(
+            doc.unknown(&["name", "vat_number", "domain", "absent"]),
+            vec!["vat_number", "domain", "absent"]
+        );
+        assert!(
+            doc.only(&[
+                "name",
+                "legal_name",
+                "vat_number",
+                "domain",
+                "links",
+                "description"
+            ])
+            .is_ok()
+        );
+        let err = doc.only(&["name"]).unwrap_err().to_string();
+        assert!(err.contains("unknown field 'legal_name'"), "{err}");
     }
 
     #[test]
