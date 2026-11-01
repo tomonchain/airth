@@ -63,6 +63,7 @@ pub struct ModelCall {
     pub error: Option<String>,
     pub answer: Option<String>,
     pub dry_run: bool,
+    pub outcome: Option<String>,
 }
 
 fn parse(at: &str) -> Result<DateTime<Utc>> {
@@ -234,7 +235,7 @@ impl Store {
     #[cfg(test)]
     pub fn model_calls(&self) -> Result<Vec<ModelCall>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, pipeline, prompt_version, model, input_tokens, cost_usd, valid, error, answer, dry_run
+            "SELECT id, pipeline, prompt_version, model, input_tokens, cost_usd, valid, error, answer, dry_run, outcome
              FROM model_calls ORDER BY id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -249,6 +250,7 @@ impl Store {
                 error: r.get(7)?,
                 answer: r.get(8)?,
                 dry_run: r.get(9)?,
+                outcome: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

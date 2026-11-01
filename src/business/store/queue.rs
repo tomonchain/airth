@@ -170,6 +170,27 @@ impl Store {
         })
     }
 
+    /// An item's log, as tests read it back: action, by, channel.
+    #[cfg(test)]
+    pub fn queue_log(&self, id: i64) -> Result<Vec<(String, String, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT action, by, channel FROM queue_log WHERE item = ?1 ORDER BY id")?;
+        let rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The founder's answers in the ledger, as tests read them back: item
+    /// and channel.
+    #[cfg(test)]
+    pub fn answers(&self) -> Result<Vec<(Option<i64>, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT item, channel FROM owner_time WHERE activity = 'answer' ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The founder answers item `id`, from `channel`, after `seconds`.
     pub fn answer(
         &mut self,

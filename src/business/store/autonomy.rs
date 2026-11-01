@@ -199,6 +199,16 @@ impl Store {
             Ok(id)
         })
     }
+
+    /// The action journal, as tests read it back: key, status, approved.
+    #[cfg(test)]
+    pub fn journal(&self) -> Result<Vec<(String, String, bool)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, status, approved FROM actions ORDER BY id")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
 }
 
 #[cfg(test)]
