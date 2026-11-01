@@ -7,11 +7,14 @@ use super::{Graph, Kind, Test, successors};
 use crate::business::store::Store;
 use crate::integration::Integration;
 use crate::pipeline::Prompt;
-use crate::pipeline::run::{Asking, Filters, Io, Item, field, field_text, judge_all, read_rss};
+use crate::pipeline::run::{
+    Asking, Filters, Io, Item, Judged, field, field_text, judge_all, read_rss,
+};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
+use std::time::Instant;
 
 /// Where an item keeps the id of what it was read from.
 const SOURCE: &str = "source_id";
@@ -23,14 +26,45 @@ pub fn key(routine: &str, item: &Item, block: &str) -> String {
     format!("{routine}/{}/{block}", field_text(item, SOURCE))
 }
 
+/// Query parameters that only track where a reader came from.
+const TRACKING: &[&str] = &[
+    "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "mc_cid", "mc_eid",
+    "igshid", "_hsenc", "_hsmi", "mkt_tok", "ref_src", "spm", "cmpid", "s_cid",
+];
+
+/// A link as one article is known, whatever brought the reader: without
+/// tracking parameters (`utm_*` and the like) or fragment. Anything that is
+/// not an http(s) URL is kept as it is.
+pub fn canonical(link: &str) -> String {
+    let Ok(mut url) = reqwest::Url::parse(link.trim()) else {
+        return link.trim().to_string();
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return link.trim().to_string();
+    }
+    url.set_fragment(None);
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| !k.starts_with("utm_") && !TRACKING.contains(&k.as_ref()))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    if kept.is_empty() {
+        url.set_query(None);
+    } else {
+        url.query_pairs_mut().clear().extend_pairs(kept);
+    }
+    url.to_string()
+}
+
 /// The id an item is known by where it was read: a feed item's link, or its
-/// guid when it has no link.
+/// guid when it has no link, made canonical.
 fn source_id(item: &Item) -> String {
-    ["link", "guid", "id"]
+    let id = ["link", "guid", "id"]
         .iter()
         .map(|k| field_text(item, k))
         .find(|s| !s.is_empty())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    canonical(&id)
 }
 
 /// A template with each `{{field}}` replaced by the item's.
@@ -140,10 +174,13 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
     let mut report = vec![format!(
         "Dry run of {name}: reads and AI blocks run, approvals are taken as given, acts are only prepared."
     )];
+    let started = Instant::now();
+    let mut total = Judged::default();
     for i in order(graph)? {
         let block = &graph.blocks[i];
         let items = std::mem::take(&mut inbox[i]);
         let (count, mut notes, mut lines) = (items.len(), Vec::new(), Vec::new());
+        let block_started = Instant::now();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
             Kind::Read {
                 source,
@@ -159,23 +196,31 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                 if items.is_empty() {
                     (Vec::new(), Vec::new())
                 } else {
-                    let (_, mut read) = read_rss(feeds, *max_age_days, dry.io, now, &mut notes)?;
+                    let (read_count, mut read) =
+                        read_rss(feeds, *max_age_days, dry.io, now, &mut notes)?;
+                    let old = read_count - read.len();
                     for item in &mut read {
                         let id = source_id(item);
                         item.insert(SOURCE.into(), id.into());
                     }
+                    let before = read.len();
                     if let Some(by) = dedupe {
-                        let keys: Vec<String> = read.iter().map(|it| field_text(it, by)).collect();
+                        let id = |it: &Item| canonical(&field_text(it, by));
+                        let keys: Vec<String> = read.iter().map(id).collect();
                         let seen = dry.store.seen(name, &keys)?;
                         let mut now_seen = HashSet::new();
                         read.retain(|it| {
-                            let k = field_text(it, by);
+                            let k = id(it);
                             !k.is_empty() && !seen.contains(&k) && now_seen.insert(k)
                         });
                     }
-                    if let Some(max) = max {
-                        read.truncate(*max);
-                    }
+                    let repeated = before - read.len();
+                    let cut = max.map_or(0, |m| read.len().saturating_sub(m));
+                    read.truncate(read.len() - cut);
+                    lines.push(format!(
+                        "  {read_count} read, {old} too old, {repeated} already seen or repeated, {cut} past the max: {} kept",
+                        read.len()
+                    ));
                     (read, Vec::new())
                 }
             }
@@ -195,21 +240,53 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                 let filters = Filters {
                     keep: keep.as_deref(),
                     rank: rank.as_deref(),
-                    distinct: distinct.as_deref(),
+                    distinct,
                     limit: *limit,
                 };
-                (
-                    judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)?,
-                    Vec::new(),
-                )
+                let (kept, stats) =
+                    judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)?;
+                let shown: Vec<&str> = rank.iter().chain(distinct).map(String::as_str).collect();
+                for it in &kept {
+                    let values: Vec<String> = shown
+                        .iter()
+                        .map(|f| format!("{f}: {}", field_text(it, &format!("answer.{f}"))))
+                        .collect();
+                    lines.push(format!(
+                        "  kept: {} ({})",
+                        field_text(it, "title"),
+                        values.join(", ")
+                    ));
+                }
+                lines.push(format!(
+                    "  set aside: {} not {}, {} invalid, {} by distinct {}, {} past the limit",
+                    stats.not_kept,
+                    keep.as_deref().unwrap_or("kept"),
+                    stats.invalid,
+                    stats.by_distinct,
+                    distinct.join(", "),
+                    stats.by_limit
+                ));
+                lines.push(cost(&stats));
+                total.input_tokens += stats.input_tokens;
+                total.output_tokens += stats.output_tokens;
+                total.cost_usd += stats.cost_usd;
+                total.unpriced += stats.unpriced;
+                (kept, Vec::new())
             }
             Kind::Condition { test, .. } => items.into_iter().partition(|it| holds(test, it)),
             Kind::Approval { show, .. } => {
                 for it in &items {
-                    lines.push(format!(
-                        "  would ask the founder: {}",
-                        field_text(it, show).chars().take(200).collect::<String>()
-                    ));
+                    let text = field_text(it, show);
+                    let chars = text.chars().count();
+                    let shown: String = text.chars().take(SHOWN).collect();
+                    let cut = if chars > SHOWN {
+                        format!(
+                            " [cut here for this report: {chars} characters in all; the queue shows it whole]"
+                        )
+                    } else {
+                        String::new()
+                    };
+                    lines.push(format!("  would ask the founder: {shown}{cut}"));
                 }
                 (items, Vec::new())
             }
@@ -230,12 +307,13 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
             }
         };
         report.push(format!(
-            "{}: {count} in, {} out",
+            "{}: {count} in, {} out, {:.1}s",
             block.id,
-            pass.len() + other.len()
+            pass.len() + other.len(),
+            block_started.elapsed().as_secs_f64()
         ));
-        report.extend(notes.iter().map(|n| format!("  note: {n}")));
         report.extend(lines);
+        report.extend(notes.iter().map(|n| format!("  note: {n}")));
         let next = successors(graph, i)?;
         match (&block.kind, next.as_slice()) {
             (Kind::Condition { .. }, [then, otherwise]) => {
@@ -250,7 +328,27 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
             }
         }
     }
+    report.push(format!(
+        "Total: {}, {:.1}s",
+        cost(&total).trim(),
+        started.elapsed().as_secs_f64()
+    ));
     Ok(report.join("\n"))
+}
+
+/// Characters of an approval's text shown in a report.
+const SHOWN: usize = 400;
+
+/// What model calls cost, as a report line.
+fn cost(stats: &Judged) -> String {
+    let unpriced = match stats.unpriced {
+        0 => String::new(),
+        n => format!(" (+{n} call(s) to a model without a known price)"),
+    };
+    format!(
+        "  cost: ${:.4}{unpriced}, {} tokens in, {} out",
+        stats.cost_usd, stats.input_tokens, stats.output_tokens
+    )
 }
 
 #[cfg(test)]

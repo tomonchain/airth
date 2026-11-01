@@ -4,6 +4,26 @@ use crate::models::{ContentBlock, ModelResponse, StopReason};
 use crate::prices::Prices;
 use serde_json::json;
 
+/// The same article reached through two campaigns is one source.
+#[test]
+fn a_link_is_known_without_its_tracking() {
+    let a = "https://e.com/news/1?utm_source=x&utm_medium=social&id=7#comments";
+    let b = "https://e.com/news/1?id=7&fbclid=abc&utm_campaign=z";
+    assert_eq!(canonical(a), "https://e.com/news/1?id=7");
+    assert_eq!(canonical(a), canonical(b));
+    assert_eq!(
+        canonical("https://e.com/x?utm_source=feed"),
+        "https://e.com/x"
+    );
+    assert_eq!(canonical("urn:uuid:42"), "urn:uuid:42");
+    let item = |link: &str| -> Item { serde_json::from_value(json!({"link": link})).unwrap() };
+    let mut one = item(a);
+    one.insert(SOURCE.into(), source_id(&item(a)).into());
+    let mut two = item(b);
+    two.insert(SOURCE.into(), source_id(&item(b)).into());
+    assert_eq!(key("posts", &one, "send"), key("posts", &two, "send"));
+}
+
 #[test]
 fn an_acts_key_is_the_source_not_the_content() {
     let item = |draft: &str| -> Item {
@@ -66,10 +86,9 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
             truncated: false,
         })
     };
-    let mut answers = vec![
-        r#"{"relevant": true, "score": 1, "draft": "Meh."}"#,
-        r#"{"relevant": true, "score": 5, "draft": "ETH left the queue."}"#,
-    ];
+    // A draft longer than a report shows.
+    let long = json!({"relevant": true, "score": 5, "draft": format!("ETH left the queue. {}", "x".repeat(500))}).to_string();
+    let mut answers = vec![r#"{"relevant": true, "score": 1, "draft": "Meh."}"#, &long];
     let mut ask = |_: &crate::models::ModelRequest| {
         Ok(ModelResponse {
             content: vec![ContentBlock::Text {
@@ -115,6 +134,28 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         "{report}"
     );
     assert!(report.contains("good: 2 in, 2 out"), "{report}");
+    assert!(
+        report.contains("2 read, 0 too old, 0 already seen or repeated, 0 past the max: 2 kept"),
+        "{report}"
+    );
+    assert!(report.contains("  kept: Flows ()"), "{report}");
+    assert!(
+        report.contains("set aside: 0 not relevant, 0 invalid"),
+        "{report}"
+    );
+    assert!(
+        report.contains(
+            "cost: $0.0000 (+2 call(s) to a model without a known price), 20 tokens in, 10 out"
+        ),
+        "{report}"
+    );
+    assert!(report.contains("Total: cost:"), "{report}");
+    assert!(
+        report.contains(
+            "[cut here for this report: 520 characters in all; the queue shows it whole]"
+        ),
+        "{report}"
+    );
     drop(io);
     assert_eq!(fetched, 1, "only the feed was read");
 }

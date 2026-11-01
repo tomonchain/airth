@@ -130,7 +130,7 @@ fn steps(
                 let filters = Filters {
                     keep: keep.as_deref(),
                     rank: rank.as_deref(),
-                    distinct: distinct.as_deref(),
+                    distinct: distinct.as_slice(),
                     limit: *limit,
                 };
                 let all = std::mem::take(&mut items);
@@ -139,7 +139,7 @@ fn steps(
                     step: i + 1,
                     prompt,
                 };
-                items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?;
+                items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?.0;
             }
             Step::Queue { kind, text } => {
                 let mut missing = 0;
@@ -240,8 +240,24 @@ pub(crate) fn read_rss(
 pub(crate) struct Filters<'a> {
     pub keep: Option<&'a str>,
     pub rank: Option<&'a str>,
-    pub distinct: Option<&'a str>,
+    /// Fields whose value only the best item of each keeps, in turn.
+    pub distinct: &'a [String],
     pub limit: Option<usize>,
+}
+
+/// What a judgement did: how many items each filter set aside, and what
+/// the model calls cost.
+#[derive(Debug, Default)]
+pub(crate) struct Judged {
+    pub invalid: usize,
+    pub not_kept: usize,
+    pub by_distinct: usize,
+    pub by_limit: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_usd: f64,
+    /// Calls to a model without a known price, left out of the cost.
+    pub unpriced: usize,
 }
 
 /// The prompt a judgement asks with, and where it is recorded from.
@@ -260,13 +276,20 @@ pub(crate) fn judge_all(
     store: &mut Store,
     io: &mut Io,
     notes: &mut Vec<String>,
-) -> Result<Vec<Item>> {
-    let mut rejected = 0;
+) -> Result<(Vec<Item>, Judged)> {
+    let mut stats = Judged::default();
     let mut kept = Vec::new();
     for mut item in items {
-        let (answer, call) = judge(asking.name, asking.step, asking.prompt, &item, store, io)?;
+        let (answer, call, used) =
+            judge(asking.name, asking.step, asking.prompt, &item, store, io)?;
+        stats.input_tokens += used.input;
+        stats.output_tokens += used.output;
+        match used.cost {
+            Some(cost) => stats.cost_usd += cost,
+            None => stats.unpriced += 1,
+        }
         let Some(answer) = answer else {
-            rejected += 1;
+            stats.invalid += 1;
             continue;
         };
         item.insert("model_call".into(), call.into());
@@ -274,12 +297,14 @@ pub(crate) fn judge_all(
         item.insert("answer".into(), answer);
         if goes_on {
             kept.push(item);
+        } else {
+            stats.not_kept += 1;
         }
     }
-    if rejected > 0 {
+    if stats.invalid > 0 {
         notes.push(format!(
-            "step {}: {rejected} answer(s) did not match {} and were dropped",
-            asking.step, asking.prompt.path
+            "step {}: {} answer(s) did not match {} and were dropped",
+            asking.step, stats.invalid, asking.prompt.path
         ));
     }
     if let Some(rank) = filters.rank {
@@ -287,14 +312,15 @@ pub(crate) fn judge_all(
         // Stable: equal scores keep the feeds' order.
         kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
     }
-    if let Some(distinct) = filters.distinct {
+    for distinct in filters.distinct {
         let before = kept.len();
         let mut values = HashSet::new();
         // Best first: the first of each value is its best.
-        kept.retain(|item| match item["answer"][distinct].as_str() {
+        kept.retain(|item| match item["answer"][distinct.as_str()].as_str() {
             Some(v) => values.insert(v.trim().to_lowercase()),
             None => true,
         });
+        stats.by_distinct += before - kept.len();
         if kept.len() < before {
             notes.push(format!(
                 "step {}: kept the best of each {distinct}, {} of {before}",
@@ -311,9 +337,18 @@ pub(crate) fn judge_all(
             asking.step,
             kept.len()
         ));
+        stats.by_limit += kept.len() - limit;
         kept.truncate(limit);
     }
-    Ok(kept)
+    Ok((kept, stats))
+}
+
+/// What one model call used: tokens, and its cost when the model's price is
+/// known.
+struct Used {
+    input: u64,
+    output: u64,
+    cost: Option<f64>,
 }
 
 /// Ask the model about one item, check its answer against the schema, and
@@ -326,7 +361,7 @@ fn judge(
     item: &Item,
     store: &mut Store,
     io: &mut Io,
-) -> Result<(Option<Value>, i64)> {
+) -> Result<(Option<Value>, i64, Used)> {
     let system = format!(
         "{}\n\nAnswer with one JSON object that matches this JSON schema, and nothing else: no code fence, no comment.\n{}",
         prompt.text.trim(),
@@ -383,7 +418,14 @@ fn judge(
             error: error.as_deref(),
             answer: &text,
         })
-        .map(|call| (answer.ok(), call))
+        .map(|call| {
+            let used = Used {
+                input: r.input_tokens,
+                output: r.output_tokens,
+                cost,
+            };
+            (answer.ok(), call, used)
+        })
 }
 
 /// A field of an item, dotted for nested ones: `answer.draft`.

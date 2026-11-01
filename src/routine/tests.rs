@@ -70,7 +70,7 @@ fn a_routine_of_six_blocks_loads() {
     let root = business();
     let g = try_graph(root.path(), posts(json!([
         rss(),
-        {"id": "pick", "type": "ai", "prompt": "prompts/watch.md", "keep": "relevant", "limit": 3},
+        {"id": "pick", "type": "ai", "prompt": "prompts/watch.md", "keep": "relevant", "limit": 3, "distinct": ["pillar", "story"]},
         {"id": "good", "type": "condition", "if": {"field": "answer.score", "op": ">=", "value": 3}, "else": "skip"},
         {"id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft"},
         {"id": "send", "type": "act", "action": "blog.publish", "fields": {"text": "{{answer.draft}}"}, "next": null},
