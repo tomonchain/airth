@@ -151,8 +151,14 @@ impl Hub {
                 }
             }
             let mut args = json!({"integration": connector, "method": declared_http.method, "url": url.as_str()});
-            if !body.is_empty() {
-                args["body"] = Value::Object(body).to_string().into();
+            // A declared body is the only one sent; without one, the body
+            // fields as a flat object.
+            let body = match declared_http.body(fields)? {
+                Some(templated) => Some(templated),
+                None => (!body.is_empty()).then_some(Value::Object(body)),
+            };
+            if let Some(body) = body {
+                args["body"] = body.to_string().into();
                 args["headers"] = json!({"Content-Type": "application/json"});
             }
             let event = if approved {

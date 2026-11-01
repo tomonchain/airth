@@ -388,3 +388,59 @@ fn a_prepared_action_is_marked_done_never_run() {
     assert!(report.unwrap().contains("the founder did it"));
     assert_eq!(hits.load(Ordering::SeqCst), 0);
 }
+
+/// A mission writing its own body cannot slip `publish_at` into a draft:
+/// the runtime refuses any body that is not the declared one's shape.
+#[test]
+fn a_mission_cannot_add_to_a_declared_body() {
+    let (base, hits) = service(|_| {});
+    let mut f = business(base.clone());
+    let draft: crate::actions::HttpAction = serde_json::from_value(json!({
+        "name": "create_draft", "method": "POST", "class": "reversible",
+        "path": "/v2/social-sets/{social_set_id}/drafts",
+        "fields": [{"name": "social_set_id", "place": "path", "value": "123"}, {"name": "text", "place": "body"}],
+        "body": {"platforms": {"x": {"enabled": true, "posts": [{"text": "{text}"}]}}}
+    }))
+    .unwrap();
+    draft.validate().unwrap();
+    f.realm
+        .set_integration(crate::integration::Integration {
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: base,
+            headers: Default::default(),
+            actions: vec![draft],
+        })
+        .unwrap();
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("writer", "typefully.create_draft", 3, 3, "founder", "")
+        .unwrap();
+    let body = |extra: bool| {
+        let mut b = json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi"}]}}});
+        if extra {
+            b["publish_at"] = json!("now");
+        }
+        call(
+            "1",
+            "http_request",
+            json!({"integration": "typefully", "method": "POST",
+            "url": "v2/social-sets/123/drafts", "body": b.to_string()}),
+        )
+    };
+    let state = routine_run(&f, vec![body(true), body(false), done("done")]);
+    assert!(
+        state.events[0]
+            .result
+            .contains("takes only its declared body"),
+        "{}",
+        state.events[0].result
+    );
+    assert_eq!(
+        state.events[1].status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        state.events[1].result
+    );
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "only the plain draft went");
+}
