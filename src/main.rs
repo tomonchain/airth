@@ -6,6 +6,7 @@ mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
 mod documents;
+mod frontmatter;
 mod github;
 mod home;
 mod hub;
