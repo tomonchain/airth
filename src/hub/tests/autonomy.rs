@@ -247,3 +247,38 @@ fn undeclared_calls_and_level_two_are_proposed_not_done() {
         "nothing reached the services"
     );
 }
+
+/// Decision 51: a routine's commands are offline, so a command cannot reach
+/// outside around the levels; a run the founder starts keeps the network.
+#[test]
+fn a_routines_commands_cannot_reach_the_network() {
+    if !crate::sandbox::available() {
+        return;
+    }
+    let (base, hits) = service(|_| {});
+    let mut f = business(base.clone());
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+    let curl = |id: &str| {
+        call(
+            id,
+            "execute_command",
+            json!({"command": format!("curl -s -m 5 -X POST {base}/drafts")}),
+        )
+    };
+    routine_run(&f, vec![curl("1"), done("done")]);
+    assert_eq!(hits.load(Ordering::SeqCst), 0, "the routine's curl got out");
+    let (hub, _, _) = make_hub(&f.home, vec![curl("1"), done("done")]);
+    hub.dispatch(
+        &f.realm,
+        "Post it",
+        config(10),
+        hooks(&mut NoObserver, true),
+    )
+    .unwrap();
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        1,
+        "the founder's run keeps the network"
+    );
+}

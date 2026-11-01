@@ -303,7 +303,9 @@ struct Session {
 
 impl Session {
     fn start(command: &str, ws: &Workspace) -> Result<Self> {
-        let mut cmd = sandboxed_command(command, ws);
+        // A server's calls are actions under the levels: it keeps the
+        // realm's network (decision 51).
+        let mut cmd = sandboxed_command(command, ws, ws.network());
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
