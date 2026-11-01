@@ -411,6 +411,7 @@ mod tests {
             description: String::new(),
             base_url: format!("https://{name}.example.com"),
             headers: Default::default(),
+            actions: Vec::new(),
         };
         let tools = realm_tools(RealmTools {
             memory: MemoryStore::new(dir.path().join("memory.json")),

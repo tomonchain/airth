@@ -364,6 +364,7 @@ mod tests {
                     "Authorization".into(),
                     "Bearer [secret:SVC_TOKEN]".into(),
                 )]),
+                actions: Vec::new(),
             }],
         }
     }

@@ -473,9 +473,34 @@ impl Realm {
         integration.validate()?;
         let list = &mut self.config.integrations;
         match list.iter_mut().find(|i| i.name == integration.name) {
-            Some(existing) => *existing = integration,
+            // Changing the URL or headers keeps what the founder declared.
+            Some(existing) => {
+                let actions = std::mem::take(&mut existing.actions);
+                *existing = integration;
+                if existing.actions.is_empty() {
+                    existing.actions = actions;
+                }
+            }
             None => list.push(integration),
         }
+        self.save()
+    }
+
+    /// Declare (or replace) one action of an integration (decision 49).
+    pub fn declare_action(
+        &mut self,
+        integration: &str,
+        action: crate::actions::HttpAction,
+    ) -> Result<()> {
+        let i = self
+            .config
+            .integrations
+            .iter_mut()
+            .find(|i| i.name == integration)
+            .ok_or_else(|| anyhow::anyhow!("no integration named {integration}"))?;
+        action.validate()?;
+        i.actions.retain(|a| a.name != action.name);
+        i.actions.push(action);
         self.save()
     }
 
@@ -604,6 +629,35 @@ pub(crate) fn write_private(path: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 49: a declared action is checked, and replacing the
+    /// integration's URL or headers keeps it.
+    #[test]
+    fn declared_actions_are_checked_and_survive_a_new_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = realm(dir.path());
+        let integration = |url: &str| Integration {
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: url.into(),
+            headers: Default::default(),
+            actions: Vec::new(),
+        };
+        r.set_integration(integration("https://api.typefully.com"))
+            .unwrap();
+        let action = |path: &str| -> crate::actions::HttpAction {
+            serde_json::from_value(serde_json::json!(
+                {"name": "create_draft", "method": "POST", "path": path, "class": "reversible"}
+            ))
+            .unwrap()
+        };
+        assert!(r.declare_action("typefully", action("/../admin")).is_err());
+        assert!(r.declare_action("nope", action("/v1/drafts")).is_err());
+        r.declare_action("typefully", action("/v1/drafts")).unwrap();
+        r.set_integration(integration("https://api.typefully.com/v2"))
+            .unwrap();
+        assert_eq!(r.config.integrations[0].actions[0].path, "/v1/drafts");
+    }
 
     fn realm(dir: &Path) -> Realm {
         Realm::create(

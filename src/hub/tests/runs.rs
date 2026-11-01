@@ -300,6 +300,7 @@ fn multi_step_task_across_tools_resumes_after_interruption() {
                 "Bearer [secret:TRACKER_TOKEN]".to_string(),
             )]
             .into(),
+            actions: Vec::new(),
         })
         .unwrap();
     let asked = Arc::new(Mutex::new(Vec::new()));
