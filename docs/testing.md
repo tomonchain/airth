@@ -130,7 +130,7 @@ The report says, for each draft, `asked the founder (item N)`. Within half a min
 
 ```bash
 airth queue --realm hedgen          # nothing left waiting
-airth time --realm hedgen           # your answers, with their time
+airth time show --realm hedgen      # your answers, with their time
 ```
 
 In Typefully: one draft per approval, with your edits.
@@ -144,4 +144,4 @@ In Typefully: one draft per approval, with your edits.
 - An item that does not reach Telegram, reaches it twice, or arrives cut.
 - An edit taken from a message that was not a reply to its item.
 - A draft in Typefully you did not approve, or one approved that is not there.
-- Your time looking wrong in `airth time`.
+- Your time looking wrong in `airth time show`.
