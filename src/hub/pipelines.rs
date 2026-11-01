@@ -155,7 +155,7 @@ fn local(at: DateTime<Utc>) -> String {
 
 /// A feed's body from the `http_request` event: its status must be 2xx, and
 /// the tool's truncation mark is taken off.
-fn fetched(event: Event) -> Result<Fetched> {
+pub(super) fn fetched(event: Event) -> Result<Fetched> {
     if event.status != EventStatus::Ok {
         bail!("{}", event.result);
     }

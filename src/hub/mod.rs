@@ -37,6 +37,7 @@ mod models;
 mod objectives;
 mod pipelines;
 mod repos;
+mod routines;
 mod runs;
 mod skills;
 
