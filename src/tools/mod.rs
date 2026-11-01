@@ -165,6 +165,9 @@ pub struct Workspace {
     sandboxed: bool,
     /// Whether commands and requests may reach other machines.
     network: bool,
+    /// Whether commands may, when `network` allows it: a routine's run cuts
+    /// them off, so its network goes through actions (decision 51).
+    command_network: bool,
 }
 
 impl Workspace {
@@ -181,6 +184,7 @@ impl Workspace {
             secrets: Vec::new(),
             sandboxed: false,
             network: true,
+            command_network: true,
         })
     }
 
@@ -239,6 +243,16 @@ impl Workspace {
     pub fn with_network(mut self, network: bool) -> Self {
         self.network = network;
         self
+    }
+
+    /// Cut commands off the network, requests and MCP servers aside.
+    pub fn with_command_network(mut self, allowed: bool) -> Self {
+        self.command_network = allowed;
+        self
+    }
+
+    pub fn command_network(&self) -> bool {
+        self.network && self.command_network
     }
 
     pub fn network(&self) -> bool {

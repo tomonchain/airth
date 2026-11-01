@@ -2,6 +2,14 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 51. A routine's commands run offline; its network goes through declared actions
+
+In a routine's run, every command (`execute_command`, and the checks run the same way) runs with the network cut by the sandbox. What the run needs from outside goes through `http_request` and MCP tools, which the runtime sees, so the autonomy levels apply to it (decision 45): reading a public page stays free, and anything that changes something outside is an action, declared or not. A run the founder starts and watches keeps the realm's network rule, as today. Local MCP servers keep the network: each of their calls is already an action under the levels.
+
+*Why:* the founder's review of decision 45's code found that a command such as `curl -X POST` reaches outside without going through the levels: the sandbox lets commands use the network whenever the realm allows it, and the runtime cannot tell what a command sends. Cutting the network for commands is the only way to make every outward call of a routine pass the levels.
+
+*Cost:* a routine whose agent installs packages or runs tools that fetch at run time (`cargo` fetching crates, `npx` downloading a server) fails until what it needs is already on the machine, or fetched through a declared action.
+
 ## 50. In the owner's home, commands read only the realm and the developer tools
 
 Decision 48 denied writes by default and reads of the owner's credentials. Everything else in the owner's home could still be read by a command: personal documents, shell history, browser profiles (cookies, saved sessions), Mail's messages, other apps' data. A test shows it. A list of what to hide can never be complete there, so the home is read-denied by default too:

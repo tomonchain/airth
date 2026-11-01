@@ -391,7 +391,10 @@ impl Hub {
         Ok(ws
             .with_secrets(env, self.redactions(realm)?)
             .with_sandbox(true)
-            .with_network(!realm.config.offline))
+            .with_network(!realm.config.offline)
+            // A routine's commands are offline: its network goes through
+            // actions the levels see (decision 51).
+            .with_command_network(state.origin.is_none()))
     }
 
     /// A run's temporary folder: `TMPDIR` for its commands.
