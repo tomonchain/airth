@@ -10,6 +10,7 @@
 pub mod autonomy;
 pub mod drafts;
 pub mod pipelines;
+pub mod queue;
 pub mod status;
 pub mod time;
 
@@ -234,6 +235,10 @@ const MIGRATIONS: &[&str] = &[
     // 11: a dry run's model calls are marked, so they count neither in the
     // statistics nor as evidence.
     "ALTER TABLE model_calls ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0;",
+    // 12: the founder's time on an answer says which item it answered, and
+    // from where (the app, Telegram, the command line).
+    "ALTER TABLE owner_time ADD COLUMN item INTEGER REFERENCES queue(id);
+    ALTER TABLE owner_time ADD COLUMN channel TEXT;",
 ];
 
 pub struct Store {
