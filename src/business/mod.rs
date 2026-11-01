@@ -7,10 +7,10 @@
 //! write it, so only the owner changes what the business is and what its
 //! bots are for.
 
-pub mod drafts;
-pub mod status;
 pub mod store;
-pub mod time;
+
+// The access layer's areas, under the names the rest of Airth uses.
+pub use store::{drafts, time};
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};

@@ -1,9 +1,16 @@
 //! The realm's `business.db` (decision 31): business state that must stay
-//! right under retries and concurrent writers. It lives in the realm's
+//! right under retries and concurrent writers. This module is its one access
+//! layer (decision 47): all of Airth's SQL is here, one file per area, and
+//! the rest of Airth calls typed functions, never a query. It lives in the realm's
 //! directory in the Airth home, never in the business folder, so runs can
 //! neither read nor change it. Every write is one immediate transaction;
 //! schema changes are numbered migrations, and a database written by a
 //! newer Airth is refused rather than guessed at.
+
+pub mod drafts;
+pub mod pipelines;
+pub mod status;
+pub mod time;
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
@@ -113,7 +120,7 @@ const MIGRATIONS: &[&str] = &[
 ];
 
 pub struct Store {
-    pub(crate) conn: Connection,
+    conn: Connection,
 }
 
 impl Store {
@@ -134,7 +141,7 @@ impl Store {
 
     /// One write, all or nothing. Immediate, so two writers never both read
     /// a state that only one of them may change.
-    pub(crate) fn write<T>(&mut self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {
+    fn write<T>(&mut self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -166,6 +173,43 @@ fn migrate(conn: &mut Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 47: this module is the only access layer. SQL or `rusqlite`
+    /// anywhere else in Airth's code fails this test.
+    #[test]
+    fn no_sql_outside_the_access_layer() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let layer = src.join("business/store");
+        let marks = [
+            "rusqlite",
+            "\"SELECT ",
+            "\"INSERT ",
+            "\"UPDATE ",
+            "\"DELETE FROM",
+            "\"CREATE TABLE",
+            ".conn.",
+        ];
+        let mut found = Vec::new();
+        let mut dirs = vec![src];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    if path != layer && !path.ends_with("node_modules") {
+                        dirs.push(path);
+                    }
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    for mark in marks {
+                        if text.contains(mark) {
+                            found.push(format!("{}: {mark}", path.display()));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(found.is_empty(), "SQL outside business/store: {found:#?}");
+    }
 
     fn version(store: &Store) -> i64 {
         store
