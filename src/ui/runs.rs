@@ -234,6 +234,7 @@ impl App {
                 "state": state,
                 "pending": pending,
                 "checks_required": checks_required,
+                "config": config_of(&state),
                 "repo": repo_name,
                 "title": realm.run_titles().get(id),
             }));
@@ -249,6 +250,7 @@ impl App {
             "state": state,
             "pending": null,
             "checks_required": checks_required,
+                "config": config_of(&state),
             "repo": repo_name,
             "title": realm.run_titles().get(id),
         }))
@@ -357,5 +359,15 @@ fn truncate_diff(diff: String) -> String {
         "{}\n… diff truncated ({} bytes total); see `airth review`",
         &diff[..cut],
         diff.len()
+    )
+}
+
+/// The business config a run's change touches, for the review (decision 44).
+fn config_of(state: &State) -> crate::business::ConfigChanges {
+    crate::business::config_changes(
+        state
+            .change
+            .as_ref()
+            .map_or(&[][..], |c| c.files.as_slice()),
     )
 }
