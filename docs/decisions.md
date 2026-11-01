@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 53. The HQ shows one section per business: health, vitals, finance, latest activity
+
+**Proposed.**
+
+The HQ never adds up figures across businesses. It shows one section per business, each with four parts:
+
+1. **Health**: healthy, watch, at risk or not started, and one sentence saying why. *Healthy* is the goal on pace, a runway above 12 months and no open quality flag that blocks publishing. One criterion out of range makes it *watch*. A runway under 6 months makes it *at risk*, whatever the rest. The thresholds live in the business config, with these values as defaults.
+2. **Vitals**: at most four, declared by the business in its config (label, value, target, normal range). The values are read from a read-only `get_vitals` tool on the business's own MCP server, bound to that business's realm, through the runtime like any tool call. A vital is highlighted only when it leaves its normal range.
+3. **Finance**: cash, money in and out this month, and runway, from the business's bank integration, read-only. With no bank connected, the section shows its empty state.
+4. **Latest activity**: the three most recent agent runs, each as one readable sentence stored with the run.
+
+Open points, not decided here:
+
+- the `get_vitals` schema: the shape of each value, its unit, when it was measured, and what Airth does when the server is down or answers late;
+- how a run's activity sentence is produced: an AI block (a prompt, a schema and a journal entry, like any model call) or a template filled from the run's record.
+
+*Why:* the founder runs several companies with separate legal and financial lives; a total across them would mean nothing and would mix what decision 42 keeps apart. A few signals per business, highlighted only when out of range, show where to look in a glance. Vitals come from the business's own server because each business measures different things, and Airth must not hold code specific to one of them.
+
+*Cost:* connected banking is out of the beta (`CLAUDE.md`), so the finance part shows its empty state until a bank integration gets a decision of its own, and runway cannot count toward health before then. "Goal on pace" needs the goal's milestones to carry measurable targets, and "a quality flag that blocks publishing" does not exist in Airth yet: both must be defined before health can be computed. Each business that wants vitals must expose `get_vitals` on its MCP server. The HQ reads every business, so it must hold only these figures and sentences, never a business's content.
+
 ## 52. One Telegram bot for the founder, held by Airth, never by a business
 
 Decision 28 made the bot's token an integration credential bound to api.telegram.org. An integration belongs to one business and puts its secrets in headers only (decision 10); Telegram's API carries the token in the URL's path (`/bot<token>/sendMessage`). Followed to the letter, decision 28 means a bot per business, or a change to the integration code (security code) to put a secret in a path. Instead:
