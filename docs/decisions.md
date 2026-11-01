@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 48. Commands write only where the run may; they never read the owner's keys (Proposed)
+## 48. Commands write only where the run may; they never read the owner's keys
 
 The command sandbox (decision 4) allowed everything by default and denied only the Airth home and the other realms. A command could therefore write anywhere else on the Mac. Two ways out followed from it, both shown by a test:
 
