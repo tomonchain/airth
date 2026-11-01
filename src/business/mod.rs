@@ -27,6 +27,14 @@ const MAX_PROFILE_CHARS: usize = 20_000;
 /// Archive files counted for the context; the run lists the folder itself.
 const MAX_COUNTED: usize = 10_000;
 
+/// The folders that configure a business, at its root (decision 43). Runs
+/// read them; only the owner writes them (decision 44).
+const CONFIG: [&str; 4] = [DIR, "agents", "routines", "prompts"];
+
+pub fn config_dirs(root: &Path) -> Vec<PathBuf> {
+    CONFIG.iter().map(|d| root.join(d)).collect()
+}
+
 pub fn dir(root: &Path) -> PathBuf {
     root.join(DIR)
 }

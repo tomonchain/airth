@@ -326,9 +326,9 @@ impl Hub {
     }
 
     /// Where a run works and what it may reach. Every run is denied the Airth
-    /// home and the other realms' roots; an isolated run may read (not write)
-    /// the owner's checkout, and write only its worktree and the git data it
-    /// needs.
+    /// home and the other realms' roots, and may only read the business's
+    /// config; an isolated run may read (not write) the owner's checkout, and
+    /// write only its worktree and the git data it needs.
     pub fn workspace_for(&self, realm: &Realm, state: &State) -> Result<Workspace> {
         let root = match &state.change {
             Some(c) if c.status == ChangeStatus::Open => c.path.clone(),
@@ -339,8 +339,13 @@ impl Hub {
         for denied in self.denied_to(realm)? {
             ws = ws.with_rule(denied, Access::None);
         }
-        // What the business is belongs to the owner: runs read it only.
-        ws = ws.with_rule(crate::business::dir(&root), Access::Read);
+        // How the business is configured belongs to the owner: a run reads
+        // it, and changes it only in a worktree the owner adopts (decision 44).
+        if state.change.is_none() {
+            for dir in crate::business::config_dirs(&root) {
+                ws = ws.with_rule(dir, Access::Read);
+            }
+        }
         // The realm's other repositories can be read, to work across them.
         for repo in &realm.config.repos {
             if repo.path != root {

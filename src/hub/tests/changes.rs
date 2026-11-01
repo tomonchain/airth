@@ -86,6 +86,70 @@ fn isolated_runs_are_checked_then_adopted() {
     assert!(hub.follow_up(&realm, &state.id, "more").is_err());
 }
 
+/// Decision 44: an agent proposes a change to the config from its worktree;
+/// it reaches the business only when the owner adopts it.
+#[test]
+fn a_config_change_reaches_the_business_only_when_adopted() {
+    let home_dir = tempfile::tempdir().unwrap();
+    let home = Home::at(home_dir.path()).unwrap();
+    let repo = crate::isolation::tests::repo();
+    let realm = home
+        .create_realm(NewRealm {
+            name: "biz".into(),
+            description: String::new(),
+            root: Some(repo.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(
+        &home,
+        vec![
+            call(
+                "1",
+                "write_file",
+                json!({"path": "agents/writer.md", "content": "Write two articles a week."}),
+            ),
+            call(
+                "2",
+                "write_file",
+                json!({"path": "business/goal.md", "content": "goal: two articles a week"}),
+            ),
+            done("Proposed a new job for the writer."),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &realm,
+            "rework the writer",
+            config(10),
+            hooks(&mut NoObserver, true),
+        )
+        .unwrap();
+    assert_eq!(
+        state.events[0].status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        state.events[0].result
+    );
+    assert_eq!(
+        state.events[1].status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        state.events[1].result
+    );
+    assert!(!repo.path().join("agents/writer.md").exists());
+    assert!(!repo.path().join("business/goal.md").exists());
+
+    git_in(repo.path(), &["config", "user.email", "t@t"]);
+    git_in(repo.path(), &["config", "user.name", "t"]);
+    hub.adopt(&realm, &state.id).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("agents/writer.md")).unwrap(),
+        "Write two articles a week."
+    );
+    assert!(repo.path().join("business/goal.md").exists());
+}
+
 fn git_in(dir: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
         .arg("-C")

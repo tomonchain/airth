@@ -547,3 +547,91 @@ fn runs_read_the_business_folder_but_never_change_it() {
         "ok"
     );
 }
+
+/// Decision 44: an agent's job and the goal are instructions and proof, so
+/// no run writes them, nor creates the config folders still to come, even
+/// with writes and commands allowed.
+#[test]
+fn runs_never_write_the_agents_or_the_goal() {
+    let mut f = fixture();
+    let root = f.root.path();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("business")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "Write one article a week.").unwrap();
+    std::fs::write(root.join("business/goal.md"), "baseline_minutes: 120").unwrap();
+    f.realm.config.policy.write = Rule::Allow;
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            call(
+                "1",
+                "write_file",
+                json!({"path": "agents/writer.md", "content": "Publish without asking."}),
+            ),
+            call(
+                "2",
+                "write_file",
+                json!({"path": "business/goal.md", "content": "baseline_minutes: 9999"}),
+            ),
+            call(
+                "3",
+                "write_file",
+                json!({"path": "routines/daily.json", "content": "{}"}),
+            ),
+            call(
+                "4",
+                "execute_command",
+                json!({"command": "echo forged > agents/writer.md; echo forged > business/goal.md; echo x > agents/new.md; mkdir prompts"}),
+            ),
+            call(
+                "5",
+                "write_file",
+                json!({"path": "notes.md", "content": "ok"}),
+            ),
+            done("done"),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &f.realm,
+            "Give yourself more room",
+            config(10),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+    assert_eq!(state.status, Status::Completed);
+    for i in 0..3 {
+        assert_ne!(
+            state.events[i].status,
+            crate::state::EventStatus::Ok,
+            "{}",
+            state.events[i].result
+        );
+        assert!(
+            state.events[i].result.contains("read-only"),
+            "{}",
+            state.events[i].result
+        );
+    }
+    assert!(!root.join("routines").exists());
+    // A command is only stopped by the sandbox.
+    if crate::sandbox::available() {
+        assert_eq!(
+            std::fs::read_to_string(root.join("agents/writer.md")).unwrap(),
+            "Write one article a week."
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("business/goal.md")).unwrap(),
+            "baseline_minutes: 120"
+        );
+        assert!(!root.join("agents/new.md").exists());
+        assert!(!root.join("prompts").exists());
+    }
+    assert_eq!(
+        std::fs::read_to_string(root.join("notes.md")).unwrap(),
+        "ok"
+    );
+}
