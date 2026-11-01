@@ -132,6 +132,20 @@ impl Store {
         Ok(out)
     }
 
+    /// Remember `keys` as kept by `pipeline`, so later runs skip them.
+    pub fn mark_seen(&mut self, pipeline: &str, keys: &[String]) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.write(|tx| {
+            for key in keys {
+                tx.execute(
+                    "INSERT OR IGNORE INTO pipeline_seen (pipeline, key, first_seen) VALUES (?1, ?2, ?3)",
+                    params![pipeline, key, now],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
     /// One run's heartbeat, and what it saw, in one transaction: a run that
     /// fails to record leaves its items to the next one.
     pub fn record_run(&mut self, beat: &Heartbeat, seen: &[String]) -> Result<()> {

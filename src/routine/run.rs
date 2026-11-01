@@ -1,7 +1,10 @@
-//! Running a routine's graph (decision 49), for now as a dry run: reads and
-//! AI blocks run for real, an approval is answered yes without asking, and
-//! an act is only prepared, never done. Items flow block by block, in the
-//! graph's order, a condition sending each to one side.
+//! Running a routine's graph (decision 49). Items flow block by block, in
+//! the graph's order, a condition sending each to one side. A dry run reads
+//! and asks the model for real, takes approvals as given and only prepares
+//! acts. A real run puts each item that reaches an approval in the queue,
+//! where it waits for the founder, and resumes after it with the founder's
+//! answer; its acts go through the autonomy levels. An item without a
+//! source id never reaches an act.
 
 use super::{Graph, Kind, Test, successors};
 use crate::business::store::Store;
@@ -12,12 +15,15 @@ use crate::pipeline::run::{
 };
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
 /// Where an item keeps the id of what it was read from.
 const SOURCE: &str = "source_id";
+/// Set on an item the founder approved.
+const APPROVED: &str = "approved_by_founder";
 
 /// An act's idempotency key: the routine, the item's source id and the
 /// block (decision 49). Never the content: a retried run whose AI block
@@ -167,18 +173,69 @@ pub struct Dry<'a, 'b> {
     pub integrations: &'a [Integration],
 }
 
+/// Where a run starts: at its trigger, or after an approval the founder
+/// gave, with the item as the founder left it.
+pub enum Start {
+    Trigger,
+    After { block: String, item: Item },
+}
+
+/// What does a real run's acts: it gets the action, its fields, the act's
+/// key and whether the founder approved the item, and says what it did.
+pub type Acts<'a> = dyn FnMut(&str, &BTreeMap<String, String>, &str, bool) -> Result<String> + 'a;
+
+/// What a real run adds: its id, and what does its acts.
+pub struct Real<'a> {
+    pub run: &'a str,
+    pub act: &'a mut Acts<'a>,
+}
+
 /// Run `graph` (named `name`) dry: its report, block by block.
 pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Result<String> {
+    run(name, graph, dry, None, Start::Trigger, now)
+}
+
+/// Run `graph` (named `name`) from `start`, dry when `real` is None: its
+/// report, block by block.
+pub fn run(
+    name: &str,
+    graph: &Graph,
+    dry: Dry,
+    mut real: Option<Real>,
+    start: Start,
+    now: DateTime<Utc>,
+) -> Result<String> {
     let mut inbox: Vec<Vec<Item>> = vec![Vec::new(); graph.blocks.len()];
-    inbox[0].push(Item::new());
-    let mut report = vec![format!(
-        "Dry run of {name}: reads and AI blocks run, approvals are taken as given, acts are only prepared."
-    )];
+    match start {
+        Start::Trigger => inbox[0].push(Item::new()),
+        Start::After { block, item } => {
+            let at = graph
+                .blocks
+                .iter()
+                .position(|b| b.id == block)
+                .ok_or_else(|| anyhow::anyhow!("{name} has no block '{block}' any more"))?;
+            // The founder approved it: what follows is done as approved.
+            let mut item = item;
+            item.insert(APPROVED.into(), true.into());
+            for j in successors(graph, at)? {
+                inbox[j].push(item.clone());
+            }
+        }
+    }
+    let mut report = vec![match &real {
+        None => format!(
+            "Dry run of {name}: reads and AI blocks run, approvals are taken as given, acts are only prepared."
+        ),
+        Some(r) => format!("Run {} of {name}.", r.run),
+    }];
     let started = Instant::now();
     let mut total = Judged::default();
     for i in order(graph)? {
         let block = &graph.blocks[i];
         let items = std::mem::take(&mut inbox[i]);
+        if items.is_empty() {
+            continue;
+        }
         let (count, mut notes, mut lines) = (items.len(), Vec::new(), Vec::new());
         let block_started = Instant::now();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
@@ -215,6 +272,13 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                         });
                     }
                     let repeated = before - read.len();
+                    if let (Some(by), Some(_)) = (dedupe, &real) {
+                        let keys: Vec<String> = read
+                            .iter()
+                            .map(|it| canonical(&field_text(it, by)))
+                            .collect();
+                        dry.store.mark_seen(name, &keys)?;
+                    }
                     let cut = max.map_or(0, |m| read.len().saturating_sub(m));
                     read.truncate(read.len() - cut);
                     lines.push(format!(
@@ -236,7 +300,7 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                     name,
                     step: i + 1,
                     prompt: &p,
-                    dry_run: true,
+                    dry_run: real.is_none(),
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),
@@ -275,7 +339,7 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                 (kept, Vec::new())
             }
             Kind::Condition { test, .. } => items.into_iter().partition(|it| holds(test, it)),
-            Kind::Approval { show, .. } => {
+            Kind::Approval { show, editable, .. } => {
                 for it in &items {
                     let text = field_text(it, show);
                     let chars = text.chars().count();
@@ -287,24 +351,77 @@ pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Resul
                     } else {
                         String::new()
                     };
-                    lines.push(format!("  would ask the founder: {shown}{cut}"));
+                    match &real {
+                        None => lines.push(format!("  would ask the founder: {shown}{cut}")),
+                        Some(r) => {
+                            let id = dry
+                                .store
+                                .propose(&crate::business::store::autonomy::NewItem {
+                                kind: "approval",
+                                title: &text
+                                    .lines()
+                                    .next()
+                                    .unwrap_or_default()
+                                    .chars()
+                                    .take(120)
+                                    .collect::<String>(),
+                                agent: Some(&graph.agent),
+                                routine: Some(name),
+                                run: Some(r.run),
+                                action: None,
+                                args: &Value::Object(it.clone()).to_string(),
+                                execute_at: None,
+                                source:
+                                    &serde_json::json!({"block": block.id, "editable": editable})
+                                        .to_string(),
+                                model_call: it.get("model_call").and_then(Value::as_i64),
+                            })?;
+                            lines.push(format!("  asked the founder (item {id}): {shown}{cut}"));
+                        }
+                    }
                 }
-                (items, Vec::new())
+                // In a real run, an item waits in the queue for the founder.
+                (if real.is_some() { Vec::new() } else { items }, Vec::new())
             }
             Kind::Act { action, fields } => {
-                for it in &items {
+                let mut done = Vec::new();
+                for mut it in items {
+                    // Its key would not tell this item from another: it
+                    // could act twice, or never.
+                    if field_text(&it, SOURCE).is_empty() {
+                        notes.push(format!(
+                            "set aside: '{}' has no source id, so it never reaches an act",
+                            field_text(&it, "title")
+                        ));
+                        continue;
+                    }
                     let values: BTreeMap<String, String> = fields
                         .iter()
-                        .map(|(k, v)| (k.clone(), render(v, it)))
+                        .map(|(k, v)| (k.clone(), render(v, &it)))
                         .collect();
-                    let what = describe(action, &values, dry.integrations)
-                        .unwrap_or_else(|e| format!("refused: {e:#}"));
-                    lines.push(format!(
-                        "  would {action} [{}]: {what}",
-                        key(name, it, &block.id)
-                    ));
+                    let key = key(name, &it, &block.id);
+                    match real.as_mut() {
+                        None => {
+                            let what = describe(action, &values, dry.integrations)
+                                .unwrap_or_else(|e| format!("refused: {e:#}"));
+                            lines.push(format!("  would {action} [{key}]: {what}"));
+                        }
+                        Some(r) => match (r.act)(
+                            action,
+                            &values,
+                            &key,
+                            it.get(APPROVED) == Some(&Value::Bool(true)),
+                        ) {
+                            Ok(what) => {
+                                lines.push(format!("  {action} [{key}]: {what}"));
+                                it.insert("result".into(), what.into());
+                            }
+                            Err(e) => notes.push(format!("{action} [{key}] failed: {e:#}")),
+                        },
+                    }
+                    done.push(it);
                 }
-                (items, Vec::new())
+                (done, Vec::new())
             }
         };
         report.push(format!(

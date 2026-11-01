@@ -5,6 +5,8 @@
 use super::*;
 use crate::business::store::Store;
 use crate::routine::{Checks, Graph};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 impl Hub {
     /// Call `f` with what the realm's routines are checked against.
@@ -50,5 +52,180 @@ impl Hub {
             };
             crate::routine::run::dry_run(name, &graph, dry, Utc::now())
         })
+    }
+}
+
+impl Hub {
+    /// Run the routine `name` for real, from `start`, unattended: its acts
+    /// go through the agent's autonomy levels, and items that reach an
+    /// approval wait in the queue. Its report, block by block.
+    pub fn run_routine(
+        &self,
+        realm: &Realm,
+        name: &str,
+        run: &str,
+        start: crate::routine::run::Start,
+    ) -> Result<String> {
+        let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
+        let root = realm.root()?;
+        let workspace = Workspace::new(&root)?
+            .with_secrets(realm.command_env()?, self.redactions(realm)?)
+            .with_network(!realm.config.offline);
+        let runtime = || {
+            Runtime::new(
+                tools::pipeline_tools(realm.config.integrations.clone()),
+                PermissionGate::new(
+                    realm.config.policy.clone(),
+                    Box::new(super::pipelines::Unattended),
+                ),
+                workspace.clone(),
+                CancelToken::default(),
+            )
+        };
+        // Acts on an item the founder approved are done as approved, once
+        // (decision 45); the others go through the agent's levels.
+        let authority =
+            super::autonomy::BusinessAuthority::for_graph(realm, name, &graph.agent, run)?;
+        let mut within_levels = runtime().with_authority(Box::new(authority));
+        let mut as_approved = runtime();
+        let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+        let declared = crate::actions::all(&realm.config.integrations, &servers);
+        let mut act = |action: &str,
+                       fields: &BTreeMap<String, String>,
+                       key: &str,
+                       approved: bool|
+         -> Result<String> {
+            let (connector, action_name) = action
+                .split_once('.')
+                .context("an action is <connector>.<action>")?;
+            let integration = realm
+                .config
+                .integrations
+                .iter()
+                .find(|i| i.name == connector)
+                .with_context(|| {
+                    format!(
+                        "{action}: only declared HTTP actions and airth.report are done for now"
+                    )
+                })?;
+            let declared_http = integration
+                .actions
+                .iter()
+                .find(|a| a.name == action_name)
+                .with_context(|| format!("{action} is not declared"))?;
+            let mut url = declared_http.url(integration, fields)?;
+            let mut body = serde_json::Map::new();
+            for f in &declared_http.fields {
+                let Some(value) = fields.get(&f.name) else {
+                    continue;
+                };
+                match f.place {
+                    crate::actions::Place::Query => {
+                        url.query_pairs_mut().append_pair(&f.name, value);
+                    }
+                    crate::actions::Place::Body => {
+                        body.insert(f.name.clone(), value.clone().into());
+                    }
+                    crate::actions::Place::Path => {}
+                }
+            }
+            let mut args = json!({"integration": connector, "method": declared_http.method, "url": url.as_str()});
+            if !body.is_empty() {
+                args["body"] = Value::Object(body).to_string().into();
+                args["headers"] = json!({"Content-Type": "application/json"});
+            }
+            let event = if approved {
+                let ceiling = declared
+                    .iter()
+                    .find(|d| d.id == action)
+                    .map_or(1, |d| d.ceiling);
+                if ceiling == 0 {
+                    bail!("{action} is only ever prepared for the founder, who does it");
+                }
+                let mut store = Store::of(realm)?;
+                let begin = store.begin_action(&crate::business::store::autonomy::NewAction {
+                    key,
+                    action,
+                    connector,
+                    agent: Some(&graph.agent),
+                    routine: Some(name),
+                    run: Some(run),
+                    level: ceiling,
+                    approved: true,
+                    args: &args.to_string(),
+                    daily_limit: u32::MAX,
+                })?;
+                let crate::business::store::autonomy::Begin::Started(journal) = begin else {
+                    bail!("not done again: this act was already started under {key}");
+                };
+                let event = as_approved.invoke(key, "http_request", &args);
+                let ok = event.status == crate::state::EventStatus::Ok;
+                let error = (!ok).then(|| event.result.clone());
+                store.finish_action(
+                    journal,
+                    if ok { "confirmed" } else { "failed" },
+                    error.as_deref(),
+                )?;
+                event
+            } else {
+                within_levels.invoke(key, "http_request", &args)
+            };
+            match event.status {
+                crate::state::EventStatus::Ok => {
+                    Ok(event.result.lines().next().unwrap_or_default().to_string())
+                }
+                _ => bail!("{}", event.result),
+            }
+        };
+        self.with_business_io(
+            realm,
+            name,
+            Box::new(super::pipelines::Unattended),
+            Vec::new(),
+            |store, io| {
+                let dry = crate::routine::run::Dry {
+                    root: &root,
+                    store,
+                    io,
+                    integrations: &realm.config.integrations,
+                };
+                let real = crate::routine::run::Real { run, act: &mut act };
+                crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
+            },
+        )
+    }
+
+    /// The founder answers queue item `id` from `channel`. An approval of a
+    /// routine's item resumes the routine after its approval block, with the
+    /// item as the founder left it; the routine's report comes back.
+    pub fn answer_item(
+        &self,
+        realm: &Realm,
+        id: i64,
+        answer: crate::business::store::queue::Answer,
+        channel: &str,
+        seconds: u64,
+    ) -> Result<(crate::business::store::queue::Item, Option<String>)> {
+        let item = Store::of(realm)?.answer(id, None, answer, channel, seconds)?;
+        let (Some(routine), Some(block), "approved") = (
+            &item.routine,
+            item.source["block"].as_str(),
+            item.status.as_str(),
+        ) else {
+            return Ok((item, None));
+        };
+        let Value::Object(fields) = item.args.clone() else {
+            bail!("item {id} does not hold the routine's item");
+        };
+        let start = crate::routine::run::Start::After {
+            block: block.to_string(),
+            item: fields,
+        };
+        let run = item
+            .run
+            .clone()
+            .unwrap_or_else(|| format!("{routine}-{id}"));
+        let report = self.run_routine(realm, routine, &run, start)?;
+        Ok((item, Some(report)))
     }
 }

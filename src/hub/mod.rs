@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-mod autonomy;
+pub(crate) mod autonomy;
 mod changes;
 mod delegation;
 mod delivery;
