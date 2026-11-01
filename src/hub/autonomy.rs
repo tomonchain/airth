@@ -194,7 +194,19 @@ impl Authority for BusinessAuthority {
         if let Err(e) =
             Store::of(&self.realm).and_then(|mut s| s.finish_action(journal, status, error))
         {
-            eprintln!("could not record the outcome of action {journal}: {e:#}");
+            // The journal no longer says what happened: the founder must know.
+            let detail =
+                format!("Action {journal} ended, but its outcome could not be recorded: {e:#}");
+            let incident = super::incidents::Incident {
+                title: "An action's outcome was not recorded",
+                detail: &detail,
+                agent: Some(&self.agent),
+                routine: Some(&self.routine),
+                action: None,
+            };
+            if let Err(e) = super::incidents::record(&self.realm, &incident) {
+                eprintln!("{detail}; and the incident could not be recorded: {e:#}");
+            }
         }
     }
 }

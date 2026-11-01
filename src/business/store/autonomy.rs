@@ -106,6 +106,24 @@ impl Store {
         })
     }
 
+    /// An incident takes the agent's action down one level, at once
+    /// (decision 45): the level before and after.
+    pub fn demote(
+        &mut self,
+        agent: &str,
+        action: &str,
+        ceiling: u8,
+        start: u8,
+        reason: &str,
+    ) -> Result<(u8, u8)> {
+        let from = self.level(agent, action, ceiling, start)?;
+        let to = from.saturating_sub(1);
+        if to < from {
+            self.set_level(agent, action, to, ceiling, "incident", reason)?;
+        }
+        Ok((from, to))
+    }
+
     /// Record an action before it is taken. The key check and the daily
     /// count happen in the same transaction as the insert, so runs acting at
     /// the same moment can neither act twice nor pass the limit together.
@@ -201,6 +219,17 @@ mod tests {
             args: "{}",
             daily_limit: 3,
         }
+    }
+
+    #[test]
+    fn an_incident_takes_an_action_down_one_level_never_below_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+        s.set_level("w", "blog.draft", 2, 3, "founder", "").unwrap();
+        assert_eq!(s.demote("w", "blog.draft", 3, 1, "failed").unwrap(), (2, 1));
+        assert_eq!(s.demote("w", "blog.draft", 3, 1, "failed").unwrap(), (1, 0));
+        assert_eq!(s.demote("w", "blog.draft", 3, 1, "failed").unwrap(), (0, 0));
+        assert_eq!(s.level("w", "blog.draft", 3, 1).unwrap(), 0);
     }
 
     #[test]

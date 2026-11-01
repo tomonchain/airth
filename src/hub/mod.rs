@@ -33,6 +33,7 @@ pub(crate) mod autonomy;
 mod changes;
 mod delegation;
 mod delivery;
+pub(crate) mod incidents;
 mod models;
 mod objectives;
 mod pipelines;
