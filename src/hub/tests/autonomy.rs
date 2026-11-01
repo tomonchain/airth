@@ -364,6 +364,12 @@ fn a_delayed_action_is_done_after_its_window_unless_cancelled() {
         1,
         "once, and not the cancelled one"
     );
+    // The cancellation took drafts down a level for the writer.
+    let level = Store::of(&f.realm)
+        .unwrap()
+        .level("writer", "blog.create_draft", 3, 1)
+        .unwrap();
+    assert_eq!(level, 1);
 }
 
 /// Decision 45: level 0 is prepared for the founder, who does it; marking
@@ -443,4 +449,23 @@ fn a_mission_cannot_add_to_a_declared_body() {
         state.events[1].result
     );
     assert_eq!(hits.load(Ordering::SeqCst), 1, "only the plain draft went");
+}
+
+/// An action's outcome that cannot be recorded is an incident: the journal
+/// no longer says what happened.
+#[test]
+fn an_unrecorded_outcome_is_an_incident() {
+    use crate::runtime::Authority;
+    let (base, _) = service(|_| {});
+    let f = business(base);
+    let mut authority =
+        crate::hub::autonomy::BusinessAuthority::for_graph(&f.realm, "weekly", "writer", "r1")
+            .unwrap();
+    authority.finish(9999, None);
+    let queued = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(
+        (queued[0].kind.as_str(), queued[0].title.as_str()),
+        ("incident", "An action's outcome was not recorded")
+    );
 }

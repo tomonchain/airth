@@ -186,7 +186,8 @@ impl Hub {
                     bail!("not done again: this act was already started under {key}");
                 };
                 let event = as_approved.invoke(key, "http_request", &args);
-                let ok = event.status == crate::state::EventStatus::Ok;
+                let ok = event.status == crate::state::EventStatus::Ok
+                    && super::incidents::succeeded(&event.result);
                 let error = (!ok).then(|| event.result.clone());
                 store.finish_action(
                     journal,
@@ -197,11 +198,27 @@ impl Hub {
             } else {
                 within_levels.invoke(key, "http_request", &args)
             };
+            let first = event.result.lines().next().unwrap_or_default().to_string();
             match event.status {
-                crate::state::EventStatus::Ok => {
-                    Ok(event.result.lines().next().unwrap_or_default().to_string())
+                crate::state::EventStatus::Ok if super::incidents::succeeded(&first) => Ok(first),
+                // Held by the levels (proposed, queued, prepared): not a failure.
+                crate::state::EventStatus::Denied => bail!("{}", event.result),
+                // It was tried and did not work: an incident, and the agent
+                // takes this action down a level.
+                _ => {
+                    let detail = format!("{name}: {action} [{key}] failed: {}", event.result);
+                    super::incidents::record(
+                        realm,
+                        &super::incidents::Incident {
+                            title: &format!("{action} failed in {name}"),
+                            detail: &detail,
+                            agent: Some(&graph.agent),
+                            routine: Some(name),
+                            action: Some(action),
+                        },
+                    )?;
+                    bail!("{detail}")
                 }
-                _ => bail!("{}", event.result),
             }
         };
         self.with_business_io(
@@ -236,8 +253,35 @@ impl Hub {
     ) -> Result<(crate::business::store::queue::Item, Option<String>)> {
         let mut store = Store::of(realm)?;
         let item = store.answer(id, revision, answer, channel, seconds)?;
+        // The founder cancelled a delayed action: that action comes down a
+        // level for its agent (decision 45).
+        if let ("delayed", "rejected", Some(agent), Some(action)) = (
+            item.kind.as_str(),
+            item.status.as_str(),
+            item.agent.clone(),
+            item.action.clone(),
+        ) {
+            let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+            let declared = crate::actions::all(&realm.config.integrations, &servers);
+            let (ceiling, start) = declared
+                .iter()
+                .find(|d| d.id == action)
+                .map_or((1, 1), |d| (d.ceiling, d.start));
+            let (from, to) =
+                store.demote(&agent, &action, ceiling, start, "cancelled by the founder")?;
+            return Ok((
+                item,
+                Some(format!(
+                    "cancelled; {agent} now takes {action} at level {to} (was {from})"
+                )),
+            ));
+        }
         if item.status != "approved" {
             return Ok((item, None));
+        }
+        if item.kind == "incident" {
+            store.close_item(id, "done", "seen by the founder")?;
+            return Ok((item, Some("seen".into())));
         }
         // Prepared for the founder (level 0): the founder did it; nothing
         // runs.
@@ -324,10 +368,25 @@ impl Hub {
             CancelToken::default(),
         );
         let event = runtime.invoke(&key, tool, &item.args);
-        let ok = event.status == crate::state::EventStatus::Ok;
+        let ok = event.status == crate::state::EventStatus::Ok
+            && super::incidents::succeeded(&event.result);
         let error = (!ok).then_some(event.result.as_str());
         store.finish_action(journal, if ok { "confirmed" } else { "failed" }, error)?;
         if !ok {
+            let detail = format!(
+                "{action}, approved in item {}, failed: {}",
+                item.id, event.result
+            );
+            super::incidents::record(
+                realm,
+                &super::incidents::Incident {
+                    title: &format!("{action} failed"),
+                    detail: &detail,
+                    agent: item.agent.as_deref(),
+                    routine: item.routine.as_deref(),
+                    action: Some(action),
+                },
+            )?;
             bail!("{}", event.result);
         }
         Ok(format!(
@@ -387,7 +446,21 @@ impl Hub {
                 let Tick::Run { missed, silent } = tick(&mut store, &key, &schedule, now)? else {
                     continue;
                 };
-                self.tell_late(&realm, &name, missed, silent)?;
+                // A missing heartbeat is an incident (`CLAUDE.md`).
+                let late = [
+                    silent.map(|at| format!("The run started at {} left no trace: Airth stopped during it. Running it again now.", at.to_rfc3339())),
+                    missed.map(|at| format!("It should have run at {}; Airth was not running then. Running it now, once.", at.to_rfc3339())),
+                ];
+                for detail in late.into_iter().flatten() {
+                    let incident = super::incidents::Incident {
+                        title: &format!("{name} did not run on time"),
+                        detail: &detail,
+                        agent: None,
+                        routine: Some(&name),
+                        action: None,
+                    };
+                    super::incidents::record(&realm, &incident)?;
+                }
                 out.push((realm.clone(), name));
             }
         }
@@ -420,13 +493,19 @@ impl Hub {
             );
         }
         if let Some(e) = error {
-            let _ = self.home.inbox().push(
-                crate::notify::Kind::Failed,
-                realm.name(),
-                None,
-                &format!("{name} failed"),
-                &e,
-            );
+            let incident = super::incidents::Incident {
+                title: &format!("{name} failed"),
+                detail: &e,
+                agent: None,
+                routine: Some(name),
+                action: None,
+            };
+            if let Err(e) = super::incidents::record(realm, &incident) {
+                eprintln!(
+                    "routine {}/{name}: the incident was not recorded: {e:#}",
+                    realm.name()
+                );
+            }
         }
     }
 }
