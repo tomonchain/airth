@@ -152,7 +152,20 @@ impl Tool for HttpRequest {
             .strip_prefix(base.path().trim_end_matches('/'))
             .unwrap_or(url.path());
         match integration.actions.iter().find(|a| a.matches(method, path)) {
-            Some(a) => Ok(Some(format!("{name}.{}", a.name))),
+            Some(a) => {
+                // With a declared body, nothing else goes in it.
+                let body = match input["body"].as_str() {
+                    Some(text) => serde_json::from_str(text).unwrap_or(Value::String(text.into())),
+                    None => Value::Null,
+                };
+                if a.body.is_some() && !a.accepts_body(&body) {
+                    bail!(
+                        "{name}.{} takes only its declared body, and this one differs",
+                        a.name
+                    );
+                }
+                Ok(Some(format!("{name}.{}", a.name)))
+            }
             None => bail!("{name} takes only its declared actions, and {method} {path} is not one"),
         }
     }
