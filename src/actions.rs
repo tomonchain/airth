@@ -146,6 +146,21 @@ impl HttpAction {
     }
 }
 
+impl HttpAction {
+    /// Whether a request is this action: same method, and a path whose
+    /// segments are the template's, a `{placeholder}` standing for one.
+    pub fn matches(&self, method: &str, path: &str) -> bool {
+        let want: Vec<&str> = self.path.trim_matches('/').split('/').collect();
+        let got: Vec<&str> = path.trim_matches('/').split('/').collect();
+        self.method.eq_ignore_ascii_case(method)
+            && want.len() == got.len()
+            && want
+                .iter()
+                .zip(&got)
+                .all(|(w, g)| (w.starts_with('{') && w.ends_with('}') && !g.is_empty()) || w == g)
+    }
+}
+
 /// The class the founder gave an MCP tool, for the schema they saw.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolClass {

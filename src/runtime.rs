@@ -86,6 +86,10 @@ impl Runtime {
             warnings: tool.warnings(arguments),
             scope: tool.scope(arguments),
         };
+        // A connector with declared actions takes nothing else (decision 49).
+        if let Err(e) = tool.action(arguments) {
+            return (format!("permission denied: {e:#}"), EventStatus::Denied);
+        }
         match self.gate.check(&request) {
             Ok(Verdict::Denied(reason)) => {
                 return (format!("permission denied: {reason}"), EventStatus::Denied);

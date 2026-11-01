@@ -34,6 +34,12 @@ pub trait Tool {
     fn scope(&self, _input: &Value) -> Option<String> {
         None
     }
+    /// The declared action this call is (decision 49), `<connector>.<action>`,
+    /// or None when it is not one. An error refuses the call: a connector
+    /// with declared actions takes nothing else.
+    fn action(&self, _input: &Value) -> Result<Option<String>> {
+        Ok(None)
+    }
     /// Long-running tools should poll `cancel` and stop early when it is set.
     fn execute(&self, input: &Value, ws: &Workspace, cancel: &CancelToken) -> Result<String>;
 }

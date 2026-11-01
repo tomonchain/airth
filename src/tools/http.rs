@@ -126,6 +126,29 @@ impl HttpRequest {
 }
 
 impl Tool for HttpRequest {
+    /// Through an integration with declared actions, only those may be
+    /// called (decision 49).
+    fn action(&self, input: &Value) -> Result<Option<String>> {
+        let Some(name) = input["integration"].as_str().filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        let integration = self.integration(name)?;
+        if integration.actions.is_empty() {
+            return Ok(None);
+        }
+        let method = input["method"].as_str().unwrap_or("GET");
+        let url = integration.url_for(str_arg(input, "url")?)?;
+        let base = integration.base()?;
+        let path = url
+            .path()
+            .strip_prefix(base.path().trim_end_matches('/'))
+            .unwrap_or(url.path());
+        match integration.actions.iter().find(|a| a.matches(method, path)) {
+            Some(a) => Ok(Some(format!("{name}.{}", a.name))),
+            None => bail!("{name} takes only its declared actions, and {method} {path} is not one"),
+        }
+    }
+
     fn spec(&self) -> ToolSpec {
         let integrations = if self.integrations.is_empty() {
             "This realm has no integrations, so only public URLs can be reached, without credentials.".to_string()
