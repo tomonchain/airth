@@ -282,8 +282,8 @@ pub(super) fn run_scheduler(runner: Runner) {
             }
             Err(e) => eprintln!("pipelines: {e:#}"),
         }
-        // Routines as graphs (decision 49), and delayed actions whose
-        // window passed (decision 45).
+        // Routines as graphs (decision 49), delayed actions whose window
+        // passed (decision 45), and failed actions to try again (decision 55).
         match runner.hub.due_routines(chrono::Utc::now()) {
             Ok(due) => {
                 for (realm, name) in due {
@@ -297,6 +297,11 @@ pub(super) fn run_scheduler(runner: Runner) {
         match runner.hub.release_delayed(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|d| eprintln!("delayed action {d}")),
             Err(e) => eprintln!("delayed actions: {e:#}"),
+        }
+        // Failed actions whose next attempt is due (decision 55).
+        match runner.hub.retry_due(chrono::Utc::now()) {
+            Ok(done) => done.iter().for_each(|d| eprintln!("retried action {d}")),
+            Err(e) => eprintln!("retried actions: {e:#}"),
         }
         std::thread::sleep(scheduler::TICK);
     }

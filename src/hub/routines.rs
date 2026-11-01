@@ -161,6 +161,12 @@ impl Hub {
                 args["body"] = body.to_string().into();
                 args["headers"] = json!({"Content-Type": "application/json"});
             }
+            // The same key on every attempt: the service does it once.
+            if let Some(header) =
+                super::retries::idempotency_header(&realm.config.integrations, action)
+            {
+                args["headers"][header] = key.into();
+            }
             let event = if approved {
                 let ceiling = declared
                     .iter()
@@ -177,6 +183,7 @@ impl Hub {
                     agent: Some(&graph.agent),
                     routine: Some(name),
                     run: Some(run),
+                    item: None,
                     level: ceiling,
                     approved: true,
                     args: &args.to_string(),
@@ -186,14 +193,16 @@ impl Hub {
                     bail!("not done again: this act was already started under {key}");
                 };
                 let event = as_approved.invoke(key, "http_request", &args);
-                let ok = event.status == crate::state::EventStatus::Ok
-                    && super::incidents::succeeded(&event.result);
-                let error = (!ok).then(|| event.result.clone());
-                store.finish_action(
-                    journal,
-                    if ok { "confirmed" } else { "failed" },
-                    error.as_deref(),
-                )?;
+                // A failure that was tried is recorded below, with its retry.
+                match event.status {
+                    crate::state::EventStatus::Ok if super::incidents::succeeded(&event.result) => {
+                        store.finish_action(journal, "confirmed", None)?
+                    }
+                    crate::state::EventStatus::Denied => {
+                        store.finish_action(journal, "failed", Some(&event.result))?
+                    }
+                    _ => {}
+                }
                 event
             } else {
                 within_levels.invoke(key, "http_request", &args)
@@ -203,23 +212,25 @@ impl Hub {
                 crate::state::EventStatus::Ok if super::incidents::succeeded(&first) => Ok(first),
                 // Held by the levels (proposed, queued, prepared): not a failure.
                 crate::state::EventStatus::Denied => bail!("{}", event.result),
-                // It was tried and did not work: an incident, and the agent
-                // takes this action down a level if it was the agent's
-                // fault (decision 55).
+                // It was tried and did not work: tried again later, or an
+                // incident (decision 55).
                 _ => {
                     let detail = format!("{name}: {action} [{key}] failed: {}", event.result);
-                    super::incidents::record(
-                        realm,
-                        &super::incidents::Incident {
-                            title: &format!("{action} failed in {name}"),
-                            detail: &detail,
-                            agent: Some(&graph.agent),
-                            routine: Some(name),
-                            action: Some(action),
-                            demote: super::retries::demotes(event.status, &event.result),
-                        },
-                    )?;
-                    bail!("{detail}")
+                    let failed = super::retries::Failed {
+                        key,
+                        action,
+                        agent: Some(&graph.agent),
+                        routine: Some(name),
+                        status: event.status,
+                        result: &event.result,
+                        attempts: 1,
+                        title: format!("{action} failed in {name}"),
+                        detail: detail.clone(),
+                    };
+                    match self.action_failed(realm, &failed)? {
+                        Some(at) => bail!("{detail}; tried again at {}", at.to_rfc3339()),
+                        None => bail!("{detail}"),
+                    }
                 }
             }
         };
@@ -309,7 +320,12 @@ impl Hub {
                 self.run_routine(realm, routine, &run, start)
             }
             // An action a mission proposed: done as it was proposed, once.
-            (_, None, Some(tool)) => self.do_approved(realm, &item, tool),
+            // One to try again stays approved until its last attempt.
+            (_, None, Some(tool)) => match self.do_approved(realm, &item, tool) {
+                Ok(Approved::Later(why)) => return Ok((item, Some(why))),
+                Ok(Approved::Done(what)) => Ok(what),
+                Err(e) => Err(e),
+            },
             _ => return Ok((item, None)),
         };
         let (status, detail) = match &outcome {
@@ -332,7 +348,7 @@ impl Hub {
         realm: &Realm,
         item: &crate::business::store::queue::Item,
         tool: &str,
-    ) -> Result<String> {
+    ) -> Result<Approved> {
         let action = item.action.as_deref().context("the item names no action")?;
         if tool != "http_request" {
             bail!(
@@ -340,6 +356,12 @@ impl Hub {
             );
         }
         let key = format!("item/{}", item.id);
+        let mut args = item.args.clone();
+        // The same key on every attempt: the service does it once.
+        if let Some(header) = super::retries::idempotency_header(&realm.config.integrations, action)
+        {
+            args["headers"][header] = key.clone().into();
+        }
         let mut store = Store::of(realm)?;
         let begin = store.begin_action(&crate::business::store::autonomy::NewAction {
             key: &key,
@@ -348,54 +370,47 @@ impl Hub {
             agent: item.agent.as_deref(),
             routine: item.routine.as_deref(),
             run: item.run.as_deref(),
+            item: Some(item.id),
             level: 1,
             approved: true,
-            args: &item.args.to_string(),
+            args: &args.to_string(),
             daily_limit: u32::MAX,
         })?;
         let crate::business::store::autonomy::Begin::Started(journal) = begin else {
             bail!("not done again: item {} was already acted on", item.id);
         };
-        let root = realm.root()?;
-        let workspace = Workspace::new(&root)?
-            .with_secrets(realm.command_env()?, self.redactions(realm)?)
-            .with_network(!realm.config.offline);
-        let mut runtime = Runtime::new(
-            tools::pipeline_tools(realm.config.integrations.clone()),
-            PermissionGate::new(
-                realm.config.policy.clone(),
-                Box::new(super::pipelines::Unattended),
-            ),
-            workspace,
-            CancelToken::default(),
-        );
-        let event = runtime.invoke(&key, tool, &item.args);
-        let ok = event.status == crate::state::EventStatus::Ok
-            && super::incidents::succeeded(&event.result);
-        let error = (!ok).then_some(event.result.as_str());
-        store.finish_action(journal, if ok { "confirmed" } else { "failed" }, error)?;
-        if !ok {
-            let detail = format!(
+        let event = self.unattended(realm)?.invoke(&key, tool, &args);
+        if event.status == crate::state::EventStatus::Ok
+            && super::incidents::succeeded(&event.result)
+        {
+            store.finish_action(journal, "confirmed", None)?;
+            return Ok(Approved::Done(format!(
+                "{action}: {}",
+                event.result.lines().next().unwrap_or_default()
+            )));
+        }
+        let failed = super::retries::Failed {
+            key: &key,
+            action,
+            agent: item.agent.as_deref(),
+            routine: item.routine.as_deref(),
+            status: event.status,
+            result: &event.result,
+            attempts: 1,
+            title: format!("{action} failed"),
+            detail: format!(
                 "{action}, approved in item {}, failed: {}",
                 item.id, event.result
-            );
-            super::incidents::record(
-                realm,
-                &super::incidents::Incident {
-                    title: &format!("{action} failed"),
-                    detail: &detail,
-                    agent: item.agent.as_deref(),
-                    routine: item.routine.as_deref(),
-                    action: Some(action),
-                    demote: super::retries::demotes(event.status, &event.result),
-                },
-            )?;
-            bail!("{}", event.result);
+            ),
+        };
+        match self.action_failed(realm, &failed)? {
+            Some(at) => Ok(Approved::Later(format!(
+                "{action} failed: {}; tried again at {}",
+                event.result.lines().next().unwrap_or_default(),
+                at.to_rfc3339()
+            ))),
+            None => bail!("{}", event.result),
         }
-        Ok(format!(
-            "{action}: {}",
-            event.result.lines().next().unwrap_or_default()
-        ))
     }
 
     /// Do the delayed actions whose window has passed by `now`, across
@@ -416,9 +431,12 @@ impl Hub {
                     .as_str()
                     .unwrap_or("http_request")
                     .to_string();
-                let outcome = self.do_approved(&realm, &item, &tool);
-                let (status, detail) = match &outcome {
-                    Ok(what) => ("done", what.clone()),
+                let (status, detail) = match self.do_approved(&realm, &item, &tool) {
+                    Ok(Approved::Done(what)) => ("done", what),
+                    Ok(Approved::Later(why)) => {
+                        out.push(format!("{}/{}: {why}", realm.name(), item.id));
+                        continue;
+                    }
                     Err(e) => ("failed", format!("{e:#}")),
                 };
                 store.close_item(item.id, status, &detail)?;
@@ -513,4 +531,11 @@ impl Hub {
             }
         }
     }
+}
+
+/// What became of an approved action now.
+enum Approved {
+    Done(String),
+    /// It failed, and is tried again later (decision 55): why, and when.
+    Later(String),
 }

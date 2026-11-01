@@ -105,6 +105,11 @@ pub struct HttpAction {
     /// date that would publish, say) can be added.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
+    /// The header in which the service takes an idempotency key: Airth sends
+    /// the action's key in it, the same on every attempt, so a write can be
+    /// tried again after any failure of the service (decision 55).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_header: Option<String>,
 }
 
 /// The field a template string stands for: `"{text}"`.

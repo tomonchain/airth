@@ -11,6 +11,7 @@ pub mod autonomy;
 pub mod drafts;
 pub mod pipelines;
 pub mod queue;
+pub mod retries;
 pub mod status;
 pub mod time;
 
@@ -239,6 +240,9 @@ const MIGRATIONS: &[&str] = &[
     // from where (the app, Telegram, the command line).
     "ALTER TABLE owner_time ADD COLUMN item INTEGER REFERENCES queue(id);
     ALTER TABLE owner_time ADD COLUMN channel TEXT;",
+    // 13: a failed action waits here for its next attempt, if it may have
+    // one (decision 55).
+    "ALTER TABLE actions ADD COLUMN retry_at TEXT;",
 ];
 
 pub struct Store {
