@@ -198,9 +198,9 @@ fn a_run_the_founder_starts_is_asked_as_before() {
 
 /// Decision 45: what nobody declared commits, so an agent trusted with one
 /// action cannot act through an undeclared integration or a public URL;
-/// and level 2 is proposed until delayed actions have an executor.
+/// and level 2 waits out its window.
 #[test]
-fn undeclared_calls_and_level_two_are_proposed_not_done() {
+fn undeclared_calls_are_proposed_and_level_two_waits() {
     let (base, hits) = service(|_| {});
     let mut f = business(base.clone());
     f.realm
@@ -238,9 +238,17 @@ fn undeclared_calls_and_level_two_are_proposed_not_done() {
             done("done"),
         ],
     );
-    for e in &state.events[..4] {
+    for e in &state.events[..3] {
         assert!(e.result.contains("proposed to the founder"), "{}", e.result);
     }
+    // Level 2 waits out its cancellation window.
+    assert!(
+        state.events[3]
+            .result
+            .contains("queued: done in 30 minutes"),
+        "{}",
+        state.events[3].result
+    );
     assert_eq!(
         hits.load(Ordering::SeqCst),
         0,
@@ -315,4 +323,43 @@ fn an_approved_proposal_is_done_once() {
     let (item, report) = approve();
     assert_eq!((item.status.as_str(), report), ("done", None));
     assert_eq!(hits.load(Ordering::SeqCst), 1, "done once");
+}
+
+/// Decision 45: level 2 is done once its window passes, unless the founder
+/// cancelled it.
+#[test]
+fn a_delayed_action_is_done_after_its_window_unless_cancelled() {
+    let (base, hits) = service(|_| {});
+    let f = business(base);
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("writer", "blog.create_draft", 2, 3, "founder", "")
+        .unwrap();
+    routine_run(
+        &f,
+        vec![post("1", "drafts"), post("2", "drafts"), done("done")],
+    );
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    hub.answer_item(
+        &f.realm,
+        2,
+        crate::business::store::queue::Answer::Reject("not this one".into()),
+        "app",
+        3,
+    )
+    .unwrap();
+    assert!(
+        hub.release_delayed(Utc::now()).unwrap().is_empty(),
+        "the window is open"
+    );
+    let later = Utc::now() + chrono::Duration::minutes(31);
+    let done = hub.release_delayed(later).unwrap();
+    assert_eq!(done.len(), 1, "{done:?}");
+    assert!(done[0].contains("/1: done"), "{done:?}");
+    assert!(hub.release_delayed(later).unwrap().is_empty());
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        1,
+        "once, and not the cancelled one"
+    );
 }

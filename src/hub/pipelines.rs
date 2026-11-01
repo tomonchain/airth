@@ -77,6 +77,39 @@ impl Hub {
     }
 }
 
+impl Hub {
+    /// Tell the founder a scheduled run is late (Airth was not running at
+    /// its time) or that the one before left no trace.
+    pub(super) fn tell_late(
+        &self,
+        realm: &Realm,
+        name: &str,
+        missed: Option<DateTime<Utc>>,
+        silent: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        let inbox = self.home.inbox();
+        if let Some(at) = silent {
+            inbox.push(
+                Kind::Failed,
+                realm.name(),
+                None,
+                &format!("{name} left no trace of its last run"),
+                &format!("The run started at {} never recorded its end: Airth stopped during it. Running it again now.", local(at)),
+            )?;
+        }
+        if let Some(at) = missed {
+            inbox.push(
+                Kind::Failed,
+                realm.name(),
+                None,
+                &format!("{name} missed its run at {}", local(at)),
+                "Airth was not running then. Running it now, once.",
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Nobody is there: what the realm's rules leave to the owner is not done.
 pub(super) struct Unattended;
 
@@ -112,25 +145,7 @@ impl Hub {
                 let Tick::Run { missed, silent } = tick(&mut store, &name, &schedule, now)? else {
                     continue;
                 };
-                let inbox = self.home.inbox();
-                if let Some(at) = silent {
-                    inbox.push(
-                        Kind::Failed,
-                        realm.name(),
-                        None,
-                        &format!("{name} left no trace of its last run"),
-                        &format!("The run started at {} never recorded its end: Airth stopped during it. Running it again now.", local(at)),
-                    )?;
-                }
-                if let Some(at) = missed {
-                    inbox.push(
-                        Kind::Failed,
-                        realm.name(),
-                        None,
-                        &format!("{name} missed its run at {}", local(at)),
-                        "Airth was not running then. Running it now, once.",
-                    )?;
-                }
+                self.tell_late(&realm, &name, missed, silent)?;
                 out.push((realm.clone(), name));
             }
         }
