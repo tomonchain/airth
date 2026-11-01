@@ -6,6 +6,7 @@ mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
 mod documents;
+mod frontmatter;
 mod github;
 mod home;
 mod hub;
@@ -863,6 +864,22 @@ fn doctor(ctx: &Ctx) -> Result<bool> {
             })
             .map_err(|e| format!("{e:#}")),
     );
+    // The business's config (decision 43): wrong fields fail; what is left
+    // to fill is listed.
+    if let Some(root) = realm.as_ref().ok().and_then(|r| r.root().ok()) {
+        let config = business::config::load(&root).map_err(|e| format!("{e:#}"));
+        check(
+            "business config",
+            config.map(|c| match c.missing.is_empty() {
+                true => format!("{} agent(s), complete", c.agents.len()),
+                false => format!(
+                    "{} agent(s); to fill: {}",
+                    c.agents.len(),
+                    c.missing.join(", ")
+                ),
+            }),
+        );
+    }
     check(
         "command sandbox",
         if sandbox::available() {

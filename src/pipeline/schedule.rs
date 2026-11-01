@@ -9,7 +9,6 @@ use crate::business::store::Store;
 use crate::objective::Schedule;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use rusqlite::{OptionalExtension, params};
 
 /// A run this much after its time was missed, not merely slow to start.
 pub const GRACE_MINUTES: i64 = 15;
@@ -34,47 +33,15 @@ pub fn tick(
     schedule: &Schedule,
     now: DateTime<Utc>,
 ) -> Result<Tick> {
-    let next = schedule.next_after(now).to_rfc3339();
-    store.write(|tx| {
-        let row: Option<(String, Option<String>)> = tx
-            .query_row(
-                "SELECT next_at, started_at FROM pipeline_schedule WHERE pipeline = ?1",
-                params![pipeline],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let Some((next_at, started_at)) = row else {
-            tx.execute(
-                "INSERT INTO pipeline_schedule (pipeline, next_at) VALUES (?1, ?2)",
-                params![pipeline, next],
-            )?;
-            return Ok(Tick::Wait);
-        };
-        let next_at = DateTime::parse_from_rfc3339(&next_at)?.with_timezone(&Utc);
-        if next_at > now {
-            return Ok(Tick::Wait);
-        }
-        let started = started_at
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
-            .transpose()?;
-        let silent = match started {
-            Some(at) => {
-                let beats: i64 = tx.query_row(
-                    "SELECT COUNT(*) FROM pipeline_runs WHERE pipeline = ?1 AND started_at >= ?2",
-                    params![pipeline, at.to_rfc3339()],
-                    |r| r.get(0),
-                )?;
-                (beats == 0).then_some(at)
-            }
-            None => None,
-        };
-        tx.execute(
-            "UPDATE pipeline_schedule SET next_at = ?2, started_at = ?3 WHERE pipeline = ?1",
-            params![pipeline, next, now.to_rfc3339()],
-        )?;
-        let missed = (now - next_at > Duration::minutes(GRACE_MINUTES)).then_some(next_at);
-        Ok(Tick::Run { missed, silent })
-    })
+    let Some(claimed) = store.claim_schedule(pipeline, schedule.next_after(now), now)? else {
+        return Ok(Tick::Wait);
+    };
+    let silent = claimed
+        .last_start
+        .and_then(|(at, beat)| (!beat).then_some(at));
+    let missed =
+        (now - claimed.due_at > Duration::minutes(GRACE_MINUTES)).then_some(claimed.due_at);
+    Ok(Tick::Run { missed, silent })
 }
 
 #[cfg(test)]
@@ -88,16 +55,17 @@ mod tests {
     }
 
     fn heartbeat(store: &mut Store, started: DateTime<Utc>) {
-        store
-            .write(|tx| {
-                tx.execute(
-                    "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, ok, items_read, items_kept)
-                     VALUES ('watch', ?1, ?1, 1, 0, 0)",
-                    params![started.to_rfc3339()],
-                )?;
-                Ok(())
-            })
-            .unwrap();
+        let beat = crate::business::store::pipelines::Heartbeat {
+            pipeline: "watch",
+            started,
+            finished: started,
+            items_read: 0,
+            items_kept: 0,
+            report: None,
+            notes: "",
+            error: None,
+        };
+        store.record_run(&beat, &[]).unwrap();
     }
 
     #[test]

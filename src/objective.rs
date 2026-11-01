@@ -80,7 +80,7 @@ pub struct Objective {
     /// The realm repository its runs work in (None: the realm's root).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
-    /// The bot that does it: its job is `business/bots/<bot>.md` (decision 36).
+    /// The agent that does it: its job is `agents/<bot>.md` (decisions 36 and 43).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot: Option<String>,
     /// The realm's extensions its runs may use (integrations, MCP servers,

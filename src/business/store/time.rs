@@ -2,7 +2,7 @@
 //! the owner. Airth records each answer the owner gives it, from the moment
 //! it asked to the answer; the owner adds what happens outside Airth.
 
-use super::store::Store;
+use super::Store;
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 use rusqlite::params;

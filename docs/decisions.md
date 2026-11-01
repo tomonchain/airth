@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 50. In the owner's home, commands read only the realm and the developer tools (Proposed)
+## 50. In the owner's home, commands read only the realm and the developer tools
 
 Decision 48 denied writes by default and reads of the owner's credentials. Everything else in the owner's home could still be read by a command: personal documents, shell history, browser profiles (cookies, saved sessions), Mail's messages, other apps' data. A test shows it. A list of what to hide can never be complete there, so the home is read-denied by default too:
 
@@ -16,6 +16,71 @@ Outside the home nothing changes: system folders and `/opt/homebrew`, where the 
 *Why:* the owner's Mac is also their personal computer. A business's agents read external content, and a command they run must reach the business, not the founder's private life.
 
 *Cost:* tools installed under the home (`~/.local/bin`, `~/.bun`, a version manager in `~/.nvm`) do not run inside a run until they are added. A realm whose folder is the home itself would open the whole home again, deeper rules winning; Airth already advises a folder of its own.
+
+## 49. Routines are JSON graphs of the six blocks; connectors declare their actions in the Airth home
+
+This replaces decision 30's pipeline format and its step types, and settles the last two pending decisions of milestone 1. The engine of decision 30 is kept and grows into this one (`CLAUDE.md`, *Starting point*); decision 34 (the schedule lives in the routine's file) still holds, as the Trigger block.
+
+### The routine graph
+
+**One file per routine: `routines/<name>.json`** in the business folder, versioned in git, read-only to runs (decision 44). JSON, not the Markdown and front matter of the other config files (decision 43): a graph is nested data, written by the routine editor (milestone 5) and read by the engine; JSON is what the engine already reads, with `serde`, and needs no new crate. Files are written pretty-printed with a stable key order, so a change reads as a short diff in a pull request.
+
+```json
+{
+  "description": "Morning posts: the three best items of the day, for the founder to approve",
+  "agent": "post-writer",
+  "trigger": { "schedule": "daily 07:30" },
+  "blocks": [
+    { "id": "news", "type": "read", "source": "rss",
+      "feeds": ["https://example.com/feed.xml"], "max_age_days": 2, "dedupe": "link", "max": 50 },
+    { "id": "pick", "type": "ai", "prompt": "prompts/watch.md",
+      "keep": "relevant", "rank": "score", "distinct": "pillar", "limit": 3 },
+    { "id": "draft", "type": "ai", "prompt": "prompts/post.md" },
+    { "id": "good", "type": "condition", "if": { "field": "answer.confidence", "op": ">=", "value": 3 },
+      "else": "skip" },
+    { "id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft" },
+    { "id": "send", "type": "act", "action": "typefully.create_draft",
+      "fields": { "content": "{{answer.draft}}" }, "next": null },
+    { "id": "skip", "type": "act", "action": "airth.report", "fields": { "title": "Left out" } }
+  ]
+}
+```
+
+- **Shape.** `blocks` is a list. An item goes from each block to the next in the list, unless the block says otherwise: `next` (another block's id, or `null` to stop), and for a condition `then` (default: the next block) and `else`. The graph must have no cycle, and every block must be reachable from the trigger.
+- **Items.** A list flows through the graph item by item. An item is a JSON object; blocks add to it (`answer` for an AI block's answer, `result` for an action's). Blocks name fields by path (`item.title`, `answer.score`); an Act fills its fields from a template (`{{answer.draft}}`). There is no expression language: a condition compares one field to one value (`==`, `!=`, `<`, `<=`, `>`, `>=`, `exists`).
+- **The six blocks**, and what each holds:
+  - `trigger`: `schedule` (as today), `webhook` (a name; the address and its secret are kept in the home), `event` (`mail.received` with a mailbox, at milestone 7), or `manual`;
+  - `read`: a `source` (`rss`, `web`, `connector` with a declared read action, `business`, the business's own records through the access layer), with the built-in filters `max_age_days`, `dedupe` and `max`;
+  - `ai`: a `prompt` file in `prompts/` and the schema beside it (`prompts/<name>.schema.json`), and the filters `keep`, `rank`, `distinct`, `limit`. It holds no tool; its call is journaled (decision 47);
+  - `condition`: `if`, `then`, `else`;
+  - `approval`: what is `show`n, what is `editable`, and `expires_after` (hours; past it the item is dropped and the founder told). The run waits; the item sits in the queue (decision 47) and on Telegram;
+  - `act`: one declared `action` and its `fields`, nothing else. No model is involved. It goes through `Runtime::invoke`, at the agent's level for that action (decision 45), and is idempotent (below).
+- **Idempotence.** Each item gets its source id when it is read, and keeps it through every block: an RSS item's link (or its `guid`), a mail's `Message-ID`, a connector record's id, a webhook delivery's id; an item a mission or a manual trigger creates gets a fresh id, saved with the run. An `act`'s key is the routine, that source id and the block's id. **Never the content:** a retried run whose AI block drafts a different text for the same item must not publish twice. The key is unique in the action journal (decision 47), so a second attempt finds the first and does not act. A test proves it: the same item, retried with a different draft, acts once.
+- **Airth's own actions**, declared in code like a connector's: `airth.launch_mission` (the agent loop, in its sandbox, under the agent's rights; the mission's report comes back as the item's `result`, and the run waits for it), `airth.report` (a report for the founder), `airth.create_task`, `airth.adopt_change` (ceiling 1), and `airth.send_mail` at milestone 7.
+- **Hedgen's Writer**, as `CLAUDE.md` describes it: `trigger` (weekly) → `read` (the week's news and the list of notions already covered) → `act airth.launch_mission` (write and illustrate the article, prepare it as a draft) → `approval` → `act blog.publish`.
+- **What runs may do is not in the file.** The agent named in the graph brings its rights from the home: levels, budget, model (decisions 43 and 45). A graph cannot raise them.
+- **Each block's execution is recorded** in `business.db`: duration, cost, outcome, items in and out. A routine run that waits (an approval, a mission) is saved block by block and resumes after a restart. This adds one table to decision 47's heartbeats, `routine_blocks`, at milestone 3.
+- **Dry run.** The editor can run a graph without effects: reads and AI blocks run for real, approvals are answered "approve" without asking, and acts are prepared as at level 0, never executed.
+
+### The rule checked when a graph is saved
+
+Content that comes from outside (a `read` of `rss`, `web`, a connector or a mailbox, a mission's result, a webhook's body) is marked as external, and so is anything an AI block derives from it. An `act` that external content can reach without an `approval` on the way is refused when the graph is saved, unless that action's level is at least 2 for the routine's agent. Levels change after a graph is saved, so the engine checks it again before each act: if the level has dropped, the item goes to the queue as at level 1. This check, the cycle check and the field checks are graph validation: security code (`CLAUDE.md`), tested on every case above.
+
+### How connectors declare their actions
+
+Declarations live in the Airth home, with the connector's record in the realm's config: out of every run's reach, and confirmed by the founder (decision 45).
+
+- **An integration** (HTTP, decision 10) declares each action: an id, a description, the method, a path under its base URL with `{placeholders}`, its fields (name, type, required, where each goes: path, query or JSON body), its risk class, and optionally the daily limit and cancellation window. An `act` can call only that: no other path, no other method. A value put into a path `{placeholder}` is percent-encoded, and refused if it holds `/` or is `.` or `..`; the URL built is then checked against the integration's base URL again (decision 10), so a field drafted from external content cannot walk the request to another endpoint. A test proves it, with `../`, an encoded slash and a full URL as values.
+- **An MCP server** (decisions 18 and 20): each tool is an action, its fields are the tool's input schema. When the server is connected, the founder sees its tools and sets each one's risk class; the server's own annotations (`readOnlyHint`, `destructiveHint`) are shown as hints, never trusted; a tool left unset is `commits`. Airth keeps a hash of each tool's schema: a new tool, or a tool whose schema changed since the founder classed it, is treated as `commits` at level 1 until the founder confirms it again, so a server cannot widen a tool after it was trusted.
+- **The connector catalog** (`connectors.rs`) may ship suggested declarations for well-known services (for example Typefully: create a draft, `reversible`; publish, `commits`). They are generic, never written for one business, and the founder confirms them like any other.
+
+### Moving from today
+
+Hedgen's two pipelines become `routines/daily-watch.json` and `routines/daily-posts.json`; `business/prompts/` and `business/schemas/` move to `prompts/`. The step types map one for one: `rss` and `dedupe` to `read`, `judge` to `ai`, `queue` to `approval` (and then an `act`), `report` to `act airth.report`. Routines that are objectives today (an agent and a task, decision 11) become a graph `trigger` → `act airth.launch_mission`, their limits moving to their agent. The engine stops reading `business/pipelines/` in the change that reads `routines/`.
+
+*Why:* `CLAUDE.md` makes a routine a graph of six blocks with no tool in the AI block and no model in the Act block, so that every effect is one declared call, checked, journaled and idempotent. A list with jumps is the smallest shape an editor and a diff can both handle. Declaring actions in the home, with schemas hashed, keeps a connector, or an agent editing files, from deciding what an action may do.
+
+*Cost:* JSON is less pleasant to edit by hand than Markdown; the editor is what makes it easy, and it comes at milestone 5. Every connector must be declared before a routine can use it, and a changed MCP tool needs the founder again. There is no expression language: logic that one comparison cannot hold goes into an AI block or a mission. A routine run that waits days for an approval holds its state in the database until then.
 
 ## 48. Commands write only where the run may; they never read the owner's keys
 
