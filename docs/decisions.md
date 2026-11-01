@@ -2,6 +2,16 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 44. A run never writes the business config; it proposes a change (Proposed)
+
+`business/`, `agents/`, `routines/` and `prompts/` at the root of a business's folder are read-only for every run working in that folder (decision 43). The rule is one of the workspace's access rules, so the file tools refuse the write and, on macOS, the command sandbox denies it to any command. It holds for folders that do not exist yet: a run cannot create `routines/` either.
+
+A run working in a worktree (a change, decision 5) may edit those folders in its worktree: that is how an agent proposes a new job, goal or routine. The owner's checkout stays read-only to it, as for any change, and nothing reaches the business until the founder adopts the change after reading its diff. The founder changes the config directly, from the app or an editor, as before.
+
+*Why:* an agent's file is its instructions, and `business/goal.md` holds the baseline the beta is measured against. A page an agent read must not be able to rewrite either. `business/` was already read-only (pilot step 1); `agents/` was not, and nothing let an agent propose a change to the config in a way the founder reviews.
+
+*Cost:* where there is no command sandbox (Linux, until milestone 9), commands are not confined, as for the rest of the workspace (decision 4); file tools still refuse. A business whose folder is not a git repository has no worktrees, so its agents can only suggest a config change in their report. A run that is not isolated can still write the folder's `.git`, as it could before: it could record a commit there without changing the files, which `git status` would show.
+
 ## 43. The business config: profile and legal identity, goal, lines, departments, agents (Proposed)
 
 A business is described by files in its folder, versioned in git, in the format `CLAUDE.md` sets: Markdown with a flat YAML front matter, one file per item. Structured fields in the front matter, prose in the body.
