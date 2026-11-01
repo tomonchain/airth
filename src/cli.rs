@@ -689,7 +689,7 @@ pub enum QueueCmd {
 pub fn queue(ctx: &Ctx, command: Option<QueueCmd>) -> Result<bool> {
     use crate::business::store::queue::Answer;
     let realm = ctx.realm()?;
-    let mut store = crate::business::store::Store::of(&realm)?;
+    let store = crate::business::store::Store::of(&realm)?;
     let (id, answer) = match command.unwrap_or(QueueCmd::List) {
         QueueCmd::List => {
             let pending = store.queue(&["pending"])?;
@@ -718,8 +718,11 @@ pub fn queue(ctx: &Ctx, command: Option<QueueCmd>) -> Result<bool> {
                 .unwrap_or_default(),
         )
     });
-    let item = store.answer(id, None, answer, "cli", seconds)?;
+    let (item, report) = ctx.hub().answer_item(&realm, id, answer, "cli", seconds)?;
     println!("{} is {}", item.id, item.status);
+    if let Some(report) = report {
+        println!("{report}");
+    }
     Ok(true)
 }
 
@@ -730,10 +733,19 @@ pub enum RoutinesCmd {
     /// Run a routine without effects: reads and AI blocks for real,
     /// approvals taken as given, acts only shown
     DryRun { name: String },
+    /// Run a routine now, for real: its acts within the agent's levels,
+    /// what needs you in the queue
+    Run { name: String },
 }
 
 pub fn routines(ctx: &Ctx, command: Option<RoutinesCmd>) -> Result<bool> {
     let realm = ctx.realm()?;
+    if let Some(RoutinesCmd::Run { name }) = command {
+        let run = format!("{name}-{}", chrono::Utc::now().format("%Y%m%dT%H%M%S"));
+        let start = crate::routine::run::Start::Trigger;
+        println!("{}", ctx.hub().run_routine(&realm, &name, &run, start)?);
+        return Ok(true);
+    }
     if let Some(RoutinesCmd::DryRun { name }) = command {
         let report = ctx.hub().dry_run_routine(
             &realm,

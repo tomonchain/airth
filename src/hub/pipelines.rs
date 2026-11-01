@@ -78,7 +78,7 @@ impl Hub {
 }
 
 /// Nobody is there: what the realm's rules leave to the owner is not done.
-struct Unattended;
+pub(super) struct Unattended;
 
 impl Approver for Unattended {
     fn ask(&mut self, _: &crate::permissions::PermissionRequest) -> Result<Answer> {

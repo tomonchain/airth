@@ -167,3 +167,108 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
     let week = store.week(Utc::now() - chrono::Duration::days(7)).unwrap();
     assert_eq!((week.model_calls, week.unpriced_calls), (0, 0));
 }
+
+/// Decision 49: in a real run an item waits in the queue at an approval,
+/// the links read are remembered, and an item without a source id never
+/// reaches an act; an approved item's acts are done as approved.
+#[test]
+fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
+    let root = tempfile::tempdir().unwrap();
+    let graph: Graph = serde_json::from_value(json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+        {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"], "dedupe": "link"},
+        {"id": "ok", "type": "approval", "show": "title", "editable": "title"},
+        {"id": "send", "type": "act", "action": "blog.publish", "fields": {"text": "{{title}}"}}
+    ]}))
+    .unwrap();
+    let mut fetch = |_: &str| {
+        Ok(crate::pipeline::run::Fetched {
+            body: "<rss><channel><item><title>Flows</title><link>https://e.com/1?utm_source=x</link></item></channel></rss>".into(),
+            truncated: false,
+        })
+    };
+    let mut ask = |_: &crate::models::ModelRequest| -> anyhow::Result<ModelResponse> {
+        unreachable!("no AI block")
+    };
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+    };
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    let mut acted = Vec::new();
+    let mut act = |action: &str, fields: &BTreeMap<String, String>, key: &str, approved: bool| {
+        acted.push(format!("{action} {} {key} {approved}", fields["text"]));
+        Ok("done".to_string())
+    };
+    let dry = Dry {
+        root: root.path(),
+        store: &mut store,
+        io: &mut io,
+        integrations: &[],
+    };
+    let report = run(
+        "posts",
+        &graph,
+        dry,
+        Some(Real {
+            run: "r1",
+            act: &mut act,
+        }),
+        Start::Trigger,
+        Utc::now(),
+    )
+    .unwrap();
+    assert!(
+        report.contains("asked the founder (item 1): Flows"),
+        "{report}"
+    );
+    let queued = store.queue(&["pending"]).unwrap();
+    assert_eq!(queued[0].source["block"], "ok");
+    assert_eq!(
+        store
+            .seen("posts", &["https://e.com/1".into()])
+            .unwrap()
+            .len(),
+        1
+    );
+    let serde_json::Value::Object(item) = queued[0].args.clone() else {
+        panic!("an item")
+    };
+    let mut nameless = item.clone();
+    nameless.insert("source_id".into(), "".into());
+    nameless.insert("title".into(), "Nameless".into());
+    for it in [item, nameless] {
+        let dry = Dry {
+            root: root.path(),
+            store: &mut store,
+            io: &mut io,
+            integrations: &[],
+        };
+        let start = Start::After {
+            block: "ok".into(),
+            item: it,
+        };
+        let report = run(
+            "posts",
+            &graph,
+            dry,
+            Some(Real {
+                run: "r1",
+                act: &mut act,
+            }),
+            start,
+            Utc::now(),
+        )
+        .unwrap();
+        assert!(
+            !report.contains("Nameless")
+                || report.contains("set aside: 'Nameless' has no source id"),
+            "{report}"
+        );
+    }
+    drop(io);
+    assert_eq!(
+        acted,
+        vec!["blog.publish Flows posts/https://e.com/1/send true"]
+    );
+}

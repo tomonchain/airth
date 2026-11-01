@@ -21,6 +21,9 @@ pub struct BusinessAuthority {
     routine: String,
     run: String,
     declared: Vec<Declared>,
+    /// A routine's graph keys its acts itself (routine, source id, block);
+    /// a mission's calls are keyed by its run and call ids.
+    graph: bool,
 }
 
 impl BusinessAuthority {
@@ -42,7 +45,21 @@ impl BusinessAuthority {
             routine: origin.objective.clone(),
             run: state.id.clone(),
             declared: crate::actions::all(&realm.config.integrations, &servers),
+            graph: false,
         }))
+    }
+
+    /// For the acts of a routine's graph, run by `agent`.
+    pub fn for_graph(realm: &Realm, routine: &str, agent: &str, run: &str) -> Result<Self> {
+        let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+        Ok(Self {
+            realm: realm.clone(),
+            agent: agent.to_string(),
+            routine: routine.to_string(),
+            run: run.to_string(),
+            declared: crate::actions::all(&realm.config.integrations, &servers),
+            graph: true,
+        })
     }
 
     /// The daily limit and cancellation window declared for `action`.
@@ -110,7 +127,11 @@ impl Authority for BusinessAuthority {
                 // same action again under a new call id gets a new key, so
                 // this does not stop it. Graphs key acts by the item's
                 // source id instead (decision 49).
-                let key = format!("{}/{call}", self.run);
+                let key = if self.graph {
+                    call.to_string()
+                } else {
+                    format!("{}/{call}", self.run)
+                };
                 let connector = action.split('.').next().unwrap_or(action);
                 let begin = store.begin_action(&NewAction {
                     key: &key,
