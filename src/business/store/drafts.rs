@@ -6,7 +6,7 @@
 //! it. Moves are idempotent: approving twice approves once, and nothing is
 //! published twice.
 
-use super::store::Store;
+use super::Store;
 use super::time::MAX_ANSWER_SECS;
 use anyhow::{Result, bail};
 use chrono::Utc;

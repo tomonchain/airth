@@ -6,11 +6,11 @@
 use super::{Pipeline, Prompt, Step, rss, schema};
 use crate::business::drafts::New;
 use crate::business::store::Store;
+use crate::business::store::pipelines::{Heartbeat, NewCall};
 use crate::models::{ContentBlock, Message, ModelRequest, ModelResponse};
 use crate::prices::Prices;
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
-use rusqlite::params;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::time::Instant;
@@ -56,12 +56,20 @@ pub fn run(
     let finished = Utc::now();
     match result {
         Ok(outcome) => {
-            store.record_run(name, now, finished, &outcome, None, &seen_now)?;
+            record(store, name, now, finished, &outcome, None, &seen_now)?;
             Ok(outcome)
         }
         Err(e) => {
             let error = format!("{e:#}");
-            store.record_run(name, now, finished, &Outcome::default(), Some(&error), &[])?;
+            record(
+                store,
+                name,
+                now,
+                finished,
+                &Outcome::default(),
+                Some(&error),
+                &[],
+            )?;
             Err(e)
         }
     }
@@ -304,32 +312,23 @@ fn judge(
             / 1_000_000.0
     });
     let error = answer.as_ref().err().cloned();
-    store.write(|tx| {
-        tx.execute(
-            "INSERT INTO model_calls (at, pipeline, step, prompt, prompt_version, model, input_tokens, output_tokens,
-                cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, error, answer)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                Utc::now().to_rfc3339(),
-                pipeline,
-                step as i64,
-                prompt.path,
-                prompt.version,
-                r.model,
-                r.input_tokens as i64,
-                r.output_tokens as i64,
-                r.cache_read_tokens as i64,
-                r.cache_write_tokens as i64,
-                cost,
-                latency_ms,
-                error.is_none(),
-                error,
-                text,
-            ],
-        )?;
-        Ok(tx.last_insert_rowid())
-    })
-    .map(|call| (answer.ok(), call))
+    store
+        .record_call(&NewCall {
+            pipeline,
+            step,
+            prompt: &prompt.path,
+            prompt_version: &prompt.version,
+            model: &r.model,
+            input_tokens: r.input_tokens,
+            output_tokens: r.output_tokens,
+            cache_read_tokens: r.cache_read_tokens,
+            cache_write_tokens: r.cache_write_tokens,
+            cost_usd: cost,
+            latency_ms,
+            error: error.as_deref(),
+            answer: &text,
+        })
+        .map(|call| (answer.ok(), call))
 }
 
 /// A field of an item, dotted for nested ones: `answer.draft`.
@@ -402,58 +401,28 @@ fn lines(out: &mut String, items: &[Item], detail: Option<&str>) {
     }
 }
 
-impl Store {
-    /// Which of `keys` an earlier run of `pipeline` already kept.
-    fn seen(&self, pipeline: &str, keys: &[String]) -> Result<HashSet<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT 1 FROM pipeline_seen WHERE pipeline = ?1 AND key = ?2")?;
-        let mut out = HashSet::new();
-        for key in keys {
-            if stmt.exists(params![pipeline, key])? {
-                out.insert(key.clone());
-            }
-        }
-        Ok(out)
-    }
-
-    /// One run's heartbeat, and what it saw, in one transaction: a run that
-    /// fails to record leaves its items to the next one.
-    fn record_run(
-        &mut self,
-        pipeline: &str,
-        started: DateTime<Utc>,
-        finished: DateTime<Utc>,
-        outcome: &Outcome,
-        error: Option<&str>,
-        seen: &[String],
-    ) -> Result<()> {
-        let (read, kept) = (outcome.read as i64, outcome.kept.len() as i64);
-        self.write(|tx| {
-            tx.execute(
-                "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, ok, items_read, items_kept, report, notes, error)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    pipeline,
-                    started.to_rfc3339(),
-                    finished.to_rfc3339(),
-                    error.is_none(),
-                    read,
-                    kept,
-                    outcome.report,
-                    outcome.notes.join("\n"),
-                    error,
-                ],
-            )?;
-            for key in seen {
-                tx.execute(
-                    "INSERT OR IGNORE INTO pipeline_seen (pipeline, key, first_seen) VALUES (?1, ?2, ?3)",
-                    params![pipeline, key, finished.to_rfc3339()],
-                )?;
-            }
-            Ok(())
-        })
-    }
+/// One run's heartbeat, and what it saw (see `Store::record_run`).
+fn record(
+    store: &mut Store,
+    pipeline: &str,
+    started: DateTime<Utc>,
+    finished: DateTime<Utc>,
+    outcome: &Outcome,
+    error: Option<&str>,
+    seen: &[String],
+) -> Result<()> {
+    let notes = outcome.notes.join("\n");
+    let beat = Heartbeat {
+        pipeline,
+        started,
+        finished,
+        items_read: outcome.read,
+        items_kept: outcome.kept.len(),
+        report: outcome.report.as_deref(),
+        notes: &notes,
+        error,
+    };
+    store.record_run(&beat, seen)
 }
 
 #[cfg(test)]
@@ -528,13 +497,11 @@ mod tests {
     }
 
     fn runs(store: &Store) -> Vec<(bool, i64, i64, Option<String>)> {
-        let mut stmt = store
-            .conn
-            .prepare("SELECT ok, items_read, items_kept, error FROM pipeline_runs ORDER BY id")
-            .unwrap();
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        store
+            .heartbeats()
             .unwrap()
-            .map(Result::unwrap)
+            .into_iter()
+            .map(|(_, r)| (r.ok, r.items_read, r.items_kept, r.error))
             .collect()
     }
 
@@ -739,12 +706,19 @@ mod tests {
         // Every call is recorded, with its prompt version, tokens and cost.
         type Call = (String, String, i64, Option<f64>, bool, Option<String>);
         let calls: Vec<Call> = store
-            .conn
-            .prepare("SELECT prompt_version, model, input_tokens, cost_usd, valid, error FROM model_calls ORDER BY id")
+            .model_calls()
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
-            .unwrap()
-            .map(Result::unwrap)
+            .into_iter()
+            .map(|c| {
+                (
+                    c.prompt_version,
+                    c.model,
+                    c.input_tokens,
+                    c.cost_usd,
+                    c.valid,
+                    c.error,
+                )
+            })
             .collect();
         assert_eq!(calls.len(), 4);
         assert_eq!(
@@ -806,10 +780,7 @@ mod tests {
             ("post", "ETH left the queue.")
         );
         assert_eq!(d.source["link"], "https://e.com/1");
-        let first_call: i64 = store
-            .conn
-            .query_row("SELECT MIN(id) FROM model_calls", [], |r| r.get(0))
-            .unwrap();
+        let first_call = store.model_calls().unwrap()[0].id;
         assert_eq!(d.model_call, Some(first_call));
     }
 
@@ -867,12 +838,10 @@ mod tests {
         assert!(!report.contains("small"));
         // What the model answered is kept with each call.
         let answers: Vec<String> = store
-            .conn
-            .prepare("SELECT answer FROM model_calls ORDER BY id")
+            .model_calls()
             .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .map(Result::unwrap)
+            .into_iter()
+            .map(|c| c.answer.unwrap_or_default())
             .collect();
         assert_eq!(
             answers[1],

@@ -1,7 +1,7 @@
 //! What the owner reads about the business: each pipeline's recent runs and
 //! next time, and the week in numbers. Reads only.
 
-use super::store::Store;
+use super::Store;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, params};

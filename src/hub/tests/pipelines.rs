@@ -27,14 +27,12 @@ fn with_watch(f: &Fixture) {
 }
 
 fn heartbeats(f: &Fixture) -> Vec<(bool, String)> {
-    let store = Store::of(&f.realm).unwrap();
-    let mut stmt = store
-        .conn
-        .prepare("SELECT ok, error FROM pipeline_runs ORDER BY id")
-        .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+    Store::of(&f.realm)
         .unwrap()
-        .map(Result::unwrap)
+        .heartbeats()
+        .unwrap()
+        .into_iter()
+        .map(|(_, r)| (r.ok, r.error.unwrap_or_default()))
         .collect()
 }
 
