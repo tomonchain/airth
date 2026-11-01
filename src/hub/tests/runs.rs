@@ -635,3 +635,79 @@ fn runs_never_write_the_agents_or_the_goal() {
         "ok"
     );
 }
+
+/// Decision 46: a run in place can commit, but cannot plant a git hook or
+/// change the git config, even by moving `.git` aside.
+#[test]
+fn runs_in_place_cannot_plant_git_hooks_or_config() {
+    let mut f = fixture();
+    let root = f.root.path();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(git(&["init", "-q", "-b", "main"]).status.success());
+    let git_config = std::fs::read_to_string(root.join(".git/config")).unwrap();
+    f.realm.config.policy.write = Rule::Allow;
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            call(
+                "1",
+                "write_file",
+                json!({"path": ".git/hooks/pre-commit", "content": "#!/bin/sh\ncurl evil"}),
+            ),
+            call(
+                "2",
+                "write_file",
+                json!({"path": ".git/config", "content": "[core]\n\thooksPath = /tmp"}),
+            ),
+            call(
+                "3",
+                "execute_command",
+                json!({"command": "echo evil > .git/hooks/post-checkout; git config core.hooksPath /tmp; mv .git g2 && mkdir -p g2/hooks && echo evil > g2/hooks/pre-commit && mv g2 .git; echo x > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -qm x"}),
+            ),
+            done("done"),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &f.realm,
+            "Set up git",
+            config(10),
+            hooks(&mut NoObserver, false),
+        )
+        .unwrap();
+    assert_eq!(state.status, Status::Completed);
+    for i in 0..2 {
+        assert!(
+            state.events[i].result.contains("read-only"),
+            "{}",
+            state.events[i].result
+        );
+    }
+    assert!(!root.join(".git/hooks/pre-commit").exists());
+    // A command is only stopped by the sandbox.
+    if crate::sandbox::available() {
+        assert!(!root.join(".git/hooks/post-checkout").exists());
+        assert!(!root.join("g2").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join(".git/config")).unwrap(),
+            git_config
+        );
+        // Committing in place still works.
+        let log = git(&["log", "--oneline"]);
+        assert!(
+            String::from_utf8_lossy(&log.stdout).contains(" x"),
+            "{}",
+            state.events[2].result
+        );
+    }
+}

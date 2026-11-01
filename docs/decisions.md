@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 46. A run in place cannot plant git hooks or change the git config
+
+A run that works in the business's folder itself (not in a worktree) may write that folder's `.git`, since committing needs it. Two parts of it run code as the founder, outside any sandbox, the next time the founder or Airth uses git there: `.git/hooks/` (scripts git runs on commit, checkout, merge) and `.git/config` (it can name a hooks folder, filters, an editor, a pager, an SSH command). So for every run in place:
+
+- `.git/hooks/` and `.git/config` are read-only, through the workspace's access rules: the file tools refuse them, and the command sandbox denies them, creating them included;
+- `.git` itself cannot be renamed or removed by a command: without this, a command could move `.git` aside, write the hooks under the new name, and move it back. The sandbox profile gains a rule for one exact path (`literal`), beside the existing ones for a whole folder (`subpath`).
+
+The rest of `.git` stays writable: a run in place can still commit. Runs in a worktree are unchanged: the founder's checkout, its `.git` included, is already read-only to them (decision 5).
+
+*Why:* a planted hook or config line runs with the founder's rights the next time git is used in the folder, outside every rule Airth applies to runs. The founder asked for it after decision 44. Checking the sandbox showed that a rule on `.git/hooks` alone is bypassed by renaming `.git`; hard links to a protected file are already refused.
+
+*Cost:* git operations that rewrite `.git/config` (adding a remote, setting a branch's upstream) fail inside a run in place; the founder does them. Without a command sandbox (Linux, until milestone 9), commands are not confined, as for the rest of the workspace. Hooks in a submodule's git folder (`.git/modules/`) are not covered.
+
 ## 45. Autonomy per agent and action, under a ceiling set by the action's risk class
 
 **Actions.** An action is one thing done outside the business's folder through a connector: one tool of an MCP server, one declared call of an integration, or one of Airth's own (launch a mission, send a mail, adopt a change). Each has an id, `<connector>.<action>` (`typefully.create_draft`, `blog.publish`, `airth.launch_mission`). Reading and writing the business's folder, running commands there, and memory stay under the realm's rules (decision 4) and the workspace (decision 44): they are not actions.
