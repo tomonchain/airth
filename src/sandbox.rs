@@ -48,8 +48,9 @@ pub fn program() -> &'static str {
 /// shortest path to the longest: the most specific rule decides, as it does
 /// for the file tools. Only reading file *contents* is denied, not metadata,
 /// so a command can still traverse a denied directory to reach an allowed one
-/// inside it.
-pub fn profile(rules: &[(PathBuf, Access)], network: bool) -> String {
+/// inside it. Each `pinned` path cannot be renamed or removed itself, whatever
+/// the rules on it, so its protected contents cannot be moved out of reach.
+pub fn profile(rules: &[(PathBuf, Access)], pinned: &[PathBuf], network: bool) -> String {
     let mut rules: Vec<&(PathBuf, Access)> = rules.iter().collect();
     rules.sort_by_key(|(p, _)| p.components().count());
     let mut out = String::from("(version 1)\n(allow default)\n");
@@ -65,6 +66,9 @@ pub fn profile(rules: &[(PathBuf, Access)], network: bool) -> String {
             }
             Access::ReadWrite => format!("(allow file-read-data file-write* (subpath {p}))\n"),
         });
+    }
+    for path in pinned {
+        out.push_str(&format!("(deny file-write* (literal {}))\n", quote(path)));
     }
     out
 }
@@ -88,13 +92,21 @@ mod tests {
             (PathBuf::from("/home/me/.airth"), Access::None),
             (PathBuf::from("/home/me/repo"), Access::Read),
         ];
-        let p = profile(&rules, true);
+        let p = profile(&rules, &[], true);
         assert!(!p.contains("network"));
-        assert!(profile(&rules, false).contains("(deny network-outbound (remote ip))"));
+        assert!(profile(&rules, &[], false).contains("(deny network-outbound (remote ip))"));
         let deny = p.find("\"/home/me/.airth\"").unwrap();
         let allow = p.find("worktrees/r1").unwrap();
         assert!(deny < allow, "{p}");
         assert!(p.contains("(deny file-write* (subpath \"/home/me/repo\"))"));
+    }
+
+    #[test]
+    fn pinned_paths_come_after_every_rule() {
+        let rules = vec![(PathBuf::from("/r"), Access::ReadWrite)];
+        let p = profile(&rules, &[PathBuf::from("/r/.git")], true);
+        let pin = p.find("(deny file-write* (literal \"/r/.git\"))").unwrap();
+        assert!(p.find("(subpath \"/r\")").unwrap() < pin, "{p}");
     }
 
     #[test]

@@ -136,7 +136,7 @@ pub(super) fn sandboxed_command(command: &str, ws: &Workspace) -> Command {
     let mut cmd = if ws.sandboxed() && sandbox::available() {
         let mut c = Command::new(sandbox::program());
         c.arg("-p")
-            .arg(sandbox::profile(ws.rules(), ws.network()))
+            .arg(sandbox::profile(ws.rules(), ws.pinned(), ws.network()))
             .arg("sh");
         c
     } else {

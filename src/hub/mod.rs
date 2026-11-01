@@ -345,6 +345,14 @@ impl Hub {
             for dir in crate::business::config_dirs(&root) {
                 ws = ws.with_rule(dir, Access::Read);
             }
+            // Git runs hooks and reads its config as the owner, outside any
+            // sandbox: a run in place may commit, never plant either, nor
+            // move `.git` aside to do it (decision 46).
+            let git = root.join(".git");
+            ws = ws
+                .with_rule(git.join("hooks"), Access::Read)
+                .with_rule(git.join("config"), Access::Read)
+                .with_pinned(git);
         }
         // The realm's other repositories can be read, to work across them.
         for repo in &realm.config.repos {

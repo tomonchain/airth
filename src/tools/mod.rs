@@ -149,6 +149,9 @@ pub enum Access {
 pub struct Workspace {
     root: PathBuf,
     rules: Vec<(PathBuf, Access)>,
+    /// Paths a command may not rename or remove, though it may write inside
+    /// them: moving one aside would escape the rules on its contents.
+    pinned: Vec<PathBuf>,
     /// Extra environment for commands (the realm's credentials).
     env: Vec<(String, String)>,
     /// Values never shown to the model: replaced in every tool result.
@@ -166,6 +169,7 @@ impl Workspace {
             .with_context(|| format!("workspace {} does not exist", root.as_ref().display()))?;
         Ok(Self {
             rules: vec![(root.clone(), Access::ReadWrite)],
+            pinned: Vec::new(),
             root,
             env: Vec::new(),
             secrets: Vec::new(),
@@ -186,6 +190,14 @@ impl Workspace {
         if path != self.root {
             self.rules.push((path, access));
         }
+        self
+    }
+
+    /// Keep commands from renaming or removing `path` itself.
+    pub fn with_pinned(mut self, path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        self.pinned
+            .push(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
         self
     }
 
@@ -229,6 +241,10 @@ impl Workspace {
 
     pub fn rules(&self) -> &[(PathBuf, Access)] {
         &self.rules
+    }
+
+    pub fn pinned(&self) -> &[PathBuf] {
+        &self.pinned
     }
 
     pub fn env(&self) -> &[(String, String)] {
