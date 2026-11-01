@@ -24,6 +24,24 @@ impl Hub {
     ) -> Result<Outcome> {
         let root = realm.root()?;
         let pipeline = crate::pipeline::load(&crate::business::dir(&root), name)?;
+        self.with_business_io(realm, name, approver, grants, |store, io| {
+            crate::pipeline::run::run(name, &pipeline, store, io, Utc::now())
+        })
+    }
+
+    /// Call `f` with the realm's store and what a business run reaches
+    /// outside: reads through the realm's runtime (checked, redacted,
+    /// recorded like any tool call) and the realm's model, asked only if a
+    /// step needs it.
+    pub(super) fn with_business_io<T>(
+        &self,
+        realm: &Realm,
+        name: &str,
+        approver: Box<dyn Approver>,
+        grants: Vec<Grant>,
+        f: impl FnOnce(&mut Store, &mut Io) -> Result<T>,
+    ) -> Result<T> {
+        let root = realm.root()?;
         let workspace = Workspace::new(&root)?
             .with_secrets(realm.command_env()?, self.redactions(realm)?)
             .with_network(!realm.config.offline);
@@ -43,7 +61,6 @@ impl Hub {
                 &json!({"method": "GET", "url": url}),
             ))
         };
-        // Asked only when a judge step runs: a pipeline without one needs no model.
         let mut model = None;
         let mut ask = |request: &crate::models::ModelRequest| {
             if model.is_none() {
@@ -56,7 +73,7 @@ impl Hub {
             ask: &mut ask,
             prices: crate::prices::Prices::load(self.home()),
         };
-        crate::pipeline::run::run(name, &pipeline, &mut store, &mut io, Utc::now())
+        f(&mut store, &mut io)
     }
 }
 

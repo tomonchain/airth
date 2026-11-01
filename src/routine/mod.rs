@@ -16,6 +16,8 @@ use std::path::Path;
 /// Where a business's routines live, at the root of its folder.
 pub const DIR: &str = "routines";
 
+pub mod run;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Graph {
