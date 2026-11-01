@@ -194,7 +194,7 @@ Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass.
 - **Read before you write.** Find how the codebase already does a thing (errors, state files, threads, tests) and do it the same way. Do not introduce a second way.
 - **Tests first for deterministic logic:** state machines, the queue, idempotence, graph validation, permission paths, the access layer.
 - **Model steps are covered by evaluations, not unit tests:** replay a reference set when a prompt or model changes.
-- Push main after every merge. Push your working branch at the end of every session, even unfinished. Before any push, check that no secret is in the commits (keys, tokens, .env files, real mailbox credentials). The repository is public.
+- `main` moves only through pull requests: open one per branch and let it merge itself once the check is green (`gh pr merge --auto`). Never push to `main`. Push your working branch at the end of every session, even unfinished. Before any push, check that no secret is in the commits (keys, tokens, .env files, real mailbox credentials). The repository is public.
 - **End every session with:** what changed, why, which files, what you tested, what you did not do and why.
 
 ## Architecture rules
