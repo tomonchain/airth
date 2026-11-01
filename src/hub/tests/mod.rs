@@ -10,6 +10,7 @@ use crate::permissions::{Answer, PermissionRequest, Rule};
 use serde_json::json;
 use std::sync::Mutex;
 
+mod autonomy;
 mod changes;
 mod models;
 mod objectives;

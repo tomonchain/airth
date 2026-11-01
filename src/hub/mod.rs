@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod autonomy;
 mod changes;
 mod delegation;
 mod delivery;
@@ -224,6 +225,10 @@ impl Hub {
             hooks.cancel.clone(),
         )
         .with_plan(plan);
+        let runtime = match autonomy::BusinessAuthority::for_run(realm, state)? {
+            Some(authority) => runtime.with_authority(Box::new(authority)),
+            None => runtime,
+        };
         let observer = hooks.observer;
         let mut config = config.within(&state.budget);
         // AIRTH_COMPACT_AT: tokens past which the conversation is summarized (0: never).
