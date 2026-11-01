@@ -16,6 +16,7 @@ mod gate;
 mod models;
 mod objectives;
 mod pipelines;
+mod retries;
 mod routines;
 mod runs;
 

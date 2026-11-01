@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod delegate;
 mod fs;
 mod http;
+pub use http::{CUT, NOT_SENT};
 pub mod mcp;
 mod memory;
 mod plan;

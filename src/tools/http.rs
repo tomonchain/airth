@@ -25,6 +25,10 @@ const MAX_BODY_IN: usize = 100_000;
 const MAX_RESPONSE: usize = 5_000_000;
 const MAX_SHOWN: usize = 100_000;
 const METHODS: &[&str] = &["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
+/// How a request that got no answer begins its error: whether it left
+/// decides whether a write may be tried again (decision 55).
+pub const NOT_SENT: &str = "not sent";
+pub const CUT: &str = "sent, no answer";
 /// Headers the model may not set: transport framing, and where the request goes.
 const RESERVED_HEADERS: &[&str] = &[
     "host",
@@ -283,9 +287,12 @@ impl Tool for HttpRequest {
         if let Some(body) = p.body {
             request = request.body(body);
         }
-        let response = request
-            .send()
-            .map_err(|e| anyhow::anyhow!("request to {} failed: {}", p.url, e.without_url()))?;
+        let response = request.send().map_err(|e| {
+            // A connection that failed (refused, DNS, TLS) carried nothing;
+            // any other error may come after the service got the request.
+            let when = if e.is_connect() { NOT_SENT } else { CUT };
+            anyhow::anyhow!("{when}: request to {} failed: {}", p.url, e.without_url())
+        })?;
 
         let status = response.status();
         let mut out = format!("HTTP {}", status);
@@ -312,7 +319,9 @@ impl Tool for HttpRequest {
                     || t.contains("javascript")
                     || t.contains("x-www-form-urlencoded")
             });
-        let bytes = response.bytes().context("reading the response body")?;
+        let bytes = response
+            .bytes()
+            .with_context(|| format!("{CUT}: reading the response body"))?;
         if bytes.is_empty() {
             return Ok(out);
         }
