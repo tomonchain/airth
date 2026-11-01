@@ -73,6 +73,10 @@ pub struct Field {
     #[serde(default)]
     pub required: bool,
     pub place: Place,
+    /// A value fixed by the declaration: whatever a routine or an agent
+    /// gives, this is what is sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// One call an integration may make, and nothing else.
@@ -96,6 +100,25 @@ pub struct HttpAction {
     pub daily_limit: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel_minutes: Option<u32>,
+    /// The JSON body, as a template: a string `"{field}"` is where a body
+    /// field goes. Only this goes in the body, so nothing undeclared (a
+    /// date that would publish, say) can be added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<Value>,
+}
+
+/// The field a template string stands for: `"{text}"`.
+fn slot(v: &Value) -> Option<&str> {
+    v.as_str()?.strip_prefix('{')?.strip_suffix('}')
+}
+
+/// Every slot of a body template.
+fn slots(template: &Value, out: &mut Vec<String>) {
+    match template {
+        Value::Object(map) => map.values().for_each(|v| slots(v, out)),
+        Value::Array(list) => list.iter().for_each(|v| slots(v, out)),
+        v => out.extend(slot(v).map(String::from)),
+    }
 }
 
 impl HttpAction {
@@ -139,6 +162,28 @@ impl HttpAction {
         {
             bail!("{}: the path's {{{p}}} has no field", self.name);
         }
+        if let Some(template) = &self.body {
+            let mut found = Vec::new();
+            slots(template, &mut found);
+            for f in self.fields.iter().filter(|f| f.place == Place::Body) {
+                if !found.contains(&f.name) {
+                    bail!(
+                        "{}: body field '{}' has no {{{}}} in the body",
+                        self.name,
+                        f.name,
+                        f.name
+                    );
+                }
+            }
+            if let Some(stray) = found.iter().find(|s| {
+                !self
+                    .fields
+                    .iter()
+                    .any(|f| &f.name == *s && f.place == Place::Body)
+            }) {
+                bail!("{}: the body's {{{stray}}} is not a body field", self.name);
+            }
+        }
         if self.max_level.is_some_and(|l| l > 3) {
             bail!("{}: a level is 0 to 3", self.name);
         }
@@ -164,8 +209,9 @@ impl HttpAction {
                 .context("a placeholder is not closed")?
                 + open;
             let name = &rest[open + 1..close];
-            let value = values
-                .get(name)
+            let value = self
+                .fixed(name)
+                .or(values.get(name))
                 .with_context(|| format!("{}: no value for {{{name}}}", self.name))?;
             if value.contains('/') || value == "." || value == ".." || value.is_empty() {
                 bail!("{}: '{value}' cannot go in {{{name}}}", self.name);
@@ -189,12 +235,84 @@ impl HttpAction {
     pub fn matches(&self, method: &str, path: &str) -> bool {
         let want: Vec<&str> = self.path.trim_matches('/').split('/').collect();
         let got: Vec<&str> = path.trim_matches('/').split('/').collect();
+        let segment =
+            |w: &&str, g: &&str| match w.strip_prefix('{').and_then(|w| w.strip_suffix('}')) {
+                // A fixed value is the only one that matches.
+                Some(name) => self.fixed(name).map_or(!g.is_empty(), |v| v == g),
+                None => w == g,
+            };
         self.method.eq_ignore_ascii_case(method)
             && want.len() == got.len()
-            && want
-                .iter()
-                .zip(&got)
-                .all(|(w, g)| (w.starts_with('{') && w.ends_with('}') && !g.is_empty()) || w == g)
+            && want.iter().zip(&got).all(|(w, g)| segment(w, g))
+    }
+
+    /// The value the declaration fixes for `field`, if any.
+    fn fixed(&self, field: &str) -> Option<&String> {
+        self.fields.iter().find(|f| f.name == field)?.value.as_ref()
+    }
+
+    /// The body to send: the template with each slot filled from `values`
+    /// (or the declaration's fixed value). None without a template.
+    pub fn body(
+        &self,
+        values: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Option<Value>> {
+        fn fill(
+            v: &Value,
+            a: &HttpAction,
+            values: &std::collections::BTreeMap<String, String>,
+        ) -> Result<Value> {
+            Ok(match v {
+                Value::Object(map) => Value::Object(
+                    map.iter()
+                        .map(|(k, v)| Ok((k.clone(), fill(v, a, values)?)))
+                        .collect::<Result<_>>()?,
+                ),
+                Value::Array(list) => Value::Array(
+                    list.iter()
+                        .map(|v| fill(v, a, values))
+                        .collect::<Result<_>>()?,
+                ),
+                v => match slot(v) {
+                    Some(name) => Value::String(
+                        a.fixed(name)
+                            .or(values.get(name))
+                            .with_context(|| format!("{}: no value for {name}", a.name))?
+                            .clone(),
+                    ),
+                    None => v.clone(),
+                },
+            })
+        }
+        self.body
+            .as_ref()
+            .map(|t| fill(t, self, values))
+            .transpose()
+    }
+
+    /// Whether `body` has exactly the template's shape: the same keys and
+    /// lengths, the template's own values, a string in each slot (the fixed
+    /// value where there is one). Anything added is refused.
+    pub fn accepts_body(&self, body: &Value) -> bool {
+        fn same(t: &Value, b: &Value, a: &HttpAction) -> bool {
+            match (t, b) {
+                (Value::Object(t), Value::Object(b)) => {
+                    t.len() == b.len()
+                        && t.iter()
+                            .all(|(k, v)| b.get(k).is_some_and(|w| same(v, w, a)))
+                }
+                (Value::Array(t), Value::Array(b)) => {
+                    t.len() == b.len() && t.iter().zip(b).all(|(v, w)| same(v, w, a))
+                }
+                (t, b) => match slot(t) {
+                    Some(name) => {
+                        b.is_string() && a.fixed(name).is_none_or(|f| b.as_str() == Some(f))
+                    }
+                    None => t == b,
+                },
+            }
+        }
+        self.body.as_ref().is_none_or(|t| same(t, body, self))
     }
 }
 
@@ -366,6 +484,74 @@ mod tests {
             assert!(url(bad).is_err(), "{bad}");
         }
         assert!(a.url(&i, &Default::default()).is_err());
+    }
+
+    /// Typefully v2's draft, as the founder declares it: the social set
+    /// fixed, the post's text the only thing filled.
+    fn typefully_draft() -> HttpAction {
+        serde_json::from_value(json!({
+            "name": "create_draft", "method": "POST", "class": "reversible",
+            "path": "/v2/social-sets/{social_set_id}/drafts",
+            "fields": [
+                {"name": "social_set_id", "place": "path", "value": "123"},
+                {"name": "text", "place": "body", "required": true}
+            ],
+            "body": {"platforms": {"x": {"enabled": true, "posts": [{"text": "{text}"}]}}}
+        }))
+        .unwrap()
+    }
+
+    /// A draft never carries `publish_at`, which would publish it: that is
+    /// what makes `create_draft` reversible. Nor another social set.
+    #[test]
+    fn a_body_template_sends_only_what_it_declares() {
+        let a = typefully_draft();
+        a.validate().unwrap();
+        // A routine's fields, say after an approval, with more than declared.
+        let values: std::collections::BTreeMap<String, String> = [
+            ("text", "ETH left the queue."),
+            ("publish_at", "now"),
+            ("social_set_id", "999"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .into();
+        assert_eq!(
+            a.body(&values).unwrap().unwrap(),
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "ETH left the queue."}]}}})
+        );
+        let i = Integration {
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: "https://api.typefully.com".into(),
+            headers: Default::default(),
+            actions: vec![a.clone()],
+        };
+        assert_eq!(
+            a.url(&i, &values).unwrap().path(),
+            "/v2/social-sets/123/drafts"
+        );
+        assert!(a.matches("POST", "/v2/social-sets/123/drafts"));
+        assert!(!a.matches("POST", "/v2/social-sets/999/drafts"));
+        // A body a mission writes itself must be the template's shape.
+        let ok = json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi"}]}}});
+        assert!(a.accepts_body(&ok));
+        for bad in [
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi"}]}}, "publish_at": "now"}),
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi"}], "publish_at": "now"}}}),
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi", "publish_at": "now"}]}}}),
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "Hi"}, {"text": "Two"}]}}}),
+            json!({"platforms": {"x": {"enabled": false, "posts": [{"text": "Hi"}]}}}),
+            json!({"platforms": {"x": {"enabled": true, "posts": [{"text": 5}]}}}),
+        ] {
+            assert!(!a.accepts_body(&bad), "{bad}");
+        }
+        // A template and its fields must agree.
+        let mut stray = a.clone();
+        stray.body = Some(json!({"text": "{text}", "when": "{publish_at}"}));
+        assert!(stray.validate().is_err());
+        let mut missing = a.clone();
+        missing.body = Some(json!({"posts": []}));
+        assert!(missing.validate().is_err());
     }
 
     #[test]
