@@ -632,6 +632,10 @@ pub struct McpTool {
 }
 
 impl Tool for McpTool {
+    fn action(&self, _input: &Value) -> Result<Option<String>> {
+        Ok(Some(format!("{}.{}", self.server, self.spec.name)))
+    }
+
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: tool_name(&self.server, &self.spec.name),
