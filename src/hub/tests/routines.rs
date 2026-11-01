@@ -123,3 +123,35 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
     assert_eq!((item.status.as_str(), again), ("done", None));
     assert_eq!(posted.lock().unwrap().len(), 1);
 }
+
+/// A scheduled routine is armed the first time it is seen, then runs at its
+/// time, once.
+#[test]
+fn a_scheduled_routine_runs_at_its_time() {
+    let f = fixture();
+    let root = f.root.path();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/watcher.md"), "Watch.").unwrap();
+    std::fs::write(
+        root.join("routines/hourly.json"),
+        json!({"agent": "watcher", "trigger": {"schedule": "every 1h"}, "blocks": [
+            {"id": "tell", "type": "act", "action": "airth.report", "fields": {"title": "Hourly"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let now = Utc::now();
+    assert!(hub.due_routines(now).unwrap().is_empty(), "armed, not run");
+    let due = hub
+        .due_routines(now + chrono::Duration::minutes(61))
+        .unwrap();
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].1, "hourly");
+    assert!(
+        hub.due_routines(now + chrono::Duration::minutes(62))
+            .unwrap()
+            .is_empty()
+    );
+}

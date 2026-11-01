@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::business::store::Store;
+use crate::pipeline::schedule::{Tick, tick};
 use crate::routine::{Checks, Graph};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -320,5 +321,99 @@ impl Hub {
             "{action}: {}",
             event.result.lines().next().unwrap_or_default()
         ))
+    }
+
+    /// Do the delayed actions whose window has passed by `now`, across
+    /// realms, each once; the founder cancelled the others by rejecting
+    /// them. What was done, or why not, by realm and item.
+    pub fn release_delayed(&self, now: DateTime<Utc>) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived || !realm.dir().join(crate::business::store::FILE).exists() {
+                continue;
+            }
+            let mut store = Store::of(&realm)?;
+            for item in store.due_delayed(now)? {
+                if !store.release_item(item.id)? {
+                    continue;
+                }
+                let tool = item.source["tool"]
+                    .as_str()
+                    .unwrap_or("http_request")
+                    .to_string();
+                let outcome = self.do_approved(&realm, &item, &tool);
+                let (status, detail) = match &outcome {
+                    Ok(what) => ("done", what.clone()),
+                    Err(e) => ("failed", format!("{e:#}")),
+                };
+                store.close_item(item.id, status, &detail)?;
+                out.push(format!("{}/{}: {status}: {detail}", realm.name(), item.id));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The routines whose schedule says they run at `now`, across realms,
+    /// each claimed so the next call does not return it again. A late or
+    /// silent run is told to the founder, as for pipelines.
+    pub fn due_routines(&self, now: DateTime<Utc>) -> Result<Vec<(Realm, String)>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived || realm.root().is_err() {
+                continue;
+            }
+            let graphs = self.with_routine_checks(&realm, crate::routine::load_all)?;
+            let mut store = Store::of(&realm)?;
+            for (name, graph) in graphs {
+                let Some(schedule) = graph.ok().and_then(|g| g.trigger.schedule) else {
+                    continue;
+                };
+                let schedule = Schedule::parse(&schedule)?;
+                // Kept apart from pipelines of the same name.
+                let key = format!("routine:{name}");
+                let Tick::Run { missed, silent } = tick(&mut store, &key, &schedule, now)? else {
+                    continue;
+                };
+                self.tell_late(&realm, &name, missed, silent)?;
+                out.push((realm.clone(), name));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Run a routine its schedule started, and leave its heartbeat, so the
+    /// next time knows it ended (decision 34).
+    pub fn run_scheduled_routine(&self, realm: &Realm, name: &str) {
+        let started = Utc::now();
+        let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
+        let outcome = self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger);
+        let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
+        let report = outcome.ok();
+        let beat = crate::business::store::pipelines::Heartbeat {
+            pipeline: &format!("routine:{name}"),
+            started,
+            finished: Utc::now(),
+            items_read: 0,
+            items_kept: 0,
+            report: report.as_deref(),
+            notes: "",
+            error: error.as_deref(),
+        };
+        let recorded = Store::of(realm).and_then(|mut s| s.record_run(&beat, &[]));
+        if let Err(e) = recorded {
+            eprintln!(
+                "routine {}/{name}: its heartbeat was not recorded: {e:#}",
+                realm.name()
+            );
+        }
+        if let Some(e) = error {
+            let _ = self.home.inbox().push(
+                crate::notify::Kind::Failed,
+                realm.name(),
+                None,
+                &format!("{name} failed"),
+                &e,
+            );
+        }
     }
 }

@@ -282,6 +282,22 @@ pub(super) fn run_scheduler(runner: Runner) {
             }
             Err(e) => eprintln!("pipelines: {e:#}"),
         }
+        // Routines as graphs (decision 49), and delayed actions whose
+        // window passed (decision 45).
+        match runner.hub.due_routines(chrono::Utc::now()) {
+            Ok(due) => {
+                for (realm, name) in due {
+                    eprintln!("routine {}/{name} started", realm.name());
+                    let hub = runner.hub.clone();
+                    std::thread::spawn(move || hub.run_scheduled_routine(&realm, &name));
+                }
+            }
+            Err(e) => eprintln!("routines: {e:#}"),
+        }
+        match runner.hub.release_delayed(chrono::Utc::now()) {
+            Ok(done) => done.iter().for_each(|d| eprintln!("delayed action {d}")),
+            Err(e) => eprintln!("delayed actions: {e:#}"),
+        }
         std::thread::sleep(scheduler::TICK);
     }
 }

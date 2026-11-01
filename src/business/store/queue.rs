@@ -119,6 +119,42 @@ impl Store {
             .collect())
     }
 
+    /// Delayed actions whose cancellation window has passed by `now`, and
+    /// that the founder did not cancel (decision 45).
+    pub fn due_delayed(&self, now: chrono::DateTime<Utc>) -> Result<Vec<Item>> {
+        let now = now.to_rfc3339();
+        Ok(self
+            .queue(&["pending"])?
+            .into_iter()
+            .filter(|i| {
+                i.kind == "delayed" && i.execute_at.as_deref().is_some_and(|at| at <= now.as_str())
+            })
+            .collect())
+    }
+
+    /// Airth lets a delayed item go once its window has passed: it becomes
+    /// approved, unless the founder answered meanwhile.
+    pub fn release_item(&mut self, id: i64) -> Result<bool> {
+        self.write(|tx| {
+            let changed = tx.execute(
+                "UPDATE queue SET status = 'approved', revision = revision + 1
+                 WHERE id = ?1 AND kind = 'delayed' AND status = 'pending'",
+                params![id],
+            )?;
+            if changed == 1 {
+                log(
+                    tx,
+                    id,
+                    "released",
+                    "airth",
+                    None,
+                    "the cancellation window passed",
+                )?;
+            }
+            Ok(changed == 1)
+        })
+    }
+
     /// What became of an approved item, as Airth records it: `done` or
     /// `failed`.
     pub fn close_item(&mut self, id: i64, status: &str, detail: &str) -> Result<()> {
