@@ -158,4 +158,12 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
     );
     drop(io);
     assert_eq!(fetched, 1, "only the feed was read");
+    // Its model calls are journaled as a dry run's, out of the statistics.
+    let calls = store.model_calls().unwrap();
+    assert!(
+        calls.len() == 2 && calls.iter().all(|c| c.dry_run),
+        "{calls:?}"
+    );
+    let week = store.week(Utc::now() - chrono::Duration::days(7)).unwrap();
+    assert_eq!((week.model_calls, week.unpriced_calls), (0, 0));
 }

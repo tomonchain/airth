@@ -231,6 +231,9 @@ const MIGRATIONS: &[&str] = &[
         BEGIN SELECT RAISE(ABORT, 'routine blocks are append-only'); END;
     CREATE TRIGGER routine_blocks_no_delete BEFORE DELETE ON routine_blocks
         BEGIN SELECT RAISE(ABORT, 'routine blocks are append-only'); END;",
+    // 11: a dry run's model calls are marked, so they count neither in the
+    // statistics nor as evidence.
+    "ALTER TABLE model_calls ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0;",
 ];
 
 pub struct Store {
