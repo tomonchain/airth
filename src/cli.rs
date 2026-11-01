@@ -670,25 +670,29 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
     Ok(true)
 }
 
-pub fn routines(ctx: &Ctx) -> Result<bool> {
+#[derive(Subcommand)]
+pub enum RoutinesCmd {
+    /// List the business's routines, each loaded or refused with why
+    List,
+    /// Run a routine without effects: reads and AI blocks for real,
+    /// approvals taken as given, acts only shown
+    DryRun { name: String },
+}
+
+pub fn routines(ctx: &Ctx, command: Option<RoutinesCmd>) -> Result<bool> {
     let realm = ctx.realm()?;
-    let root = realm.root()?;
-    let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
-    let actions = crate::actions::all(&realm.config.integrations, &servers);
-    let store = crate::business::store::Store::of(&realm)?;
-    let level = |agent: &str, action: &str| {
-        let (ceiling, start) = actions
-            .iter()
-            .find(|a| a.id == action)
-            .map_or((1, 1), |a| (a.ceiling, a.start));
-        store.level(agent, action, ceiling, start).unwrap_or(1)
-    };
-    let checks = crate::routine::Checks {
-        root: &root,
-        actions: &actions,
-        level: &level,
-    };
-    let all = crate::routine::load_all(&checks)?;
+    if let Some(RoutinesCmd::DryRun { name }) = command {
+        let report = ctx.hub().dry_run_routine(
+            &realm,
+            &name,
+            Box::new(crate::permissions::TerminalApprover),
+        )?;
+        println!("{report}");
+        return Ok(true);
+    }
+    let all = ctx
+        .hub()
+        .with_routine_checks(&realm, crate::routine::load_all)?;
     if all.is_empty() {
         eprintln!("no routine yet: write one in {}/", crate::routine::DIR);
     }

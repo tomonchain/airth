@@ -147,6 +147,43 @@ impl HttpAction {
 }
 
 impl HttpAction {
+    /// The URL this action calls with `values` in its placeholders, checked
+    /// under the integration's base (decision 49). A value is encoded, and
+    /// refused if it holds `/` or is `.` or `..`: a field drafted from
+    /// outside content cannot walk the request to another endpoint.
+    pub fn url(
+        &self,
+        integration: &Integration,
+        values: &std::collections::BTreeMap<String, String>,
+    ) -> Result<reqwest::Url> {
+        let mut path = String::new();
+        let mut rest = self.path.as_str();
+        while let Some(open) = rest.find('{') {
+            let close = rest[open..]
+                .find('}')
+                .context("a placeholder is not closed")?
+                + open;
+            let name = &rest[open + 1..close];
+            let value = values
+                .get(name)
+                .with_context(|| format!("{}: no value for {{{name}}}", self.name))?;
+            if value.contains('/') || value == "." || value == ".." || value.is_empty() {
+                bail!("{}: '{value}' cannot go in {{{name}}}", self.name);
+            }
+            path.push_str(&rest[..open]);
+            for b in value.bytes() {
+                if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                    path.push(b as char);
+                } else {
+                    path.push_str(&format!("%{b:02X}"));
+                }
+            }
+            rest = &rest[close + 1..];
+        }
+        path.push_str(rest);
+        integration.url_for(&path)
+    }
+
     /// Whether a request is this action: same method, and a path whose
     /// segments are the template's, a `{placeholder}` standing for one.
     pub fn matches(&self, method: &str, path: &str) -> bool {
@@ -302,6 +339,33 @@ mod tests {
         let mut get = ok.clone();
         get.method = "TRACE".into();
         assert!(get.validate().is_err());
+    }
+
+    /// Decision 49: a value in a path placeholder cannot leave the action's
+    /// endpoint.
+    #[test]
+    fn a_placeholder_value_is_encoded_and_cannot_walk_away() {
+        let a = action(
+            "/v1/sets/{set}/drafts",
+            json!([{"name": "set", "place": "path"}]),
+        );
+        let i = Integration {
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: "https://api.typefully.com".into(),
+            headers: Default::default(),
+            actions: vec![a.clone()],
+        };
+        let url = |v: &str| a.url(&i, &[("set".to_string(), v.to_string())].into());
+        assert_eq!(
+            url("hedgen 2").unwrap().as_str(),
+            "https://api.typefully.com/v1/sets/hedgen%202/drafts"
+        );
+        assert_eq!(url("a%2Fb").unwrap().path(), "/v1/sets/a%252Fb/drafts");
+        for bad in ["../admin", "..", ".", "a/b", "https://evil.example/x", ""] {
+            assert!(url(bad).is_err(), "{bad}");
+        }
+        assert!(a.url(&i, &Default::default()).is_err());
     }
 
     #[test]
