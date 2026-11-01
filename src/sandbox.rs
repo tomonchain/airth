@@ -5,7 +5,8 @@
 //! open any path, so on macOS it runs under `sandbox-exec` with the same rules:
 //! no access to the Airth home or other realms, read-only where the run may
 //! only read, no writes anywhere the workspace does not allow (a few tool
-//! caches aside), and none of the owner's credentials (decision 48). Elsewhere commands are not confined (yet) and `airth doctor` says
+//! caches aside), none of the owner's credentials (decision 48), and nothing
+//! else of the owner's home but the developer tools (decision 50). Elsewhere commands are not confined (yet) and `airth doctor` says
 //! so; every command still needs approval unless the realm's policy says
 //! otherwise.
 
@@ -25,6 +26,11 @@ const CACHES: &[&str] = &[
     ".cargo/.global-cache",
     ".npm",
 ];
+
+/// The developer tools' folders under the owner's home that commands read:
+/// toolchains and Cargo's config, and the owner's git settings. The rest of
+/// the home is closed (decision 50).
+const DEV_TOOLS: &[&str] = &[".cargo", ".rustup", ".gitconfig", ".config/git"];
 
 /// The owner's credentials under their home, which no command may read.
 const CREDENTIALS: &[&str] = &[
@@ -50,13 +56,16 @@ const CREDENTIALS: &[&str] = &[
 const KEYCHAIN_SERVICES: &[&str] = &["com.apple.SecurityServer", "com.apple.securityd.xpc"];
 
 /// What holds for every command before the workspace's own rules: nothing
-/// written but `/dev` and the tool caches, the owner's credentials unread.
+/// written but `/dev` and the tool caches; in the owner's home, nothing read
+/// but the developer tools, and never the credentials.
 fn baseline(home: Option<&Path>) -> Vec<(PathBuf, Access)> {
     let mut rules = vec![
         (PathBuf::from("/"), Access::Read),
         (PathBuf::from("/dev"), Access::ReadWrite),
     ];
     if let Some(home) = home {
+        rules.push((home.to_path_buf(), Access::None));
+        rules.extend(DEV_TOOLS.iter().map(|t| (home.join(t), Access::Read)));
         rules.extend(CACHES.iter().map(|c| (home.join(c), Access::ReadWrite)));
         rules.extend(CREDENTIALS.iter().map(|c| (home.join(c), Access::None)));
     }
@@ -229,7 +238,10 @@ mod tests {
         let files = [
             ("Documents/taxes.txt", "personal"),
             ("Library/Mail/V10/inbox.emlx", "personal"),
-            ("Library/Application Support/Google/Chrome/Default/Cookies", "personal"),
+            (
+                "Library/Application Support/Google/Chrome/Default/Cookies",
+                "personal",
+            ),
             (".zsh_history", "personal"),
             ("realm/notes.md", "realm"),
             (".cargo/config.toml", "tool"),
