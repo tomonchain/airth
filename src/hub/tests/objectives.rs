@@ -210,8 +210,9 @@ fn a_bot_runs_with_its_job_and_the_strategy() {
     use crate::objective::{Objective, Trigger};
     let f = fixture();
     let business = f.root.path().join("business");
-    std::fs::create_dir_all(business.join("bots")).unwrap();
-    std::fs::write(business.join("strategy.md"), "Explain, never hype.").unwrap();
+    std::fs::create_dir_all(f.root.path().join("agents")).unwrap();
+    std::fs::create_dir_all(&business).unwrap();
+    std::fs::write(business.join("goal.md"), "Explain, never hype.").unwrap();
     f.realm
         .objectives()
         .save(Objective {
@@ -238,13 +239,10 @@ fn a_bot_runs_with_its_job_and_the_strategy() {
     let err = hub
         .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
         .unwrap_err();
-    assert!(
-        format!("{err:#}").contains("business/bots/writer.md"),
-        "{err:#}"
-    );
+    assert!(format!("{err:#}").contains("agents/writer.md"), "{err:#}");
 
     std::fs::write(
-        business.join("bots/writer.md"),
+        f.root.path().join("agents/writer.md"),
         "Write one article a week for the blog.",
     )
     .unwrap();

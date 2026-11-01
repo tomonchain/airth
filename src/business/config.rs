@@ -42,6 +42,7 @@ pub struct Config {
 }
 
 pub fn load(root: &Path) -> Result<Config> {
+    super::migrate(root)?;
     let mut c = Config::default();
     let m = &mut c.missing;
     let profile = read(root, "business/profile.md", PROFILE, m, check_profile)?;

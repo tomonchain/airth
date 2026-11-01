@@ -1,11 +1,13 @@
 //! A business run from a realm (decision 30). What belongs to it lives in
-//! the realm's `business/` folder, versioned with the realm: its profile
-//! (`profile.md`), the owner's strategy (`strategy.md`), the jobs of its
-//! bots (`bots/<name>.md`, decision 36) and its archive (`archive/`, past
-//! posts and documents). Every run of the realm is told the profile, the
-//! strategy and where the archive is; runs may read the folder but never
-//! write it, so only the owner changes what the business is and what its
-//! bots are for.
+//! the realm's folder, versioned with it (decision 43): `business/` holds its
+//! profile (`profile.md`), its goal with the owner's strategy as its body
+//! (`goal.md`) and its archive (`archive/`, past posts and documents);
+//! `agents/<name>.md` holds each agent's job (decision 36). Every run of the
+//! realm is told the profile, the strategy and where the archive is; runs may
+//! read these folders but never write them (decision 44), so only the owner
+//! changes what the business is and what its agents are for. Folders laid
+//! out before decision 43 (`business/bots/`, `business/strategy.md`) are
+//! moved once, the first time they are read.
 
 pub mod config;
 pub mod store;
@@ -19,8 +21,8 @@ use std::path::{Path, PathBuf};
 /// The business folder, under the realm's root.
 pub const DIR: &str = "business";
 const PROFILE: &str = "profile.md";
-const STRATEGY: &str = "strategy.md";
-const BOTS: &str = "bots";
+const GOAL: &str = "goal.md";
+const AGENTS: &str = "agents";
 const ARCHIVE: &str = "archive";
 /// Beyond this, the profile is cut in the run's context; the run can read
 /// the rest from the file.
@@ -71,17 +73,68 @@ pub fn dir(root: &Path) -> PathBuf {
     root.join(DIR)
 }
 
-/// The owner's strategy as written, empty when there is none yet.
-pub fn strategy(root: &Path) -> Result<String> {
-    Ok(read_optional(&dir(root), STRATEGY)?.unwrap_or_default())
+/// Move a folder laid out before decision 43: `business/bots/<name>.md` to
+/// `agents/<name>.md`, and `business/strategy.md` to the body of
+/// `business/goal.md`. Nothing is overwritten: a file whose new place is
+/// taken stays where it was.
+fn migrate(root: &Path) -> Result<()> {
+    let old = dir(root).join("bots");
+    if let Ok(entries) = std::fs::read_dir(&old) {
+        let agents = root.join(AGENTS);
+        std::fs::create_dir_all(&agents).with_context(|| format!("creating {AGENTS}/"))?;
+        for entry in entries.flatten() {
+            let to = agents.join(entry.file_name());
+            if !to.exists() {
+                std::fs::rename(entry.path(), &to)
+                    .with_context(|| format!("moving {} to {AGENTS}/", entry.path().display()))?;
+            }
+        }
+        let _ = std::fs::remove_dir(&old);
+    }
+    let strategy = dir(root).join("strategy.md");
+    if strategy.exists() && !dir(root).join(GOAL).exists() {
+        std::fs::rename(&strategy, dir(root).join(GOAL))
+            .context("moving strategy.md to goal.md")?;
+    }
+    Ok(())
 }
 
-/// Write the owner's strategy (only the owner does: runs cannot write the
-/// business folder).
+/// A file's front matter, as written, and its body.
+fn split(text: &str) -> (&str, &str) {
+    if text.starts_with("---")
+        && let Some(end) = text[3..].find("\n---")
+    {
+        let close = 3 + end + 4;
+        let line_end = text[close..]
+            .find('\n')
+            .map_or(text.len(), |n| close + n + 1);
+        return text.split_at(line_end);
+    }
+    ("", text)
+}
+
+/// Write `body` into the file at `path`, keeping its front matter.
+fn write_body(path: &Path, body: &str) -> Result<()> {
+    let old = std::fs::read_to_string(path).unwrap_or_default();
+    let (front, _) = split(&old);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    crate::realm::write_atomic(path, &format!("{front}{}\n", body.trim()))
+}
+
+/// The owner's strategy (the body of `goal.md`), empty when there is none.
+pub fn strategy(root: &Path) -> Result<String> {
+    migrate(root)?;
+    let text = read_optional(&dir(root), GOAL)?.unwrap_or_default();
+    Ok(split(&text).1.trim().to_string())
+}
+
+/// Write the owner's strategy, keeping the goal's fields (only the owner
+/// does: runs cannot write the business folder).
 pub fn set_strategy(root: &Path, text: &str) -> Result<()> {
-    let dir = dir(root);
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    crate::realm::write_atomic(&dir.join(STRATEGY), &format!("{}\n", text.trim()))
+    migrate(root)?;
+    write_body(&dir(root).join(GOAL), text)
 }
 
 /// Write what the business is (only the owner does).
@@ -91,32 +144,35 @@ pub fn set_profile(root: &Path, text: &str) -> Result<()> {
     crate::realm::write_atomic(&dir.join(PROFILE), &format!("{}\n", text.trim()))
 }
 
-/// A bot's job, as the owner wrote it in `business/bots/<name>.md`.
+/// An agent's job, as the owner wrote it: the body of `agents/<name>.md`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Job {
     pub text: String,
-    /// SHA-256 of the text: recorded with each of the bot's runs.
+    /// SHA-256 of the whole file: recorded with each of the agent's runs.
     pub version: String,
 }
 
-/// The job of the bot `name`.
+/// The job of the agent `name`.
 pub fn job(root: &Path, name: &str) -> Result<Job> {
-    crate::realm::validate_name(name).context("invalid bot name")?;
-    let path = format!("{DIR}/{BOTS}/{name}.md");
-    let text = std::fs::read_to_string(root.join(&path))
-        .with_context(|| format!("the bot {name} has no job: write it in {path}"))?;
-    if text.trim().is_empty() {
-        anyhow::bail!("the bot {name} has no job: {path} is empty");
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    migrate(root)?;
+    let path = format!("{AGENTS}/{name}.md");
+    let file = std::fs::read_to_string(root.join(&path))
+        .with_context(|| format!("the agent {name} has no job: write it in {path}"))?;
+    let text = split(&file).1.trim().to_string();
+    if text.is_empty() {
+        anyhow::bail!("the agent {name} has no job: {path} is empty");
     }
     Ok(Job {
-        version: crate::update::sha256_hex(text.as_bytes()),
+        version: crate::update::sha256_hex(file.as_bytes()),
         text,
     })
 }
 
-/// Every bot of the business with its job, by name.
+/// Every agent of the business with its job, by name.
 pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
-    let dir = dir(root).join(BOTS);
+    migrate(root)?;
+    let dir = root.join(AGENTS);
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -132,7 +188,7 @@ pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
         else {
             continue;
         };
-        // A file that is not a valid bot (bad name, empty) is not listed.
+        // A file that is not a valid agent (bad name, empty) is not listed.
         if let Ok(job) = job(root, name) {
             out.push((name.to_string(), job));
         }
@@ -141,26 +197,23 @@ pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
     Ok(out)
 }
 
-/// Write the job of the bot `name`, hiring it when it is new (only the owner
-/// does: runs cannot write the business folder).
+/// Write the job of the agent `name`, keeping its fields, and hiring it when
+/// it is new (only the owner does: runs cannot write `agents/`).
 pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
-    crate::realm::validate_name(name).context("invalid bot name")?;
+    crate::realm::validate_name(name).context("invalid agent name")?;
     if text.trim().is_empty() {
-        anyhow::bail!("a bot needs a job");
+        anyhow::bail!("an agent needs a job");
     }
-    let dir = dir(root).join(BOTS);
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    crate::realm::write_atomic(
-        &dir.join(format!("{name}.md")),
-        &format!("{}\n", text.trim()),
-    )
+    migrate(root)?;
+    write_body(&root.join(AGENTS).join(format!("{name}.md")), text)
 }
 
-/// Let the bot `name` go: its job file is removed.
+/// Let the agent `name` go: its file is removed.
 pub fn remove_job(root: &Path, name: &str) -> Result<()> {
-    crate::realm::validate_name(name).context("invalid bot name")?;
-    let path = dir(root).join(BOTS).join(format!("{name}.md"));
-    std::fs::remove_file(&path).with_context(|| format!("no bot {name}"))
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    migrate(root)?;
+    let path = root.join(AGENTS).join(format!("{name}.md"));
+    std::fs::remove_file(&path).with_context(|| format!("no agent {name}"))
 }
 
 fn read_optional(dir: &Path, file: &str) -> Result<Option<String>> {
@@ -186,7 +239,7 @@ fn capped(text: &str, file: &str) -> String {
 pub fn briefing(root: &Path) -> Result<Option<String>> {
     let dir = dir(root);
     let profile = read_optional(&dir, PROFILE)?;
-    let strategy = read_optional(&dir, STRATEGY)?;
+    let strategy = Some(strategy(root)?).filter(|s| !s.is_empty());
     let archived = count_files(&dir.join(ARCHIVE));
     if profile.is_none() && strategy.is_none() && archived == 0 {
         return Ok(None);
@@ -198,7 +251,7 @@ pub fn briefing(root: &Path) -> Result<Option<String>> {
     if let Some(s) = &strategy {
         out.push_str(&format!(
             "\nThe owner's strategy, which all work for the business follows:\n{}",
-            capped(s, STRATEGY)
+            capped(s, GOAL)
         ));
     }
     if archived > 0 {
@@ -260,7 +313,11 @@ mod tests {
         assert!(b.contains("business/archive/: 2 files"), "{b}");
         assert!(b.contains("not change it"), "{b}");
         assert!(!b.contains("strategy"), "{b}");
-        std::fs::write(business.join(STRATEGY), "Grow the newsletter first.").unwrap();
+        std::fs::write(
+            business.join(GOAL),
+            "---\ngoal: TODO\n---\nGrow the newsletter first.",
+        )
+        .unwrap();
         let b = briefing(root.path()).unwrap().unwrap();
         assert!(
             b.contains("The owner's strategy, which all work for the business follows:\nGrow the newsletter first."),
@@ -332,25 +389,31 @@ mod tests {
     fn a_strategy_alone_is_a_business() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir(root.path())).unwrap();
-        std::fs::write(dir(root.path()).join(STRATEGY), "Sell more.").unwrap();
+        // Written before decision 43: moved to goal.md when first read.
+        std::fs::write(dir(root.path()).join("strategy.md"), "Sell more.").unwrap();
         assert!(
             briefing(root.path())
                 .unwrap()
                 .unwrap()
                 .contains("Sell more.")
         );
+        assert!(dir(root.path()).join(GOAL).exists());
     }
 
     #[test]
-    fn a_bot_has_a_job_with_a_version() {
+    fn an_agent_has_a_job_with_a_version() {
         let root = tempfile::tempdir().unwrap();
-        let bots = dir(root.path()).join(BOTS);
-        std::fs::create_dir_all(&bots).unwrap();
+        let agents = root.path().join(AGENTS);
+        std::fs::create_dir_all(&agents).unwrap();
         let err = job(root.path(), "writer").unwrap_err();
-        assert!(format!("{err:#}").contains("write it in business/bots/writer.md"));
-        std::fs::write(bots.join("writer.md"), " \n").unwrap();
+        assert!(format!("{err:#}").contains("write it in agents/writer.md"));
+        std::fs::write(agents.join("writer.md"), "---\ntitle: Writer\n---\n \n").unwrap();
         assert!(format!("{:#}", job(root.path(), "writer").unwrap_err()).contains("empty"));
-        std::fs::write(bots.join("writer.md"), "Write one article a week.").unwrap();
+        std::fs::write(
+            agents.join("writer.md"),
+            "---\ntitle: Writer\n---\nWrite one article a week.\n",
+        )
+        .unwrap();
         let j = job(root.path(), "writer").unwrap();
         assert_eq!(j.text, "Write one article a week.");
         assert_eq!(j.version.len(), 64);
@@ -358,29 +421,72 @@ mod tests {
     }
 
     #[test]
-    fn the_owner_hires_edits_and_lets_bots_go() {
+    fn the_owner_hires_edits_and_lets_agents_go() {
         let root = tempfile::tempdir().unwrap();
         assert!(bots(root.path()).unwrap().is_empty());
         set_job(root.path(), "writer", "Write one article a week.").unwrap();
         set_job(root.path(), "analyst", "Watch the markets.").unwrap();
-        std::fs::write(dir(root.path()).join("bots/notes.txt"), "not a bot").unwrap();
-        std::fs::write(dir(root.path()).join("bots/empty.md"), "").unwrap();
+        let agents = root.path().join(AGENTS);
+        std::fs::write(agents.join("notes.txt"), "not an agent").unwrap();
+        std::fs::write(agents.join("empty.md"), "").unwrap();
         let names: Vec<String> = bots(root.path())
             .unwrap()
             .into_iter()
             .map(|b| b.0)
             .collect();
         assert_eq!(names, vec!["analyst", "writer"]);
+        // Editing the job keeps the agent's fields.
+        std::fs::write(
+            agents.join("writer.md"),
+            "---\ntitle: Writer\ndepartment: marketing\n---\nOld job.\n",
+        )
+        .unwrap();
         set_job(root.path(), "writer", "Write two articles a week.").unwrap();
         assert_eq!(
-            job(root.path(), "writer").unwrap().text,
-            "Write two articles a week.\n"
+            std::fs::read_to_string(agents.join("writer.md")).unwrap(),
+            "---\ntitle: Writer\ndepartment: marketing\n---\nWrite two articles a week.\n"
         );
         assert!(set_job(root.path(), "writer", "  ").is_err());
         assert!(set_job(root.path(), "../x", "job").is_err());
         remove_job(root.path(), "analyst").unwrap();
         assert!(remove_job(root.path(), "analyst").is_err());
         assert_eq!(bots(root.path()).unwrap().len(), 1);
+    }
+
+    /// Decision 43: a folder laid out before it moves once, and nothing is
+    /// overwritten.
+    #[test]
+    fn bots_and_the_strategy_move_to_agents_and_the_goal() {
+        let root = tempfile::tempdir().unwrap();
+        let (r, business) = (root.path(), dir(root.path()));
+        std::fs::create_dir_all(business.join("bots")).unwrap();
+        std::fs::create_dir_all(r.join(AGENTS)).unwrap();
+        std::fs::write(business.join("bots/writer.md"), "Write.").unwrap();
+        std::fs::write(business.join("bots/analyst.md"), "Old analyst.").unwrap();
+        std::fs::write(r.join("agents/analyst.md"), "New analyst.").unwrap();
+        std::fs::write(business.join("strategy.md"), "Explain, never hype.").unwrap();
+        let names: Vec<String> = bots(r).unwrap().into_iter().map(|b| b.0).collect();
+        assert_eq!(names, vec!["analyst", "writer"]);
+        assert_eq!(job(r, "analyst").unwrap().text, "New analyst.");
+        assert_eq!(
+            std::fs::read_to_string(business.join("bots/analyst.md")).unwrap(),
+            "Old analyst."
+        );
+        assert!(!business.join("bots/writer.md").exists());
+        assert_eq!(strategy(r).unwrap(), "Explain, never hype.");
+        assert!(!business.join("strategy.md").exists());
+        // The strategy is the goal's body: its fields stay.
+        std::fs::write(
+            business.join(GOAL),
+            "---\nbaseline_minutes: 300\n---\nOld.\n",
+        )
+        .unwrap();
+        set_strategy(r, "New line.").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(business.join(GOAL)).unwrap(),
+            "---\nbaseline_minutes: 300\n---\nNew line.\n"
+        );
+        assert_eq!(strategy(r).unwrap(), "New line.");
     }
 
     #[test]
