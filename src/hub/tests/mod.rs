@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 mod autonomy;
 mod changes;
+mod gate;
 mod models;
 mod objectives;
 mod pipelines;

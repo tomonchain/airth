@@ -55,6 +55,13 @@ impl Hub {
         let mut calls = 0;
         let mut fetch = |url: &str| {
             calls += 1;
+            #[cfg(test)]
+            if let Some(body) = TEST_FEEDS.lock().unwrap().get(url) {
+                return Ok(Fetched {
+                    body: body.clone(),
+                    truncated: false,
+                });
+            }
             fetched(runtime.invoke(
                 &format!("{name}-{calls}"),
                 "http_request",
@@ -216,6 +223,12 @@ fn fetched(event: Event) -> Result<Fetched> {
         truncated,
     })
 }
+
+/// Tests: feeds served without the network, by URL (a public read refuses
+/// the local servers tests use).
+#[cfg(test)]
+pub(crate) static TEST_FEEDS: std::sync::Mutex<std::collections::BTreeMap<String, String>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 #[cfg(test)]
 mod tests {
