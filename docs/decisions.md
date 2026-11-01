@@ -2,6 +2,55 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 43. The business config: profile and legal identity, goal, lines, departments, agents (Proposed)
+
+A business is described by files in its folder, versioned in git, in the format `CLAUDE.md` sets: Markdown with a flat YAML front matter, one file per item. Structured fields in the front matter, prose in the body.
+
+```text
+<business folder>/
+  business/profile.md        identity, legal identity, links; the body describes the business
+  business/goal.md           the goal, its measure and milestones, the founder's baseline;
+                             the body is the strategy every agent follows
+  business/lines/<name>.md   one editorial line, range or brand
+  agents/<name>.md           one agent: its role in the front matter, its job in the body
+```
+
+**Front matter.** Flat: `key: value`, one per line, no nesting. A value is text, a date (`2026-11-01`), or an inline list (`[a, b]`, quoted items when they hold a comma). An empty value or `TODO` means not known yet: the business loads, and the app lists what is left to fill. An unknown key refuses the file at load, naming the file and the key, so a typo never silently drops a field. The parser of `tools/catalog.rs` becomes a shared module, `src/frontmatter.rs`, and each kind of file has its own checked fields.
+
+**`business/profile.md`**
+
+| Field | Meaning |
+| --- | --- |
+| `name` | The name the business goes by |
+| `legal_name`, `legal_form` | As registered: `Hedgen Ltd`, `ltd`; `sas`, `sasu`, `ei` in France |
+| `country` | ISO code: `GB`, `FR`. It picks the legal calendar |
+| `status` | `planned` (not registered yet) or `registered` |
+| `registration_number` | Companies House number (UK), SIREN (France) |
+| `registered_office` | The registered address |
+| `incorporated_on`, `fiscal_year_end` | A date; a month and day (`03-31`) |
+| `vat_number`, `tax_regime` | When registered |
+| `currency` | The accounts' currency: `GBP`, `EUR` |
+| `bank` | The bank's name only. Never an account number: bank details stay out of the folder |
+| `domain`, `links` | The business's domain; its sites and social accounts |
+
+With `status: planned`, only `name` and `country` are expected. The legal calendar (filing and tax deadlines) is derived from `country`, `incorporated_on` and `fiscal_year_end`; its rules per country are written at milestone 2.
+
+**`business/goal.md`**: `goal` (one sentence), `measure`, `target`, `by` (a date), `milestones` (a list of `YYYY-MM-DD what`), `baseline_minutes` (the founder's time per week on the business before Airth, which the founder-time ledger is compared with, decision 27). Its body is the strategy (decision 36), which `business/strategy.md` becomes.
+
+**`business/lines/<name>.md`**: `title`, `kind` (`editorial`, `range` or `brand`), `status` (`active` or `paused`). The body says what the line is and for whom.
+
+**Departments** are not files. The seven of `CLAUDE.md` (`leadership`, `marketing`, `sales`, `support`, `product`, `operations`, `finance`) are fixed in Airth; an agent names one, and an empty department is not shown.
+
+**`agents/<name>.md`**: the file name is the agent's id. Front matter: `title`, `department`, `reports_to` (an agent's id, or `founder`), `lines` (the lines it works on), `mailbox` (its address, if it has one). Its body is the job (decision 36): mission, how it works, what it reports. `business/bots/` becomes `agents/`.
+
+**What the folder never holds:** what an agent may do. Its tools, autonomy levels, budgets, model, the credentials of its mailbox, and whether it is paused stay in the Airth home, out of every run's reach (decisions 7 and 36). The folder describes the business; the home decides what runs may do. An agent that edits its own file can change how it is described, never what it is allowed to do.
+
+**A gap this decision does not close:** decision 30 says runs can read `business/` but not write it. That is not enforced today: a run with `write` allowed can change `business/` and would be able to change `agents/`. Refusing writes to `business/`, `agents/`, `routines/` and `prompts/` is a change to the permission rules and the sandbox profile (security code), proposed as its own change when the founder asks for it.
+
+*Why:* milestone 2's gate is Hedgen Ltd fully described in configuration, and Numirama must be set up with configuration only. Files in git show who changed what and when, and read well in an editor; flat front matter keeps the parser small and with no new crate. Keeping rights out of the folder means a page an agent read cannot raise what it may do by rewriting a file.
+
+*Cost:* two places describe an agent: its file (who it is) and the home (what it may do). The app must show both on one card. Seven fixed departments may not fit every business (a media's editorial team sits in `marketing`); adding a department to the list is a decision. Moving `bots/` and `strategy.md` is a migration of existing folders, done once, when the business loads.
+
 ## 42. The surface is frozen on the beta's scope
 
 This supersedes decision 25. Until the beta is reached (`CLAUDE.md`, *Scope: the beta*), Airth gets bug fixes and the current milestone's work only. Milestones are taken in order; one starts when the previous one's gate is passed. Anything outside the beta goes to `docs/backlog.md`: what, why, which milestone it would serve. The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own.
