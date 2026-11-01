@@ -372,7 +372,7 @@ pub fn run(
                                 args: &Value::Object(it.clone()).to_string(),
                                 execute_at: None,
                                 source:
-                                    &serde_json::json!({"block": block.id, "editable": editable})
+                                    &serde_json::json!({"block": block.id, "show": show, "editable": editable})
                                         .to_string(),
                                 model_call: it.get("model_call").and_then(Value::as_i64),
                             })?;

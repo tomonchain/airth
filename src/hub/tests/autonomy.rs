@@ -311,6 +311,7 @@ fn an_approved_proposal_is_done_once() {
         hub.answer_item(
             &f.realm,
             1,
+            None,
             crate::business::store::queue::Answer::Approve,
             "app",
             5,
@@ -343,6 +344,7 @@ fn a_delayed_action_is_done_after_its_window_unless_cancelled() {
     hub.answer_item(
         &f.realm,
         2,
+        None,
         crate::business::store::queue::Answer::Reject("not this one".into()),
         "app",
         3,
@@ -362,4 +364,27 @@ fn a_delayed_action_is_done_after_its_window_unless_cancelled() {
         1,
         "once, and not the cancelled one"
     );
+}
+
+/// Decision 45: level 0 is prepared for the founder, who does it; marking
+/// it done runs nothing.
+#[test]
+fn a_prepared_action_is_marked_done_never_run() {
+    let (base, hits) = service(|_| {});
+    let f = business(base);
+    routine_run(&f, vec![post("1", "replies"), done("done")]);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let (item, report) = hub
+        .answer_item(
+            &f.realm,
+            1,
+            None,
+            crate::business::store::queue::Answer::Approve,
+            "app",
+            5,
+        )
+        .unwrap();
+    assert_eq!(item.kind, "prepared");
+    assert!(report.unwrap().contains("the founder did it"));
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
 }

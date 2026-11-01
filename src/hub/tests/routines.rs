@@ -96,13 +96,14 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
     hub.answer_item(
         &f.realm,
         1,
+        None,
         Answer::Edit("ETH left. Calmly.".into()),
         "app",
         5,
     )
     .unwrap();
     let (item, report) = hub
-        .answer_item(&f.realm, 1, Answer::Approve, "app", 5)
+        .answer_item(&f.realm, 1, None, Answer::Approve, "app", 5)
         .unwrap();
     assert_eq!(item.status, "done");
     let report = report.unwrap();
@@ -118,7 +119,7 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
 
     // Approved again: it is done already, nothing runs twice.
     let (item, again) = hub
-        .answer_item(&f.realm, 1, Answer::Approve, "app", 5)
+        .answer_item(&f.realm, 1, None, Answer::Approve, "app", 5)
         .unwrap();
     assert_eq!((item.status.as_str(), again), ("done", None));
     assert_eq!(posted.lock().unwrap().len(), 1);

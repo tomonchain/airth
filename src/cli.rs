@@ -671,6 +671,50 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
 }
 
 #[derive(Subcommand)]
+pub enum TelegramCmd {
+    /// Connect your bot: paste the token @BotFather gave you, then open the
+    /// link it prints on your phone
+    Connect,
+    /// Whether a bot is connected and paired
+    Status,
+    /// Disconnect the bot
+    Forget,
+}
+
+pub fn telegram(ctx: &Ctx, command: TelegramCmd) -> Result<bool> {
+    let hub = ctx.hub();
+    match command {
+        TelegramCmd::Connect => {
+            eprint!("Bot token (from @BotFather): ");
+            let mut token = String::new();
+            std::io::stdin().read_line(&mut token)?;
+            let token = token.trim();
+            let link = crate::telegram::connect(&hub, &crate::telegram::Telegram(token), token)?;
+            println!("Open this link on your phone to pair (keep it private):\n{link}");
+        }
+        TelegramCmd::Status => {
+            let c = crate::telegram::load(&hub)?;
+            match (c.token.is_empty(), c.chat) {
+                (true, _) => println!("no bot connected (airth telegram connect)"),
+                (false, None) => println!(
+                    "@{} connected, not paired yet: open https://t.me/{}?start={}",
+                    c.bot, c.bot, c.code
+                ),
+                (false, Some(_)) => println!("@{} connected and paired", c.bot),
+            }
+        }
+        TelegramCmd::Forget => {
+            let path = hub.home().dir().join("telegram.json");
+            if path.exists() {
+                std::fs::remove_file(path)?;
+            }
+            println!("bot forgotten");
+        }
+    }
+    Ok(true)
+}
+
+#[derive(Subcommand)]
 pub enum QueueCmd {
     /// What waits for you
     List,
@@ -718,7 +762,9 @@ pub fn queue(ctx: &Ctx, command: Option<QueueCmd>) -> Result<bool> {
                 .unwrap_or_default(),
         )
     });
-    let (item, report) = ctx.hub().answer_item(&realm, id, answer, "cli", seconds)?;
+    let (item, report) = ctx
+        .hub()
+        .answer_item(&realm, id, None, answer, "cli", seconds)?;
     println!("{} is {}", item.id, item.status);
     if let Some(report) = report {
         println!("{report}");
