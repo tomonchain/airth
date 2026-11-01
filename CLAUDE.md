@@ -164,13 +164,13 @@ Milestones, in order. One starts only when the previous one's gate is passed.
 2. **Data model.** SQLite per business and its access layer, business folder, legal identity, agents and departments in config. *Gate: Hedgen Ltd fully described in config, no Hedgen data in code.*
 3. **Engine and queue.** Pipeline engine with routines as graph files, approval queue, founder-time ledger, heartbeats, Telegram.
 4. **Hedgen routines.** Watch, production to Typefully, replies, weekly report (through Telegram and Needs you), and the Writer: a weekly article, as a mission launched by an Act (Trigger → Read → Act "Launch a mission" → Approval → Act "publish"), its agent in `agents/`.
-5. **Interface.** HQ, business pages, routine editor v1 (no full drag and drop), command bar, Settings, Workshop.
+5. **Interface.** HQ, business pages, routine editor v1 (no full drag and drop), command bar, Settings, Workshop, and one bank read-only for the HQ's finance: Revolut Business (decision 54, proposed).
 6. **Hedgen proof.** 4 stable weeks, founder time below baseline.
 7. **Agent mail.** IMAP and SMTP integration, one mailbox per role.
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.
 9. **VPS.** Linux sandbox, security scenarios green on Linux, deployment, access through a tunnel only.
 
-**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting and banking, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
+**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
 
 **Current milestone: 3.** Milestone 1 is closed: its decisions are 42 to 49. Exception, decided by the founder: milestone 2's code is done, but its gate (Hedgen Ltd fully described in config) stays open until the founder fills the config; milestone 3 goes ahead in parallel because it does not depend on that config technically. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
