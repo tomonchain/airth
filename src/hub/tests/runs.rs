@@ -777,3 +777,74 @@ fn commands_cannot_write_outside_the_workspace() {
     );
     assert!(out.contains("\nt\n") || out.ends_with("\nt"), "{out}");
 }
+
+/// Decision 49: once an integration declares its actions, a run can call
+/// those and nothing else through it.
+#[test]
+fn an_integration_with_declared_actions_takes_nothing_else() {
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", server.server_addr().to_ip().unwrap());
+    let hits = Arc::new(Mutex::new(Vec::new()));
+    let seen = hits.clone();
+    std::thread::spawn(move || {
+        for req in server.incoming_requests() {
+            seen.lock().unwrap().push(req.url().to_string());
+            req.respond(tiny_http::Response::from_string("{}")).unwrap();
+        }
+    });
+    let mut f = fixture();
+    f.realm
+        .set_integration(crate::integration::Integration {
+            name: "blog".into(),
+            description: String::new(),
+            base_url: base,
+            headers: Default::default(),
+            actions: vec![
+                serde_json::from_value(json!({"name": "create_draft", "method": "POST",
+                    "path": "/drafts/{site}", "fields": [{"name": "site", "place": "path"}]}))
+                .unwrap(),
+            ],
+        })
+        .unwrap();
+    f.realm.config.policy.network = Rule::Allow;
+    f.realm.save().unwrap();
+    let request = |id: &str, method: &str, url: &str| {
+        call(
+            id,
+            "http_request",
+            json!({"integration": "blog", "method": method, "url": url}),
+        )
+    };
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            request("1", "POST", "drafts/hedgen"),
+            request("2", "DELETE", "drafts/hedgen"),
+            request("3", "POST", "admin/users"),
+            request("4", "POST", "drafts/a/b"),
+            done("done"),
+        ],
+    );
+    let state = hub
+        .dispatch(
+            &f.realm,
+            "Draft it",
+            config(10),
+            hooks(&mut NoObserver, true),
+        )
+        .unwrap();
+    assert_eq!(
+        state.events[0].status,
+        crate::state::EventStatus::Ok,
+        "{}",
+        state.events[0].result
+    );
+    for e in &state.events[1..4] {
+        assert!(
+            e.result.contains("only its declared actions"),
+            "{}",
+            e.result
+        );
+    }
+    assert_eq!(*hits.lock().unwrap(), vec!["/v1/drafts/hedgen"]);
+}
