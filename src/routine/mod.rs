@@ -47,6 +47,20 @@ pub struct Block {
     pub next: Option<Option<String>>,
 }
 
+/// A field, or a list of them.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Either {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Either::deserialize(d)? {
+        Either::One(f) => vec![f],
+        Either::Many(fs) => fs,
+    })
+}
+
 /// Keeps `"next": null` apart from no `next` at all.
 fn explicit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
     Option::<String>::deserialize(d).map(Some)
@@ -69,7 +83,9 @@ pub enum Kind {
         prompt: String,
         keep: Option<String>,
         rank: Option<String>,
-        distinct: Option<String>,
+        /// One field, or several: only the best item of each value goes on.
+        #[serde(default, deserialize_with = "one_or_many")]
+        distinct: Vec<String>,
         limit: Option<usize>,
     },
     Condition {
@@ -323,7 +339,7 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             distinct,
             limit,
         } => {
-            for p in [keep, rank, distinct].into_iter().flatten() {
+            for p in [keep, rank].into_iter().flatten().chain(distinct) {
                 path(p)?;
             }
             positive("limit", *limit)?;
