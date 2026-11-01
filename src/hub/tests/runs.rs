@@ -234,6 +234,75 @@ fn realms_do_not_see_each_other() {
     assert!(systems.lock().unwrap()[0].contains("Initech"));
 }
 
+/// A run's own realm keeps its sign-ins to remote MCP servers in the Airth
+/// home: the run reads none of them, directly or through a hard link, a
+/// symbolic link or a copy made in its temporary folder, which is in the
+/// Airth home too.
+#[test]
+fn a_run_cannot_read_its_own_realms_mcp_sign_ins() {
+    let mut f = fixture();
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+    let auth = f.realm.skills_dir().join("mcp-auth");
+    std::fs::create_dir_all(&auth).unwrap();
+    let token = auth.canonicalize().unwrap().join("server.json");
+    std::fs::write(&token, r#"{"access_token": "mcp-token-value"}"#).unwrap();
+    let t = token.display();
+    let (hub, seen, _) = make_hub(
+        &f.home,
+        vec![
+            call("1", "read_file", json!({"path": token})),
+            call(
+                "2",
+                "execute_command",
+                json!({"command": format!("cat {t}")}),
+            ),
+            call(
+                "3",
+                "execute_command",
+                json!({"command": format!("ln {t} \"$TMPDIR/hard\"; cat \"$TMPDIR/hard\"")}),
+            ),
+            call(
+                "4",
+                "execute_command",
+                json!({"command": format!("ln -s {t} \"$TMPDIR/soft\"; cat \"$TMPDIR/soft\"")}),
+            ),
+            call(
+                "5",
+                "execute_command",
+                json!({"command": format!("cp {t} \"$TMPDIR/copy\"; cat \"$TMPDIR/copy\"")}),
+            ),
+            done("ok"),
+        ],
+    );
+    let state = hub
+        .dispatch(&f.realm, "snoop", config(10), hooks(&mut NoObserver, false))
+        .unwrap();
+    assert!(
+        state.events[0].result.contains("outside the workspace"),
+        "{}",
+        state.events[0].result
+    );
+    // Commands are only stopped by the sandbox.
+    if crate::sandbox::available() {
+        for event in &state.events[1..5] {
+            assert!(
+                !event.result.contains("mcp-token-value"),
+                "{}",
+                event.result
+            );
+        }
+        assert!(!format!("{:?}", seen.lock().unwrap()).contains("mcp-token-value"));
+        let tmp = hub.run_tmp(&f.realm, &state.id);
+        // A symbolic link is only a path: reading through it is what the
+        // sandbox stops, as the command's output shows.
+        for name in ["hard", "copy"] {
+            let copied = std::fs::read_to_string(tmp.join(name)).unwrap_or_default();
+            assert!(!copied.contains("mcp-token-value"), "{name}");
+        }
+    }
+}
+
 /// Approves everything for the rest of the run, and records what it was asked.
 struct GrantAll(Arc<Mutex<Vec<String>>>);
 
