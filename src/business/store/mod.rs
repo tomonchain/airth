@@ -7,6 +7,7 @@
 //! schema changes are numbered migrations, and a database written by a
 //! newer Airth is refused rather than guessed at.
 
+pub mod autonomy;
 pub mod drafts;
 pub mod pipelines;
 pub mod status;

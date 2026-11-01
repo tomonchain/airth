@@ -204,6 +204,14 @@ pub enum ActionsCmd {
         #[arg(long)]
         max_level: Option<u8>,
     },
+    /// Set what an agent may do alone with an action: 0 prepare, 1 propose,
+    /// 2 act after a delay, 3 act (never above the action's ceiling)
+    Level {
+        agent: String,
+        /// <connector>.<action>
+        action: String,
+        level: u8,
+    },
 }
 
 #[derive(Subcommand)]
@@ -626,6 +634,21 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
             let name = action.name.clone();
             realm.declare_action(&integration, action)?;
             println!("declared {integration}.{name}");
+        }
+        ActionsCmd::Level {
+            agent,
+            action,
+            level,
+        } => {
+            let all = crate::actions::all(&realm.config.integrations, &mcp.list()?);
+            let declared = all
+                .iter()
+                .find(|a| a.id == action)
+                .with_context(|| format!("no action {action} (see `airth actions`)"))?;
+            let mut store = crate::business::store::Store::of(&realm)?;
+            let was = store.level(&agent, &action, declared.ceiling)?;
+            store.set_level(&agent, &action, level, declared.ceiling, "founder", "")?;
+            println!("{agent} may now take {action} at level {level} (was {was})");
         }
         ActionsCmd::Class {
             action,
