@@ -2,25 +2,46 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 54. One bank in the beta, read-only: Revolut Business
+
+**Proposed.** Refines decision 53's finance part.
+
+At milestone 5, Airth connects one bank, Revolut Business (Hedgen's bank), **read-only**: the READ scope only, for balances and transactions. The signing key that authenticates Airth to Revolut's API lives in the Airth home, like the other credentials (decision 52), never in the business folder, and never reaches a model or a run. Accounting, payments and transfers stay out of the beta: Airth never moves money.
+
+What it feeds is decision 53's finance part (cash, money in and out this month, runway) and the runway criterion of health. A business with no bank connected (Numirama today) shows its finance part empty and its runway as unknown.
+
+*Why:* runway is one of the three health criteria, and without a bank the HQ cannot say whether a business is at risk. Revolut is the bank of the first business; the READ scope cannot move money, so it adds no way for an agent or an instruction in content to commit the business.
+
+*Cost:* Revolut Business authenticates with a client assertion signed by the business's private key and a short-lived access token renewed with a refresh token. Signing it likely needs a cryptography crate, which needs a decision of its own (`CLAUDE.md`, *Architecture rules*), and storing tokens that renew is new state in the home. The integration code is security code. A second bank, or Numirama's, is another connector. A business's bank figures are among the few things the HQ reads; they stay in its section.
+
 ## 53. The HQ shows one section per business: health, vitals, finance, latest activity
 
-**Proposed.**
+**Proposed.** Amended with the founder's answers on its first costs (health criteria with no data, goal on pace, quality flag); the bank is decision 54.
 
 The HQ never adds up figures across businesses. It shows one section per business, each with four parts:
 
-1. **Health**: healthy, watch, at risk or not started, and one sentence saying why. *Healthy* is the goal on pace, a runway above 12 months and no open quality flag that blocks publishing. One criterion out of range makes it *watch*. A runway under 6 months makes it *at risk*, whatever the rest. The thresholds live in the business config, with these values as defaults.
+1. **Health**: healthy, watch, at risk or not started, and one sentence saying why. Three criteria:
+   - **the goal on pace** (below);
+   - **the runway** above 12 months;
+   - **no open blocking quality flag** (below).
+
+   All in range is *healthy*. One criterion out of range makes it *watch*. A runway under 6 months makes it *at risk*, whatever the rest. A criterion with no data (no bank connected, a goal with nothing to measure) is shown as **unknown**: it is never counted as failed, and health is computed from the criteria that have data. The thresholds live in the business config, with these values as defaults.
 2. **Vitals**: at most four, declared by the business in its config (label, value, target, normal range). The values are read from a read-only `get_vitals` tool on the business's own MCP server, bound to that business's realm, through the runtime like any tool call. A vital is highlighted only when it leaves its normal range.
-3. **Finance**: cash, money in and out this month, and runway, from the business's bank integration, read-only. With no bank connected, the section shows its empty state.
+3. **Finance**: cash, money in and out this month, and runway, from the business's bank integration, read-only (decision 54). With no bank connected, the section shows its empty state.
 4. **Latest activity**: the three most recent agent runs, each as one readable sentence stored with the run.
+
+**Goal on pace.** A goal may carry a metric (a vital's key), a start (a value and a date) and a target (a value and a deadline). The expected value is linear between start and target; the goal is on pace when the current value is at least the expected value minus a tolerance (10% by default, in the business config). A goal made of steps is on pace when its steps are done by their planned dates. A goal with neither a metric nor dated steps does not count in health.
+
+**Quality flag.** A mark set on an item of the approval queue by a check step of its routine, with a reason. A blocking flag prevents Approve until the item is edited or the founder explicitly overrides it; the override is recorded. Nothing in it is specific to one business. The check step itself is defined with the internal quality check planned for milestone 4; if it needs a block of its own, that is a decision then (the six blocks, `CLAUDE.md`).
 
 Open points, not decided here:
 
 - the `get_vitals` schema: the shape of each value, its unit, when it was measured, and what Airth does when the server is down or answers late;
 - how a run's activity sentence is produced: an AI block (a prompt, a schema and a journal entry, like any model call) or a template filled from the run's record.
 
-*Why:* the founder runs several companies with separate legal and financial lives; a total across them would mean nothing and would mix what decision 42 keeps apart. A few signals per business, highlighted only when out of range, show where to look in a glance. Vitals come from the business's own server because each business measures different things, and Airth must not hold code specific to one of them.
+*Why:* the founder runs several companies with separate legal and financial lives; a total across them would mean nothing and would mix what decision 42 keeps apart. A few signals per business, highlighted only when out of range, show where to look in a glance. Vitals come from the business's own server because each business measures different things, and Airth must not hold code specific to one of them. Counting a missing figure as unknown rather than failed keeps a business without a bank or a measurable goal from looking at risk for the wrong reason.
 
-*Cost:* connected banking is out of the beta (`CLAUDE.md`), so the finance part shows its empty state until a bank integration gets a decision of its own, and runway cannot count toward health before then. "Goal on pace" needs the goal's milestones to carry measurable targets, and "a quality flag that blocks publishing" does not exist in Airth yet: both must be defined before health can be computed. Each business that wants vitals must expose `get_vitals` on its MCP server. The HQ reads every business, so it must hold only these figures and sentences, never a business's content.
+*Cost:* each business that wants vitals must expose `get_vitals` on its MCP server, and a goal measured by a metric depends on that vital being there. A business with every criterion unknown says little; the sentence must say so. Goals gain structured fields in the business config. The quality flag adds a state to queue items and an override to the queue's state machine (security code: the access layer). The HQ reads every business, so it must hold only these figures and sentences, never a business's content.
 
 ## 52. One Telegram bot for the founder, held by Airth, never by a business
 
