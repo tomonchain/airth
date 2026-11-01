@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 50. In the owner's home, commands read only the realm and the developer tools
+
+Decision 48 denied writes by default and reads of the owner's credentials. Everything else in the owner's home could still be read by a command: personal documents, shell history, browser profiles (cookies, saved sessions), Mail's messages, other apps' data. A test shows it. A list of what to hide can never be complete there, so the home is read-denied by default too:
+
+- the owner's home folder is closed to commands, reading and writing;
+- what a run's workspace allows stays open, deeper rules winning: the realm's folder, its repositories, its worktree;
+- so do the developer tools runs use, read-only: `~/.cargo` and `~/.rustup` (toolchains, Cargo's config), `~/.gitconfig` and `~/.config/git` (the owner's git settings), and `~/.npm`, read and written, as in decision 48; Cargo's downloads stay writable;
+- the credentials of decision 48 stay closed even inside these (`~/.cargo/credentials`).
+
+Outside the home nothing changes: system folders and `/opt/homebrew`, where the tools themselves are installed, stay readable. A tool kept under the home that a routine needs is added to the list by a change of its own.
+
+*Why:* the owner's Mac is also their personal computer. A business's agents read external content, and a command they run must reach the business, not the founder's private life.
+
+*Cost:* tools installed under the home (`~/.local/bin`, `~/.bun`, a version manager in `~/.nvm`) do not run inside a run until they are added. A realm whose folder is the home itself would open the whole home again, deeper rules winning; Airth already advises a folder of its own.
+
 ## 49. Routines are JSON graphs of the six blocks; connectors declare their actions in the Airth home
 
 This replaces decision 30's pipeline format and its step types, and settles the last two pending decisions of milestone 1. The engine of decision 30 is kept and grows into this one (`CLAUDE.md`, *Starting point*); decision 34 (the schedule lives in the routine's file) still holds, as the Trigger block.
