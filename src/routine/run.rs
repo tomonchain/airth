@@ -8,6 +8,7 @@
 
 use super::{Graph, Kind, Test, successors};
 use crate::business::store::Store;
+use crate::business::store::routines::BlockRun;
 use crate::integration::Integration;
 use crate::pipeline::Prompt;
 use crate::pipeline::run::{
@@ -238,6 +239,9 @@ pub fn run(
         }
         let (count, mut notes, mut lines) = (items.len(), Vec::new(), Vec::new());
         let block_started = Instant::now();
+        let block_at = Utc::now();
+        // What the block's record says beyond its counts (a real run only).
+        let (mut acts_failed, mut block_cost) = (0usize, None);
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
             Kind::Read {
                 source,
@@ -332,6 +336,7 @@ pub fn run(
                     stats.by_limit
                 ));
                 lines.push(cost(&stats));
+                block_cost = Some(stats.cost_usd);
                 total.input_tokens += stats.input_tokens;
                 total.output_tokens += stats.output_tokens;
                 total.cost_usd += stats.cost_usd;
@@ -416,7 +421,10 @@ pub fn run(
                                 lines.push(format!("  {action} [{key}]: {what}"));
                                 it.insert("result".into(), what.into());
                             }
-                            Err(e) => notes.push(format!("{action} [{key}] failed: {e:#}")),
+                            Err(e) => {
+                                acts_failed += 1;
+                                notes.push(format!("{action} [{key}] failed: {e:#}"));
+                            }
                         },
                     }
                     done.push(it);
@@ -430,6 +438,26 @@ pub fn run(
             pass.len() + other.len(),
             block_started.elapsed().as_secs_f64()
         ));
+        if let Some(r) = &real {
+            // Each block's execution, for the founder to follow the run step
+            // by step (decision 49).
+            let outcome = match &block.kind {
+                Kind::Approval { .. } => "waiting",
+                _ if acts_failed > 0 => "failed",
+                _ => "ok",
+            };
+            dry.store.record_block(&BlockRun {
+                routine: name,
+                run: r.run,
+                block: &block.id,
+                started_at: block_at,
+                outcome,
+                items_in: count,
+                items_out: pass.len() + other.len(),
+                cost_usd: block_cost,
+                error: (acts_failed > 0).then(|| notes.join("\n")),
+            })?;
+        }
         report.extend(lines);
         report.extend(notes.iter().map(|n| format!("  note: {n}")));
         let next = successors(graph, i)?;

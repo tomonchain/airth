@@ -34,6 +34,7 @@ const needs = {
   rejecting: null, // the item being rejected
   note: null, // what the last answer did
   shownAt: {}, // when each item was first shown, for the founder's time
+  runs: {}, // item id → its run's blocks, once loaded
   error: null,
 };
 
@@ -58,7 +59,8 @@ function needsPage() {
     byAgent.get(key).push(it);
   }
   if (needs.agent === undefined || !byAgent.has(needs.agent || "")) needs.agent = byAgent.size ? [...byAgent.keys()][0] || null : undefined;
-  return h("div", { class: "needs" }, agentList(byAgent), thread(byAgent.get(needs.agent || "") || []));
+  const open = byAgent.get(needs.agent || "") || [];
+  return h("div", { class: "needs" }, agentList(byAgent), thread(open), details(open.find((i) => i.routine && i.run)));
 }
 
 function agentList(byAgent) {
@@ -166,4 +168,38 @@ function clock(at) {
   if (isNaN(d)) return "";
   const today = new Date().toDateString() === d.toDateString();
   return today ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+// The run an item came from, block by block (decision 49).
+function details(it) {
+  if (!it) return null;
+  const run = needs.runs[it.id];
+  if (run === undefined) {
+    needs.runs[it.id] = null;
+    api(`realms/${enc(next.realm)}/queue/${it.id}/run`)
+      .then((r) => { needs.runs[it.id] = r; renderPanel(); })
+      .catch(() => { needs.runs[it.id] = { blocks: [] }; renderPanel(); });
+  }
+  const blocks = (run && run.blocks) || [];
+  const state = blocks.some((b) => b.outcome === "failed") ? ["Failed", "bad"]
+    : blocks.some((b) => b.outcome === "waiting") ? ["Waiting for you", "warn"] : ["Done", "ok"];
+  const cost = blocks.reduce((sum, b) => sum + (b.cost_usd || 0), 0);
+  const secs = (b) => b.finished_at ? Math.max(0, Math.round((new Date(b.finished_at) - new Date(b.started_at)) / 1000)) : 0;
+  return h("aside", { class: "details", "aria-labelledby": "details-title" },
+    h("h2", { id: "details-title" }, "Routine details"),
+    h("div", { class: "details-head" },
+      blocks.length > 0 && h("span", { class: `state ${state[1]}` }, state[0]),
+      h("span", {}, it.routine, blocks.length > 0 && ` · started ${clock(blocks[0].started_at)}`)),
+    run === null || run === undefined ? h("p", { class: "note" }, "Loading…")
+      : !blocks.length ? h("p", { class: "note" }, "No step was recorded for this run. Runs record each step from now on.")
+      : h("div", { class: "steps" },
+          h("span", { class: "steps-label" }, "Steps"),
+          blocks.map((b, n) => h("div", { class: "step" },
+            h("span", {}, `${n + 1} · ${b.block}`),
+            h("span", { class: `step-out ${b.outcome}` },
+              b.outcome === "waiting" ? `${b.items_in} waiting for you`
+                : b.outcome === "failed" ? "failed"
+                : `${b.items_in} → ${b.items_out} · ${secs(b)} s`)))),
+    blocks.length > 0 && h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Run cost"), h("span", { class: "tile-value" }, `$${cost.toFixed(2)}`)),
+    h("a", { href: `/#/r/${enc(next.realm)}/routines` }, "Open the routine"));
 }

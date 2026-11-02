@@ -19,6 +19,25 @@ impl App {
             (Method::Get, ["realms", r, "queue"]) => {
                 json_response(200, self.needs_you(&self.realm(r)?)?)
             }
+            // The run an item came from, block by block.
+            (Method::Get, ["realms", r, "queue", id, "run"]) => {
+                let realm = self.realm(r)?;
+                let id: i64 = id.parse().context("no such item")?;
+                let store = Store::of(&realm)?;
+                let item = store
+                    .queue(&["pending", "approved", "rejected", "done", "failed"])?
+                    .into_iter()
+                    .find(|i| i.id == id)
+                    .context("no such item")?;
+                let blocks = match (&item.routine, &item.run) {
+                    (Some(routine), Some(run)) => store.run_blocks(routine, run)?,
+                    _ => Vec::new(),
+                };
+                json_response(
+                    200,
+                    json!({"routine": item.routine, "run": item.run, "blocks": blocks}),
+                )
+            }
             (Method::Post, ["realms", r, "queue", id]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

@@ -12,6 +12,7 @@ pub mod drafts;
 pub mod pipelines;
 pub mod queue;
 pub mod retries;
+pub mod routines;
 pub mod status;
 pub mod time;
 
