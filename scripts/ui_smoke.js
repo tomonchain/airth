@@ -343,7 +343,8 @@ function smokeNext() {
     { id: 2, kind: "incident", title: "watch failed", agent: null, routine: "watch", run: null, action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "It failed.", editable: false, source: { title: null, link: null } },
     { id: 3, kind: "delayed", title: "writer: blog.draft", agent: "writer", routine: null, run: null, action: "blog.draft", created_at: null, execute_at: now, status: "pending", revision: 1, text: "{}", editable: false, source: { title: null, link: null } },
     { id: 4, kind: "prepared", title: "reply", agent: "writer", routine: null, run: null, action: "x.reply", created_at: now, execute_at: null, status: "pending", revision: 1, text: "Hi", editable: false, source: { title: null, link: null } },
-    { id: 5, kind: "approval", title: "blog.publish, from a task you started", agent: null, routine: null, run: "r9", action: "blog.publish", created_at: now, execute_at: null, status: "pending", revision: 1, text: "POST blog: posts", editable: false, source: { title: null, link: null }, task: { id: "r9", title: null } }])},
+    { id: 5, kind: "approval", title: "blog.publish, from a task you started", agent: null, routine: null, run: "r9", action: "blog.publish", created_at: now, execute_at: null, status: "pending", revision: 1, text: "POST blog: posts", editable: false, source: { title: null, link: null }, task: { id: "r9", title: null } },
+    { id: 6, kind: "report", title: "Daily watch", agent: "post-writer", routine: "daily-watch", run: "r2", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.\n\nBTC up.", editable: false, source: { title: null, link: null } }])},
     agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
   vm.runInContext(`needs.runs = { 1: { routine: "daily-posts", run: "r1", blocks: [
     { block: "news", started_at: "${now}", finished_at: null, outcome: "ok", items_in: 1, items_out: 1, cost_usd: null, error: null },
@@ -366,6 +367,9 @@ function smokeNext() {
   vm.runInContext(`needs.agent = null; needs.editing = null;`, ctx);
   show("needs you, a commit from a task", { route: { page: "needs-you", realm: "acme" } });
   if (!nbody.textContent.includes("From your task")) problems.push("next/needs you: the task a commit came from is missing");
+  vm.runInContext(`needs.agent = "post-writer";`, ctx);
+  show("needs you, a report", { route: { page: "needs-you", realm: "acme" } });
+  if (!nbody.textContent.includes("Report") || !nbody.textContent.includes("Seen")) problems.push("next/needs you: a report shows without its tag or Seen");
   vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
   show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
   // Routines: every kind of block, a routine refused, then a dry run.

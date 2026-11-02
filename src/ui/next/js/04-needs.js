@@ -106,7 +106,7 @@ function thread(items) {
       items.map(card)));
 }
 
-const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident" };
+const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident", report: "Report" };
 
 function card(it) {
   needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
@@ -115,7 +115,7 @@ function card(it) {
   // An action a task of the founder's proposed (decision 56): the task
   // stopped there, and waits for nothing else.
   const what = it.task && it.action ? `If approved: ${it.action} is done, once. The task stopped here.`
-    : it.kind === "incident" ? "Seen closes it."
+    : it.kind === "incident" || it.kind === "report" ? "Seen closes it."
     : it.kind === "prepared" ? "Airth does nothing: mark it done once you did it."
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
     : it.action ? `If approved: ${it.action} is done, once.` : null;
@@ -143,7 +143,7 @@ function buttons(it, editing, rejecting) {
   if (rejecting) return [
     b(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", () => answer(it, "reject", $(`#why-${it.id}`).value)),
     b("Keep it", "plain", () => { needs.rejecting = null; renderPanel(); })];
-  if (it.kind === "incident") return [b("Seen", "primary", () => answer(it, "approve"))];
+  if (it.kind === "incident" || it.kind === "report") return [b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "prepared") return [b("Mark done", "primary", () => answer(it, "approve"))];
   if (it.kind === "delayed") return [b("Cancel it", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
   return [

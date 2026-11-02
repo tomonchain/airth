@@ -184,6 +184,7 @@ fn item_text(realm: &str, item: &Item) -> String {
     let what = match item.kind.as_str() {
         "prepared" => "To do yourself",
         "incident" => "Incident",
+        "report" => "Report",
         "delayed" => "Will be done unless you cancel",
         "approval" if item.action.is_some() => "Asks to act",
         _ => "Needs you",
@@ -201,7 +202,7 @@ fn buttons(realm: &str, item: &Item) -> Value {
     let button = |label: &str, op: &str| json!({"text": label, "callback_data": data(op)});
     match item.kind.as_str() {
         "delayed" => json!([[button("Cancel", "r")]]),
-        "incident" => json!([[button("Seen", "a")]]),
+        "incident" | "report" => json!([[button("Seen", "a")]]),
         "prepared" => json!([[button("Done", "a")]]),
         _ if item.source["editable"].is_string() => {
             json!([[

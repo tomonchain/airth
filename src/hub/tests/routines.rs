@@ -270,3 +270,68 @@ fn a_failed_act_is_an_incident_and_demotes_its_agent() {
             .is_empty()
     );
 }
+
+/// Decision 59: what a run's `airth.report` gathers is one report in
+/// Needs you, not a notification per item; a retried run reports nothing
+/// twice; Seen closes it.
+#[test]
+fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
+    let feed = "https://feeds.example.com/watch.xml";
+    let items: String = ["ETH", "BTC", "SOL"]
+        .iter()
+        .map(|t| format!("<item><title>{t}</title><link>https://e.com/{t}</link></item>"))
+        .collect();
+    crate::hub::pipelines::TEST_FEEDS.lock().unwrap().insert(
+        feed.into(),
+        format!("<rss><channel>{items}</channel></rss>"),
+    );
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/watcher.md"), "Watch.").unwrap();
+    std::fs::write(
+        root.join("routines/watch.json"),
+        json!({"agent": "watcher", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": [feed]},
+            {"id": "tell", "type": "act", "action": "airth.report",
+             "fields": {"title": "Daily watch", "line": "{{title}}"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let start = || crate::routine::run::Start::Trigger;
+    let report = hub.run_routine(&f.realm, "watch", "r1", start()).unwrap();
+    assert!(
+        report.contains("tell: reported in Needs you (item 1)"),
+        "{report}"
+    );
+    let store = Store::of(&f.realm).unwrap();
+    let items = store.queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1, "one report for the run, not one per item");
+    assert_eq!(
+        (items[0].kind.as_str(), items[0].title.as_str()),
+        ("report", "Daily watch")
+    );
+    assert_eq!(items[0].args["text"], "ETH\n\nBTC\n\nSOL");
+    assert_eq!(items[0].agent.as_deref(), Some("watcher"));
+    assert!(
+        f.home.inbox().list().unwrap().is_empty(),
+        "nothing in the old inbox"
+    );
+    // Retried: the same items, the same keys, nothing new.
+    let again = hub.run_routine(&f.realm, "watch", "r2", start()).unwrap();
+    assert!(
+        again.contains("tell: already reported, nothing new"),
+        "{again}"
+    );
+    assert_eq!(store.queue(&["pending"]).unwrap().len(), 1);
+    // Seen closes it.
+    let (_, said) = hub
+        .answer_item(&f.realm, 1, None, Answer::Approve, "telegram", 4)
+        .unwrap();
+    assert_eq!(said.as_deref(), Some("seen"));
+    assert!(store.queue(&["pending", "approved"]).unwrap().is_empty());
+    assert_eq!(store.queue(&["done"]).unwrap()[0].id, 1);
+}
