@@ -7,7 +7,7 @@ use crate::objective::{Objective, Trigger};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A service that counts what reaches it; `on_hit` runs on each request.
-fn service(on_hit: impl Fn(&str) + Send + 'static) -> (String, Arc<AtomicUsize>) {
+pub(super) fn service(on_hit: impl Fn(&str) + Send + 'static) -> (String, Arc<AtomicUsize>) {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let base = format!("http://{}/v1", server.server_addr().to_ip().unwrap());
     let hits = Arc::new(AtomicUsize::new(0));
@@ -25,7 +25,7 @@ fn service(on_hit: impl Fn(&str) + Send + 'static) -> (String, Arc<AtomicUsize>)
 
 /// A realm with a blog integration and its declared actions, and a routine
 /// whose agent is the writer, at level 3 for drafts.
-fn business(base: String) -> Fixture {
+pub(super) fn business(base: String) -> Fixture {
     let mut f = fixture();
     let action = |name: &str, path: &str, class: &str, max: Option<u8>| {
         serde_json::from_value(json!({"name": name, "method": "POST", "path": path,
@@ -78,7 +78,7 @@ fn business(base: String) -> Fixture {
     f
 }
 
-fn post(id: &str, path: &str) -> ModelResponse {
+pub(super) fn post(id: &str, path: &str) -> ModelResponse {
     call(
         id,
         "http_request",
@@ -170,28 +170,6 @@ fn a_demotion_stops_a_routine_already_running() {
         state.events[1].result.contains("proposed to the founder"),
         "{}",
         state.events[1].result
-    );
-    assert_eq!(hits.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn a_run_the_founder_starts_is_asked_as_before() {
-    let (base, hits) = service(|_| {});
-    let f = business(base);
-    let (hub, _, _) = make_hub(&f.home, vec![post("1", "posts"), done("done")]);
-    let state = hub
-        .dispatch(
-            &f.realm,
-            "Publish it",
-            config(10),
-            hooks(&mut NoObserver, true),
-        )
-        .unwrap();
-    assert_eq!(
-        state.events[0].status,
-        crate::state::EventStatus::Ok,
-        "{}",
-        state.events[0].result
     );
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }

@@ -12,13 +12,15 @@ use serde_json::Value;
 /// What an agent may do alone with a declared action (decision 45),
 /// decided before each one, from the levels as they are now.
 pub trait Authority: Send {
-    /// `tool` is the tool called, `call` the call's id, unique in the run.
+    /// `tool` is the tool called, `call` the call's id, unique in the run;
+    /// `watched`, whether the founder watches the run (decision 56).
     fn decide(
         &mut self,
         tool: &str,
         action: &str,
         arguments: &Value,
         call: &str,
+        watched: bool,
     ) -> anyhow::Result<Decision>;
     /// What became of an action decided `Act`.
     fn finish(&mut self, journal: i64, error: Option<&str>);
@@ -29,7 +31,18 @@ pub enum Decision {
     Act(i64),
     /// Not done now: queued, prepared or refused, and why.
     Held(String),
+    /// Not for the levels: the realm's policy decides, as for any call.
+    Policy,
+    /// The founder, watching, approves this very call or not (decision 56).
+    AskFounder,
+    /// Not done: it waits for the founder, and the run stops here, why.
+    Stop(String),
 }
+
+/// Shown with a call the founder must approve one by one; it also keeps the
+/// call from being approved for the rest of the run.
+pub const COMMITS_WARNING: &str =
+    "This commits the business: your yes covers this call only (decision 56).";
 
 pub struct Runtime {
     tools: Vec<Box<dyn Tool>>,
@@ -38,6 +51,8 @@ pub struct Runtime {
     workspace: Workspace,
     cancel: CancelToken,
     plan: Option<PlanHandle>,
+    /// Set when a call ended the run (decision 56): why.
+    stopped: Option<String>,
 }
 
 impl Runtime {
@@ -54,6 +69,7 @@ impl Runtime {
             workspace,
             cancel,
             plan: None,
+            stopped: None,
         }
     }
 
@@ -76,6 +92,11 @@ impl Runtime {
         if let Some(plan) = &self.plan {
             state.plan = plan.lock().unwrap().clone();
         }
+    }
+
+    /// Why the run must stop, if a call ended it.
+    pub fn stopped(&self) -> Option<&str> {
+        self.stopped.as_deref()
     }
 
     pub fn workspace(&self) -> &Workspace {
@@ -109,7 +130,7 @@ impl Runtime {
             Ok(p) => p,
             Err(e) => return (format!("invalid arguments: {e:#}"), EventStatus::Error),
         };
-        let request = PermissionRequest {
+        let mut request = PermissionRequest {
             tool: name.to_string(),
             capability: tool.capability(),
             preview,
@@ -121,15 +142,39 @@ impl Runtime {
             Err(e) => return (format!("permission denied: {e:#}"), EventStatus::Denied),
         };
         let mut journal = None;
+        let mut explicit = false;
         if let (Some(action), Some(authority)) = (&action, self.authority.as_mut()) {
-            match authority.decide(name, action, arguments, call) {
+            let watched = self.gate.watched();
+            match authority.decide(name, action, arguments, call, watched) {
                 Ok(Decision::Act(id)) => journal = Some(id),
+                Ok(Decision::Policy) => {}
+                // Watched now, but the answer must be the founder's own,
+                // for this call (decision 56).
+                Ok(Decision::AskFounder) if watched => {
+                    request.warnings.push(COMMITS_WARNING.into());
+                    explicit = true;
+                }
+                Ok(Decision::AskFounder) => {
+                    return (
+                        "not done: nobody is watching this run to approve it".into(),
+                        EventStatus::Denied,
+                    );
+                }
                 Ok(Decision::Held(why)) => return (why, EventStatus::Denied),
+                Ok(Decision::Stop(why)) => {
+                    self.stopped = Some(why.clone());
+                    return (why, EventStatus::Denied);
+                }
                 // Unsure what the agent may do: it does not act alone.
                 Err(e) => return (format!("not done: {e:#}"), EventStatus::Denied),
             }
         }
-        let refused = match self.gate.check(&request) {
+        let verdict = if explicit {
+            self.gate.check_explicit(&request)
+        } else {
+            self.gate.check(&request)
+        };
+        let refused = match verdict {
             Ok(Verdict::Denied(reason)) => Some(format!("permission denied: {reason}")),
             Err(e) => Some(format!("permission check failed: {e:#}")),
             // The run may have been stopped while approval was pending.

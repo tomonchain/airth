@@ -230,7 +230,9 @@ impl Hub {
         .with_plan(plan);
         let runtime = match autonomy::BusinessAuthority::for_run(realm, state)? {
             Some(authority) => runtime.with_authority(Box::new(authority)),
-            None => runtime,
+            None => {
+                runtime.with_authority(Box::new(autonomy::FounderAuthority::for_run(realm, state)?))
+            }
         };
         let observer = hooks.observer;
         let mut config = config.within(&state.budget);

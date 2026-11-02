@@ -369,7 +369,17 @@ fn multi_step_task_across_tools_resumes_after_interruption() {
                 "Bearer [secret:TRACKER_TOKEN]".to_string(),
             )]
             .into(),
-            actions: Vec::new(),
+            // Classed, so the policy decides as before: an undeclared call
+            // commits, and would be asked each time (decision 56).
+            actions: vec![
+                serde_json::from_value(json!({"name": "issues", "method": "GET",
+                    "path": "/issues", "class": "read"}))
+                .unwrap(),
+                serde_json::from_value(json!({"name": "comment", "method": "POST",
+                    "path": "/issues/{n}/comments", "fields": [{"name": "n", "place": "path"}],
+                    "class": "reversible"}))
+                .unwrap(),
+            ],
         })
         .unwrap();
     let asked = Arc::new(Mutex::new(Vec::new()));
@@ -870,7 +880,8 @@ fn an_integration_with_declared_actions_takes_nothing_else() {
             headers: Default::default(),
             actions: vec![
                 serde_json::from_value(json!({"name": "create_draft", "method": "POST",
-                    "path": "/drafts/{site}", "fields": [{"name": "site", "place": "path"}]}))
+                    "path": "/drafts/{site}", "fields": [{"name": "site", "place": "path"}],
+                    "class": "reversible"}))
                 .unwrap(),
             ],
         })
