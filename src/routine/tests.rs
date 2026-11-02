@@ -251,3 +251,27 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
         assert!(e.contains(why), "{graph}: {e}");
     }
 }
+
+/// Decision 58: an approval's flag must be a check's answer on every way to
+/// it, and a check's answer cannot take a field the engine keeps.
+#[test]
+fn a_flag_needs_its_check_on_every_way() {
+    let root = business();
+    let check = json!({"id": "check", "type": "ai", "prompt": "prompts/watch.md", "as": "check"});
+    let ok = json!({"id": "ok", "type": "approval", "show": "answer.draft", "flag": "check"});
+    try_graph(root.path(), posts(json!([rss(), check, ok]))).unwrap();
+    let e = |g: Value| format!("{:#}", try_graph(root.path(), g).unwrap_err());
+    // No check at all.
+    assert!(e(posts(json!([rss(), ok]))).contains("not the answer of a check"));
+    // A check under another name.
+    let other = json!({"id": "check", "type": "ai", "prompt": "prompts/watch.md", "as": "review"});
+    assert!(e(posts(json!([rss(), other, ok]))).contains("not the answer of a check"));
+    // A check on one way only: the condition's other side skips it.
+    let g = posts(json!([rss(),
+        {"id": "c", "type": "condition", "if": {"field": "x", "op": "exists"}, "else": "ok"},
+        check, ok]));
+    assert!(e(g).contains("on every way"));
+    // A check's answer cannot take the place of the engine's fields.
+    let bad = json!({"id": "check", "type": "ai", "prompt": "prompts/watch.md", "as": "source_id"});
+    assert!(e(posts(json!([rss(), bad]))).contains("keeps that field"));
+}

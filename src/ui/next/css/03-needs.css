@@ -71,3 +71,7 @@
   .agents { border-right: 0; border-bottom: 1px solid var(--line-soft); }
   .thread-body { padding: 16px; }
 }
+
+/* A check's quality flag on an item (decision 58). */
+.flag { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2); background: var(--chip); border-radius: var(--r-chip); padding: 8px 12px; }
+.flag.blocking { color: var(--bad); }

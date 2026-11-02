@@ -359,13 +359,16 @@ pub fn run(
                 rank,
                 distinct,
                 limit,
+                into,
             } => {
                 let p = prompt(dry.root, path)?;
+                let into = into.as_deref().unwrap_or("answer");
                 let asking = Asking {
                     name,
                     step: i + 1,
                     prompt: &p,
                     dry_run: real.is_none(),
+                    into,
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),
@@ -379,7 +382,7 @@ pub fn run(
                 for it in &kept {
                     let values: Vec<String> = shown
                         .iter()
-                        .map(|f| format!("{f}: {}", field_text(it, &format!("answer.{f}"))))
+                        .map(|f| format!("{f}: {}", field_text(it, &format!("{into}.{f}"))))
                         .collect();
                     lines.push(format!(
                         "kept: {} ({})",
@@ -405,9 +408,19 @@ pub fn run(
                 (kept, Vec::new())
             }
             Kind::Condition { test, .. } => items.into_iter().partition(|it| holds(test, it)),
-            Kind::Approval { show, editable, .. } => {
+            Kind::Approval {
+                show,
+                editable,
+                flag: check,
+                ..
+            } => {
                 for it in &items {
                     let text = field_text(it, show);
+                    let flag = check.as_deref().and_then(|c| quality_flag(it, c));
+                    let flagged = flag
+                        .as_ref()
+                        .map(|(f, why)| format!(" [flagged {f}: {why}]"))
+                        .unwrap_or_default();
                     let chars = text.chars().count();
                     let shown: String = text.chars().take(SHOWN).collect();
                     let cut = if chars > SHOWN {
@@ -418,11 +431,10 @@ pub fn run(
                         String::new()
                     };
                     match &real {
-                        None => lines.push(format!("would ask the founder: {shown}{cut}")),
+                        None => lines.push(format!("would ask the founder{flagged}: {shown}{cut}")),
                         Some(r) => {
-                            let id = dry
-                                .store
-                                .propose(&crate::business::store::autonomy::NewItem {
+                            let id = dry.store.propose_flagged(
+                                &crate::business::store::autonomy::NewItem {
                                 kind: "approval",
                                 title: &text
                                     .lines()
@@ -441,8 +453,12 @@ pub fn run(
                                     &serde_json::json!({"block": block.id, "show": show, "editable": editable})
                                         .to_string(),
                                 model_call: it.get("model_call").and_then(Value::as_i64),
-                            })?;
-                            lines.push(format!("asked the founder (item {id}): {shown}{cut}"));
+                            },
+                                flag.as_ref().map(|(f, why)| (*f, why.as_str())),
+                            )?;
+                            lines.push(format!(
+                                "asked the founder (item {id}){flagged}: {shown}{cut}"
+                            ));
                         }
                     }
                 }
@@ -541,6 +557,25 @@ pub fn run(
         cost: cost(&total),
         secs: started.elapsed().as_secs_f64(),
     })
+}
+
+/// The quality flag a check's answer at `check` sets (decision 58), and
+/// why. No answer there means the check could not run: the founder is told,
+/// not blocked.
+fn quality_flag(item: &Item, check: &str) -> Option<(&'static str, String)> {
+    let Some(answer) = field(item, check).filter(|v| v.is_object()) else {
+        return Some(("note", "not checked: the check gave no valid answer".into()));
+    };
+    let why = field_text(item, &format!("{check}.reason"));
+    match answer["flag"].as_str() {
+        Some("blocking") => Some(("blocking", why)),
+        Some("note") => Some(("note", why)),
+        Some("none") => None,
+        _ => Some((
+            "note",
+            "not checked: the check's flag is not none, note or blocking".into(),
+        )),
+    }
 }
 
 /// Characters of an approval's text shown in a report.
