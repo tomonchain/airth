@@ -20,6 +20,8 @@ pub struct BlockRun<'a> {
     pub items_out: usize,
     pub cost_usd: Option<f64>,
     pub error: Option<String>,
+    /// The items it dropped, as JSON: each one's title and why (decision 61).
+    pub dropped: Option<String>,
 }
 
 /// A block's record, as the app shows it.
@@ -39,10 +41,10 @@ impl Store {
     pub fn record_block(&mut self, b: &BlockRun) -> Result<()> {
         self.write(|tx| {
             tx.execute(
-                "INSERT INTO routine_blocks (routine, run, block, started_at, finished_at, outcome, items_in, items_out, cost_usd, error)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO routine_blocks (routine, run, block, started_at, finished_at, outcome, items_in, items_out, cost_usd, error, dropped)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![b.routine, b.run, b.block, b.started_at.to_rfc3339(), Utc::now().to_rfc3339(),
-                    b.outcome, b.items_in as i64, b.items_out as i64, b.cost_usd, b.error],
+                    b.outcome, b.items_in as i64, b.items_out as i64, b.cost_usd, b.error, b.dropped],
             )?;
             Ok(())
         })

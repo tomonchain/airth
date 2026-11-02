@@ -156,6 +156,7 @@ fn flagged(store: &mut Store, flag: &str) -> i64 {
                 model_call: None,
             },
             Some((flag, "a call to buy")),
+            None,
         )
         .unwrap()
 }
@@ -252,6 +253,7 @@ fn an_edit_lifts_the_block_and_the_journal_says_so() {
                 model_call: None,
             },
             Some(("overridden", "")),
+            None,
         )
         .unwrap_err();
     assert!(format!("{e:#}").contains("note or blocking"), "{e:#}");

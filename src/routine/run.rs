@@ -255,6 +255,7 @@ pub fn run(
     now: DateTime<Utc>,
 ) -> Result<Report> {
     let mut inbox: Vec<Vec<Item>> = vec![Vec::new(); graph.blocks.len()];
+    let resumed = matches!(start, Start::After { .. });
     match start {
         Start::Trigger => inbox[0].push(Item::new()),
         Start::After { block, item } => {
@@ -280,6 +281,10 @@ pub fn run(
     let mut blocks = Vec::new();
     let started = Instant::now();
     let mut total = Judged::default();
+    // What each block dropped, and how many items it had (decision 61);
+    // and how many items the run put before the founder.
+    let mut dropped: Vec<Dropped> = Vec::new();
+    let mut asked = 0;
     for i in order(graph)? {
         let block = &graph.blocks[i];
         let items = std::mem::take(&mut inbox[i]);
@@ -291,6 +296,7 @@ pub fn run(
         let block_at = Utc::now();
         // What the block's record says beyond its counts (a real run only).
         let (mut acts_failed, mut block_cost) = (0usize, None);
+        let mut block_dropped = Vec::new();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
             Kind::Read { source, .. } if source == "business" => {
                 // The graph check let only `records: week` through.
@@ -380,7 +386,7 @@ pub fn run(
                     distinct,
                     limit: *limit,
                 };
-                let (kept, stats) =
+                let (kept, mut stats) =
                     judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)
                         .with_context(|| format!("{} failed", block.id))?;
                 let shown: Vec<&str> = rank.iter().chain(distinct).map(String::as_str).collect();
@@ -414,6 +420,7 @@ pub fn run(
                 lines.push(format!("set aside: {}", aside.join(", ")));
                 lines.push(cost(&stats));
                 block_cost = Some(stats.cost_usd);
+                block_dropped = std::mem::take(&mut stats.dropped);
                 total.input_tokens += stats.input_tokens;
                 total.output_tokens += stats.output_tokens;
                 total.cost_usd += stats.cost_usd;
@@ -468,7 +475,9 @@ pub fn run(
                                 model_call: it.get("model_call").and_then(Value::as_i64),
                             },
                                 flag.as_ref().map(|(f, why)| (*f, why.as_str())),
+                                run_note(&dropped).as_deref(),
                             )?;
+                            asked += 1;
                             lines.push(format!(
                                 "asked the founder (item {id}){flagged}: {shown}{cut}"
                             ));
@@ -522,6 +531,16 @@ pub fn run(
                 (done, Vec::new())
             }
         };
+        let dropped_json = (!block_dropped.is_empty()).then(|| {
+            let list: Vec<Value> = block_dropped
+                .iter()
+                .map(|(item, why)| serde_json::json!({"item": item, "reason": why}))
+                .collect();
+            Value::from(list).to_string()
+        });
+        if !block_dropped.is_empty() {
+            dropped.push((block.id.clone(), count, block_dropped));
+        }
         if let Some(r) = &real {
             // Each block's execution, for the founder to follow the run step
             // by step (decision 49).
@@ -540,6 +559,7 @@ pub fn run(
                 items_out: pass.len() + other.len(),
                 cost_usd: block_cost,
                 error: (acts_failed > 0).then(|| notes.join("\n")),
+                dropped: dropped_json,
             })?;
         }
         blocks.push(BlockReport {
@@ -563,6 +583,22 @@ pub fn run(
                 }
             }
         }
+    }
+    // Nothing left to carry the note: the founder is told by a report, so
+    // an empty day is never silent. Not an incident: nothing failed.
+    if let (Some(r), Some(note), 0, false) = (&real, run_note(&dropped), asked, resumed) {
+        let entries = [(
+            format!("{name}/{}/dropped", r.run),
+            BTreeMap::from([("dropped".to_string(), note)]),
+        )];
+        dry.store
+            .add_report(&crate::business::store::reports::NewReport {
+                title: &format!("{name}: items dropped"),
+                agent: Some(&graph.agent),
+                routine: name,
+                run: r.run,
+                entries: &entries,
+            })?;
     }
     Ok(Report {
         title,
@@ -589,6 +625,33 @@ fn quality_flag(item: &Item, check: &str) -> Option<(&'static str, String)> {
             "not checked: the check's flag is not none, note or blocking".into(),
         )),
     }
+}
+
+/// A block that dropped items: its id, how many items it had, and each
+/// dropped one's name and why.
+type Dropped = (String, usize, Vec<(String, String)>);
+
+/// One line on what a run dropped so far (decision 61): per block, how many
+/// of its items, which, and why. Written by code, so its counts are exact.
+fn run_note(dropped: &[Dropped]) -> Option<String> {
+    if dropped.is_empty() {
+        return None;
+    }
+    let blocks: Vec<String> = dropped
+        .iter()
+        .map(|(block, of, items)| {
+            let which: Vec<String> = items
+                .iter()
+                .map(|(item, why)| format!("\"{item}\" ({why})"))
+                .collect();
+            format!(
+                "{block}: {} of {of} dropped: {}",
+                items.len(),
+                which.join(", ")
+            )
+        })
+        .collect();
+    Some(blocks.join("; "))
 }
 
 /// Characters of an approval's text shown in a report.

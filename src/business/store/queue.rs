@@ -34,6 +34,8 @@ pub struct Item {
     /// once the founder dealt with a blocking one, `lifted` or `overridden`.
     pub flag: Option<String>,
     pub flag_reason: Option<String>,
+    /// One line on what the same run dropped (decision 61).
+    pub note: Option<String>,
 }
 
 /// What the founder decides.
@@ -51,7 +53,7 @@ pub enum Answer {
 pub const FOUNDER_CHANNELS: &[&str] = &["app", "telegram"];
 
 const COLUMNS: &str = "id, created_at, kind, title, agent, routine, run, action, args, \
-    original_args, source, model_call, execute_at, status, revision, flag, flag_reason";
+    original_args, source, model_call, execute_at, status, revision, flag, flag_reason, note";
 
 fn read(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     let json = |i: usize| -> rusqlite::Result<Value> {
@@ -76,6 +78,7 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<Item> {
         revision: r.get(14)?,
         flag: r.get(15)?,
         flag_reason: r.get(16)?,
+        note: r.get(17)?,
     })
 }
 

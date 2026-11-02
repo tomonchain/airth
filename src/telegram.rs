@@ -202,7 +202,16 @@ fn item_text(realm: &str, item: &Item) -> String {
         (Some("note"), why) => format!("\nNote from the check: {}", why.unwrap_or("none")),
         _ => String::new(),
     };
-    format!("{realm} · {what}{action}\n{}{flag}\n\n{whole}", item.title)
+    // What the same run dropped (decision 61), so a missing post is seen.
+    let dropped = item
+        .note
+        .as_deref()
+        .map(|n| format!("\nAlso in this run: {n}"))
+        .unwrap_or_default();
+    format!(
+        "{realm} · {what}{action}\n{}{flag}{dropped}\n\n{whole}",
+        item.title
+    )
 }
 
 fn buttons(realm: &str, item: &Item) -> Value {

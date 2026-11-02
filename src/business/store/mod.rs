@@ -279,6 +279,11 @@ const MIGRATIONS: &[&str] = &[
     // 16: the time a scheduled run was due, beside when it started: a run
     // that starts late (the Mac asleep) is told apart from a slow one.
     "ALTER TABLE pipeline_runs ADD COLUMN due_at TEXT;",
+    // 17: what a run dropped reaches the founder (decision 61): a note on
+    // the items it still asks about, and each block's dropped items, for
+    // the weekly report.
+    "ALTER TABLE queue ADD COLUMN note TEXT;
+    ALTER TABLE routine_blocks ADD COLUMN dropped TEXT;",
 ];
 
 pub struct Store {

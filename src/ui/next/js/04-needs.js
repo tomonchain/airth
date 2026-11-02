@@ -129,6 +129,7 @@ function card(it) {
       h("strong", {}, blocked ? "Flagged by the check" : "Note from the check"), ": ",
       it.flag_reason || "no reason given",
       blocked && ". Edit it, or override the flag to approve it as it is."),
+    it.note && h("p", { class: "flag" }, h("strong", {}, "Also in this run"), ": ", it.note),
     editing
       ? h("textarea", { id: `edit-${it.id}`, class: "edit", rows: 5, "aria-label": "New text" }, it.text)
       : h("p", { class: it.call ? "content call" : "content" }, it.text),
