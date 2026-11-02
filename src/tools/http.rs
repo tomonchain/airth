@@ -18,6 +18,7 @@ use reqwest::Url;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::sync::Mutex;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -41,6 +42,9 @@ const RESERVED_HEADERS: &[&str] = &[
 
 pub struct HttpRequest {
     pub integrations: Vec<Integration>,
+    /// Writes of this run that were sent and got no answer: they may have
+    /// been done, so the same one is not sent again (decision 55).
+    pub cut: Mutex<Vec<String>>,
 }
 
 /// A request, checked and ready to send.
@@ -250,6 +254,25 @@ impl Tool for HttpRequest {
             bail!("network access is off for this realm");
         }
         let p = self.prepare(input)?;
+        let write = !matches!(p.method, reqwest::Method::GET | reqwest::Method::HEAD);
+        let request_text = format!(
+            "{} {} {}",
+            p.method,
+            p.url,
+            p.body.as_deref().unwrap_or_default()
+        );
+        let lost = |cut: &Mutex<Vec<String>>| {
+            if write {
+                cut.lock().unwrap().push(request_text.clone());
+            }
+        };
+        if write && self.cut.lock().unwrap().contains(&request_text) {
+            bail!(
+                "refused: the same {} to {} was sent earlier in this run and got no answer, so it may already be done; ask the founder before sending it again",
+                p.method,
+                p.url
+            );
+        }
         let mut builder = reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(TIMEOUT)
@@ -290,7 +313,12 @@ impl Tool for HttpRequest {
         let response = request.send().map_err(|e| {
             // A connection that failed (refused, DNS, TLS) carried nothing;
             // any other error may come after the service got the request.
-            let when = if e.is_connect() { NOT_SENT } else { CUT };
+            let when = if e.is_connect() {
+                NOT_SENT
+            } else {
+                lost(&self.cut);
+                CUT
+            };
             anyhow::anyhow!("{when}: request to {} failed: {}", p.url, e.without_url())
         })?;
 
@@ -319,9 +347,10 @@ impl Tool for HttpRequest {
                     || t.contains("javascript")
                     || t.contains("x-www-form-urlencoded")
             });
-        let bytes = response
-            .bytes()
-            .with_context(|| format!("{CUT}: reading the response body"))?;
+        let bytes = response.bytes().map_err(|e| {
+            lost(&self.cut);
+            anyhow::anyhow!("{CUT}: reading the response body: {e}")
+        })?;
         if bytes.is_empty() {
             return Ok(out);
         }
@@ -419,6 +448,7 @@ mod tests {
                 )]),
                 actions: Vec::new(),
             }],
+            cut: Default::default(),
         }
     }
 
@@ -459,6 +489,59 @@ mod tests {
         let (auth, url) = handle.join().unwrap();
         assert_eq!(auth.as_deref(), Some("Bearer tok-123"));
         assert_eq!(url, "/api/items?x=1");
+    }
+
+    /// Decision 55: a write sent without an answer may be done; the run
+    /// cannot send the very same one again, so the agent cannot post twice
+    /// by retrying by hand. Another write, or a read, still goes.
+    #[test]
+    fn a_write_that_got_no_answer_is_not_sent_again_in_the_run() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let connections = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let n = counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut got = Vec::new();
+                let mut chunk = [0u8; 4096];
+                while !String::from_utf8_lossy(&got).contains("\r\n\r\n") {
+                    let read = stream.read(&mut chunk).unwrap();
+                    got.extend_from_slice(&chunk[..read]);
+                }
+                // The first request is cut once read; the others are answered.
+                if n > 0 {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+                    );
+                }
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path())
+            .unwrap()
+            .with_secrets(vec![("SVC_TOKEN".into(), "tok-123".into())], vec![]);
+        let t = tool(&base);
+        let post = |body: &str| json!({"integration": "svc", "method": "POST", "url": "items", "body": body});
+        let send = |input: &Value| t.execute(input, &ws, &CancelToken::default());
+        let cut = send(&post("{\"text\": \"gm\"}")).unwrap_err();
+        assert!(format!("{cut:#}").starts_with(CUT), "{cut:#}");
+        let again = send(&post("{\"text\": \"gm\"}")).unwrap_err();
+        assert!(
+            format!("{again:#}").contains("may already be done"),
+            "{again:#}"
+        );
+        assert_eq!(connections.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            send(&post("{\"text\": \"gn\"}"))
+                .unwrap()
+                .starts_with("HTTP 200")
+        );
+        let read = json!({"integration": "svc", "url": "items"});
+        assert!(send(&read).unwrap().starts_with("HTTP 200"));
+        assert_eq!(connections.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     #[test]
