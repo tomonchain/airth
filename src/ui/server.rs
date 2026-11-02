@@ -285,11 +285,11 @@ pub(super) fn run_scheduler(runner: Runner) {
         // Routines as graphs (decision 49), delayed actions whose window
         // passed (decision 45), and failed actions to try again (decision 55).
         match runner.hub.due_routines(chrono::Utc::now()) {
-            Ok(due) => {
-                for (realm, name) in due {
+            Ok(routines) => {
+                for (realm, name, due) in routines {
                     eprintln!("routine {}/{name} started", realm.name());
                     let hub = runner.hub.clone();
-                    std::thread::spawn(move || hub.run_scheduled_routine(&realm, &name));
+                    std::thread::spawn(move || hub.run_scheduled_routine(&realm, &name, due));
                 }
             }
             Err(e) => eprintln!("routines: {e:#}"),

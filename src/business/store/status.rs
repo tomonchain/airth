@@ -19,6 +19,8 @@ pub struct RunRow {
     pub report: Option<String>,
     pub notes: String,
     pub error: Option<String>,
+    /// When its schedule said it should run; None for a run by hand.
+    pub due_at: Option<String>,
 }
 
 /// The week in numbers.
@@ -55,6 +57,17 @@ pub struct RoutinesWeek {
     pub incidents: i64,
     /// By routine, by name.
     pub routines: Vec<RoutineWeek>,
+    /// Scheduled runs that started more than the grace after their time
+    /// (the Mac asleep, Airth stopped), oldest first.
+    pub late: Vec<LateRun>,
+}
+
+/// A scheduled run that started late.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct LateRun {
+    pub routine: String,
+    pub due_at: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
@@ -65,6 +78,8 @@ pub struct RoutineWeek {
     pub cost_usd: f64,
     /// The founder's seconds on the items it queued.
     pub founder_seconds: i64,
+    /// Of its runs, those that started late.
+    pub late: i64,
 }
 
 /// What one pipeline's model calls cost over a period.
@@ -105,7 +120,7 @@ impl Store {
     /// The latest runs of `pipeline`, newest first.
     pub fn pipeline_runs(&self, pipeline: &str, limit: usize) -> Result<Vec<RunRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT started_at, finished_at, ok, items_read, items_kept, report, notes, error
+            "SELECT started_at, finished_at, ok, items_read, items_kept, report, notes, error, due_at
              FROM pipeline_runs WHERE pipeline = ?1 ORDER BY id DESC LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![pipeline, limit as i64], |r| {
@@ -118,6 +133,7 @@ impl Store {
                 report: r.get(5)?,
                 notes: r.get(6)?,
                 error: r.get(7)?,
+                due_at: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -172,6 +188,35 @@ impl Store {
             let r = by_name.entry(name.clone()).or_default();
             (r.routine, r.founder_seconds) = (name, seconds);
         }
+        let grace = chrono::Duration::minutes(crate::pipeline::schedule::GRACE_MINUTES);
+        let mut late = Vec::new();
+        let mut stmt = self.conn.prepare(
+            "SELECT substr(pipeline, 9), due_at, started_at FROM pipeline_runs
+             WHERE pipeline LIKE 'routine:%' AND due_at IS NOT NULL AND started_at >= ?1 ORDER BY id",
+        )?;
+        for row in stmt.query_map(params![at], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })? {
+            let (routine, due, started) = row?;
+            let parse = |t: &str| DateTime::parse_from_rfc3339(t).map(|t| t.with_timezone(&Utc));
+            let (Ok(due_at), Ok(started_at)) = (parse(&due), parse(&started)) else {
+                continue;
+            };
+            if started_at - due_at > grace {
+                if let Some(r) = by_name.get_mut(&routine) {
+                    r.late += 1;
+                }
+                late.push(LateRun {
+                    routine,
+                    due_at,
+                    started_at,
+                });
+            }
+        }
         // A routine run by hand leaves no heartbeat, but its calls count.
         for c in self.pipeline_costs(since)? {
             let r = by_name.entry(c.pipeline.clone()).or_default();
@@ -199,6 +244,7 @@ impl Store {
                 "SELECT COUNT(*) FROM queue WHERE kind = 'incident' AND created_at >= ?1",
             )?,
             routines: by_name.into_values().collect(),
+            late,
         })
     }
 
@@ -407,6 +453,7 @@ mod tests {
             failed,
             cost_usd,
             founder_seconds,
+            late: 0,
         };
         assert_eq!(
             week,
@@ -426,7 +473,63 @@ mod tests {
                     routine("posts", 2, 1, 0.25, 100),
                     routine("watch", 0, 0, 0.0, 5),
                 ],
+                late: vec![],
             }
+        );
+    }
+
+    /// Milestone 6's proof: a scheduled run that started past the grace
+    /// after its time is counted late, apart; one within it, or run by
+    /// hand, is not.
+    #[test]
+    fn a_run_that_started_late_is_told_apart() {
+        use crate::business::store::pipelines::Heartbeat;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let now = Utc::now();
+        let mut beat = |routine: &str, due: Option<i64>, started_ago: i64| {
+            let started = now - chrono::Duration::minutes(started_ago);
+            store
+                .record_run(
+                    &Heartbeat {
+                        pipeline: &format!("routine:{routine}"),
+                        due: due.map(|ago| now - chrono::Duration::minutes(ago)),
+                        started,
+                        finished: started,
+                        items_read: 0,
+                        items_kept: 0,
+                        report: None,
+                        notes: "",
+                        error: None,
+                    },
+                    &[],
+                )
+                .unwrap();
+        };
+        // Due 3 hours before it started: the Mac was asleep.
+        beat("posts", Some(300), 120);
+        // Five minutes after its time: slow, not late.
+        beat("posts", Some(65), 60);
+        // By hand: no time to be late for.
+        beat("watch", None, 30);
+        let week = store
+            .routines_week(now - chrono::Duration::days(7))
+            .unwrap();
+        assert_eq!(week.late.len(), 1, "{:?}", week.late);
+        assert_eq!(week.late[0].routine, "posts");
+        assert_eq!(
+            (week.late[0].started_at - week.late[0].due_at).num_minutes(),
+            180
+        );
+        let posts = week.routines.iter().find(|r| r.routine == "posts").unwrap();
+        assert_eq!((posts.runs, posts.late), (2, 1));
+        assert_eq!(
+            week.routines
+                .iter()
+                .find(|r| r.routine == "watch")
+                .unwrap()
+                .late,
+            0
         );
     }
 }

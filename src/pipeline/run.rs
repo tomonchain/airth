@@ -540,6 +540,7 @@ fn record(
 ) -> Result<()> {
     let notes = outcome.notes.join("\n");
     let beat = Heartbeat {
+        due: None,
         pipeline,
         started,
         finished,

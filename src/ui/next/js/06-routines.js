@@ -160,13 +160,20 @@ function blockReport(report, open) {
     !ran.lines.length && !ran.notes.length && h("p", { class: "note" }, "Nothing to say: its items went on."));
 }
 
+/** How late a scheduled run started, past the 15 minutes of grace. */
+function late(run) {
+  if (!run.due_at) return null;
+  const secs = (new Date(run.at) - new Date(run.due_at)) / 1000;
+  return secs > 15 * 60 ? minutes(Math.round(secs)) : null;
+}
+
 function lastRuns(r) {
   return [
     h("div", { class: "steps" },
       h("span", { class: "steps-label" }, "Last runs"),
       !r.runs.length && h("p", { class: "note" }, "No run yet. Each scheduled run shows here once it ends."),
       r.runs.map((x) => h("div", { class: "step" },
-        h("span", {}, clock(x.at)),
+        h("span", {}, clock(x.at), late(x) && h("span", { class: "late" }, ` · ${late(x)} late`)),
         h("span", { class: `step-out ${x.ok ? "ok" : "failed"}`, title: x.error || "" }, x.ok ? "Done" : "Failed")))),
     h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Model cost, last 7 days"),
       h("span", { class: "tile-value" }, money(r.cost_usd, r.unpriced))),
