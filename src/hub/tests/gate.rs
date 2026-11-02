@@ -101,15 +101,17 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
         .due_routines(now + chrono::Duration::minutes(61))
         .unwrap();
     assert_eq!(
-        due.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>(),
+        due.iter().map(|(_, n, _)| n.as_str()).collect::<Vec<_>>(),
         vec!["posts"]
     );
 
     // 2. The run: read, drafted, waiting for the founder; its heartbeat left.
-    hub.run_scheduled_routine(&f.realm, "posts");
+    hub.run_scheduled_routine(&f.realm, "posts", due[0].2);
     let beats = store().heartbeats().unwrap();
     assert_eq!(beats.len(), 1);
     assert!(beats[0].0 == "routine:posts" && beats[0].1.ok, "{beats:?}");
+    // With the time it was due, to tell a late start from a slow one.
+    assert_eq!(beats[0].1.due_at, Some(due[0].2.to_rfc3339()));
     let calls = store().model_calls().unwrap();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].valid && !calls[0].dry_run);

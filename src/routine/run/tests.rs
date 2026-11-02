@@ -305,6 +305,24 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
             note: String::new(),
         })
         .unwrap();
+    // Due Monday 07:30, started at 10:30: the Mac was asleep.
+    let due: DateTime<Utc> = "2026-11-02T07:30:00Z".parse().unwrap();
+    store
+        .record_run(
+            &crate::business::store::pipelines::Heartbeat {
+                pipeline: "routine:daily-posts",
+                due: Some(due),
+                started: due + chrono::Duration::hours(3),
+                finished: due + chrono::Duration::hours(3),
+                items_read: 0,
+                items_kept: 0,
+                report: None,
+                notes: "",
+                error: None,
+            },
+            &[],
+        )
+        .unwrap();
     let (mut fetch, mut ask) = (
         |_: &str| -> Result<crate::pipeline::run::Fetched> {
             panic!("a business read fetches nothing")
@@ -343,7 +361,8 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
         "Your time: 45 min (baseline: 5 h 00 a week, so this week took 15% of it)",
         "Your answers: 0 approved, 0 edited, 0 rejected",
         "Model cost: $0.00 for 0 model call(s)",
-        "By routine:\n      none ran",
+        "- daily-posts: 1 run(s), 0 failed, 1 late, $0.00, 0 s of yours",
+        "Started late: 1\n      - daily-posts: due Mon 2 Nov 07:30 UTC, started 3 h 00 later",
     ] {
         assert!(first.contains(line), "{line}\n{first}");
     }

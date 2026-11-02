@@ -463,7 +463,9 @@ impl Hub {
     /// The routines whose schedule says they run at `now`, across realms,
     /// each claimed so the next call does not return it again. A late or
     /// silent run is told to the founder, as for pipelines.
-    pub fn due_routines(&self, now: DateTime<Utc>) -> Result<Vec<(Realm, String)>> {
+    /// The scheduled routines due at `now`, across realms, each with the
+    /// time it was due, and claimed so the next call does not return it.
+    pub fn due_routines(&self, now: DateTime<Utc>) -> Result<Vec<(Realm, String, DateTime<Utc>)>> {
         let mut out = Vec::new();
         for realm in self.home.realms()? {
             if realm.config.archived || realm.root().is_err() {
@@ -478,7 +480,12 @@ impl Hub {
                 let schedule = Schedule::parse(&schedule)?;
                 // Kept apart from pipelines of the same name.
                 let key = format!("routine:{name}");
-                let Tick::Run { missed, silent } = tick(&mut store, &key, &schedule, now)? else {
+                let Tick::Run {
+                    due,
+                    missed,
+                    silent,
+                } = tick(&mut store, &key, &schedule, now)?
+                else {
                     continue;
                 };
                 // A missing heartbeat is an incident (`CLAUDE.md`).
@@ -497,15 +504,16 @@ impl Hub {
                     };
                     super::incidents::record(&realm, &incident)?;
                 }
-                out.push((realm.clone(), name));
+                out.push((realm.clone(), name, due));
             }
         }
         Ok(out)
     }
 
-    /// Run a routine its schedule started, and leave its heartbeat, so the
-    /// next time knows it ended (decision 34).
-    pub fn run_scheduled_routine(&self, realm: &Realm, name: &str) {
+    /// Run a routine its schedule started for `due`, and leave its
+    /// heartbeat with both times, so the next time knows it ended (decision
+    /// 34) and the weekly report knows if it started late.
+    pub fn run_scheduled_routine(&self, realm: &Realm, name: &str, due: DateTime<Utc>) {
         let started = Utc::now();
         let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
         let outcome = self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger);
@@ -513,6 +521,7 @@ impl Hub {
         let report = outcome.ok();
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
+            due: Some(due),
             started,
             finished: Utc::now(),
             items_read: 0,

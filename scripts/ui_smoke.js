@@ -379,7 +379,7 @@ function smokeNext() {
   // Routines: every kind of block, a routine refused, then a dry run.
   vm.runInContext(`routines.data.acme = { routines: [
     { name: "broken", runs: [], next_at: null, cost_usd: 0, unpriced: 0, error: "routines/broken.json: the agent 'ghost'" },
-    { name: "daily-posts", runs: [{ at: "${now}", ok: false, error: "x" }, { at: "${now}", ok: true, error: null }], next_at: "${now}", cost_usd: 0.12, unpriced: 1, agent_title: null,
+    { name: "daily-posts", runs: [{ at: "${now}", due_at: "2026-11-02T05:00:00Z", ok: false, error: "x" }, { at: "${now}", due_at: null, ok: true, error: null }], next_at: "${now}", cost_usd: 0.12, unpriced: 1, agent_title: null,
       graph: { description: "", agent: "post-writer", trigger: { schedule: "daily 07:30" }, blocks: [
         { id: "news", type: "read", source: "rss", feeds: ["https://e.com/f"], max_age_days: 2, dedupe: "link", max: null },
         { id: "week", type: "read", source: "business", records: "week", feeds: [] },

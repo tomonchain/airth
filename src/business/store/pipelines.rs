@@ -21,6 +21,8 @@ pub struct Claimed {
 /// One run's heartbeat, as it is recorded.
 pub struct Heartbeat<'a> {
     pub pipeline: &'a str,
+    /// When its schedule said it should run; None for a run by hand.
+    pub due: Option<DateTime<Utc>>,
     pub started: DateTime<Utc>,
     pub finished: DateTime<Utc>,
     pub items_read: usize,
@@ -152,8 +154,8 @@ impl Store {
     pub fn record_run(&mut self, beat: &Heartbeat, seen: &[String]) -> Result<()> {
         self.write(|tx| {
             tx.execute(
-                "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, ok, items_read, items_kept, report, notes, error)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, ok, items_read, items_kept, report, notes, error, due_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     beat.pipeline,
                     beat.started.to_rfc3339(),
@@ -164,6 +166,7 @@ impl Store {
                     beat.report,
                     beat.notes,
                     beat.error,
+                    beat.due.map(|d| d.to_rfc3339()),
                 ],
             )?;
             for key in seen {
@@ -210,7 +213,7 @@ impl Store {
     #[cfg(test)]
     pub fn heartbeats(&self) -> Result<Vec<(String, RunRow)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT pipeline, started_at, finished_at, ok, items_read, items_kept, report, notes, error
+            "SELECT pipeline, started_at, finished_at, ok, items_read, items_kept, report, notes, error, due_at
              FROM pipeline_runs ORDER BY id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -225,6 +228,7 @@ impl Store {
                     report: r.get(6)?,
                     notes: r.get(7)?,
                     error: r.get(8)?,
+                    due_at: r.get(9)?,
                 },
             ))
         })?;

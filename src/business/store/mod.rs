@@ -276,6 +276,9 @@ const MIGRATIONS: &[&str] = &[
     // which leaves it `lifted` or `overridden`.
     "ALTER TABLE queue ADD COLUMN flag TEXT CHECK (flag IN ('note', 'blocking', 'lifted', 'overridden'));
     ALTER TABLE queue ADD COLUMN flag_reason TEXT;",
+    // 16: the time a scheduled run was due, beside when it started: a run
+    // that starts late (the Mac asleep) is told apart from a slow one.
+    "ALTER TABLE pipeline_runs ADD COLUMN due_at TEXT;",
 ];
 
 pub struct Store {

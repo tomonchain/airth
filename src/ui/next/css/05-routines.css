@@ -44,3 +44,4 @@
   .node { flex: 0 0 auto; }
   .node + .node::before { left: 50%; top: -17px; width: 2px; height: 16px; }
 }
+.step .late { color: var(--warn); }

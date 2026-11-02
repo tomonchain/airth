@@ -149,7 +149,8 @@ impl Hub {
             }
             let mut store = Store::of(&realm)?;
             for (name, schedule) in scheduled {
-                let Tick::Run { missed, silent } = tick(&mut store, &name, &schedule, now)? else {
+                let Tick::Run { missed, silent, .. } = tick(&mut store, &name, &schedule, now)?
+                else {
                     continue;
                 };
                 self.tell_late(&realm, &name, missed, silent)?;

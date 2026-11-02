@@ -19,6 +19,8 @@ pub enum Tick {
     Wait,
     /// Run it now. It is claimed: the next tick will not start it again.
     Run {
+        /// The time it was due, late or not.
+        due: DateTime<Utc>,
         /// The time it should have run, when it runs late.
         missed: Option<DateTime<Utc>>,
         /// The start of an earlier run that left no heartbeat.
@@ -41,7 +43,11 @@ pub fn tick(
         .and_then(|(at, beat)| (!beat).then_some(at));
     let missed =
         (now - claimed.due_at > Duration::minutes(GRACE_MINUTES)).then_some(claimed.due_at);
-    Ok(Tick::Run { missed, silent })
+    Ok(Tick::Run {
+        due: claimed.due_at,
+        missed,
+        silent,
+    })
 }
 
 #[cfg(test)]
@@ -57,6 +63,7 @@ mod tests {
     fn heartbeat(store: &mut Store, started: DateTime<Utc>) {
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: "watch",
+            due: None,
             started,
             finished: started,
             items_read: 0,
@@ -82,18 +89,20 @@ mod tests {
             tick(&mut store, "watch", &every, at(7, 59)).unwrap(),
             Tick::Wait
         );
-        let due = Tick::Run {
+        let due = |h| Tick::Run {
+            due: at(h, 0),
             missed: None,
             silent: None,
         };
-        assert_eq!(tick(&mut store, "watch", &every, at(8, 0)).unwrap(), due);
+        assert_eq!(tick(&mut store, "watch", &every, at(8, 0)).unwrap(), due(8));
         // Claimed: the next tick does not start it again.
         assert_eq!(
             tick(&mut store, "watch", &every, at(8, 0)).unwrap(),
             Tick::Wait
         );
         heartbeat(&mut store, at(8, 0));
-        assert_eq!(tick(&mut store, "watch", &every, at(9, 5)).unwrap(), due);
+        // Five minutes after its time is slow, not missed.
+        assert_eq!(tick(&mut store, "watch", &every, at(9, 5)).unwrap(), due(9));
     }
 
     #[test]
@@ -106,6 +115,7 @@ mod tests {
         assert_eq!(
             tick(&mut store, "watch", &every, at(11, 30)).unwrap(),
             Tick::Run {
+                due: at(8, 0),
                 missed: Some(at(8, 0)),
                 silent: None
             }
@@ -127,6 +137,7 @@ mod tests {
         assert_eq!(
             tick(&mut store, "watch", &every, at(9, 0)).unwrap(),
             Tick::Run {
+                due: at(9, 0),
                 missed: None,
                 silent: Some(at(8, 0))
             }

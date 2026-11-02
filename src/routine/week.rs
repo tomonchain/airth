@@ -39,6 +39,7 @@ pub fn read(root: &Path, store: &Store, now: DateTime<Utc>) -> Result<Item> {
     );
     set("incidents", w.incidents.to_string());
     set("routines", routines(&w));
+    set("late", late(&w));
     let summary = summary(&item);
     item.insert("summary".into(), summary.into());
     Ok(item)
@@ -92,10 +93,11 @@ fn routines(w: &RoutinesWeek) -> String {
         .iter()
         .map(|r| {
             format!(
-                "- {}: {} run(s), {} failed, ${:.2}, {} of yours",
+                "- {}: {} run(s), {} failed, {} late, ${:.2}, {} of yours",
                 r.routine,
                 r.runs,
                 r.failed,
+                r.late,
                 r.cost_usd,
                 human(r.founder_seconds as u64)
             )
@@ -104,10 +106,31 @@ fn routines(w: &RoutinesWeek) -> String {
         .join("\n")
 }
 
+/// Runs that started late, apart: a late start is the Mac or Airth, not the
+/// routine, and must not pass for slowness.
+fn late(w: &RoutinesWeek) -> String {
+    if w.late.is_empty() {
+        return "none".into();
+    }
+    let runs: Vec<String> = w
+        .late
+        .iter()
+        .map(|l| {
+            format!(
+                "- {}: due {}, started {} later",
+                l.routine,
+                l.due_at.format("%a %-d %b %H:%M UTC"),
+                human((l.started_at - l.due_at).num_seconds().max(0) as u64)
+            )
+        })
+        .collect();
+    format!("{}\n{}", w.late.len(), runs.join("\n"))
+}
+
 fn summary(item: &Item) -> String {
     let f = |k: &str| crate::pipeline::run::field_text(item, k);
     format!(
-        "Week {} ({} to {})\nYour time: {} (baseline: {})\nYour answers: {}\nModel cost: {}\nActions: {}\nIncidents: {}\nBy routine:\n{}",
+        "Week {} ({} to {})\nYour time: {} (baseline: {})\nYour answers: {}\nModel cost: {}\nActions: {}\nIncidents: {}\nBy routine:\n{}\nStarted late: {}",
         f("week"),
         f("from"),
         f("to"),
@@ -117,6 +140,7 @@ fn summary(item: &Item) -> String {
         f("cost"),
         f("actions"),
         f("incidents"),
-        f("routines")
+        f("routines"),
+        f("late")
     )
 }

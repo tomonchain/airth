@@ -60,7 +60,7 @@ impl App {
             let runs: Vec<Value> = store
                 .pipeline_runs(&key, 5)?
                 .into_iter()
-                .map(|r| json!({"at": r.started_at, "ok": r.ok, "error": r.error}))
+                .map(|r| json!({"at": r.started_at, "due_at": r.due_at, "ok": r.ok, "error": r.error}))
                 .collect();
             let cost = costs.iter().find(|c| c.pipeline == name);
             let mut routine = json!({
