@@ -63,6 +63,34 @@ const THEME_JS: &str = include_str!("theme.js");
 /// The Documents editor (CodeMirror), built from editor/ by editor/build.sh.
 const EDITOR_JS: &str = include_str!("vendor/editor.js");
 const FAVICON: &str = include_str!("favicon.svg");
+/// The new interface, served at /next next to the current one (decision 57).
+const NEXT_HTML: &str = include_str!("next/index.html");
+const NEXT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.js"));
+const NEXT_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.css"));
+/// Inter and JetBrains Mono (SIL Open Font License, next/fonts/), bundled
+/// so no page asks a font server for anything.
+const FONTS: &[(&str, &[u8])] = &[
+    (
+        "inter-400.woff2",
+        include_bytes!("next/fonts/inter-400.woff2"),
+    ),
+    (
+        "inter-500.woff2",
+        include_bytes!("next/fonts/inter-500.woff2"),
+    ),
+    (
+        "inter-600.woff2",
+        include_bytes!("next/fonts/inter-600.woff2"),
+    ),
+    (
+        "jetbrains-mono-400.woff2",
+        include_bytes!("next/fonts/jetbrains-mono-400.woff2"),
+    ),
+    (
+        "jetbrains-mono-500.woff2",
+        include_bytes!("next/fonts/jetbrains-mono-500.woff2"),
+    ),
+];
 const MAX_BODY: u64 = 1 << 20;
 
 pub struct UiOptions {
@@ -132,6 +160,21 @@ impl App {
             }
             (Method::Get, "/favicon.svg") => {
                 return Ok(static_response(FAVICON, "image/svg+xml"));
+            }
+            (Method::Get, "/next") | (Method::Get, "/next/") => {
+                return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
+            }
+            (Method::Get, "/next/app.js") => {
+                return Ok(static_response(NEXT_JS, "text/javascript; charset=utf-8"));
+            }
+            (Method::Get, "/next/app.css") => {
+                return Ok(static_response(NEXT_CSS, "text/css; charset=utf-8"));
+            }
+            (Method::Get, font) if font.starts_with("/next/fonts/") => {
+                let name = &font["/next/fonts/".len()..];
+                if let Some((_, bytes)) = FONTS.iter().find(|(n, _)| *n == name) {
+                    return Ok(static_bytes(bytes, "font/woff2"));
+                }
             }
             // The browser coming back from a connector's sign-in page. It cannot
             // carry the API token; the one-time `state` Airth issued is the proof.

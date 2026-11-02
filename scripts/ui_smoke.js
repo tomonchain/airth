@@ -292,7 +292,48 @@ const main = body.querySelector("#main");
   A.renderMain(); A.renderRun();
   if (!main.textContent.includes("edits the business's config") || !main.textContent.includes("Agents: writer")) problems.push("review: a config change is not flagged");
   check("change editing the config", main);
+  smokeNext();
   if (problems.length) { console.log(problems.join("\n")); process.exit(1); }
   console.log("ui smoke: no leaked null/undefined/false/true/NaN in rendered text");
   process.exit(0); // pages that follow a live run keep polling
 })().catch((e) => { console.error("ui smoke crashed:", e); process.exit(2); });
+
+// ---------- the new interface (/next, decision 57), in a context of its own ----------
+// Its scripts declare the same names as the current one's, so they run in
+// a separate global, with the same fake DOM.
+function smokeNext() {
+  const vm = require("vm");
+  // The current interface's scripts patched FakeNode's append for their
+  // own use; the new interface's elements start from the plain DOM's
+  // behaviour, which turns a list into text, so its own patch is tested.
+  class NextNode extends FakeNode {}
+  NextNode.prototype.append = function (...items) { for (const x of items) { const n = x instanceof FakeNode ? x : new FakeText(String(x)); n.parent = this; this.children.push(n); } };
+  NextNode.prototype.replaceChildren = function (...items) { this.children = []; this.append(...items); };
+  const nbody = new NextNode("body");
+  for (const id of ["top", "rail", "panel"]) { const n = new NextNode("div"); n.attrs.id = id; nbody.append(n); }
+  const ctx = {
+    Node: FakeNode, Element: NextNode, Date, console, storage,
+    document: { createElement: (t) => new NextNode(t), createTextNode: (t) => new FakeText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s) },
+    location: { hash: "" }, window: { addEventListener() {} },
+    sessionStorage: storage, localStorage: storage,
+  };
+  const dir = path.join(__dirname, "..", "src", "ui", "next", "js");
+  const code = fs.readdirSync(dir).filter((f) => f.endsWith(".js")).sort()
+    .map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n").replace(/\nboot\(\);\s*$/, "\n");
+  vm.runInNewContext(code + "\n;globalThis.__next = { next, renderAll, PAGES, PINNED };", ctx);
+  const N = ctx.__next;
+  const realms = [{ name: "acme", description: "", archived: false, default: true }, { name: "perso", description: null, archived: false }];
+  const show = (label, state) => {
+    Object.assign(N.next, { realms, realm: "acme", unauthorized: false, menuOpen: false }, state);
+    N.renderAll();
+    check(`next/${label}`, nbody);
+    if (nbody.textContent.trim().length < 40) problems.push(`next/${label}: rendered (almost) nothing`);
+    // A list handed to the DOM as is shows its items' addresses as text.
+    if (nbody.textContent.includes("#/")) problems.push(`next/${label}: an address shows as text`);
+  };
+  show("hq", { route: { page: "hq" } });
+  show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
+  show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
+  for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
+  show("unauthorized", { route: { page: "hq" }, unauthorized: true });
+}

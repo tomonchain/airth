@@ -1,6 +1,7 @@
 //! Records which commit and repository the binary is built from, so a running
 //! Airth can tell when its source has a newer version (see src/update.rs), and
-//! joins the app's scripts and styles into the one app.js and app.css it serves.
+//! joins the app's scripts and styles into the one app.js and app.css it serves,
+//! and the new interface's into next.js and next.css.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -33,6 +34,9 @@ fn bundle(dir: &str, ext: &str, name: &str) {
 fn main() {
     bundle("src/ui/js", "js", "app.js");
     bundle("src/ui/css", "css", "app.css");
+    // The new interface, next to the current one (decision 57).
+    bundle("src/ui/next/js", "js", "next.js");
+    bundle("src/ui/next/css", "css", "next.css");
     if let Some(commit) = git(&["rev-parse", "HEAD"]) {
         println!("cargo:rustc-env=AIRTH_COMMIT={commit}");
     }

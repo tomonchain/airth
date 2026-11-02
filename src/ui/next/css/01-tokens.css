@@ -1,0 +1,43 @@
+/* The new interface (decision 57): docs/design/DESIGN.md's tokens, defined
+   once. Pages use only these. */
+
+@font-face { font-family: Inter; font-weight: 400; font-display: swap; src: url("/next/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 500; font-display: swap; src: url("/next/fonts/inter-500.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 600; font-display: swap; src: url("/next/fonts/inter-600.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url("/next/fonts/jetbrains-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/next/fonts/jetbrains-mono-500.woff2") format("woff2"); }
+
+:root {
+  --bg: #0F1011;
+  --panel: #17181A;
+  --card: #1D1F22;
+  --raised: #23262A;
+  --chip: #26292D;
+  --line: #2A2D31;
+  --line-soft: #24272B;
+  --text: #ECEDEE;
+  --text-2: #C2C7CE;
+  --text-3: #A3A9B1;
+  --text-4: #8B929B;
+  --text-5: #6F767F;
+  --icon: #9BA1A9;
+  --accent: #8FA6FF;
+  --accent-hover: #B8C6FF;
+  --ok: #5BD08D;
+  --ok-bg: #16301F;
+  --warn: #F5B353;
+  --warn-bg: #2A2213;
+  --warn-chip: #3A2C14;
+  --warn-muted: #D9C29A;
+  --bad: #FF9A9A;
+
+  --font: Inter, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --r-chip: 8px;
+  --r-button: 10px;
+  --r-tile: 12px;
+  --r-card: 16px;
+  --r-large: 20px;
+  --r-pill: 999px;
+}
