@@ -322,3 +322,38 @@ fn a_blocked_item_offers_override_not_approve() {
             .contains(r#"Also in this run: draft: 1 of 3 dropped: "Hack" (too long)"#)
     );
 }
+
+/// An approved item whose send failed says so, with its reason in one
+/// line, never "done".
+#[test]
+fn an_approved_item_that_failed_to_send_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(&dir.path().join(crate::business::store::FILE)).unwrap();
+    let new = NewItem {
+        kind: "approval",
+        title: "HKMA",
+        agent: None,
+        routine: Some("daily-posts"),
+        run: Some("r1"),
+        action: None,
+        args: "{}",
+        execute_at: None,
+        source: r#"{"block": "ok"}"#,
+        model_call: None,
+    };
+    store.propose(&new).unwrap();
+    // As the hub leaves it once the approved send failed.
+    let mut item = store.queue(&["pending"]).unwrap().remove(0);
+    item.status = "failed".into();
+    assert_eq!(
+        answered(
+            "hedgen",
+            &item,
+            Some("typefully.create_draft: HTTP 403 Forbidden: v1 is closed")
+        ),
+        "hedgen · approved, sending failed: HKMA\ntypefully.create_draft: HTTP 403 Forbidden: v1 is closed"
+    );
+    let mut done = item.clone();
+    done.status = "done".into();
+    assert!(answered("hedgen", &done, None).starts_with("hedgen · done: HKMA"));
+}

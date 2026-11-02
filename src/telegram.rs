@@ -463,14 +463,22 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
         "telegram",
         answer_seconds(&sent),
     ) {
-        Ok((item, report)) => {
-            let report = report.map(|r| format!("\n{r}")).unwrap_or_default();
-            format!("{} · {}: {}{report}", realm.name(), item.status, item.title)
-        }
+        Ok((item, report)) => answered(realm.name(), &item, report.as_deref()),
         Err(e) => format!("Not done: {e:#}"),
     };
     send(api, chat, &text, None)?;
     Ok(())
+}
+
+/// What the bot says once an answer is taken: the item's new state and
+/// what came of it. Approved but failed to send is never "done".
+fn answered(realm: &str, item: &Item, report: Option<&str>) -> String {
+    let report = report.map(|r| format!("\n{r}")).unwrap_or_default();
+    let status = match item.status.as_str() {
+        "failed" => "approved, sending failed",
+        status => status,
+    };
+    format!("{realm} · {status}: {}{report}", item.title)
 }
 
 /// Ask Telegram for what came, handle it, then send what waits.

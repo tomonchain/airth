@@ -224,11 +224,16 @@ fn a_failed_act_is_an_incident_and_demotes_its_agent() {
     let (item, report) = hub
         .answer_item(&f.realm, 1, None, Answer::Approve, "app", 5)
         .unwrap();
+    // Approved, but the send failed: the item says so in one line, with
+    // the service's own words, never as done and never as raw JSON.
+    let report = report.unwrap();
+    assert_eq!(item.status, "failed", "the routine ran; its act failed");
     assert!(
-        report.unwrap().contains("failed"),
-        "the act's 422 is a failure"
+        report.starts_with("typefully.create_draft: HTTP 422")
+            && report.ends_with(": text too long"),
+        "{report}"
     );
-    assert_eq!(item.status, "done", "the routine ran; its act failed");
+    assert!(!report.contains('{') && !report.contains('\n'), "{report}");
     let incidents: Vec<_> = Store::of(&f.realm)
         .unwrap()
         .queue(&["pending"])
@@ -302,7 +307,10 @@ fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
     .unwrap();
     let (hub, _, _) = make_hub(&f.home, vec![]);
     let start = || crate::routine::run::Start::Trigger;
-    let report = hub.run_routine(&f.realm, "watch", "r1", start()).unwrap();
+    let report = hub
+        .run_routine(&f.realm, "watch", "r1", start())
+        .unwrap()
+        .text;
     assert!(
         report.contains("tell: reported in Needs you (item 1)"),
         "{report}"
@@ -321,7 +329,10 @@ fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
         "nothing in the old inbox"
     );
     // Retried: the same items, the same keys, nothing new.
-    let again = hub.run_routine(&f.realm, "watch", "r2", start()).unwrap();
+    let again = hub
+        .run_routine(&f.realm, "watch", "r2", start())
+        .unwrap()
+        .text;
     assert!(
         again.contains("tell: already reported, nothing new"),
         "{again}"

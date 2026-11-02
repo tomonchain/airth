@@ -205,6 +205,9 @@ pub struct Report {
     /// What its model calls cost, in words.
     pub cost: String,
     pub secs: f64,
+    /// Each act that failed, in one line: the action and why.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failed: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -285,6 +288,7 @@ pub fn run(
     // and how many items the run put before the founder.
     let mut dropped: Vec<Dropped> = Vec::new();
     let mut asked = 0;
+    let mut failed = Vec::new();
     for i in order(graph)? {
         let block = &graph.blocks[i];
         let items = std::mem::take(&mut inbox[i]);
@@ -522,6 +526,7 @@ pub fn run(
                             }
                             Err(e) => {
                                 acts_failed += 1;
+                                failed.push(format!("{action}: {}", one_line(&format!("{e:#}"))));
                                 notes.push(format!("{action} [{key}] failed: {e:#}"));
                             }
                         },
@@ -605,7 +610,30 @@ pub fn run(
         blocks,
         cost: cost(&total),
         secs: started.elapsed().as_secs_f64(),
+        failed,
     })
+}
+
+/// A failed call's reason in one line: its first line, and the service's
+/// own message when its answer is JSON, never the raw answer.
+pub fn one_line(error: &str) -> String {
+    let first = error.lines().next().unwrap_or_default().trim();
+    // From the service's status on, when there is one: what was being done
+    // is said by the caller.
+    let first = first.find("HTTP ").map_or(first, |at| &first[at..]);
+    let said = error
+        .split_once("\n\n")
+        .and_then(|(_, body)| serde_json::from_str::<Value>(body.trim()).ok())
+        .and_then(|body| {
+            ["detail", "message", "error"]
+                .iter()
+                .find_map(|k| body[*k].as_str().map(str::to_string))
+        });
+    let line = match said {
+        Some(said) => format!("{first}: {said}"),
+        None => first.to_string(),
+    };
+    line.chars().take(240).collect()
 }
 
 /// The quality flag a check's answer at `check` sets (decision 58), and
