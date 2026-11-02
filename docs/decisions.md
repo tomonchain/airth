@@ -2,6 +2,38 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 59. A report is an item of Needs you, one per run and block, sent to Telegram
+
+**Proposed.**
+
+Today `airth.report` puts a notification in the current interface's inbox, one per item: the daily watch's ten kept items make ten notifications, and none of them reaches Needs you or Telegram. Milestone 4 wants the weekly report "through Telegram and Needs you".
+
+- **Where it goes.** A report becomes an item of the queue of a new kind, `report`: in Needs you, under its agent, and on Telegram like any item (decision 52). It has one answer, **Seen**, which closes it, as for an incident. Nothing waits on it: the run does not stop for a report.
+- **One per run and block.** An `act airth.report` gathers every item that reaches it in one run into one report: its title once, then one entry per item with the fields the block names. The daily watch sends one report of ten entries, not ten. Each item keeps its own idempotency key (decision 49), so a retried run adds nothing twice.
+- **The text.** A report is filled from its fields by code, never written by a model; a routine that wants a sentence of analysis puts an AI block before the act. The whole report reaches Telegram; a long one comes in several messages, as approvals do.
+- **Founder time.** Reading a report and answering Seen is recorded in the ledger, like any answer (decision 27): reading is part of what running the business costs.
+- **The old inbox** stops receiving routine reports in the same change; it keeps what the current interface still uses it for.
+
+*Why:* the founder looks in two places, Needs you and the phone; a report anywhere else is not read. One report per run keeps Telegram readable, and filling it by code keeps figures the founder relies on (time, cost) from being rephrased by a model.
+
+*Cost:* the queue's `kind` gains a value, which in SQLite means rebuilding the table in a migration (the access layer: security code). A report that nobody marks Seen stays in Needs you; reports expire after 7 days unless the founder sets otherwise. Telegram receives the report's text, so a routine must not put in a report what decision 52 keeps off Telegram.
+
+## 58. The quality check is an AI block whose answer can flag the item; no seventh block
+
+**Proposed.**
+
+Decision 53 defines the quality flag (a mark set on an item of the queue by a check step of its routine, with a reason; a blocking flag prevents Approve until the item is edited or the founder overrides it) and leaves the check step to milestone 4. It does not need a block of its own:
+
+- **The check is an AI block.** It has a prompt (`prompts/check.md`, written for the business: its red lines, its tone, its facts) and a schema whose answer says `flag` (`none`, `note` or `blocking`) and `reason`. Like any AI block it holds no tool, and its call is journaled with its prompt version. What code can check exactly (a length, a forbidden word) stays in the drafting block's schema (`maxLength`, `pattern`), where an invalid answer is already refused.
+- **An AI block names where its answer goes.** Today each AI block writes `answer`, so a check after the draft would replace `answer.draft`. A new optional field, `"as": "check"`, writes the answer under `check` instead; without it, `answer` as today.
+- **The approval carries the flag.** The approval block gains an optional `"flag": "check"`, the field holding the check's answer. The item goes to the queue with that flag and its reason; `none` or no field is no flag. A check that failed (its answer invalid, the model down) flags the item `note` with that reason: the founder sees the draft was not checked, and is not blocked by an outage.
+- **Blocking, edit, override** (decision 53): a `blocking` item cannot be approved; editing it lifts the block, since the text is then the founder's; **Override** approves it as it is, only from the founder's channels (the app and Telegram), logged with who, when and the channel. A `note` is shown and blocks nothing. No agent, routine or tool can set, lift or override a flag: the flag comes only from the approval block, through the access layer.
+- **The graph check** refuses a `flag` that no AI block `as` on the way names, like any field.
+
+*Why:* `CLAUDE.md` adds a block only for a real routine that needs it, and this one does not: judging a draft is an AI block's work (a prompt, a schema, no tool), and acting on the judgment is the approval's. Keeping the flag on the approval also keeps it where only the founder answers. `as` is the smallest change that lets two AI blocks follow each other without the second erasing the first.
+
+*Cost:* each business writes its own check prompt, and a check costs one model call per item. The queue gains the flag and its reason (a migration), and the queue's state machine an override (the access layer: security code). Telegram needs an Override button on blocking items. The check judges only what it is told; it is not a guarantee, and the founder's approval stays the guard.
+
 ## 57. The interface stays vanilla JavaScript and CSS, served by Airth; the new one grows next to the old
 
 **Accepted.**
