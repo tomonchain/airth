@@ -351,12 +351,21 @@ pub(super) fn follow_pull_requests(runner: Runner) {
     }
 }
 
+/// The line under the link: what the link grants, and whether anything
+/// runs on its own while it is open.
+fn banner(background: bool) -> String {
+    let runs = match background {
+        true => "Routines run while this is running.",
+        false => "Preview: nothing runs on its own (no routines, no Telegram, no updates).",
+    };
+    format!("This link grants control of the agent; don't share it. {runs} Ctrl-C to quit.")
+}
+
 pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
+    let background = options.background;
     let server = start(hub, options)?;
     eprintln!("\x1b[1mairth\x1b[0m → {}", server.url);
-    eprintln!(
-        "\x1b[2mThis link grants control of the agent; don't share it. Objectives run while this is running. Ctrl-C to quit.\x1b[0m"
-    );
+    eprintln!("\x1b[2m{}\x1b[0m", banner(background));
     let registry = server.registry.clone();
     let path = server.info_path.clone();
     ctrlc::set_handler(move || shut_down(&registry, &path))
@@ -510,4 +519,17 @@ pub(super) fn shut_down(registry: &Registry, info_path: &std::path::Path) {
         }
         std::process::exit(0);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    /// A preview runs nothing on its own: its start message must not say
+    /// that routines run.
+    #[test]
+    fn a_preview_does_not_say_routines_run() {
+        assert!(super::banner(true).contains("Routines run while this is running."));
+        let preview = super::banner(false);
+        assert!(!preview.contains("run while"), "{preview}");
+        assert!(preview.contains("nothing runs on its own"), "{preview}");
+    }
 }
