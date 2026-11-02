@@ -270,6 +270,9 @@ pub(crate) struct Judged {
     pub unpriced: usize,
     /// The block asked for the fast model and the main one answered.
     pub main_instead: bool,
+    /// Items dropped because their answer did not fit twice: each one's
+    /// name and why (decision 61).
+    pub dropped: Vec<(String, String)>,
 }
 
 impl Judged {
@@ -375,6 +378,8 @@ pub(crate) fn judge_all(
                 ));
                 if checking {
                     kept.push(item);
+                } else {
+                    stats.dropped.push((named(&item), why));
                 }
                 continue;
             }

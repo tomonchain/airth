@@ -290,9 +290,11 @@ fn a_blocked_item_offers_override_not_approve() {
         model_call: None,
     };
     store
-        .propose_flagged(&new, Some(("blocking", "a call to buy")))
+        .propose_flagged(&new, Some(("blocking", "a call to buy")), None)
         .unwrap();
-    store.propose_flagged(&new, Some(("note", "long"))).unwrap();
+    store
+        .propose_flagged(&new, Some(("note", "long")), None)
+        .unwrap();
     let items = store.queue(&["pending"]).unwrap();
     let labels = |item| -> Vec<String> {
         buttons("hedgen", item)[0]
@@ -306,4 +308,17 @@ fn a_blocked_item_offers_override_not_approve() {
     assert!(item_text("hedgen", &items[0]).contains("Flagged by the check: a call to buy"));
     assert_eq!(labels(&items[1]), ["Approve", "Edit", "Reject"]);
     assert!(item_text("hedgen", &items[1]).contains("Note from the check: long"));
+    // What the same run dropped reaches the phone too (decision 61).
+    store
+        .propose_flagged(
+            &new,
+            None,
+            Some(r#"draft: 1 of 3 dropped: "Hack" (too long)"#),
+        )
+        .unwrap();
+    let items = store.queue(&["pending"]).unwrap();
+    assert!(
+        item_text("hedgen", &items[2])
+            .contains(r#"Also in this run: draft: 1 of 3 dropped: "Hack" (too long)"#)
+    );
 }

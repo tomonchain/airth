@@ -829,3 +829,117 @@ fn a_draft_that_does_not_fit_is_asked_once_more_then_dropped_by_name() {
         assert!(!report.contains("dropped \"Flows\""), "{report}");
     }
 }
+
+/// Decision 61: what a run drops reaches the founder. The items it still
+/// asks about carry one line on it; when it drops them all, a report says
+/// so instead, never an incident.
+#[test]
+fn what_a_run_drops_reaches_the_founder() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/post.md", "Draft."),
+        (
+            "prompts/post.schema.json",
+            r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string", "maxLength": 280}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"]},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft"}
+        ]}),
+    )
+    .unwrap();
+    let long = json!({"draft": "x".repeat(300)}).to_string();
+    let why = "answer.draft has 300 characters, more than 280";
+    for too_long in [vec!["Hack"], vec!["Flows", "Hack", "Rates"]] {
+        let mut fetch = |_: &str| {
+            Ok(crate::pipeline::run::Fetched {
+                body: format!(
+                    "<rss><channel>{}</channel></rss>",
+                    ["Flows", "Hack", "Rates"]
+                        .iter()
+                        .map(|t| format!(
+                            "<item><title>{t}</title><link>https://e.com/{t}</link></item>"
+                        ))
+                        .collect::<String>()
+                ),
+                truncated: false,
+            })
+        };
+        let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            let seen = format!("{req:?}");
+            let title = ["Flows", "Hack", "Rates"]
+                .into_iter()
+                .find(|t| seen.contains(&format!("https://e.com/{t}")))
+                .unwrap();
+            let text = match too_long.contains(&title) {
+                true => long.clone(),
+                false => json!({"draft": format!("{title}, drafted")}).to_string(),
+            };
+            Ok(ModelResponse {
+                content: vec![ContentBlock::Text { text }],
+                stop_reason: StopReason::EndTurn,
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            })
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+            fast: None,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let mut act = |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool| -> Result<String> {
+            unreachable!("no act")
+        };
+        run(
+            "posts",
+            &graph,
+            Dry {
+                root: root.path(),
+                store: &mut store,
+                io: &mut io,
+                integrations: &[],
+            },
+            Some(Real {
+                run: "r1",
+                act: &mut act,
+            }),
+            Start::Trigger,
+            Utc::now(),
+        )
+        .unwrap();
+        let items = store.queue(&["pending"]).unwrap();
+        assert!(items.iter().all(|i| i.kind != "incident"), "{items:?}");
+        if too_long.len() == 1 {
+            let line = format!(r#"draft: 1 of 3 dropped: "Hack" ({why})"#);
+            assert_eq!(items.len(), 2);
+            assert!(
+                items
+                    .iter()
+                    .all(|i| i.kind == "approval" && i.note.as_deref() == Some(line.as_str())),
+                "{items:?}"
+            );
+        } else {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].kind, "report");
+            assert_eq!(items[0].title, "posts: items dropped");
+            let text = items[0].args["text"].as_str().unwrap();
+            assert!(
+                text.starts_with(r#"draft: 3 of 3 dropped: "Flows" ("#),
+                "{text}"
+            );
+        }
+    }
+}
