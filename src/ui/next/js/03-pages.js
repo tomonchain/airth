@@ -13,13 +13,15 @@ function renderPanel() {
   const page = next.route.page;
   if (page === "hq") return panel.replaceChildren(hqPage());
   if (page === "needs-you" && next.realm) return panel.replaceChildren(needsPage());
+  if (page === "team" && next.realm) return panel.replaceChildren(teamPage());
+  if (page === "business" && next.realm) return panel.replaceChildren(businessPage());
   const known = [...PAGES, ...PINNED].find((p) => p.id === page);
   panel.replaceChildren(soonPage(known ? known.title : "This page"));
 }
 
 function hqPage() {
   const live = next.realms.filter((r) => !r.archived);
-  return h("div", { class: "column" },
+  return h("div", { class: "column hq" },
     h("header", { class: "page-head" },
       h("div", { class: "date" }, today()),
       h("h1", { class: "headline" }, live.length === 1 ? "One business." : `${live.length} businesses.`)),
