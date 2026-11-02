@@ -10,6 +10,22 @@ pub mod router;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
+
+/// Whether a request that failed on the way is worth sending again. A model
+/// call has no side effect, so any failure to send it or to read its answer
+/// is tried again; only a request Airth could not build is not.
+pub(crate) fn worth_retrying(e: &reqwest::Error) -> bool {
+    !e.is_builder()
+}
+
+/// How long to wait before the `attempt`-th try again: 2, 4, then 8 s.
+pub(crate) fn backoff(attempt: u32) -> Duration {
+    if cfg!(test) {
+        return Duration::from_millis(5);
+    }
+    Duration::from_secs(2u64.pow(attempt))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
