@@ -62,8 +62,11 @@ function renderRail() {
   const link = (p) => {
     const current = next.route.page === p.id;
     const disabled = !next.realm && PAGES.includes(p);
-    return h("a", { href: disabled ? "#/hq" : pageHash(p.id), "aria-label": p.title, title: p.title,
+    const waiting = p.id === "needs-you" && needs.realm === next.realm && needs.items.length;
+    const el = h("a", { href: disabled ? "#/hq" : pageHash(p.id), "aria-label": waiting ? `${p.title}, ${needs.items.length} waiting` : p.title, title: p.title,
         "aria-current": current ? "page" : null, svg: icon(p.icon) });
+    if (waiting) el.append(h("span", { class: "dot", "aria-hidden": "true" }));
+    return el;
   };
   $("#rail").replaceChildren(
     h("a", { href: "#/hq", "aria-label": "HQ", title: "HQ", "aria-current": next.route.page === "hq" ? "page" : null, svg: icon("hq") }),
@@ -82,6 +85,8 @@ async function onRoute() {
   next.route = parseRoute();
   next.menuOpen = false;
   if (next.route.realm) next.realm = next.route.realm;
+  // Needs you's dot in the rail, for the business open now.
+  if (next.realm && needs.realm !== next.realm && !next.unauthorized) loadNeeds();
   try { if (next.realm) localStorage.setItem("airth-next-realm", next.realm); } catch {}
   renderAll();
 }

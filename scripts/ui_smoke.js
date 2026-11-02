@@ -320,7 +320,8 @@ function smokeNext() {
   const dir = path.join(__dirname, "..", "src", "ui", "next", "js");
   const code = fs.readdirSync(dir).filter((f) => f.endsWith(".js")).sort()
     .map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n").replace(/\nboot\(\);\s*$/, "\n");
-  vm.runInNewContext(code + "\n;globalThis.__next = { next, renderAll, PAGES, PINNED };", ctx);
+  vm.createContext(ctx);
+  vm.runInContext(code + "\n;globalThis.__next = { next, renderAll, PAGES, PINNED };", ctx);
   const N = ctx.__next;
   const realms = [{ name: "acme", description: "", archived: false, default: true }, { name: "perso", description: null, archived: false }];
   const show = (label, state) => {
@@ -336,4 +337,18 @@ function smokeNext() {
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
   show("unauthorized", { route: { page: "hq" }, unauthorized: true });
+  // Needs you, with every kind of item and fields left empty.
+  vm.runInContext(`Object.assign(needs, { realm: "acme", items: ${JSON.stringify([
+    { id: 1, kind: "approval", title: "A post", agent: "post-writer", routine: "daily-posts", run: "r1", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.", editable: true, source: { title: null, link: "https://e.com/1" } },
+    { id: 2, kind: "incident", title: "watch failed", agent: null, routine: "watch", run: null, action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "It failed.", editable: false, source: { title: null, link: null } },
+    { id: 3, kind: "delayed", title: "writer: blog.draft", agent: "writer", routine: null, run: null, action: "blog.draft", created_at: null, execute_at: now, status: "pending", revision: 1, text: "{}", editable: false, source: { title: null, link: null } },
+    { id: 4, kind: "prepared", title: "reply", agent: "writer", routine: null, run: null, action: "x.reply", created_at: now, execute_at: null, status: "pending", revision: 1, text: "Hi", editable: false, source: { title: null, link: null } }])},
+    agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
+  show("needs you", { route: { page: "needs-you", realm: "acme" } });
+  vm.runInContext(`needs.agent = "writer"; needs.rejecting = 3;`, ctx);
+  show("needs you, cancelling a delayed action", { route: { page: "needs-you", realm: "acme" } });
+  vm.runInContext(`needs.agent = "post-writer"; needs.editing = 1; needs.rejecting = null;`, ctx);
+  show("needs you, editing", { route: { page: "needs-you", realm: "acme" } });
+  vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
+  show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
 }
