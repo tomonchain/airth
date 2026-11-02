@@ -43,6 +43,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 mod company;
 mod extensions;
 mod general;
+mod graphs;
 mod http;
 mod live;
 mod queue;
@@ -264,6 +265,7 @@ impl App {
                 segments.as_slice(),
                 [.., "approval"]
                     | [.., "stop"]
+                    | ["realms", _, "graphs", _, "dry-run"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
             );
@@ -275,6 +277,7 @@ impl App {
             Self::extensions_routes,
             Self::queue_routes,
             Self::company_routes,
+            Self::graph_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {

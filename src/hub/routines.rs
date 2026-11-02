@@ -41,7 +41,7 @@ impl Hub {
         realm: &Realm,
         name: &str,
         approver: Box<dyn Approver>,
-    ) -> Result<String> {
+    ) -> Result<crate::routine::run::Report> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
         self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
@@ -248,6 +248,7 @@ impl Hub {
                 };
                 let real = crate::routine::run::Real { run, act: &mut act };
                 crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
+                    .map(|r| r.to_string())
             },
         )
     }

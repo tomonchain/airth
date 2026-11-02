@@ -13,6 +13,7 @@
   --card: #1D1F22;
   --raised: #23262A;
   --chip: #26292D;
+  --canvas: #141517; /* the routine graph's background */
   --line: #2A2D31;
   --line-soft: #24272B;
   --line-strong: #34383D; /* secondary buttons' border, as in the mockups */

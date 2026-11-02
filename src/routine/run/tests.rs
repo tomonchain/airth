@@ -120,7 +120,8 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         },
         Utc::now(),
     )
-    .unwrap();
+    .unwrap()
+    .to_string();
     assert!(
         report.contains("would ask the founder: ETH left the queue."),
         "{report}"
@@ -217,7 +218,8 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
         Start::Trigger,
         Utc::now(),
     )
-    .unwrap();
+    .unwrap()
+    .to_string();
     assert!(
         report.contains("asked the founder (item 1): Flows"),
         "{report}"
@@ -259,7 +261,8 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
             start,
             Utc::now(),
         )
-        .unwrap();
+        .unwrap()
+        .to_string();
         assert!(
             !report.contains("Nameless")
                 || report.contains("set aside: 'Nameless' has no source id"),
@@ -329,6 +332,7 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
             now,
         )
         .unwrap()
+        .to_string()
     };
     let first = report(&mut store);
     for line in [
