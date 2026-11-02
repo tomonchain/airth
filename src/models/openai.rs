@@ -185,16 +185,25 @@ impl OpenAiCompatible {
                     let s = resp.status().as_u16();
                     s == 408 || s == 409 || s == 429 || s >= 500
                 }
-                Err(e) => e.is_timeout() || e.is_connect(),
+                Err(e) => super::worth_retrying(e),
             };
             if retryable && attempt < MAX_RETRIES {
                 attempt += 1;
-                std::thread::sleep(Duration::from_secs(2u64.pow(attempt)));
+                std::thread::sleep(super::backoff(attempt));
                 continue;
             }
             let resp = result.with_context(|| format!("request to {} failed", self.base_url))?;
             let status = resp.status();
-            let text = resp.text()?;
+            // The answer can break off while it is read: ask again then too.
+            let text = match resp.text() {
+                Ok(text) => text,
+                Err(e) if attempt < MAX_RETRIES && super::worth_retrying(&e) => {
+                    attempt += 1;
+                    std::thread::sleep(super::backoff(attempt));
+                    continue;
+                }
+                Err(e) => return Err(e).context("reading the model's answer failed"),
+            };
             if !status.is_success() {
                 bail!("{} API error {status}: {text}", self.provider);
             }
@@ -348,6 +357,70 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         move |k: &str| map.get(k).cloned()
+    }
+
+    /// Read one HTTP request whole: its head, then as many bytes as it says.
+    fn read_request(s: &mut std::net::TcpStream) {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let mut byte = [0u8; 1];
+        while !buf.ends_with(b"\r\n\r\n") && s.read(&mut byte).unwrap() == 1 {
+            buf.push(byte[0]);
+        }
+        let head = String::from_utf8_lossy(&buf).to_lowercase();
+        let length: usize = head
+            .lines()
+            .find_map(|l| l.strip_prefix("content-length:"))
+            .map_or(0, |v| v.trim().parse().unwrap());
+        let mut body = vec![0u8; length];
+        s.read_exact(&mut body).unwrap();
+    }
+
+    /// A model call has no side effect: a connection dropped before the
+    /// answer, or an answer cut while it is read, is asked again. On 1
+    /// November both failed DeepSeek runs at the first try.
+    #[test]
+    fn a_dropped_or_cut_answer_is_asked_again() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let body = r#"{"choices": [{"message": {"content": "fine"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}, "model": "m"}"#;
+            let mut served = 0;
+            for stream in listener.incoming().take(3) {
+                let mut s = stream.unwrap();
+                read_request(&mut s);
+                served += 1;
+                match served {
+                    // Closed before any answer.
+                    1 => {}
+                    // The answer breaks off halfway.
+                    2 => {
+                        let cut = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 500\r\n\r\n{\"choi";
+                        s.write_all(cut.as_bytes()).unwrap();
+                    }
+                    _ => {
+                        let whole = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        s.write_all(whole.as_bytes()).unwrap();
+                    }
+                }
+            }
+            served
+        });
+        let url = format!("http://127.0.0.1:{port}/v1");
+        let model = OpenAiCompatible::from_settings(
+            "ollama",
+            &settings(&[("AIRTH_MODEL", "m"), ("OPENAI_BASE_URL", &url)]),
+        )
+        .unwrap();
+        let answer = model
+            .complete(&ModelRequest::new("s", &[Message::user_text("hi")], &[]))
+            .unwrap();
+        assert!(matches!(&answer.content[0], ContentBlock::Text { text } if text == "fine"));
+        assert_eq!(server.join().unwrap(), 3);
     }
 
     #[test]
