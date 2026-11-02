@@ -36,6 +36,7 @@
 .tag.bad { background: var(--chip); color: var(--bad); }
 .approval .when { color: var(--warn); }
 .approval .content { margin: 0; font-size: 17px; line-height: 1.55; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval .content.call { font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 .approval .meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-3); }
 .approval textarea, .approval .why { width: 100%; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 12px 14px; font: inherit; font-size: 15px; line-height: 1.5; }
 .approval .why { min-height: 44px; padding: 0 14px; }

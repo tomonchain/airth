@@ -112,7 +112,10 @@ function card(it) {
   needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
   const editing = needs.editing === it.id;
   const rejecting = needs.rejecting === it.id;
-  const what = it.kind === "incident" ? "Seen closes it."
+  // An action a task of the founder's proposed (decision 56): the task
+  // stopped there, and waits for nothing else.
+  const what = it.task && it.action ? `If approved: ${it.action} is done, once. The task stopped here.`
+    : it.kind === "incident" ? "Seen closes it."
     : it.kind === "prepared" ? "Airth does nothing: mark it done once you did it."
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
     : it.action ? `If approved: ${it.action} is done, once.` : null;
@@ -123,9 +126,10 @@ function card(it) {
       it.execute_at && h("span", { class: "when" }, `Done at ${clock(it.execute_at)}`)),
     editing
       ? h("textarea", { id: `edit-${it.id}`, class: "edit", rows: 5, "aria-label": "New text" }, it.text)
-      : h("p", { class: "content" }, it.text),
+      : h("p", { class: it.call ? "content call" : "content" }, it.text),
     h("div", { class: "meta" },
       link && h("span", {}, "Source: ", h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, (it.source.title || link))),
+      it.task && h("span", {}, "From your task: ", h("a", { href: `/#/r/${enc(next.realm)}/run/${enc(it.task.id)}` }, it.task.title || it.task.id)),
       what && h("span", {}, what)),
     rejecting && h("input", { id: `why-${it.id}`, class: "why", type: "text", placeholder: "Why? (optional)", "aria-label": "Why you reject it" }),
     h("div", { class: "buttons" }, buttons(it, editing, rejecting)));

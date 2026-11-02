@@ -341,7 +341,7 @@ impl App {
 mod tests {
     use super::*;
 
-    fn test_app(home: crate::home::Home, port: u16) -> App {
+    pub(super) fn test_app(home: crate::home::Home, port: u16) -> App {
         let hub = Arc::new(Hub::new(home));
         let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
         App {
