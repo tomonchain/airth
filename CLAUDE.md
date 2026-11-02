@@ -153,18 +153,20 @@ Each business can have developer agents working on its own platforms, using the 
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
 - Visual reference: `docs/design/DESIGN.md` and `docs/design/mockups/`. Build pages from the tokens and components in `DESIGN.md`, never by copying the mockups' inline styles.
+- **The new interface grows with the milestones.** Each milestone ships the interface of its own features in the new interface, which lives next to the current one (`/next`, decision 57) until it replaces it at milestone 5. Nothing is removed on the way.
+- Stack: vanilla JavaScript and CSS in `src/ui`, served by Airth, no build step; a graph library only for the routine editor, through the `src/ui/editor` bundle (decision 57).
 
 ## Scope: the beta
 
 The beta is reached when: Hedgen runs on its own for 4 consecutive weeks; founder time on Hedgen is measured weekly and stays well below the manual baseline; Numirama is connected with configuration and a connector only, without a line of Rust specific to it; the new interface is the main screen; at least one role handles mail under the rules above; Airth runs on a Linux VPS with a Linux sandbox and the security scenarios green on Linux; everything in the queue can be handled from Telegram.
 
-Milestones, in order. One starts only when the previous one's gate is passed.
+Milestones, in order. One starts only when the previous one's gate is passed. Every milestone's gate also includes: **its features are visible and usable in the new interface.**
 
 1. **Sound base.** This file, reconciliation of `main` and `business-autonomy`, the pending decisions written.
 2. **Data model.** SQLite per business and its access layer, business folder, legal identity, agents and departments in config. *Gate: Hedgen Ltd fully described in config, no Hedgen data in code.*
 3. **Engine and queue.** Pipeline engine with routines as graph files, approval queue, founder-time ledger, heartbeats, Telegram.
 4. **Hedgen routines.** Watch, production to Typefully, replies, weekly report (through Telegram and Needs you), and the Writer: a weekly article, as a mission launched by an Act (Trigger → Read → Act "Launch a mission" → Approval → Act "publish"), its agent in `agents/`.
-5. **Interface.** HQ, business pages, routine editor v1 (no full drag and drop), command bar, Settings, Workshop, and one bank read-only for the HQ's finance: Revolut Business (decision 54).
+5. **Interface, the finish.** The full HQ, the routine editor v1 (no full drag and drop), the command bar, and the current interface moved into Settings and the Workshop, so the new interface becomes the main screen; one bank read-only for the HQ's finance: Revolut Business (decision 54).
 6. **Hedgen proof.** 4 stable weeks, founder time below baseline.
 7. **Agent mail.** IMAP and SMTP integration, one mailbox per role.
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.
@@ -221,9 +223,7 @@ A structural choice (new module, new dependency, new stored state, a change to a
 
 No decision ahead of need: a decision is written when a step of the current milestone needs it, not before. The legal calendars' rules (UK, France) are written at milestone 2.
 
-Decided at the start of their milestone: the interface stack and what the HQ aggregates (milestone 5); the IMAP and SMTP integration (milestone 7).
-
-The interface stack is still open: keep the current vanilla JavaScript and CSS in `src/ui`, or a new front end. Weigh it against the routine editor, the page that would need a front end most. Do not decide it before milestone 5.
+Decided at the start of their milestone: the IMAP and SMTP integration (milestone 7); the routine editor's graph library (when the editor is built). The interface stack is decision 57; what the HQ shows, decision 53.
 
 ## Writing
 

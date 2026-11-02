@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 57. The interface stays vanilla JavaScript and CSS, served by Airth; the new one grows next to the old
+
+**Accepted.**
+
+- **Stack.** The new interface is written like the current one: plain JavaScript and CSS files in `src/ui`, joined in name order by `build.rs` and served by Airth from the binary. No framework, no npm build step for the pages, no runtime request to another server. `scripts/ui_smoke.js` covers its views as it covers the current ones.
+- **Next to the old.** The new interface has its own files (`src/ui/next/`: a page, its scripts, its styles) and is served at `/next` by the same server, with the same API and the same token. Nothing of the current interface is removed: it moves into Settings and the Workshop at milestone 5, then `/next` becomes `/`.
+- **Design.** `docs/design/DESIGN.md`'s tokens are CSS custom properties defined once; pages use only them. Inter and JetBrains Mono are bundled in the binary and served by Airth; no font CDN.
+- **One exception, later:** the routine editor's graph may use a graph library, bundled the way the Documents editor's CodeMirror already is (`src/ui/editor/`, esbuild, its output committed to `src/ui/vendor/`). Choosing that library is a decision of its own, when the editor is built. No other page gets a library.
+
+*Why:* the founder prefers it, and the current interface already works this way: one binary, nothing to install, nothing to build to run Airth, and a smoke test that runs with Node alone. The routine editor is the only page whose drawing is hard enough to want a library, and the editor bundle already shows how to add one without a build step for everything else.
+
+*Cost:* no components or reactivity from a framework: each page renders its own DOM, so pages must share a small set of helpers to stay consistent. Two interfaces live side by side until milestone 5, and each API change must serve both. The fonts add about a megabyte to the binary.
+
 ## 56. An action that commits always needs the founder's explicit approval, whoever started the run
 
 **Proposed.**
