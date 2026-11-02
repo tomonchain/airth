@@ -6,6 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// One run of a pipeline: its heartbeat.
 #[derive(Debug, PartialEq, Serialize)]
@@ -33,6 +34,37 @@ pub struct Week {
     /// are counted apart.
     pub model_cost: f64,
     pub unpriced_calls: i64,
+}
+
+/// How the routines ran over a period, for the weekly report: the
+/// founder's time, the answers, the cost, the actions and the incidents.
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct RoutinesWeek {
+    /// Every second in the ledger: answers and time the founder reported.
+    pub founder_seconds: i64,
+    pub approved: i64,
+    pub edited: i64,
+    pub rejected: i64,
+    pub model_calls: i64,
+    /// Estimated, from list prices; calls without a known price are left
+    /// out and counted in `unpriced`.
+    pub cost_usd: f64,
+    pub unpriced: i64,
+    pub actions_done: i64,
+    pub actions_failed: i64,
+    pub incidents: i64,
+    /// By routine, by name.
+    pub routines: Vec<RoutineWeek>,
+}
+
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct RoutineWeek {
+    pub routine: String,
+    pub runs: i64,
+    pub failed: i64,
+    pub cost_usd: f64,
+    /// The founder's seconds on the items it queued.
+    pub founder_seconds: i64,
 }
 
 /// What one pipeline's model calls cost over a period.
@@ -101,6 +133,73 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?)
+    }
+
+    /// How the routines ran since `since`. Dry runs count nowhere.
+    pub fn routines_week(&self, since: DateTime<Utc>) -> Result<RoutinesWeek> {
+        let at = since.to_rfc3339();
+        let one =
+            |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, params![at], |r| r.get(0))?) };
+        let answered = |event: &str| {
+            one(&format!(
+                "SELECT COUNT(*) FROM queue_log
+                 WHERE by = 'founder' AND action = '{event}' AND at >= ?1"
+            ))
+        };
+        let actions = |status: &str| {
+            one(&format!(
+                "SELECT COUNT(*) FROM actions WHERE status = '{status}' AND started_at >= ?1"
+            ))
+        };
+        let mut by_name: BTreeMap<String, RoutineWeek> = BTreeMap::new();
+        let mut stmt = self.conn.prepare(
+            "SELECT substr(pipeline, 9), COUNT(*), SUM(ok = 0) FROM pipeline_runs
+             WHERE pipeline LIKE 'routine:%' AND started_at >= ?1 GROUP BY pipeline",
+        )?;
+        for row in stmt.query_map(params![at], |r| {
+            Ok((r.get::<_, String>(0)?, r.get(1)?, r.get(2)?))
+        })? {
+            let (name, runs, failed) = row?;
+            let r = by_name.entry(name.clone()).or_default();
+            (r.routine, r.runs, r.failed) = (name, runs, failed);
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT q.routine, SUM(o.seconds) FROM owner_time o JOIN queue q ON o.item = q.id
+             WHERE o.at >= ?1 AND q.routine IS NOT NULL GROUP BY q.routine",
+        )?;
+        for row in stmt.query_map(params![at], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
+            let (name, seconds) = row?;
+            let r = by_name.entry(name.clone()).or_default();
+            (r.routine, r.founder_seconds) = (name, seconds);
+        }
+        // A routine run by hand leaves no heartbeat, but its calls count.
+        for c in self.pipeline_costs(since)? {
+            let r = by_name.entry(c.pipeline.clone()).or_default();
+            (r.routine, r.cost_usd) = (c.pipeline, c.cost_usd);
+        }
+        Ok(RoutinesWeek {
+            founder_seconds: one(
+                "SELECT COALESCE(SUM(seconds), 0) FROM owner_time WHERE at >= ?1",
+            )?,
+            approved: answered("approved")?,
+            edited: answered("edited")?,
+            rejected: answered("rejected")?,
+            model_calls: one("SELECT COUNT(*) FROM model_calls WHERE at >= ?1 AND dry_run = 0")?,
+            cost_usd: self.conn.query_row(
+                "SELECT COALESCE(SUM(cost_usd), 0) FROM model_calls WHERE at >= ?1 AND dry_run = 0",
+                params![at],
+                |r| r.get(0),
+            )?,
+            unpriced: one(
+                "SELECT COUNT(*) FROM model_calls WHERE at >= ?1 AND dry_run = 0 AND cost_usd IS NULL",
+            )?,
+            actions_done: actions("confirmed")?,
+            actions_failed: actions("failed")?,
+            incidents: one(
+                "SELECT COUNT(*) FROM queue WHERE kind = 'incident' AND created_at >= ?1",
+            )?,
+            routines: by_name.into_values().collect(),
+        })
     }
 
     pub fn week(&self, since: DateTime<Utc>) -> Result<Week> {
@@ -214,5 +313,120 @@ mod tests {
         assert_eq!(runs[0].started_at, "b", "newest first");
         assert_eq!(store.next_run("p").unwrap().as_deref(), Some("tomorrow"));
         assert_eq!(store.next_run("other").unwrap(), None);
+    }
+
+    /// The weekly report's figures: answers from the queue's log, time from
+    /// the ledger, runs, costs and actions by routine; dry runs and what is
+    /// older than the week count nowhere.
+    #[test]
+    fn counts_how_the_routines_ran() {
+        use crate::business::store::autonomy::{NewAction, NewItem};
+        use crate::business::store::queue::Answer;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let since = Utc::now() - chrono::Duration::days(7);
+        assert_eq!(store.routines_week(since).unwrap(), RoutinesWeek::default());
+        let mut item = |kind: &str, routine: Option<&str>| {
+            store
+                .propose(&NewItem {
+                    kind,
+                    title: "t",
+                    agent: None,
+                    routine,
+                    run: None,
+                    action: None,
+                    args: r#"{"answer": {"draft": "x"}}"#,
+                    execute_at: None,
+                    source: r#"{"editable": "answer.draft"}"#,
+                    model_call: None,
+                })
+                .unwrap()
+        };
+        let (a, b, c) = (
+            item("approval", Some("posts")),
+            item("approval", Some("posts")),
+            item("approval", Some("watch")),
+        );
+        item("incident", None);
+        store.answer(a, None, Answer::Approve, "app", 30).unwrap();
+        store
+            .answer(b, None, Answer::Edit("y".into()), "telegram", 60)
+            .unwrap();
+        store
+            .answer(b, None, Answer::Approve, "telegram", 10)
+            .unwrap();
+        store
+            .answer(c, None, Answer::Reject("no".into()), "app", 5)
+            .unwrap();
+        for (key, status) in [("k1", "confirmed"), ("k2", "failed"), ("k3", "confirmed")] {
+            let begin = store
+                .begin_action(&NewAction {
+                    key,
+                    action: "typefully.create_draft",
+                    connector: "typefully",
+                    agent: None,
+                    routine: Some("posts"),
+                    run: None,
+                    item: None,
+                    level: 3,
+                    approved: true,
+                    args: "{}",
+                    daily_limit: 20,
+                })
+                .unwrap();
+            let crate::business::store::autonomy::Begin::Started(id) = begin else {
+                panic!("{key} did not start");
+            };
+            store.finish_action(id, status, None).unwrap();
+        }
+        let old = "2020-01-01T00:00:00+00:00";
+        store
+            .write(|tx| {
+                tx.execute_batch(&format!(
+                    "INSERT INTO model_calls (at, pipeline, step, prompt, prompt_version, model, input_tokens,
+                        output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, dry_run)
+                     VALUES ('9999', 'posts', 1, 'x', 'v', 'm', 0, 0, 0, 0, 0.25, 0, 1, 0),
+                            ('9999', 'posts', 1, 'x', 'v', 'm', 0, 0, 0, 0, 0.5, 0, 1, 1),
+                            ('9999', 'by-hand', 1, 'x', 'v', 'm', 0, 0, 0, 0, NULL, 0, 1, 0),
+                            ('{old}', 'posts', 1, 'x', 'v', 'm', 0, 0, 0, 0, 9, 0, 1, 0);
+                     INSERT INTO pipeline_runs (pipeline, started_at, finished_at, ok, items_read, items_kept)
+                     VALUES ('routine:posts', '9999', '9999', 1, 0, 0),
+                            ('routine:posts', '9999', '9999', 0, 0, 0),
+                            ('routine:posts', '{old}', '{old}', 1, 0, 0),
+                            ('daily-posts', '9999', '9999', 1, 0, 0);
+                     INSERT INTO owner_time (at, activity, seconds) VALUES ('9999', 'reported', 120),
+                            ('{old}', 'reported', 999);"
+                ))?;
+                Ok(())
+            })
+            .unwrap();
+        let week = store.routines_week(since).unwrap();
+        let routine = |routine: &str, runs, failed, cost_usd, founder_seconds| RoutineWeek {
+            routine: routine.into(),
+            runs,
+            failed,
+            cost_usd,
+            founder_seconds,
+        };
+        assert_eq!(
+            week,
+            RoutinesWeek {
+                founder_seconds: 225,
+                approved: 2,
+                edited: 1,
+                rejected: 1,
+                model_calls: 2,
+                cost_usd: 0.25,
+                unpriced: 1,
+                actions_done: 2,
+                actions_failed: 1,
+                incidents: 1,
+                routines: vec![
+                    routine("by-hand", 0, 0, 0.0, 0),
+                    routine("posts", 2, 1, 0.25, 100),
+                    routine("watch", 0, 0, 0.0, 5),
+                ],
+            }
+        );
     }
 }
