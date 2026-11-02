@@ -60,6 +60,17 @@ pub struct RoutinesWeek {
     /// Scheduled runs that started more than the grace after their time
     /// (the Mac asleep, Airth stopped), oldest first.
     pub late: Vec<LateRun>,
+    /// Why items were dropped (decision 61): each reason once, by routine,
+    /// with how many times it came.
+    pub dropped: Vec<DroppedReason>,
+}
+
+/// A reason items were dropped, and how often.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DroppedReason {
+    pub routine: String,
+    pub reason: String,
+    pub count: i64,
 }
 
 /// A scheduled run that started late.
@@ -80,6 +91,8 @@ pub struct RoutineWeek {
     pub founder_seconds: i64,
     /// Of its runs, those that started late.
     pub late: i64,
+    /// Items its runs dropped (decision 61).
+    pub dropped: i64,
 }
 
 /// What one pipeline's model calls cost over a period.
@@ -217,6 +230,27 @@ impl Store {
                 });
             }
         }
+        // Every run, by hand or scheduled, keeps what each block dropped.
+        let mut reasons: BTreeMap<(String, String), i64> = BTreeMap::new();
+        let mut stmt = self.conn.prepare(
+            "SELECT routine, dropped FROM routine_blocks WHERE dropped IS NOT NULL AND started_at >= ?1",
+        )?;
+        for row in stmt.query_map(params![at], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })? {
+            let (routine, list) = row?;
+            let list: Vec<serde_json::Value> = serde_json::from_str(&list).unwrap_or_default();
+            let r = by_name.entry(routine.clone()).or_default();
+            r.routine = routine.clone();
+            r.dropped += list.len() as i64;
+            for d in list {
+                let reason = d["reason"]
+                    .as_str()
+                    .unwrap_or("no reason recorded")
+                    .to_string();
+                *reasons.entry((routine.clone(), reason)).or_default() += 1;
+            }
+        }
         // A routine run by hand leaves no heartbeat, but its calls count.
         for c in self.pipeline_costs(since)? {
             let r = by_name.entry(c.pipeline.clone()).or_default();
@@ -245,6 +279,14 @@ impl Store {
             )?,
             routines: by_name.into_values().collect(),
             late,
+            dropped: reasons
+                .into_iter()
+                .map(|((routine, reason), count)| DroppedReason {
+                    routine,
+                    reason,
+                    count,
+                })
+                .collect(),
         })
     }
 
@@ -441,20 +483,27 @@ mod tests {
                             ('routine:posts', '{old}', '{old}', 1, 0, 0),
                             ('daily-posts', '9999', '9999', 1, 0, 0);
                      INSERT INTO owner_time (at, activity, seconds) VALUES ('9999', 'reported', 120),
-                            ('{old}', 'reported', 999);"
+                            ('{old}', 'reported', 999);
+                     INSERT INTO routine_blocks (routine, run, block, started_at, outcome, dropped)
+                     VALUES ('posts', 'r1', 'draft', '9999', 'ok', '[{{\"item\": \"Hack\", \"reason\": \"too long\"}}]'),
+                            ('posts', 'r2', 'draft', '9999', 'ok', '[{{\"item\": \"A\", \"reason\": \"too long\"}}, {{\"item\": \"B\", \"reason\": \"not JSON\"}}]'),
+                            ('posts', 'r3', 'draft', '9999', 'ok', NULL),
+                            ('posts', 'r0', 'draft', '{old}', 'ok', '[{{\"item\": \"Old\", \"reason\": \"too long\"}}]');"
                 ))?;
                 Ok(())
             })
             .unwrap();
         let week = store.routines_week(since).unwrap();
-        let routine = |routine: &str, runs, failed, cost_usd, founder_seconds| RoutineWeek {
-            routine: routine.into(),
-            runs,
-            failed,
-            cost_usd,
-            founder_seconds,
-            late: 0,
-        };
+        let routine =
+            |routine: &str, runs, failed, cost_usd, founder_seconds, dropped| RoutineWeek {
+                routine: routine.into(),
+                runs,
+                failed,
+                cost_usd,
+                founder_seconds,
+                late: 0,
+                dropped,
+            };
         assert_eq!(
             week,
             RoutinesWeek {
@@ -469,11 +518,24 @@ mod tests {
                 actions_failed: 1,
                 incidents: 1,
                 routines: vec![
-                    routine("by-hand", 0, 0, 0.0, 0),
-                    routine("posts", 2, 1, 0.25, 100),
-                    routine("watch", 0, 0, 0.0, 5),
+                    routine("by-hand", 0, 0, 0.0, 0, 0),
+                    routine("posts", 2, 1, 0.25, 100, 3),
+                    routine("watch", 0, 0, 0.0, 5, 0),
                 ],
                 late: vec![],
+                // Decision 61: each reason once, with how often.
+                dropped: vec![
+                    DroppedReason {
+                        routine: "posts".into(),
+                        reason: "not JSON".into(),
+                        count: 1
+                    },
+                    DroppedReason {
+                        routine: "posts".into(),
+                        reason: "too long".into(),
+                        count: 2
+                    },
+                ],
             }
         );
     }

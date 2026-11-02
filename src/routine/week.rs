@@ -40,6 +40,7 @@ pub fn read(root: &Path, store: &Store, now: DateTime<Utc>) -> Result<Item> {
     set("incidents", w.incidents.to_string());
     set("routines", routines(&w));
     set("late", late(&w));
+    set("dropped", dropped(&w));
     let summary = summary(&item);
     item.insert("summary".into(), summary.into());
     Ok(item)
@@ -93,11 +94,12 @@ fn routines(w: &RoutinesWeek) -> String {
         .iter()
         .map(|r| {
             format!(
-                "- {}: {} run(s), {} failed, {} late, ${:.2}, {} of yours",
+                "- {}: {} run(s), {} failed, {} late, {} dropped, ${:.2}, {} of yours",
                 r.routine,
                 r.runs,
                 r.failed,
                 r.late,
+                r.dropped,
                 r.cost_usd,
                 human(r.founder_seconds as u64)
             )
@@ -127,10 +129,25 @@ fn late(w: &RoutinesWeek) -> String {
     format!("{}\n{}", w.late.len(), runs.join("\n"))
 }
 
+/// What was dropped, each reason once with how often (decision 61): a
+/// missing post the founder expected, not a failure.
+fn dropped(w: &RoutinesWeek) -> String {
+    let total: i64 = w.dropped.iter().map(|d| d.count).sum();
+    if total == 0 {
+        return "none".into();
+    }
+    let reasons: Vec<String> = w
+        .dropped
+        .iter()
+        .map(|d| format!("- {}: {} ({}×)", d.routine, d.reason, d.count))
+        .collect();
+    format!("{total}\n{}", reasons.join("\n"))
+}
+
 fn summary(item: &Item) -> String {
     let f = |k: &str| crate::pipeline::run::field_text(item, k);
     format!(
-        "Week {} ({} to {})\nYour time: {} (baseline: {})\nYour answers: {}\nModel cost: {}\nActions: {}\nIncidents: {}\nBy routine:\n{}\nStarted late: {}",
+        "Week {} ({} to {})\nYour time: {} (baseline: {})\nYour answers: {}\nModel cost: {}\nActions: {}\nIncidents: {}\nBy routine:\n{}\nStarted late: {}\nDropped: {}",
         f("week"),
         f("from"),
         f("to"),
@@ -141,6 +158,7 @@ fn summary(item: &Item) -> String {
         f("actions"),
         f("incidents"),
         f("routines"),
-        f("late")
+        f("late"),
+        f("dropped")
     )
 }
