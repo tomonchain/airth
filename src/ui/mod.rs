@@ -101,6 +101,9 @@ pub struct UiOptions {
     pub max_iterations: u32,
     /// The realm to open first.
     pub realm: Option<String>,
+    /// The scheduler, Telegram, pull requests and update checks run; off
+    /// for a preview (`airth ui --preview`).
+    pub background: bool,
 }
 
 struct App {
@@ -356,6 +359,7 @@ mod tests {
                 open_browser: false,
                 max_iterations: 1,
                 realm: None,
+                background: false,
             },
             update: Arc::new(Mutex::new(UpdateState::default())),
             writes: Mutex::new(()),

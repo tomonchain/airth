@@ -436,14 +436,17 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         open_in_browser(&url);
     }
 
-    let runner = app.runner.clone();
-    std::thread::spawn(move || run_scheduler(runner));
-    let runner = app.runner.clone();
-    std::thread::spawn(move || follow_pull_requests(runner));
-    let hub = app.hub.clone();
-    std::thread::spawn(move || crate::telegram::run((*hub).clone()));
-    let (hub, update) = (app.hub.clone(), app.update.clone());
-    std::thread::spawn(move || run_updater(hub, update));
+    // A preview serves the pages and nothing else: nothing runs on its own.
+    if app.options.background {
+        let runner = app.runner.clone();
+        std::thread::spawn(move || run_scheduler(runner));
+        let runner = app.runner.clone();
+        std::thread::spawn(move || follow_pull_requests(runner));
+        let hub = app.hub.clone();
+        std::thread::spawn(move || crate::telegram::run((*hub).clone()));
+        let (hub, update) = (app.hub.clone(), app.update.clone());
+        std::thread::spawn(move || run_updater(hub, update));
+    }
 
     let registry = app.registry.clone();
     let thread = std::thread::spawn(move || serve_requests(server, app));
