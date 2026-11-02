@@ -44,20 +44,41 @@ pub struct NewRealm {
     pub isolation: Option<Isolation>,
 }
 
+/// The home's folder: `$AIRTH_HOME`, or `~/.airth`. A development (debug)
+/// build refuses `~/.airth` unless told `real_home`: opening a realm
+/// migrates its database, and a build being worked on once migrated the
+/// founder's real one under their running service.
+fn home_dir(
+    airth_home: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+    debug: bool,
+    real_home: bool,
+) -> Result<PathBuf> {
+    if let Some(dir) = airth_home {
+        return Ok(PathBuf::from(dir));
+    }
+    if debug && !real_home {
+        bail!(
+            "a development build does not open your real home (~/.airth): set AIRTH_HOME to a copy, or pass --real-home"
+        );
+    }
+    Ok(PathBuf::from(home.context("HOME is not set")?).join(".airth"))
+}
+
 #[derive(Debug, Clone)]
 pub struct Home {
     dir: PathBuf,
 }
 
 impl Home {
-    /// `$AIRTH_HOME`, or `~/.airth`.
-    pub fn locate() -> Result<Self> {
-        let dir = match std::env::var_os("AIRTH_HOME").filter(|v| !v.is_empty()) {
-            Some(dir) => PathBuf::from(dir),
-            None => {
-                PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".airth")
-            }
-        };
+    /// `$AIRTH_HOME`, or `~/.airth`; see `home_dir` for a development build.
+    pub fn locate(real_home: bool) -> Result<Self> {
+        let dir = home_dir(
+            std::env::var_os("AIRTH_HOME").filter(|v| !v.is_empty()),
+            std::env::var_os("HOME"),
+            cfg!(debug_assertions),
+            real_home,
+        )?;
         Self::at(&dir)
     }
 
@@ -291,6 +312,22 @@ impl Home {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A development build opens `~/.airth` only when told to; `AIRTH_HOME`
+    /// and a release build open what they say.
+    #[test]
+    fn a_development_build_refuses_the_real_home() {
+        let home = || Some("/Users/f".into());
+        let e = home_dir(None, home(), true, false).unwrap_err();
+        assert!(format!("{e}").contains("--real-home"), "{e}");
+        let real = PathBuf::from("/Users/f/.airth");
+        assert_eq!(home_dir(None, home(), true, true).unwrap(), real);
+        assert_eq!(home_dir(None, home(), false, false).unwrap(), real);
+        assert_eq!(
+            home_dir(Some("/tmp/copy".into()), home(), true, false).unwrap(),
+            PathBuf::from("/tmp/copy")
+        );
+    }
 
     fn new(name: &str, root: Option<&Path>) -> NewRealm {
         NewRealm {

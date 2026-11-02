@@ -60,6 +60,10 @@ struct Cli {
     /// directory, else the default realm). Also AIRTH_REALM.
     #[arg(long, global = true, env = "AIRTH_REALM")]
     realm: Option<String>,
+    /// Let a development build open your real home (~/.airth). A release
+    /// build always may; AIRTH_HOME chooses another.
+    #[arg(long, global = true)]
+    real_home: bool,
     #[command(subcommand)]
     command: Option<Cmd>,
 }
@@ -325,7 +329,7 @@ fn main() -> ExitCode {
     if launched_as_app() {
         cli.command = Some(Cmd::App);
     }
-    let result = Home::locate().and_then(|home| {
+    let result = Home::locate(cli.real_home).and_then(|home| {
         let ctx = Ctx {
             home,
             realm_name: cli.realm,
