@@ -15,6 +15,7 @@
   --chip: #26292D;
   --line: #2A2D31;
   --line-soft: #24272B;
+  --line-strong: #34383D; /* secondary buttons' border, as in the mockups */
   --text: #ECEDEE;
   --text-2: #C2C7CE;
   --text-3: #A3A9B1;

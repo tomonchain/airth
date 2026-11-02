@@ -44,6 +44,7 @@ mod extensions;
 mod general;
 mod http;
 mod live;
+mod queue;
 mod realms;
 mod runs;
 mod server;
@@ -268,6 +269,7 @@ impl App {
             Self::realms_routes,
             Self::runs_routes,
             Self::extensions_routes,
+            Self::queue_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {

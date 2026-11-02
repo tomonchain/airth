@@ -8,6 +8,8 @@ button { font: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .shell { display: flex; flex-direction: column; min-height: 100vh; }
+/* A long line inside (a preview that does not wrap) must not widen the page. */
+.shell > *, .body > * { min-width: 0; }
 
 .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
 .top-left { display: flex; align-items: center; gap: 16px; }
@@ -55,7 +57,8 @@ button { font: inherit; }
 .mark.big { width: 36px; height: 36px; border-radius: var(--r-button); font-size: 15px; }
 
 @media (max-width: 720px) {
-  .body { flex-direction: column; }
+  /* A wrapping column would be as wide as its widest content. */
+  .body { flex-direction: column; flex-wrap: nowrap; }
   .rail { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; padding: 0 12px 8px; }
   .top .back { display: none; }
   .rail .gap { display: none; }
