@@ -740,3 +740,92 @@ fn a_block_asks_the_fast_model_or_says_the_main_one_answered() {
         }
     }
 }
+
+/// A draft whose answer does not fit (here, over 280 characters) is asked
+/// once more; refused twice, it is dropped and the report names it, why
+/// included, so a missing post is never silent.
+#[test]
+fn a_draft_that_does_not_fit_is_asked_once_more_then_dropped_by_name() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/post.md", "Draft."),
+        (
+            "prompts/post.schema.json",
+            r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string", "maxLength": 280}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"]},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft"}
+        ]}),
+    )
+    .unwrap();
+    let long = json!({"draft": "x".repeat(300)}).to_string();
+    let short = json!({"draft": "Short enough."}).to_string();
+    // Flows is too long, then fits; Hack is too long twice.
+    for (answers, kept) in [
+        (vec![&long, &short, &long, &long], "Short enough."),
+        (vec![&short, &long, &long], "Short enough."),
+    ] {
+        let mut fetch = |_: &str| {
+            Ok(crate::pipeline::run::Fetched {
+                body: "<rss><channel><item><title>Flows</title><link>https://e.com/1</link></item>\
+                       <item><title>Hack</title><link>https://e.com/2</link></item></channel></rss>"
+                    .into(),
+                truncated: false,
+            })
+        };
+        let mut answers = answers.into_iter();
+        let mut asked = 0;
+        let mut ask = |_: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            asked += 1;
+            Ok(ModelResponse {
+                content: vec![ContentBlock::Text {
+                    text: answers.next().expect("no more answers").clone(),
+                }],
+                stop_reason: StopReason::EndTurn,
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            })
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+            fast: None,
+        };
+        let mut store = Store::open(&root.path().join(FILE)).unwrap();
+        let report = dry_run(
+            "posts",
+            &graph,
+            Dry {
+                root: root.path(),
+                store: &mut store,
+                io: &mut io,
+                integrations: &[],
+            },
+            Utc::now(),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            report.contains(&format!("would ask the founder: {kept}")),
+            "{report}"
+        );
+        assert!(report.contains("draft: 2 in, 1 out"), "{report}");
+        assert!(
+            report.contains("note: step 2: dropped \"Hack\": its answer did not match prompts/post.md twice (answer.draft has 300 characters, more than 280)"),
+            "{report}"
+        );
+        assert!(!report.contains("dropped \"Flows\""), "{report}");
+    }
+}

@@ -272,6 +272,28 @@ pub(crate) struct Judged {
     pub main_instead: bool,
 }
 
+impl Judged {
+    /// Count one model call.
+    fn add(&mut self, used: &Used) {
+        self.input_tokens += used.input;
+        self.output_tokens += used.output;
+        match used.cost {
+            Some(cost) => self.cost_usd += cost,
+            None => self.unpriced += 1,
+        }
+        self.main_instead |= used.main_instead;
+    }
+}
+
+/// An item as the founder knows it: its title, else its link.
+fn named(item: &Item) -> String {
+    ["title", "link", "source_id"]
+        .iter()
+        .map(|f| field_text(item, f))
+        .find(|t| !t.is_empty())
+        .unwrap_or_default()
+}
+
 /// The prompt a judgement asks with, and where it is recorded from.
 pub(crate) struct Asking<'a> {
     pub name: &'a str,
@@ -314,30 +336,48 @@ pub(crate) fn judge_all(
         }
         false => items,
     };
-    for mut item in one_by_one {
-        let judged = judge(asking, &item, store, io);
-        // A check that could not answer must not drop the draft it checks.
-        let (answer, call, used) = match judged {
-            Err(e) if checking => {
-                notes.push(format!("step {}: not checked: {e:#}", asking.step));
-                kept.push(item);
+    'items: for mut item in one_by_one {
+        // An answer that does not fit is asked once more: a model call has
+        // no side effect. Twice, the item is dropped and the report says
+        // which and why, so a missing post is never silent.
+        let mut refused = None;
+        let (answer, call) = loop {
+            let (answer, call, used) = match judge(asking, &item, store, io) {
+                // A check that could not answer must not drop the draft it checks.
+                Err(e) if checking => {
+                    notes.push(format!("step {}: not checked: {e:#}", asking.step));
+                    kept.push(item);
+                    continue 'items;
+                }
+                judged => judged?,
+            };
+            stats.add(&used);
+            match (answer, refused) {
+                (Ok(answer), _) => break (Ok(answer), call),
+                (Err(why), None) => refused = Some(why),
+                (Err(why), Some(_)) => break (Err(why), call),
+            }
+        };
+        let answer = match answer {
+            Ok(answer) => answer,
+            Err(why) => {
+                stats.invalid += 1;
+                notes.push(format!(
+                    "step {}: {} \"{}\": its answer did not match {} twice ({why})",
+                    asking.step,
+                    if checking {
+                        "left unchecked"
+                    } else {
+                        "dropped"
+                    },
+                    named(&item),
+                    asking.prompt.path
+                ));
+                if checking {
+                    kept.push(item);
+                }
                 continue;
             }
-            judged => judged?,
-        };
-        stats.input_tokens += used.input;
-        stats.output_tokens += used.output;
-        match used.cost {
-            Some(cost) => stats.cost_usd += cost,
-            None => stats.unpriced += 1,
-        }
-        stats.main_instead |= used.main_instead;
-        let Some(answer) = answer else {
-            stats.invalid += 1;
-            if checking {
-                kept.push(item);
-            }
-            continue;
         };
         if !checking {
             item.insert("model_call".into(), call.into());
@@ -354,20 +394,6 @@ pub(crate) fn judge_all(
         notes.push(format!(
             "step {}: this business has no fast model: its main model answered",
             asking.step
-        ));
-    }
-    // A list's refused answer is noted where it is asked again.
-    if stats.invalid > 0 && !asking.list {
-        notes.push(format!(
-            "step {}: {} answer(s) did not match {} and were {}",
-            asking.step,
-            stats.invalid,
-            asking.prompt.path,
-            if checking {
-                "left unchecked"
-            } else {
-                "dropped"
-            }
         ));
     }
     if let Some(rank) = filters.rank {
@@ -431,13 +457,7 @@ fn judge_list(
     let mut refused = None;
     let (answers, call) = loop {
         let (answer, call, used) = judge_together(asking, &items, store, io)?;
-        stats.input_tokens += used.input;
-        stats.output_tokens += used.output;
-        match used.cost {
-            Some(cost) => stats.cost_usd += cost,
-            None => stats.unpriced += 1,
-        }
-        stats.main_instead |= used.main_instead;
+        stats.add(&used);
         match (answer, refused) {
             (Ok(answers), _) => break (answers, call),
             (Err(why), None) => {
@@ -482,14 +502,14 @@ struct Used {
 }
 
 /// Ask the model about one item, check its answer against the schema, and
-/// record the call. None when the answer does not fit: it is recorded as
+/// record the call. Why, when the answer does not fit: it is recorded as
 /// invalid, never repaired.
 fn judge(
     asking: &Asking,
     item: &Item,
     store: &mut Store,
     io: &mut Io,
-) -> Result<(Option<Value>, i64, Used)> {
+) -> Result<(Result<Value, String>, i64, Used)> {
     let prompt = asking.prompt;
     let system = format!(
         "{}\n\nAnswer with one JSON object that matches this JSON schema, and nothing else: no code fence, no comment.\n{}",
@@ -505,8 +525,7 @@ fn judge(
         None => Ok(value),
         Some(why) => Err(why),
     };
-    let (answer, call, used) = ask(asking, &system, content, check, store, io)?;
-    Ok((answer.ok(), call, used))
+    ask(asking, &system, content, check, store, io)
 }
 
 /// Ask the model about every item at once (decision 60): the answer lists
@@ -993,6 +1012,8 @@ mod tests {
             answer(r#"{"relevant": true}"#),
             answer(r#"{"relevant": false}"#),
             answer(r#"{"relevant": "yes"}"#),
+            answer(r#"{"relevant": "yes"}"#),
+            answer("```json\n{\"relevant\": true}\n```"),
             answer("```json\n{\"relevant\": true}\n```"),
         ]
         .into_iter();
@@ -1016,7 +1037,19 @@ mod tests {
         assert_eq!(out.kept.len(), 1);
         assert_eq!(out.kept[0]["link"], "https://e.com/1");
         assert_eq!(out.kept[0]["answer"]["relevant"], true);
-        assert!(out.notes[0].contains("2 answer(s) did not match prompts/watch.md"));
+        // An answer that does not fit is asked once more, then the item is
+        // dropped, named, with why.
+        assert_eq!(asked.len(), 6);
+        assert!(
+            out.notes[0].contains("dropped \"About https://e.com/3\": its answer did not match prompts/watch.md twice (answer.relevant should be boolean"),
+            "{:?}",
+            out.notes
+        );
+        assert!(
+            out.notes[1].contains("dropped \"About https://e.com/4\""),
+            "{:?}",
+            out.notes
+        );
         // The prompt and the schema are the instructions; the item is data,
         // and the model gets no tools.
         let (system, tools, messages) = &asked[0];
@@ -1042,7 +1075,7 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(calls.len(), 4);
+        assert_eq!(calls.len(), 6);
         assert_eq!(
             (calls[0].0.as_str(), calls[0].1.as_str(), calls[0].2),
             ("v1", "claude-sonnet-5-5", 1_000_000)
@@ -1051,7 +1084,7 @@ mod tests {
         assert!((calls[0].3.unwrap() - 2.0).abs() < 1e-9);
         assert!(calls[0].4 && calls[1].4);
         assert!(!calls[2].4 && calls[2].5.as_deref().unwrap().contains("should be boolean"));
-        assert!(!calls[3].4 && calls[3].5.as_deref().unwrap().contains("not JSON"));
+        assert!(!calls[4].4 && calls[4].5.as_deref().unwrap().contains("not JSON"));
     }
 
     #[test]
