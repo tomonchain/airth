@@ -272,3 +272,77 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
         vec!["blog.publish Flows posts/https://e.com/1/send true"]
     );
 }
+
+/// Milestone 4: the weekly report reads the business's own records and
+/// puts them into words by code; its act is keyed by the week, so it
+/// reports once a week however often it is retried.
+#[test]
+fn a_weekly_report_reads_the_week_and_reports_it_once() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("business")).unwrap();
+    std::fs::write(
+        root.path().join("business/goal.md"),
+        "---\nbaseline_minutes: 300\n---\n",
+    )
+    .unwrap();
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "chief", "trigger": {"schedule": "mon 08:00"}, "blocks": [
+            {"id": "week", "type": "read", "source": "business", "records": "week"},
+            {"id": "report", "type": "act", "action": "airth.report",
+             "fields": {"title": "Week {{week}}", "text": "{{summary}}"}}
+        ]}),
+    )
+    .unwrap();
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    store
+        .record_time(&crate::business::store::time::Entry {
+            at: Utc::now(),
+            activity: "reported".into(),
+            seconds: 45 * 60,
+            note: String::new(),
+        })
+        .unwrap();
+    let (mut fetch, mut ask) = (
+        |_: &str| -> Result<crate::pipeline::run::Fetched> {
+            panic!("a business read fetches nothing")
+        },
+        |_: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            panic!("a weekly report asks no model")
+        },
+    );
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+    };
+    let now: DateTime<Utc> = "2026-11-02T08:00:00Z".parse().unwrap();
+    let mut report = |store: &mut Store| {
+        dry_run(
+            "weekly-report",
+            &graph,
+            Dry {
+                root: root.path(),
+                store,
+                io: &mut io,
+                integrations: &[],
+            },
+            now,
+        )
+        .unwrap()
+    };
+    let first = report(&mut store);
+    for line in [
+        "the week 2026-W45 from the business's records",
+        "would airth.report [weekly-report/week/2026-W45/report]:",
+        "title: Week 2026-W45",
+        "Week 2026-W45 (26 Oct to 2 Nov)",
+        "Your time: 45 min (baseline: 5 h 00 a week, so this week took 15% of it)",
+        "Your answers: 0 approved, 0 edited, 0 rejected",
+        "Model cost: $0.00 for 0 model call(s)",
+        "By routine:\n      none ran",
+    ] {
+        assert!(first.contains(line), "{line}\n{first}");
+    }
+    // Retried the same week, it has the same key: it would act once.
+    assert!(report(&mut store).contains("[weekly-report/week/2026-W45/report]"));
+}

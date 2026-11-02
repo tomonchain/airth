@@ -81,7 +81,7 @@ fn a_routine_of_six_blocks_loads() {
     assert_eq!(g.blocks[4].next, Some(None));
     // Hedgen's Writer: a mission, then the founder, then publishing.
     try_graph(root.path(), json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
-        {"id": "news", "type": "read", "source": "business"},
+        {"id": "news", "type": "read", "source": "business", "records": "week"},
         {"id": "write", "type": "act", "action": "airth.launch_mission", "fields": {"brief": "Write"}},
         {"id": "ok", "type": "approval", "show": "result.report"},
         {"id": "publish", "type": "act", "action": "blog.publish"}
@@ -128,6 +128,13 @@ fn content_from_outside_reaches_no_act_without_an_approval() {
     };
     assert!(err(task("writer")).contains("airth.create_task"));
     try_graph(root.path(), task("founder")).unwrap();
+    // The business's own records are not from outside.
+    try_graph(
+        root.path(),
+        posts(json!([{"id": "week", "type": "read", "source": "business", "records": "week"},
+            {"id": "send", "type": "act", "action": "blog.publish", "fields": {"text": "{{summary}}"}}])),
+    )
+    .unwrap();
     // An action the agent may take alone (level 2 or more) is allowed.
     try_graph(
         root.path(),
@@ -187,6 +194,20 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
                 json!([{"id": "a", "type": "read", "source": "connector", "action": "blog.publish"}]),
             ),
             "not a read action",
+        ),
+        (
+            posts(json!([{"id": "a", "type": "read", "source": "business"}])),
+            "names its records",
+        ),
+        (
+            posts(json!([{"id": "a", "type": "read", "source": "business", "records": "mail"}])),
+            "unknown records 'mail'",
+        ),
+        (
+            posts(
+                json!([{"id": "a", "type": "read", "source": "rss", "feeds": ["https://e.com/f"], "records": "week"}]),
+            ),
+            "only a business read names records",
         ),
         (
             posts(json!([{"id": "a", "type": "ai", "prompt": "../secrets.md"}])),

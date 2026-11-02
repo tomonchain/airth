@@ -17,6 +17,7 @@ use std::path::Path;
 pub const DIR: &str = "routines";
 
 pub mod run;
+pub mod week;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,6 +72,9 @@ fn explicit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Stri
 pub enum Kind {
     Read {
         source: String,
+        /// What a `business` read reads: `week`, how the routines ran in
+        /// the last seven days.
+        records: Option<String>,
         #[serde(default)]
         feeds: Vec<String>,
         url: Option<String>,
@@ -303,6 +307,7 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
     match &block.kind {
         Kind::Read {
             source,
+            records,
             feeds,
             url,
             action,
@@ -312,6 +317,13 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
         } => {
             dedupe.as_deref().map(path).transpose()?;
             positive("max", *max)?;
+            match (source.as_str(), records.as_deref()) {
+                ("business", Some("week")) => {}
+                ("business", Some(other)) => bail!("unknown records '{other}' (week)"),
+                ("business", None) => bail!("a business read names its records (week)"),
+                (_, Some(_)) => bail!("only a business read names records"),
+                _ => {}
+            }
             match source.as_str() {
                 "rss" if feeds.is_empty() => bail!("an rss read needs feeds"),
                 "web" if url.is_none() => bail!("a web read needs a url"),

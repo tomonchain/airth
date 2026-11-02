@@ -22,7 +22,7 @@ use std::path::Path;
 use std::time::Instant;
 
 /// Where an item keeps the id of what it was read from.
-const SOURCE: &str = "source_id";
+pub(super) const SOURCE: &str = "source_id";
 /// Set on an item the founder approved.
 const APPROVED: &str = "approved_by_founder";
 
@@ -144,7 +144,11 @@ fn describe(
     {
         return Ok(format!("{} {}", a.method, a.url(i, fields)?));
     }
-    Ok(serde_json::to_string(fields)?)
+    // One field a line, as the founder would read them.
+    Ok(fields
+        .iter()
+        .map(|(k, v)| format!("\n    {k}: {}", v.replace('\n', "\n      ")))
+        .collect())
 }
 
 /// The blocks in an order where each comes after every block leading to it.
@@ -243,6 +247,15 @@ pub fn run(
         // What the block's record says beyond its counts (a real run only).
         let (mut acts_failed, mut block_cost) = (0usize, None);
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
+            Kind::Read { source, .. } if source == "business" => {
+                // The graph check let only `records: week` through.
+                let week = super::week::read(dry.root, dry.store, now)?;
+                lines.push(format!(
+                    "  the week {} from the business's records",
+                    field_text(&week, "week")
+                ));
+                (vec![week], Vec::new())
+            }
             Kind::Read {
                 source,
                 feeds,
@@ -252,7 +265,10 @@ pub fn run(
                 ..
             } => {
                 if source != "rss" {
-                    bail!("block '{}': a dry run reads rss only, for now", block.id);
+                    bail!(
+                        "block '{}': a run reads rss and the business only, for now",
+                        block.id
+                    );
                 }
                 if items.is_empty() {
                     (Vec::new(), Vec::new())
