@@ -31,7 +31,7 @@ pub const DIR: &str = "pipelines";
 pub mod rss;
 pub mod run;
 pub mod schedule;
-mod schema;
+pub(crate) mod schema;
 
 /// One step, as declared.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -231,6 +231,9 @@ fn check_step(business: &Path, step: &Step, prompts: &mut Vec<Prompt>) -> Result
                 .with_context(|| format!("schema {schema} is not JSON"))?;
             if schema_value["type"] != "object" {
                 bail!("schema {schema}: the model answers with an object (\"type\": \"object\")");
+            }
+            if let Some(why) = schema::unsupported(&schema_value) {
+                bail!("{schema}: {why}");
             }
             if let Some(keep) = keep
                 && schema_value["properties"][keep]["type"] != "boolean"
@@ -541,6 +544,22 @@ mod tests {
             .contains("boolean")
         );
         assert!(judge("prompts/watch.md", "prompts/watch.md", "").contains("not JSON"));
+    }
+
+    /// A schema rule Airth does not check refuses the pipeline, named.
+    #[test]
+    fn a_schema_with_a_rule_airth_does_not_check_is_refused() {
+        let dir = business();
+        std::fs::write(
+            dir.path().join("schemas/watch.json"),
+            r#"{"type": "object", "properties": {"relevant": {"type": "boolean"}}, "additionalProperties": false}"#,
+        )
+        .unwrap();
+        let e = format!("{:#}", load(dir.path(), "daily-watch").unwrap_err());
+        assert!(
+            e.contains("schemas/watch.json: schema uses \"additionalProperties\""),
+            "{e}"
+        );
     }
 
     #[test]

@@ -423,6 +423,9 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             if !value.is_object() {
                 bail!("{schema} is not a JSON schema");
             }
+            if let Some(why) = crate::pipeline::schema::unsupported(&value) {
+                bail!("{schema}: {why}");
+            }
         }
         Kind::Condition { test, .. } => {
             path(&test.field)?;

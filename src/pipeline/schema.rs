@@ -6,6 +6,48 @@
 
 use serde_json::Value;
 
+/// The keywords the check enforces, and those that only describe.
+const ENFORCED: &[&str] = &[
+    "type",
+    "properties",
+    "required",
+    "items",
+    "enum",
+    "minimum",
+    "maximum",
+    "minLength",
+    "maxLength",
+];
+const DESCRIBING: &[&str] = &["description", "title", "$schema"];
+
+/// The first keyword of `schema` that the check would not enforce, with
+/// where it is: a schema must not promise a rule nobody checks.
+pub fn unsupported(schema: &Value) -> Option<String> {
+    keyword_at(schema, "schema")
+}
+
+fn keyword_at(schema: &Value, path: &str) -> Option<String> {
+    let object = schema.as_object()?;
+    if let Some(key) = object
+        .keys()
+        .find(|k| !ENFORCED.contains(&k.as_str()) && !DESCRIBING.contains(&k.as_str()))
+    {
+        return Some(format!(
+            "{path} uses \"{key}\", which Airth does not check (it checks {})",
+            ENFORCED.join(", ")
+        ));
+    }
+    let properties = object.get("properties").and_then(Value::as_object);
+    for (name, sub) in properties.into_iter().flatten() {
+        if let Some(why) = keyword_at(sub, &format!("{path}.{name}")) {
+            return Some(why);
+        }
+    }
+    object
+        .get("items")
+        .and_then(|items| keyword_at(items, &format!("{path}.items")))
+}
+
 /// Why `value` does not fit `schema`, or None when it does.
 pub fn mismatch(schema: &Value, value: &Value) -> Option<String> {
     at(schema, value, "answer")
@@ -112,6 +154,32 @@ mod tests {
         let ok =
             json!({"relevant": true, "pillar": "flows", "score": 3, "tags": ["eth"], "extra": 1});
         assert_eq!(mismatch(&schema(), &ok), None);
+    }
+
+    /// A keyword the check does not enforce is named, wherever it is; one
+    /// that only describes is fine.
+    #[test]
+    fn names_a_keyword_it_does_not_check() {
+        assert_eq!(unsupported(&schema()), None);
+        let described = json!({"type": "object", "description": "One item.", "properties": {"a": {"type": "string", "title": "A"}}});
+        assert_eq!(unsupported(&described), None);
+        for (schema, at) in [
+            (
+                json!({"type": "object", "additionalProperties": false}),
+                "schema uses \"additionalProperties\"",
+            ),
+            (
+                json!({"properties": {"draft": {"type": "string", "pattern": "^[A-Z]"}}}),
+                "schema.draft uses \"pattern\"",
+            ),
+            (
+                json!({"properties": {"tags": {"items": {"format": "uri"}}}}),
+                "schema.tags.items uses \"format\"",
+            ),
+        ] {
+            let why = unsupported(&schema).unwrap();
+            assert!(why.contains(at), "{why}");
+        }
     }
 
     #[test]
