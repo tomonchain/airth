@@ -1,6 +1,7 @@
 use super::*;
 use crate::business::store::FILE;
 use crate::models::{ContentBlock, ModelResponse, StopReason};
+use crate::pipeline::run::LIST_MAX;
 use crate::prices::Prices;
 use serde_json::json;
 
@@ -106,6 +107,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         fetch: &mut fetch,
         ask: &mut ask,
         prices: Prices::default(),
+        fast: None,
     };
     let mut store = Store::open(&root.path().join(FILE)).unwrap();
     let integrations = [typefully];
@@ -195,6 +197,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
         fetch: &mut fetch,
         ask: &mut ask,
         prices: Prices::default(),
+        fast: None,
     };
     let mut store = Store::open(&root.path().join(FILE)).unwrap();
     let mut acted = Vec::new();
@@ -336,6 +339,7 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
         fetch: &mut fetch,
         ask: &mut ask,
         prices: Prices::default(),
+        fast: None,
     };
     let now: DateTime<Utc> = "2026-11-02T08:00:00Z".parse().unwrap();
     let mut report = |store: &mut Store| {
@@ -443,6 +447,7 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
         fetch: &mut fetch,
         ask: &mut ask,
         prices: Prices::default(),
+        fast: None,
     };
     let mut store = Store::open(&root.path().join(FILE)).unwrap();
     let mut act = |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool| -> Result<String> {
@@ -504,4 +509,234 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
             .iter()
             .all(|i| draft_calls.contains(&i.model_call.unwrap()))
     );
+}
+
+/// A routine whose sort judges its whole list, with the model's answers
+/// given in turn; its report, or why it failed, and the model's requests.
+fn sort_list(titles: &[&str], answers: &[&str]) -> (Result<String>, Vec<String>) {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/pick.md", "Pick the best."),
+        (
+            "prompts/pick.schema.json",
+            r#"{"type": "object", "required": ["relevant", "story"], "properties": {"relevant": {"type": "boolean"}, "story": {"type": "string"}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+        {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"]},
+        {"id": "pick", "type": "ai", "prompt": "prompts/pick.md", "keep": "relevant", "distinct": "story", "over": "list"},
+        {"id": "ok", "type": "approval", "show": "title"}
+    ]}))
+    .unwrap();
+    let body = format!(
+        "<rss><channel>{}</channel></rss>",
+        titles
+            .iter()
+            .map(|t| format!("<item><title>{t}</title><link>https://e.com/{t}</link></item>"))
+            .collect::<String>()
+    );
+    let mut fetch = |_: &str| {
+        Ok(crate::pipeline::run::Fetched {
+            body: body.clone(),
+            truncated: false,
+        })
+    };
+    let mut asked = Vec::new();
+    let mut answers = answers.iter();
+    let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+        asked.push(format!("{req:?}"));
+        Ok(ModelResponse {
+            content: vec![ContentBlock::Text {
+                text: answers.next().expect("no more answers").to_string(),
+            }],
+            stop_reason: StopReason::EndTurn,
+            model: "m".into(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        })
+    };
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+        fast: None,
+    };
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    let report = dry_run(
+        "posts",
+        &graph,
+        Dry {
+            root: root.path(),
+            store: &mut store,
+            io: &mut io,
+            integrations: &[],
+        },
+        Utc::now(),
+    )
+    .map(|r| r.to_string());
+    (report, asked)
+}
+
+/// Decision 60: a list block asks once for every item, keeps those the
+/// answer names, in its order, and `distinct` still checks behind it.
+#[test]
+fn a_list_block_judges_every_item_in_one_call() {
+    let answer = json!({"items": [
+        {"n": 3, "relevant": true, "story": "Hack"},
+        {"n": 1, "relevant": true, "story": "hack"},
+        {"n": 2, "relevant": false, "story": "ETF"}
+    ]})
+    .to_string();
+    let (report, asked) = sort_list(&["A", "B", "C", "D"], &[&answer]);
+    let report = report.unwrap();
+    assert_eq!(asked.len(), 1, "one call for the list");
+    for n in 1..=4 {
+        assert!(asked[0].contains(&format!("\\\"n\\\":{n}")), "{}", asked[0]);
+    }
+    assert!(report.contains("would ask the founder: C\n"), "{report}");
+    assert!(!report.contains("would ask the founder: A"), "{report}");
+    // B is not relevant, D was left out, A is C's story.
+    assert!(
+        report.contains("set aside: 2 not relevant, 0 invalid, 1 by distinct story"),
+        "{report}"
+    );
+}
+
+/// Decision 60: an answer that names an item it was not given, names one
+/// twice, or does not fit the schema is refused whole and asked again;
+/// refused twice, the block fails, naming itself.
+#[test]
+fn a_refused_list_answer_is_asked_once_more_then_fails_the_block() {
+    let good = r#"{"items": [{"n": 1, "relevant": true, "story": "Hack"}]}"#;
+    for bad in [
+        r#"{"items": [{"n": 3, "relevant": true, "story": "Hack"}]}"#,
+        r#"{"items": [{"n": 1, "relevant": true, "story": "Hack"}, {"n": 1, "relevant": true, "story": "Hack"}]}"#,
+        r#"{"items": [{"n": 1, "relevant": "yes", "story": "Hack"}]}"#,
+        r#"{"items": [{"relevant": true, "story": "Hack"}]}"#,
+        r#"{"picked": [1]}"#,
+    ] {
+        let (report, asked) = sort_list(&["A", "B"], &[bad, good]);
+        let report = report.unwrap();
+        assert_eq!(asked.len(), 2, "{bad}");
+        assert!(report.contains("asked again"), "{report}");
+        assert!(report.contains("would ask the founder: A"), "{report}");
+
+        let (failed, asked) = sort_list(&["A", "B"], &[bad, bad]);
+        let e = format!("{:#}", failed.unwrap_err());
+        assert_eq!(asked.len(), 2, "{bad}");
+        assert!(e.contains("pick failed"), "{e}");
+        assert!(e.contains("did not match prompts/pick.md twice"), "{e}");
+    }
+}
+
+/// A list call takes at most LIST_MAX items; the rest are set aside, noted.
+#[test]
+fn a_list_call_takes_at_most_its_bound() {
+    let titles: Vec<String> = (0..LIST_MAX + 2).map(|i| format!("T{i}")).collect();
+    let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+    let (report, asked) = sort_list(&titles, &[r#"{"items": []}"#]);
+    let report = report.unwrap();
+    assert!(
+        asked[0].contains(&format!("\\\"n\\\":{LIST_MAX}")),
+        "the last one in"
+    );
+    assert!(!asked[0].contains(&format!("\\\"n\\\":{}", LIST_MAX + 1)));
+    assert!(
+        report.contains(&format!("judged the first {LIST_MAX} of {}", LIST_MAX + 2)),
+        "{report}"
+    );
+}
+
+/// Decision 60: a block with `"model": "fast"` asks the realm's fast model,
+/// the others its main one; with no fast connection, the main one answers
+/// and the report says so.
+#[test]
+fn a_block_asks_the_fast_model_or_says_the_main_one_answered() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/pick.md", "Pick."),
+        ("prompts/post.md", "Draft."),
+        ("prompts/pick.schema.json", r#"{"type": "object"}"#),
+        ("prompts/post.schema.json", r#"{"type": "object"}"#),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"]},
+            {"id": "pick", "type": "ai", "prompt": "prompts/pick.md", "model": "fast"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md", "model": "main"},
+            {"id": "ok", "type": "approval", "show": "title"}
+        ]}),
+    )
+    .unwrap();
+    let response = |model: &str| ModelResponse {
+        content: vec![ContentBlock::Text { text: "{}".into() }],
+        stop_reason: StopReason::EndTurn,
+        model: model.into(),
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+    };
+    for has_fast in [true, false] {
+        let mut fetch = |_: &str| {
+            Ok(crate::pipeline::run::Fetched {
+                body: "<rss><channel><item><title>A</title><link>https://e.com/a</link></item></channel></rss>".into(),
+                truncated: false,
+            })
+        };
+        let mut asked = Vec::new();
+        let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            asked.push(("main", format!("{req:?}")));
+            Ok(response("main-m"))
+        };
+        let mut fast_asked = Vec::new();
+        let mut fast = |req: &crate::models::ModelRequest| -> Result<Option<ModelResponse>> {
+            fast_asked.push(format!("{req:?}"));
+            Ok(has_fast.then(|| response("fast-m")))
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+            fast: Some(&mut fast),
+        };
+        let mut store = Store::open(&root.path().join(FILE)).unwrap();
+        let report = dry_run(
+            "posts",
+            &graph,
+            Dry {
+                root: root.path(),
+                store: &mut store,
+                io: &mut io,
+                integrations: &[],
+            },
+            Utc::now(),
+        )
+        .unwrap()
+        .to_string();
+        // Only the pick goes to the fast model; the draft never does.
+        assert_eq!(fast_asked.len(), 1, "{has_fast}");
+        assert!(fast_asked[0].contains("Pick."));
+        let main: Vec<&String> = asked.iter().map(|(_, r)| r).collect();
+        assert!(main.iter().any(|r| r.contains("Draft.")));
+        let note = "step 2: this business has no fast model: its main model answered";
+        if has_fast {
+            assert_eq!(main.len(), 1);
+            assert!(!report.contains(note), "{report}");
+        } else {
+            assert_eq!(main.len(), 2);
+            assert!(main[0].contains("Pick."));
+            assert!(report.contains(note), "{report}");
+        }
+    }
 }

@@ -360,6 +360,8 @@ pub fn run(
                 distinct,
                 limit,
                 into,
+                over,
+                model,
             } => {
                 let p = prompt(dry.root, path)?;
                 let into = into.as_deref().unwrap_or("answer");
@@ -369,6 +371,8 @@ pub fn run(
                     prompt: &p,
                     dry_run: real.is_none(),
                     into,
+                    list: over.is_some(),
+                    fast: *model == Some(super::Tier::Fast),
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),
@@ -377,7 +381,8 @@ pub fn run(
                     limit: *limit,
                 };
                 let (kept, stats) =
-                    judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)?;
+                    judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)
+                        .with_context(|| format!("{} failed", block.id))?;
                 let shown: Vec<&str> = rank.iter().chain(distinct).map(String::as_str).collect();
                 for it in &kept {
                     let values: Vec<String> = shown

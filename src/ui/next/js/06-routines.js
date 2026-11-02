@@ -33,7 +33,7 @@ function blockText(b) {
         [b.max_age_days && `last ${b.max_age_days} days`, b.dedupe && "no repeats", b.max && `at most ${b.max}`].filter(Boolean).join(", ")];
       return [b.source, b.action || b.url || ""];
     case "ai": {
-      const keep = [b.keep && `keeps ${b.keep}`, b.limit && `best ${b.limit}`, b.distinct && b.distinct.length && `one per ${b.distinct.join(" and ")}`];
+      const keep = [b.over === "list" && "all at once", b.model === "fast" && "fast model", b.keep && `keeps ${b.keep}`, b.limit && `best ${b.limit}`, b.distinct && b.distinct.length && `one per ${b.distinct.join(" and ")}`];
       return [b.id, [b.prompt.replace(/^prompts\//, ""), ...keep].filter(Boolean).join(" · ")];
     }
     case "condition": return [b.id, `if ${b.if.field} ${b.if.op}${b.if.value === undefined ? "" : ` ${JSON.stringify(b.if.value)}`}`];
