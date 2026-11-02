@@ -21,7 +21,13 @@ pub struct Io<'a> {
     pub fetch: &'a mut dyn FnMut(&str) -> Result<Fetched>,
     pub ask: &'a mut dyn FnMut(&ModelRequest) -> Result<ModelResponse>,
     pub prices: Prices,
+    /// The realm's fast model, for the blocks that ask for it (decision
+    /// 60); it answers None when the realm has no fast connection.
+    pub fast: Option<&'a mut AskFast<'a>>,
 }
+
+/// The fast model's call: None when the realm has no fast connection.
+pub type AskFast<'a> = dyn FnMut(&ModelRequest) -> Result<Option<ModelResponse>> + 'a;
 
 /// A feed's body, and whether it was cut before its end.
 #[derive(Debug)]
@@ -141,6 +147,7 @@ fn steps(
                     dry_run: false,
                     into: "answer",
                     list: false,
+                    fast: false,
                 };
                 items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?.0;
             }
@@ -261,6 +268,8 @@ pub(crate) struct Judged {
     pub cost_usd: f64,
     /// Calls to a model without a known price, left out of the cost.
     pub unpriced: usize,
+    /// The block asked for the fast model and the main one answered.
+    pub main_instead: bool,
 }
 
 /// The prompt a judgement asks with, and where it is recorded from.
@@ -277,6 +286,8 @@ pub(crate) struct Asking<'a> {
     pub into: &'a str,
     /// Every item in one call (decision 60), instead of one call each.
     pub list: bool,
+    /// Ask the realm's fast model rather than its main one (decision 60).
+    pub fast: bool,
 }
 
 /// The most items a list call takes; the rest are set aside, noted.
@@ -320,6 +331,7 @@ pub(crate) fn judge_all(
             Some(cost) => stats.cost_usd += cost,
             None => stats.unpriced += 1,
         }
+        stats.main_instead |= used.main_instead;
         let Some(answer) = answer else {
             stats.invalid += 1;
             if checking {
@@ -337,6 +349,12 @@ pub(crate) fn judge_all(
         } else {
             stats.not_kept += 1;
         }
+    }
+    if stats.main_instead {
+        notes.push(format!(
+            "step {}: this business has no fast model: its main model answered",
+            asking.step
+        ));
     }
     // A list's refused answer is noted where it is asked again.
     if stats.invalid > 0 && !asking.list {
@@ -419,6 +437,7 @@ fn judge_list(
             Some(cost) => stats.cost_usd += cost,
             None => stats.unpriced += 1,
         }
+        stats.main_instead |= used.main_instead;
         match (answer, refused) {
             (Ok(answers), _) => break (answers, call),
             (Err(why), None) => {
@@ -458,6 +477,8 @@ struct Used {
     input: u64,
     output: u64,
     cost: Option<f64>,
+    /// The fast model was asked for, and the realm has none.
+    main_instead: bool,
 }
 
 /// Ask the model about one item, check its answer against the schema, and
@@ -565,8 +586,17 @@ fn ask<T>(
 ) -> Result<(Result<T, String>, i64, Used)> {
     let prompt = asking.prompt;
     let messages = [Message::user_text(content)];
+    let request = ModelRequest::new(system, &messages, &[]);
     let started = Instant::now();
-    let response = (io.ask)(&ModelRequest::new(system, &messages, &[]))?;
+    let fast = match (asking.fast, io.fast.as_mut()) {
+        (true, Some(fast)) => fast(&request)?,
+        _ => None,
+    };
+    let main_instead = asking.fast && fast.is_none();
+    let response = match fast {
+        Some(response) => response,
+        None => (io.ask)(&request)?,
+    };
     let latency_ms = started.elapsed().as_millis() as i64;
     let text: String = response
         .content
@@ -614,6 +644,7 @@ fn ask<T>(
                 input: r.input_tokens,
                 output: r.output_tokens,
                 cost,
+                main_instead,
             };
             (answer, call, used)
         })
@@ -732,6 +763,7 @@ mod tests {
             fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         run(name, p, store, &mut io, Utc::now())
     }
@@ -977,6 +1009,7 @@ mod tests {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         let out = run("watch", &p, &mut store, &mut io, Utc::now()).unwrap();
         // Only the first answer fits and says relevant.
@@ -1057,6 +1090,7 @@ mod tests {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         let out = run("production", &p, &mut store, &mut io, Utc::now()).unwrap();
         assert_eq!(out.queued, 1);
@@ -1115,6 +1149,7 @@ mod tests {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         let out = run("watch", &p, &mut store, &mut io, Utc::now()).unwrap();
         let kept: Vec<_> = out.kept.iter().map(|i| i["link"].clone()).collect();
@@ -1180,6 +1215,7 @@ mod tests {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         let out = run("watch", &p, &mut store, &mut io, Utc::now()).unwrap();
         // Two flows items: only the better one; then the limit takes the two best left.
@@ -1223,6 +1259,7 @@ mod tests {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: Prices::default(),
+            fast: None,
         };
         assert!(run("watch", &p, &mut store, &mut io, Utc::now()).is_err());
         assert!(!runs(&store)[0].0);
