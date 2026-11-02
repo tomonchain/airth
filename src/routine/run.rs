@@ -361,6 +361,7 @@ pub fn run(
                 limit,
                 into,
                 over,
+                model,
             } => {
                 let p = prompt(dry.root, path)?;
                 let into = into.as_deref().unwrap_or("answer");
@@ -371,6 +372,7 @@ pub fn run(
                     dry_run: real.is_none(),
                     into,
                     list: over.is_some(),
+                    fast: *model == Some(super::Tier::Fast),
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),
