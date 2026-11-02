@@ -100,7 +100,10 @@ pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
 
 /// The tools a pipeline's steps call: HTTP, with the realm's integrations.
 pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
-    vec![Box::new(http::HttpRequest { integrations })]
+    vec![Box::new(http::HttpRequest {
+        integrations,
+        cut: Default::default(),
+    })]
 }
 
 /// The tools of a run in a realm: the defaults plus its plan, the realm's
@@ -116,6 +119,7 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
             .into_iter()
             .filter(|i| allows(&i.name))
             .collect(),
+        cut: Default::default(),
     }));
     tools.push(Box::new(memory::Remember {
         memory: realm.memory,
