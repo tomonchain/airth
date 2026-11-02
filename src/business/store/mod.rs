@@ -11,6 +11,7 @@ pub mod autonomy;
 pub mod drafts;
 pub mod pipelines;
 pub mod queue;
+pub mod reports;
 pub mod retries;
 pub mod routines;
 pub mod status;
@@ -244,6 +245,32 @@ const MIGRATIONS: &[&str] = &[
     // 13: a failed action waits here for its next attempt, if it may have
     // one (decision 55).
     "ALTER TABLE actions ADD COLUMN retry_at TEXT;",
+    // 14: a report is an item of the queue (decision 59). SQLite cannot
+    // change a check, so the table is rebuilt, ids kept; what refers to
+    // `queue` (log, actions, ledger) is checked before the commit.
+    "CREATE TABLE queue_new (
+        id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('approval', 'prepared', 'delayed', 'incident', 'promotion', 'report')),
+        title TEXT NOT NULL,
+        agent TEXT,
+        routine TEXT,
+        run TEXT,
+        action TEXT,
+        args TEXT NOT NULL DEFAULT '{}',
+        original_args TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT '{}',
+        model_call INTEGER REFERENCES model_calls(id),
+        due_at TEXT,
+        execute_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired', 'done', 'failed')),
+        revision INTEGER NOT NULL DEFAULT 1
+    );
+    INSERT INTO queue_new SELECT id, created_at, kind, title, agent, routine, run, action, args,
+        original_args, source, model_call, due_at, execute_at, status, revision FROM queue;
+    DROP TABLE queue;
+    ALTER TABLE queue_new RENAME TO queue;
+    CREATE INDEX queue_by_status ON queue(status, created_at);",
 ];
 
 pub struct Store {
@@ -299,6 +326,17 @@ fn backup_before_migrating(conn: &Connection, path: &Path) -> Result<()> {
 }
 
 fn migrate(conn: &mut Connection) -> Result<()> {
+    // A table rebuilt keeps its name and ids, so what refers to it must not
+    // be rewritten or emptied on the way: foreign keys are off while the
+    // migrations run (they cannot change inside a transaction), and every
+    // reference is checked before the commit, as SQLite advises.
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let migrated = migrate_unchecked(conn);
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    migrated
+}
+
+fn migrate_unchecked(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let applied: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
     let applied = usize::try_from(applied).unwrap_or(usize::MAX);
@@ -311,6 +349,13 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(applied) {
         tx.execute_batch(sql)
             .with_context(|| format!("migration {}", i + 1))?;
+    }
+    let broken: Vec<(String, i64)> = tx
+        .prepare("PRAGMA foreign_key_check")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    if let Some((table, row)) = broken.first() {
+        bail!("row {row} of {table} refers to nothing after migrating: nothing was changed");
     }
     tx.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?;
     tx.commit()?;
@@ -413,6 +458,102 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(old, 6);
+    }
+
+    /// Decision 59: a database of schema 13 with items, their log, an
+    /// action and the founder's time on them keeps them all when the queue
+    /// is rebuilt to take reports; an unknown kind is still refused.
+    #[test]
+    fn the_queue_takes_reports_and_keeps_what_refers_to_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        let mut conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let tx = conn.transaction().unwrap();
+        for sql in &MIGRATIONS[..13] {
+            tx.execute_batch(sql).unwrap();
+        }
+        tx.pragma_update(None, "user_version", 13).unwrap();
+        tx.execute_batch(
+            "INSERT INTO queue (id, created_at, kind, title, status) VALUES (7, 't', 'approval', 'Post', 'pending'),
+                (9, 't', 'incident', 'Down', 'done');
+             INSERT INTO queue_log (item, at, action, by) VALUES (7, 't', 'proposed', 'airth'), (9, 't', 'proposed', 'airth');
+             INSERT INTO actions (key, action, connector, item, level, approved, args, status, started_at)
+                 VALUES ('r/link/send', 'typefully.create_draft', 'typefully', 7, 1, 1, '{}', 'confirmed', 't');
+             INSERT INTO owner_time (at, activity, seconds, item, channel) VALUES ('t', 'answer', 12, 9, 'app');",
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        drop(conn);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(version(&store), MIGRATIONS.len() as i64);
+        let c = &store.conn;
+        let one = |sql: &str| -> i64 { c.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(one("SELECT COUNT(*) FROM queue WHERE id IN (7, 9)"), 2);
+        assert_eq!(one("SELECT COUNT(*) FROM queue_log"), 2);
+        assert_eq!(one("SELECT item FROM actions"), 7);
+        assert_eq!(one("SELECT item FROM owner_time"), 9);
+        assert!(
+            c.query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .is_err(),
+            "no reference left dangling"
+        );
+        c.execute(
+            "INSERT INTO queue (created_at, kind, title, status) VALUES ('t', 'report', 'Week', 'pending')",
+            [],
+        )
+        .unwrap();
+        let wrong = c.execute(
+            "INSERT INTO queue (created_at, kind, title, status) VALUES ('t', 'memo', 'x', 'pending')",
+            [],
+        );
+        assert!(wrong.is_err(), "the kind is still checked");
+        // The log still refers to the queue: a log line for no item is refused.
+        let orphan = c.execute(
+            "INSERT INTO queue_log (item, at, action, by) VALUES (999, 't', 'x', 'airth')",
+            [],
+        );
+        assert!(orphan.is_err(), "the log's reference to the queue holds");
+        assert_eq!(
+            one("SELECT COUNT(*) FROM sqlite_master WHERE name = 'queue_by_status'"),
+            1
+        );
+    }
+
+    /// A migration that would leave a reference to nothing changes
+    /// nothing: the database stays at its version, rows as they were.
+    #[test]
+    fn a_migration_that_breaks_a_reference_is_refused_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        let conn = Connection::open(&path).unwrap();
+        for sql in &MIGRATIONS[..13] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        // Written with references off, as an old bug might have.
+        conn.pragma_update(None, "foreign_keys", "OFF").unwrap();
+        conn.execute(
+            "INSERT INTO queue_log (item, at, action, by) VALUES (42, 't', 'proposed', 'airth')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let err = Store::open(&path).err().unwrap();
+        assert!(format!("{err:#}").contains("refers to nothing"), "{err:#}");
+        let conn = Connection::open(&path).unwrap();
+        let v: i64 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 13);
+        let kind: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'queue'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!kind.contains("'report'"), "the queue was not rebuilt");
     }
 
     /// Decision 47: evidence is append-only by the database itself.

@@ -91,30 +91,18 @@ impl Hub {
         let mut as_approved = runtime();
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let declared = crate::actions::all(&realm.config.integrations, &servers);
-        let inbox = self.home.inbox();
+        // Reports are gathered, then made one per block when the run ends
+        // (decision 59).
+        let reports: std::cell::RefCell<Vec<(String, BTreeMap<String, String>)>> =
+            Default::default();
         let mut act = |action: &str,
                        fields: &BTreeMap<String, String>,
                        key: &str,
                        approved: bool|
          -> Result<String> {
             if action == "airth.report" {
-                let title = fields
-                    .get("title")
-                    .cloned()
-                    .unwrap_or_else(|| name.to_string());
-                let body: Vec<String> = fields
-                    .iter()
-                    .filter(|(k, _)| *k != "title")
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect();
-                inbox.push(
-                    crate::notify::Kind::Completed,
-                    realm.name(),
-                    None,
-                    &title,
-                    &body.join("\n"),
-                )?;
-                return Ok("reported".into());
+                reports.borrow_mut().push((key.to_string(), fields.clone()));
+                return Ok("reported in Needs you".into());
             }
             let (connector, action_name) = action
                 .split_once('.')
@@ -234,7 +222,7 @@ impl Hub {
                 }
             }
         };
-        self.with_business_io(
+        let outcome = self.with_business_io(
             realm,
             name,
             Box::new(super::pipelines::Unattended),
@@ -250,7 +238,15 @@ impl Hub {
                 crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
                     .map(|r| r.to_string())
             },
-        )
+        );
+        // What was gathered is reported even when a later block failed.
+        let reported = report(realm, name, &graph.agent, run, reports.take());
+        match (outcome, reported) {
+            (Ok(text), Ok(lines)) => Ok(format!("{text}\n{lines}").trim_end().to_string()),
+            (Err(e), Ok(_)) => Err(e),
+            (Ok(_), Err(e)) => Err(e.context("the run's reports were not recorded")),
+            (Err(e), Err(r)) => Err(e.context(format!("and its reports were not recorded: {r:#}"))),
+        }
     }
 
     /// The founder answers queue item `id` from `channel`. An approval of a
@@ -293,7 +289,7 @@ impl Hub {
         if item.status != "approved" {
             return Ok((item, None));
         }
-        if item.kind == "incident" {
+        if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;
             return Ok((item, Some("seen".into())));
         }
@@ -412,6 +408,23 @@ impl Hub {
             ))),
             None => bail!("{}", event.result),
         }
+    }
+
+    /// Reports not seen within a week leave Needs you, across realms; how
+    /// many, by realm.
+    pub fn expire_reports(&self, now: DateTime<Utc>) -> Result<Vec<(String, usize)>> {
+        let before = now - chrono::Duration::days(crate::business::store::reports::KEPT_DAYS);
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived || !realm.dir().join(crate::business::store::FILE).exists() {
+                continue;
+            }
+            let n = Store::of(&realm)?.expire_reports(before)?;
+            if n > 0 {
+                out.push((realm.name().to_string(), n));
+            }
+        }
+        Ok(out)
     }
 
     /// Do the delayed actions whose window has passed by `now`, across
@@ -539,4 +552,42 @@ enum Approved {
     Done(String),
     /// It failed, and is tried again later (decision 55): why, and when.
     Later(String),
+}
+
+/// One report per block of what a run's `airth.report` acts gathered,
+/// titled by its first entry's `title`; what it did, a line per report.
+fn report(
+    realm: &Realm,
+    routine: &str,
+    agent: &str,
+    run: &str,
+    gathered: Vec<(String, BTreeMap<String, String>)>,
+) -> Result<String> {
+    type Entries = Vec<(String, BTreeMap<String, String>)>;
+    // An act's key ends with its block's id (routine/source/block).
+    let mut by_block: Vec<(String, Option<String>, Entries)> = Vec::new();
+    for (key, mut fields) in gathered {
+        let block = key.rsplit('/').next().unwrap_or_default().to_string();
+        let title = fields.remove("title");
+        match by_block.iter_mut().find(|(b, _, _)| *b == block) {
+            Some((_, _, entries)) => entries.push((key, fields)),
+            None => by_block.push((block, title, vec![(key, fields)])),
+        }
+    }
+    let mut lines = Vec::new();
+    let mut store = Store::of(realm)?;
+    for (block, title, entries) in by_block {
+        let new = crate::business::store::reports::NewReport {
+            title: title.as_deref().unwrap_or(routine),
+            agent: Some(agent),
+            routine,
+            run,
+            entries: &entries,
+        };
+        lines.push(match store.add_report(&new)? {
+            Some(id) => format!("{block}: reported in Needs you (item {id})"),
+            None => format!("{block}: already reported, nothing new"),
+        });
+    }
+    Ok(lines.join("\n"))
 }

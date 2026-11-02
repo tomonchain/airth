@@ -183,12 +183,14 @@ While point B runs, the installed service stays as it is. Run the new build besi
 
 ```bash
 cd ~/Personnel/airth
-git switch main && git pull
+git fetch && git switch --detach cd44a07
 cargo build --release
 ./target/release/airth ui --preview --port 7460
 ```
 
-It uses your real home, so the dry runs read the feeds and ask DeepSeek with Hedgen's key, as `airth routines dry-run` does. `--preview` starts nothing on its own: no schedule, no Telegram, no delayed action. Ctrl-C stops it. Once point B is over, `airth service install` from this build replaces it.
+**While point B runs, build from that commit (#66 merged), never a later main.** From decision 59 on (#68), a new build migrates `business.db` to a newer schema the first time it opens it, and the installed service, older, then refuses the database ("newer than this Airth knows") until it is updated.
+
+It uses your real home, so the dry runs read the feeds and ask DeepSeek with Hedgen's key, as `airth routines dry-run` does. `--preview` starts nothing on its own: no schedule, no Telegram, no delayed action. Ctrl-C stops it. Once point B is over, build from main and `airth service install`: the service then migrates the database itself.
 
 ### 2. The routines in the Hedgen folder
 

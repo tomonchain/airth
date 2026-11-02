@@ -77,7 +77,7 @@ fn get(tx: &Transaction, id: i64) -> Result<Item> {
     .ok_or_else(|| anyhow::anyhow!("no item {id} in the queue"))
 }
 
-fn log(
+pub(super) fn log(
     tx: &Transaction,
     id: i64,
     action: &str,

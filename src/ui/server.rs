@@ -298,6 +298,13 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|d| eprintln!("delayed action {d}")),
             Err(e) => eprintln!("delayed actions: {e:#}"),
         }
+        // Reports nobody looked at in a week (decision 59).
+        match runner.hub.expire_reports(chrono::Utc::now()) {
+            Ok(gone) => gone
+                .iter()
+                .for_each(|(realm, n)| eprintln!("{realm}: {n} report(s) expired unseen")),
+            Err(e) => eprintln!("reports: {e:#}"),
+        }
         // Failed actions whose next attempt is due (decision 55).
         match runner.hub.retry_due(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|d| eprintln!("retried action {d}")),
