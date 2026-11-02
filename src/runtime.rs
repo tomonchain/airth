@@ -174,6 +174,24 @@ impl Runtime {
         } else {
             self.gate.check(&request)
         };
+        // Asked for a commit, the founder left before answering: as in any
+        // run nobody watches, it waits for them and the run stops.
+        if let (true, Some(action), Some(authority)) = (explicit, &action, self.authority.as_mut())
+            && !matches!(verdict, Ok(Verdict::Approved))
+            && !self.gate.watched()
+        {
+            return match authority.decide(name, action, arguments, call, false) {
+                Ok(Decision::Stop(why)) => {
+                    self.stopped = Some(why.clone());
+                    (why, EventStatus::Denied)
+                }
+                Ok(_) => (
+                    "not done: the founder left before answering".into(),
+                    EventStatus::Denied,
+                ),
+                Err(e) => (format!("not done: {e:#}"), EventStatus::Denied),
+            };
+        }
         let refused = match verdict {
             Ok(Verdict::Denied(reason)) => Some(format!("permission denied: {reason}")),
             Err(e) => Some(format!("permission check failed: {e:#}")),

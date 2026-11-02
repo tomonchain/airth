@@ -331,7 +331,7 @@ pub(super) fn follow_pull_requests(runner: Runner) {
                     Ok(PrEvent::Conflict) => match runner.hub.resolve(&realm, &run.id) {
                         Ok(Some(state)) => {
                             eprintln!("run {} resolves a conflict with its base", run.id);
-                            runner.spawn(realm.clone(), state, Job::Drive);
+                            runner.spawn(realm.clone(), state, Job::Alone);
                         }
                         Ok(None) => {}
                         Err(e) => eprintln!("run {} cannot resolve its conflict: {e:#}", run.id),

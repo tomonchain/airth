@@ -9,6 +9,46 @@ pub(super) struct Live {
     pub(super) pending: Mutex<Option<Pending>>,
     pub(super) cancel: CancelToken,
     pub(super) version: AtomicU64,
+    pub(super) watch: Watch,
+}
+
+/// Longer than this between two looks at a run, and the founder has left
+/// it. The run's page looks every 600 ms; a hidden tab, about once a second
+/// until the browser slows it down further.
+const WATCH_GAP: Duration = Duration::from_secs(10);
+
+/// Whether the founder watches a run in the app (decision 56): its page
+/// looks at it again and again. Once they left, they left, for the run.
+#[derive(Default)]
+pub(super) struct Watch(Mutex<(Option<std::time::Instant>, bool)>);
+
+impl Watch {
+    /// Watched from now: the founder just started or followed up the run.
+    pub(super) fn from_now() -> Self {
+        Self(Mutex::new((Some(std::time::Instant::now()), false)))
+    }
+
+    /// The founder asked for a `Drive` in the app: they watch it from now.
+    /// Nobody watches the other jobs.
+    pub(super) fn for_job(job: &Job) -> Self {
+        match job {
+            Job::Drive => Self::from_now(),
+            _ => Self::default(),
+        }
+    }
+
+    /// The run's page looked at it.
+    pub(super) fn seen(&self) {
+        let mut w = self.0.lock().unwrap();
+        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
+        w.0 = Some(std::time::Instant::now());
+    }
+
+    pub(super) fn watching(&self) -> bool {
+        let mut w = self.0.lock().unwrap();
+        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
+        !w.1
+    }
 }
 
 impl Live {
@@ -60,6 +100,12 @@ pub(super) struct Away {
 }
 
 impl Approver for UiApprover {
+    /// A run an objective started is never watched; another, while its page
+    /// in the app follows it.
+    fn watched(&self) -> bool {
+        self.away.is_none() && self.live.watch.watching()
+    }
+
     fn ask(&mut self, request: &PermissionRequest) -> Result<Answer> {
         let deadline = match &self.away {
             Some(away) if away.wait_minutes == 0 => return Ok(Answer::No(away_reason(0))),
@@ -97,6 +143,16 @@ impl Approver for UiApprover {
                 let waited = self.away.as_ref().map_or(0, |a| a.wait_minutes);
                 break Answer::No(away_reason(waited));
             }
+            // Asked for a commit, the founder left: the runtime puts it in
+            // Needs you instead (decision 56).
+            if request
+                .warnings
+                .iter()
+                .any(|w| w == crate::runtime::COMMITS_WARNING)
+                && !self.watched()
+            {
+                break Answer::No("the founder left the run before answering".into());
+            }
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(answer) => break answer,
                 Err(mpsc::RecvTimeoutError::Timeout) if !self.live.cancel.is_cancelled() => {}
@@ -111,8 +167,12 @@ impl Approver for UiApprover {
 
 /// What a background thread does with a run.
 pub(super) enum Job {
-    /// Drive the agent (a new run, a follow-up, a resume).
+    /// Drive the agent (a new run, a follow-up, a resume), for the founder
+    /// who just asked for it in the app.
     Drive,
+    /// Drive the agent for the founder with nobody watching: Airth started
+    /// it on its own.
+    Alone,
     /// Drive a run an objective started, which the owner may not be watching.
     Unattended {
         objective: String,
@@ -145,6 +205,7 @@ impl Runner {
             pending: Mutex::new(None),
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
+            watch: Watch::for_job(&job),
         });
         self.registry
             .lock()
@@ -171,7 +232,7 @@ impl Runner {
                 _ => None,
             };
             match job {
-                Job::Drive | Job::Unattended { .. } => {
+                Job::Drive | Job::Alone | Job::Unattended { .. } => {
                     let hooks = RunHooks {
                         approver: Box::new(UiApprover {
                             live: live.clone(),
@@ -219,5 +280,100 @@ impl Runner {
             live.bump();
             registry.lock().unwrap().remove(&k);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn left(ago: u64) -> Watch {
+        Watch(Mutex::new((
+            Some(Instant::now() - Duration::from_secs(ago)),
+            false,
+        )))
+    }
+
+    #[test]
+    fn a_run_is_watched_while_its_page_looks_and_never_again_once_left() {
+        let w = Watch::from_now();
+        assert!(w.watching());
+        w.seen();
+        assert!(w.watching());
+        // Its page stopped looking: left, even once it looks again.
+        let w = left(11);
+        assert!(!w.watching());
+        w.seen();
+        assert!(!w.watching());
+        // Left between two looks, and nothing asked in between.
+        let w = left(11);
+        w.seen();
+        assert!(!w.watching());
+    }
+
+    #[test]
+    fn only_a_run_the_founder_just_asked_for_in_the_app_starts_watched() {
+        assert!(Watch::for_job(&Job::Drive).watching());
+        assert!(!Watch::for_job(&Job::Alone).watching());
+        let objective = Job::Unattended {
+            objective: "o".into(),
+            wait_minutes: 5,
+        };
+        assert!(!Watch::for_job(&objective).watching());
+        assert!(!Watch::default().watching());
+    }
+
+    fn live(watch: Watch) -> Arc<Live> {
+        Arc::new(Live {
+            snapshot: Mutex::new(State::new("x", None)),
+            pending: Mutex::new(None),
+            cancel: CancelToken::default(),
+            version: AtomicU64::new(1),
+            watch,
+        })
+    }
+
+    #[test]
+    fn asked_for_a_commit_the_app_stops_waiting_once_the_founder_left() {
+        let mut approver = UiApprover {
+            live: live(left(11)),
+            next_id: 0,
+            away: None,
+        };
+        assert!(!approver.watched());
+        let request = PermissionRequest {
+            tool: "http_request".into(),
+            capability: Capability::Network,
+            preview: String::new(),
+            warnings: vec![crate::runtime::COMMITS_WARNING.into()],
+            scope: None,
+        };
+        // Were it still waiting, the run's stop would end it a second on.
+        let cancel = approver.live.cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(1));
+            cancel.cancel();
+        });
+        let Answer::No(why) = approver.ask(&request).unwrap() else {
+            panic!("not approved");
+        };
+        assert!(why.contains("left"), "{why}");
+    }
+
+    #[test]
+    fn a_run_an_objective_started_is_never_watched() {
+        let approver = UiApprover {
+            live: live(Watch::from_now()),
+            next_id: 0,
+            away: Some(Away {
+                objective: "o".into(),
+                realm: "r".into(),
+                run: "x".into(),
+                wait_minutes: 5,
+                inbox: crate::notify::Inbox::new(std::env::temp_dir().join("airth-watch-test")),
+            }),
+        };
+        assert!(!approver.watched());
     }
 }

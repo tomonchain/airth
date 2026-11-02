@@ -210,6 +210,7 @@ impl App {
             (!r.checks.is_empty(), state.change.as_ref().map(|_| r.name))
         };
         if let Some(live) = self.live(realm.name(), id) {
+            live.watch.seen();
             let version = live.version.load(Ordering::SeqCst);
             if since == Some(version) {
                 return Ok(json!({"unchanged": true, "version": version}));

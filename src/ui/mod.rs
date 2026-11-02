@@ -397,6 +397,7 @@ mod tests {
             })),
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
+            watch: Watch::default(),
         });
         app.registry.lock().unwrap().insert(key("r", "run1"), live);
         app.answer("r", "run1", &json!({"approval_id": 1, "approve": true}))
@@ -548,6 +549,7 @@ mod tests {
                 })),
                 cancel: CancelToken::default(),
                 version: AtomicU64::new(1),
+                watch: Watch::default(),
             })
         };
         app.registry

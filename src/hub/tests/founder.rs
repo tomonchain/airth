@@ -199,3 +199,18 @@ fn once_the_founder_leaves_every_later_commit_is_unwatched() {
     assert_eq!(state.status, Status::Stopped);
     assert_eq!(pending(&f).len(), 1);
 }
+
+/// Asked for a commit, the founder leaves before answering: it waits in
+/// Needs you, and the run stops, as when nobody watched.
+#[test]
+fn a_founder_who_leaves_while_asked_finds_the_commit_in_needs_you() {
+    let (base, hits) = service(|_| {});
+    let f = business(base);
+    let left = Answer::No("the founder left the run before answering".into());
+    let (approver, asked) = founder(vec![left], vec![true, false]);
+    let state = task(&f, vec![post("1", "posts"), done("done")], approver);
+    assert_eq!(asked.lock().unwrap().len(), 1);
+    assert_eq!(state.status, Status::Stopped);
+    assert_eq!(pending(&f).len(), 1);
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+}
