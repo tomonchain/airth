@@ -275,3 +275,29 @@ fn a_flag_needs_its_check_on_every_way() {
     let bad = json!({"id": "check", "type": "ai", "prompt": "prompts/watch.md", "as": "source_id"});
     assert!(e(posts(json!([rss(), bad]))).contains("keeps that field"));
 }
+
+/// A routine whose schema uses a keyword Airth does not check is refused,
+/// naming it: the founder must not believe a rule holds when it does not.
+#[test]
+fn a_schema_with_a_rule_airth_does_not_check_is_refused() {
+    let root = business();
+    std::fs::write(root.path().join("prompts/post.md"), "Draft.").unwrap();
+    let schema = root.path().join("prompts/post.schema.json");
+    let graph = posts(json!([rss(), {"id": "draft", "type": "ai", "prompt": "prompts/post.md"}]));
+    std::fs::write(
+        &schema,
+        r#"{"type": "object", "properties": {"draft": {"type": "string", "maxLength": 280}}}"#,
+    )
+    .unwrap();
+    assert!(try_graph(root.path(), graph.clone()).is_ok());
+    std::fs::write(
+        &schema,
+        r#"{"type": "object", "properties": {"draft": {"type": "string", "pattern": "^[^#]*$"}}}"#,
+    )
+    .unwrap();
+    let e = format!("{:#}", try_graph(root.path(), graph).unwrap_err());
+    assert!(
+        e.contains("prompts/post.schema.json: schema.draft uses \"pattern\""),
+        "{e}"
+    );
+}
