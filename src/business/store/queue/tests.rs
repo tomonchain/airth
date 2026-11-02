@@ -117,3 +117,24 @@ fn a_rejection_is_final_and_an_item_without_an_editable_field_is_not_edited() {
         "{err:#}"
     );
 }
+
+/// Team's figure: the founder's time on each agent's items, from the ledger.
+#[test]
+fn the_founders_time_adds_up_by_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+    let one = propose(&mut s, None);
+    let two = propose(&mut s, None);
+    s.answer(one, None, Answer::Edit("ETH left.".into()), "app", 30)
+        .unwrap();
+    s.answer(one, None, Answer::Approve, "app", 12).unwrap();
+    s.answer(two, None, Answer::Reject("no".into()), "telegram", 8)
+        .unwrap();
+    let since = Utc::now() - chrono::Duration::days(30);
+    assert_eq!(
+        s.owner_seconds_by_agent(since).unwrap(),
+        vec![(Some("post-writer".to_string()), 50)]
+    );
+    let later = Utc::now() + chrono::Duration::minutes(1);
+    assert!(s.owner_seconds_by_agent(later).unwrap().is_empty());
+}

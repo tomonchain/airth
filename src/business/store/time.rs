@@ -40,6 +40,20 @@ pub fn human(secs: u64) -> String {
 }
 
 impl Store {
+    /// The founder's seconds on each agent's items since `since`, by agent
+    /// (None: Airth's own items).
+    pub fn owner_seconds_by_agent(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<(Option<String>, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT q.agent, SUM(o.seconds) FROM owner_time o JOIN queue q ON o.item = q.id
+             WHERE o.at >= ?1 GROUP BY q.agent",
+        )?;
+        let rows = stmt.query_map(params![since.to_rfc3339()], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn record_time(&mut self, entry: &Entry) -> Result<()> {
         if entry.activity.trim().is_empty() {
             bail!("an entry needs an activity");
