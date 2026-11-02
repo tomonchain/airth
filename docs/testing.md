@@ -172,3 +172,45 @@ The last `pipeline hedgen/… started` lines are from before you switched the fo
 - An edit taken from a message that was not a reply to its item.
 - A draft in Typefully you did not approve, or one approved that is not there.
 - Your time looking wrong in `airth time show`.
+
+## Point C: the watch and the weekly report, dry, from /next (milestone 4)
+
+The Routines page of the new interface shows each routine as its blocks, and runs it dry: reads and AI blocks for real, approvals taken as given, acts only shown. Nothing is sent and nothing goes to your queue; the model calls are recorded as a dry run's.
+
+### 1. The build, without touching the installed service
+
+While point B runs, the installed service stays as it is. Run the new build beside it, on another port, with no scheduler and no Telegram:
+
+```bash
+cd ~/Personnel/airth
+git switch main && git pull
+cargo build --release
+./target/release/airth ui --preview --port 7460
+```
+
+It uses your real home, so the dry runs read the feeds and ask DeepSeek with Hedgen's key, as `airth routines dry-run` does. `--preview` starts nothing on its own: no schedule, no Telegram, no delayed action. Ctrl-C stops it. Once point B is over, `airth service install` from this build replaces it.
+
+### 2. The routines in the Hedgen folder
+
+`weekly-report` and its agent, the Chief of staff, are in the `hedgen-business` repository, pull request #2 (`routines/weekly-report`, on top of #1). Once #1 is merged or checked out, check it out too:
+
+```bash
+cd ~/Personnel/hedgen
+git fetch && git switch routines/weekly-report
+airth routines --realm hedgen      # three routines, each ✓
+```
+
+The weekly report compares your time with `baseline_minutes` in `business/goal.md`: set it to your weekly minutes on Hedgen before Airth, or the report says it is not set.
+
+### 3. The dry runs
+
+Open the link the preview prints, then `/next`, then Hedgen's **Routines**:
+
+- **daily-watch**: Dry run. Each block shows how many items went in and out; choose a block to see what it did: the feed counts, the items kept with their score and pillar, and what `airth.report` would report.
+- **weekly-report**: Dry run. Choose `airth.report`: the week's figures, as the Monday report will give them. It reads only your business's records: no feed, no model, no cost.
+
+### What to report
+
+- A block whose summary or result is hard to read.
+- A figure of the weekly report that looks wrong, or one you miss.
+- Where a report should reach you (Needs you and Telegram, one report per run): that is decision 59, waiting for your answer.

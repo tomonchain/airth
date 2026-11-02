@@ -1,0 +1,46 @@
+/* Routines (docs/design/mockups/routine-editor.html): the graph on a dotted
+   canvas, its details on the right. */
+
+.panel.flush > .routines { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; }
+.graph { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; background-color: var(--canvas); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 20px 20px; }
+.graph-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text-3); font: inherit; font-size: 14px; cursor: pointer; }
+.pick[aria-selected="true"] { color: var(--text); border-color: var(--line-strong); background: var(--raised); }
+.dot { width: 8px; height: 8px; border-radius: 4px; background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+.graph-head .primary { min-height: 40px; padding: 0 18px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.graph-head .primary[disabled] { opacity: 0.6; cursor: default; }
+.graph-sub, .graph-foot { margin: 0; font-size: 14px; color: var(--text-3); max-width: 760px; }
+.graph-sub strong { color: var(--text-2); font-weight: 600; }
+.graph-foot { font-size: 13px; color: var(--text-4); }
+
+.flow { list-style: none; margin: 0; padding: 8px 0; display: flex; align-items: stretch; gap: 24px; overflow-x: auto; }
+.node { position: relative; flex: 0 0 160px; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tile); padding: 10px 12px; }
+.node + .node::before { content: ""; position: absolute; left: -25px; top: 50%; width: 24px; height: 2px; background: var(--line-strong); }
+.node:has(.node-button) { padding: 0; }
+.node-button { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 0; border-radius: var(--r-tile); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.node-button[aria-pressed="true"] { box-shadow: 0 0 0 1px var(--accent); }
+.node-type { font-size: 10.5px; font-weight: 600; color: var(--text-4); letter-spacing: 0.06em; text-transform: uppercase; }
+.node-title { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.node-sub { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.node-out { font-size: 11.5px; font-family: var(--mono); }
+.node-out.ok { color: var(--ok); }
+.node-out.warn { color: var(--warn); }
+.node-out.none { color: var(--text-5); }
+
+.block-report { display: flex; flex-direction: column; gap: 8px; max-width: 860px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.block-report h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-3); }
+.block-report .line { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.block-report .line.warn { color: var(--warn); }
+
+@media (max-width: 720px) {
+  .panel.flush > .routines { flex-direction: column; flex-wrap: nowrap; }
+  .graph, .routines .details { flex: 0 0 auto; width: 100%; max-width: none; }
+  .graph { padding: 16px; }
+  .routines .details { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .flow { flex-direction: column; gap: 16px; overflow-x: visible; }
+  .node { flex: 0 0 auto; }
+  .node + .node::before { left: 50%; top: -17px; width: 2px; height: 16px; }
+}

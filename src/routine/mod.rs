@@ -8,7 +8,7 @@
 
 use crate::objective::Schedule;
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -19,7 +19,7 @@ pub const DIR: &str = "routines";
 pub mod run;
 pub mod week;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Graph {
     #[serde(default)]
@@ -30,7 +30,7 @@ pub struct Graph {
 }
 
 /// What starts the routine: exactly one of these.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
     pub schedule: Option<String>,
@@ -38,13 +38,17 @@ pub struct Trigger {
     pub manual: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Block {
     pub id: String,
     #[serde(flatten)]
     pub kind: Kind,
     /// Absent: the next block in the list. `null`: the run stops here.
-    #[serde(default, deserialize_with = "explicit")]
+    #[serde(
+        default,
+        deserialize_with = "explicit",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub next: Option<Option<String>>,
 }
 
@@ -67,7 +71,7 @@ fn explicit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Stri
     Option::<String>::deserialize(d).map(Some)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Kind {
     Read {
@@ -111,7 +115,7 @@ pub enum Kind {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Test {
     pub field: String,

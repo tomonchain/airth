@@ -368,4 +368,37 @@ function smokeNext() {
   if (!nbody.textContent.includes("From your task")) problems.push("next/needs you: the task a commit came from is missing");
   vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
   show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
+  // Routines: every kind of block, a routine refused, then a dry run.
+  vm.runInContext(`routines.data.acme = { routines: [
+    { name: "broken", runs: [], next_at: null, cost_usd: 0, unpriced: 0, error: "routines/broken.json: the agent 'ghost'" },
+    { name: "daily-posts", runs: [{ at: "${now}", ok: false, error: "x" }, { at: "${now}", ok: true, error: null }], next_at: "${now}", cost_usd: 0.12, unpriced: 1, agent_title: null,
+      graph: { description: "", agent: "post-writer", trigger: { schedule: "daily 07:30" }, blocks: [
+        { id: "news", type: "read", source: "rss", feeds: ["https://e.com/f"], max_age_days: 2, dedupe: "link", max: null },
+        { id: "week", type: "read", source: "business", records: "week", feeds: [] },
+        { id: "pick", type: "ai", prompt: "prompts/watch.md", keep: "relevant", rank: "score", distinct: ["pillar", "story"], limit: 3 },
+        { id: "good", type: "condition", if: { field: "answer.score", op: ">=", value: 3 }, then: null, else: "send" },
+        { id: "ok", type: "approval", show: "answer.draft", editable: "answer.draft", expires_after: 24 },
+        { id: "send", type: "act", action: "typefully.create_draft", fields: { text: "{{answer.draft}}" } }] } },
+    { name: "weekly-report", runs: [], next_at: null, cost_usd: 0, unpriced: 0, agent_title: "Chief of staff",
+      graph: { description: "The week in figures", agent: "chief", trigger: { schedule: "mon 08:00" }, blocks: [
+        { id: "week", type: "read", source: "business", records: "week", feeds: [] }] } }] };`, ctx);
+  show("routines, a routine refused", { route: { page: "routines", realm: "acme" } });
+  vm.runInContext(`routines.open.acme = "daily-posts";`, ctx);
+  show("routines, before a dry run", { route: { page: "routines", realm: "acme" } });
+  if (!nbody.textContent.includes("Every day")) problems.push("next/routines: the trigger is missing");
+  vm.runInContext(`routines.running["acme/daily-posts"] = true;`, ctx);
+  show("routines, a dry run going", { route: { page: "routines", realm: "acme" } });
+  vm.runInContext(`routines.running["acme/daily-posts"] = false;
+    routines.dry["acme/daily-posts"] = { at: "${now}", title: "Dry run of daily-posts", cost: "cost: $0.0040, 10 tokens in, 5 out", secs: 3.2, blocks: [
+      { id: "news", items_in: 1, items_out: 2, secs: 1.1, lines: ["2 read, 0 too old: 2 kept"], notes: [] },
+      { id: "send", items_in: 2, items_out: 2, secs: 0, lines: ["would typefully.create_draft [daily-posts/https://e.com/1/send]: POST https://api.typefully.com/v2/drafts"], notes: ["feed down"] }] };
+    routines.block["acme/daily-posts"] = "send";`, ctx);
+  show("routines, a dry run's block", { route: { page: "routines", realm: "acme" } });
+  if (!nbody.textContent.includes("would typefully.create_draft")) problems.push("next/routines: the dry run's act is missing");
+  vm.runInContext(`routines.block["acme/daily-posts"] = "pick";`, ctx);
+  show("routines, a block not reached", { route: { page: "routines", realm: "acme" } });
+  vm.runInContext(`routines.dry["acme/daily-posts"] = { error: "block 'news': a run reads rss and the business only" };`, ctx);
+  show("routines, a dry run refused", { route: { page: "routines", realm: "acme" } });
+  vm.runInContext(`routines.data.acme = { routines: [] };`, ctx);
+  show("routines, none yet", { route: { page: "routines", realm: "acme" } });
 }

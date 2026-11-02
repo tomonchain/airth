@@ -3,7 +3,7 @@
 
 function renderPanel() {
   const panel = $("#panel");
-  panel.classList.toggle("flush", next.route.page === "needs-you" && !next.unauthorized);
+  panel.classList.toggle("flush", ["needs-you", "routines"].includes(next.route.page) && !next.unauthorized);
   if (next.unauthorized) {
     panel.replaceChildren(h("div", { class: "column" },
       h("h1", { class: "headline" }, "Open Airth first"),
@@ -14,6 +14,7 @@ function renderPanel() {
   if (page === "hq") return panel.replaceChildren(hqPage());
   if (page === "needs-you" && next.realm) return panel.replaceChildren(needsPage());
   if (page === "team" && next.realm) return panel.replaceChildren(teamPage());
+  if (page === "routines" && next.realm) return panel.replaceChildren(routinesPage());
   if (page === "business" && next.realm) return panel.replaceChildren(businessPage());
   const known = [...PAGES, ...PINNED].find((p) => p.id === page);
   panel.replaceChildren(soonPage(known ? known.title : "This page"));

@@ -64,6 +64,8 @@ button { font: inherit; }
   .rail { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; padding: 0 12px 8px; }
   .top .back { display: none; }
   .rail .gap { display: none; }
-  .panel { margin: 0 8px 8px; padding: 24px 16px; }
+  /* In a column, the panel's flex basis is a height: let it grow with its
+     page, or a flush page is cut at the bottom. */
+  .panel { flex: 1 0 auto; margin: 0 8px 8px; padding: 24px 16px; }
   .headline { font-size: 26px; }
 }

@@ -16,6 +16,7 @@ use crate::pipeline::run::{
 };
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -195,8 +196,51 @@ pub struct Real<'a> {
     pub act: &'a mut Acts<'a>,
 }
 
+/// What a run did, block by block: as text for the terminal and the
+/// heartbeat, as data for the app.
+#[derive(Debug, Serialize)]
+pub struct Report {
+    pub title: String,
+    pub blocks: Vec<BlockReport>,
+    /// What its model calls cost, in words.
+    pub cost: String,
+    pub secs: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlockReport {
+    pub id: String,
+    pub items_in: usize,
+    pub items_out: usize,
+    pub secs: f64,
+    /// What it did, one line each: what it kept, would ask or would do.
+    pub lines: Vec<String>,
+    /// What went wrong or was left out.
+    pub notes: Vec<String>,
+}
+
+impl std::fmt::Display for Report {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        writeln!(f, "{}", self.title)?;
+        for b in &self.blocks {
+            writeln!(
+                f,
+                "{}: {} in, {} out, {:.1}s",
+                b.id, b.items_in, b.items_out, b.secs
+            )?;
+            for line in &b.lines {
+                writeln!(f, "  {line}")?;
+            }
+            for note in &b.notes {
+                writeln!(f, "  note: {note}")?;
+            }
+        }
+        write!(f, "Total: {}, {:.1}s", self.cost, self.secs)
+    }
+}
+
 /// Run `graph` (named `name`) dry: its report, block by block.
-pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Result<String> {
+pub fn dry_run(name: &str, graph: &Graph, dry: Dry, now: DateTime<Utc>) -> Result<Report> {
     run(name, graph, dry, None, Start::Trigger, now)
 }
 
@@ -209,7 +253,7 @@ pub fn run(
     mut real: Option<Real>,
     start: Start,
     now: DateTime<Utc>,
-) -> Result<String> {
+) -> Result<Report> {
     let mut inbox: Vec<Vec<Item>> = vec![Vec::new(); graph.blocks.len()];
     match start {
         Start::Trigger => inbox[0].push(Item::new()),
@@ -227,12 +271,13 @@ pub fn run(
             }
         }
     }
-    let mut report = vec![match &real {
+    let title = match &real {
         None => format!(
             "Dry run of {name}: reads and AI blocks run, approvals are taken as given, acts are only prepared."
         ),
         Some(r) => format!("Run {} of {name}.", r.run),
-    }];
+    };
+    let mut blocks = Vec::new();
     let started = Instant::now();
     let mut total = Judged::default();
     for i in order(graph)? {
@@ -251,7 +296,7 @@ pub fn run(
                 // The graph check let only `records: week` through.
                 let week = super::week::read(dry.root, dry.store, now)?;
                 lines.push(format!(
-                    "  the week {} from the business's records",
+                    "the week {} from the business's records",
                     field_text(&week, "week")
                 ));
                 (vec![week], Vec::new())
@@ -302,7 +347,7 @@ pub fn run(
                     let cut = max.map_or(0, |m| read.len().saturating_sub(m));
                     read.truncate(read.len() - cut);
                     lines.push(format!(
-                        "  {read_count} read, {old} too old, {repeated} already seen or repeated, {cut} past the max: {} kept",
+                        "{read_count} read, {old} too old, {repeated} already seen or repeated, {cut} past the max: {} kept",
                         read.len()
                     ));
                     (read, Vec::new())
@@ -337,13 +382,13 @@ pub fn run(
                         .map(|f| format!("{f}: {}", field_text(it, &format!("answer.{f}"))))
                         .collect();
                     lines.push(format!(
-                        "  kept: {} ({})",
+                        "kept: {} ({})",
                         field_text(it, "title"),
                         values.join(", ")
                     ));
                 }
                 lines.push(format!(
-                    "  set aside: {} not {}, {} invalid, {} by distinct {}, {} past the limit",
+                    "set aside: {} not {}, {} invalid, {} by distinct {}, {} past the limit",
                     stats.not_kept,
                     keep.as_deref().unwrap_or("kept"),
                     stats.invalid,
@@ -373,7 +418,7 @@ pub fn run(
                         String::new()
                     };
                     match &real {
-                        None => lines.push(format!("  would ask the founder: {shown}{cut}")),
+                        None => lines.push(format!("would ask the founder: {shown}{cut}")),
                         Some(r) => {
                             let id = dry
                                 .store
@@ -397,7 +442,7 @@ pub fn run(
                                         .to_string(),
                                 model_call: it.get("model_call").and_then(Value::as_i64),
                             })?;
-                            lines.push(format!("  asked the founder (item {id}): {shown}{cut}"));
+                            lines.push(format!("asked the founder (item {id}): {shown}{cut}"));
                         }
                     }
                 }
@@ -425,7 +470,7 @@ pub fn run(
                         None => {
                             let what = describe(action, &values, dry.integrations)
                                 .unwrap_or_else(|e| format!("refused: {e:#}"));
-                            lines.push(format!("  would {action} [{key}]: {what}"));
+                            lines.push(format!("would {action} [{key}]: {what}"));
                         }
                         Some(r) => match (r.act)(
                             action,
@@ -434,7 +479,7 @@ pub fn run(
                             it.get(APPROVED) == Some(&Value::Bool(true)),
                         ) {
                             Ok(what) => {
-                                lines.push(format!("  {action} [{key}]: {what}"));
+                                lines.push(format!("{action} [{key}]: {what}"));
                                 it.insert("result".into(), what.into());
                             }
                             Err(e) => {
@@ -448,12 +493,6 @@ pub fn run(
                 (done, Vec::new())
             }
         };
-        report.push(format!(
-            "{}: {count} in, {} out, {:.1}s",
-            block.id,
-            pass.len() + other.len(),
-            block_started.elapsed().as_secs_f64()
-        ));
         if let Some(r) = &real {
             // Each block's execution, for the founder to follow the run step
             // by step (decision 49).
@@ -474,8 +513,14 @@ pub fn run(
                 error: (acts_failed > 0).then(|| notes.join("\n")),
             })?;
         }
-        report.extend(lines);
-        report.extend(notes.iter().map(|n| format!("  note: {n}")));
+        blocks.push(BlockReport {
+            id: block.id.clone(),
+            items_in: count,
+            items_out: pass.len() + other.len(),
+            secs: block_started.elapsed().as_secs_f64(),
+            lines,
+            notes,
+        });
         let next = successors(graph, i)?;
         match (&block.kind, next.as_slice()) {
             (Kind::Condition { .. }, [then, otherwise]) => {
@@ -490,12 +535,12 @@ pub fn run(
             }
         }
     }
-    report.push(format!(
-        "Total: {}, {:.1}s",
-        cost(&total).trim(),
-        started.elapsed().as_secs_f64()
-    ));
-    Ok(report.join("\n"))
+    Ok(Report {
+        title,
+        blocks,
+        cost: cost(&total),
+        secs: started.elapsed().as_secs_f64(),
+    })
 }
 
 /// Characters of an approval's text shown in a report.
@@ -508,7 +553,7 @@ fn cost(stats: &Judged) -> String {
         n => format!(" (+{n} call(s) to a model without a known price)"),
     };
     format!(
-        "  cost: ${:.4}{unpriced}, {} tokens in, {} out",
+        "cost: ${:.4}{unpriced}, {} tokens in, {} out",
         stats.cost_usd, stats.input_tokens, stats.output_tokens
     )
 }
