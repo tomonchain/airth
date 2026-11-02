@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 59. A report is an item of Needs you, one per run and block, sent to Telegram
 
-**Proposed.**
+**Accepted.**
 
 Today `airth.report` puts a notification in the current interface's inbox, one per item: the daily watch's ten kept items make ten notifications, and none of them reaches Needs you or Telegram. Milestone 4 wants the weekly report "through Telegram and Needs you".
 
@@ -20,14 +20,14 @@ Today `airth.report` puts a notification in the current interface's inbox, one p
 
 ## 58. The quality check is an AI block whose answer can flag the item; no seventh block
 
-**Proposed.**
+**Accepted**, with the founder's amendment: an edit that lifts a blocking flag is logged like an override.
 
 Decision 53 defines the quality flag (a mark set on an item of the queue by a check step of its routine, with a reason; a blocking flag prevents Approve until the item is edited or the founder overrides it) and leaves the check step to milestone 4. It does not need a block of its own:
 
 - **The check is an AI block.** It has a prompt (`prompts/check.md`, written for the business: its red lines, its tone, its facts) and a schema whose answer says `flag` (`none`, `note` or `blocking`) and `reason`. Like any AI block it holds no tool, and its call is journaled with its prompt version. What code can check exactly (a length, a forbidden word) stays in the drafting block's schema (`maxLength`, `pattern`), where an invalid answer is already refused.
 - **An AI block names where its answer goes.** Today each AI block writes `answer`, so a check after the draft would replace `answer.draft`. A new optional field, `"as": "check"`, writes the answer under `check` instead; without it, `answer` as today.
 - **The approval carries the flag.** The approval block gains an optional `"flag": "check"`, the field holding the check's answer. The item goes to the queue with that flag and its reason; `none` or no field is no flag. A check that failed (its answer invalid, the model down) flags the item `note` with that reason: the founder sees the draft was not checked, and is not blocked by an outage.
-- **Blocking, edit, override** (decision 53): a `blocking` item cannot be approved; editing it lifts the block, since the text is then the founder's; **Override** approves it as it is, only from the founder's channels (the app and Telegram), logged with who, when and the channel. A `note` is shown and blocks nothing. No agent, routine or tool can set, lift or override a flag: the flag comes only from the approval block, through the access layer.
+- **Blocking, edit, override** (decision 53): a `blocking` item cannot be approved; editing it lifts the block, since the text is then the founder's; **Override** approves it as it is, only from the founder's channels (the app and Telegram), logged with who, when and the channel. An edit that lifts a block is logged the same way, as "lifted by edit", so the journal shows every blocked item that went out anyway. A `note` is shown and blocks nothing. No agent, routine or tool can set, lift or override a flag: the flag comes only from the approval block, through the access layer.
 - **The graph check** refuses a `flag` that no AI block `as` on the way names, like any field.
 
 *Why:* `CLAUDE.md` adds a block only for a real routine that needs it, and this one does not: judging a draft is an AI block's work (a prompt, a schema, no tool), and acting on the judgment is the approval's. Keeping the flag on the approval also keeps it where only the founder answers. `as` is the smallest change that lets two AI blocks follow each other without the second erasing the first.
