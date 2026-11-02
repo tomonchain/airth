@@ -8,14 +8,14 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 An item whose answer does not fit its schema is asked once more, then dropped, and the run's report names it with why. But a real run's report stays in its journal row: nothing tells the founder that two posts came this morning instead of three. The founder asked that a dropped item reach them, without making it an incident.
 
-- **The run remembers what it dropped.** Each item dropped in a run is recorded with the run: the block, the item's title and the reason (for example `answer.draft has 300 characters, more than 280`). Its journal row (`pipeline_runs`) gains a `dropped` column, a JSON list written with its heartbeat.
+- **The run remembers what it dropped.** Each item dropped in a run is recorded with the run: the block, the item's title and the reason (for example `answer.draft has 300 characters, more than 280`). The block's record of the run (`routine_blocks`) gains a `dropped` column, a JSON list: every run has those records, manual ones included, whereas only scheduled runs leave a heartbeat.
 - **A note on the items that remain.** Every approval item the same run puts in the queue carries one line written by code, never by a model: `2 of 3 drafts: "Hack" dropped (answer.draft has 300 characters, more than 280)`. The queue gains a `note` column. Needs you shows the note under the title, and Telegram as one line above the buttons.
 - **Nothing left to approve.** When the run drops every item, no item can carry the note. The run then puts one report item in Needs you and on Telegram (decision 59, answered by Seen), with the same line, so an empty day is never silent. It is not an incident: nothing demotes, and nothing failed in Airth.
 - **The weekly report** counts dropped items per routine, and lists each reason once with how many times it came.
 
 *Why:* a missing post is work the founder expected and did not get. They should know it where they already look (Needs you and Telegram) and in the week's figures, without an incident for what is a model's miss, not an outage. Code writes the note, so its count and reason are exact.
 
-*Cost:* two migrations' worth of columns: `queue.note` and `pipeline_runs.dropped`. The queue's is in the access layer (security code). A report item appears on the days when everything is dropped. Telegram shows the note's text, which comes from the item's title, so it follows decision 52's limits like the rest of the item.
+*Cost:* two columns, in one migration: `queue.note` and `routine_blocks.dropped`. The queue's is in the access layer (security code). A report item appears on the days when everything is dropped. Telegram shows the note's text, which comes from the item's title, so it follows decision 52's limits like the rest of the item.
 
 ## 60. An AI block can judge its whole list in one call, and can use the realm's fast model
 
