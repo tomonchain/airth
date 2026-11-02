@@ -1,0 +1,87 @@
+// The shell: header with the business switcher, the icon rail, the panel.
+
+const next = {
+  realms: [],
+  realm: null, // the business open now
+  route: { page: "hq" },
+  menuOpen: false,
+  unauthorized: !token,
+};
+
+// The pages of a business, in the rail's order; Workshop and Settings are
+// pinned at the bottom.
+const PAGES = [
+  { id: "needs-you", title: "Needs you", icon: "needs" },
+  { id: "team", title: "Team", icon: "team" },
+  { id: "routines", title: "Routines", icon: "routines" },
+  { id: "tasks", title: "Tasks", icon: "tasks" },
+  { id: "calendar", title: "Calendar", icon: "calendar" },
+  { id: "business", title: "Business", icon: "business" },
+];
+const PINNED = [
+  { id: "workshop", title: "Workshop", icon: "workshop" },
+  { id: "settings", title: "Settings", icon: "settings" },
+];
+
+function parseRoute() {
+  const m = location.hash.match(/^#\/b\/([^/]+)\/([a-z-]+)/);
+  if (m) return { page: m[2], realm: decodeURIComponent(m[1]) };
+  const p = location.hash.match(/^#\/(workshop|settings)/);
+  if (p) return { page: p[1] };
+  return { page: "hq" };
+}
+
+const pageHash = (page, realm = next.realm) =>
+  PINNED.some((p) => p.id === page) || page === "hq" || !realm ? `#/${page}` : `#/b/${enc(realm)}/${page}`;
+
+function renderTop() {
+  const top = $("#top");
+  const inBusiness = next.route.page !== "hq" && next.realm;
+  const page = [...PAGES, ...PINNED].find((p) => p.id === next.route.page);
+  const switcher = h("button", { class: "switcher", type: "button", "aria-haspopup": "true", "aria-expanded": next.menuOpen ? "true" : "false",
+      onclick: (e) => { e.stopPropagation(); next.menuOpen = !next.menuOpen; renderTop(); } },
+    h("span", { class: "mark", "aria-hidden": "true" }, inBusiness ? initial(next.realm) : "A"),
+    inBusiness ? next.realm : "Airth HQ",
+    h("span", { class: "glyph dim", svg: icon("updown", 14, 2) }));
+  const menu = next.menuOpen && h("div", { class: "menu", role: "menu" },
+    h("div", { class: "label" }, "Switch to"),
+    h("a", { href: "#/hq", role: "menuitem", "aria-current": next.route.page === "hq" ? "page" : null }, h("span", { class: "mark", "aria-hidden": "true" }, "A"), "Airth HQ"),
+    next.realms.filter((r) => !r.archived).map((r) =>
+      h("a", { href: pageHash("needs-you", r.name), role: "menuitem", "aria-current": inBusiness && r.name === next.realm ? "page" : null },
+        h("span", { class: "mark", "aria-hidden": "true" }, initial(r.name)), r.name)));
+  top.replaceChildren(
+    h("div", { class: "top-left" },
+      h("div", { class: "anchor" }, switcher, menu),
+      h("span", { class: "where" }, inBusiness ? (page ? page.title : "") : "All businesses")),
+    next.route.page === "hq"
+      ? h("a", { class: "primary", href: "/#/realms/new" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
+      : h("a", { class: "where back", href: "/" }, "Current interface"));
+}
+
+function renderRail() {
+  const link = (p) => {
+    const current = next.route.page === p.id;
+    const disabled = !next.realm && PAGES.includes(p);
+    return h("a", { href: disabled ? "#/hq" : pageHash(p.id), "aria-label": p.title, title: p.title,
+        "aria-current": current ? "page" : null, svg: icon(p.icon) });
+  };
+  $("#rail").replaceChildren(
+    h("a", { href: "#/hq", "aria-label": "HQ", title: "HQ", "aria-current": next.route.page === "hq" ? "page" : null, svg: icon("hq") }),
+    PAGES.map(link),
+    h("div", { class: "gap" }),
+    PINNED.map(link));
+}
+
+function renderAll() {
+  renderTop();
+  renderRail();
+  renderPanel();
+}
+
+async function onRoute() {
+  next.route = parseRoute();
+  next.menuOpen = false;
+  if (next.route.realm) next.realm = next.route.realm;
+  try { if (next.realm) localStorage.setItem("airth-next-realm", next.realm); } catch {}
+  renderAll();
+}

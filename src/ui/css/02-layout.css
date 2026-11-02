@@ -527,4 +527,5 @@ pre.out {
 kbd { font-size: 10.5px; padding: 0 5px; border-radius: 5px; border: 1px solid currentColor; opacity: .6; line-height: 1.5; }
 
 .task-ask .composer textarea { min-height: 64px; }
-
+.side-next { display: block; padding: 6px 10px; font-size: 13px; color: var(--muted); text-decoration: none; }
+.side-next:hover { text-decoration: underline; }
