@@ -1,7 +1,8 @@
 //! Checking a model's answer against the JSON schema its pipeline declares.
 //! A small subset of JSON Schema, enough to describe an answer: `type`,
-//! `properties`, `required`, `items` and `enum`. An answer that does not
-//! fit is rejected, never repaired.
+//! `properties`, `required`, `items`, `enum`, `minimum`, `maximum`,
+//! `minLength` and `maxLength`. An answer that does not fit is rejected,
+//! never repaired.
 
 use serde_json::Value;
 
@@ -30,6 +31,32 @@ fn at(schema: &Value, value: &Value, path: &str) -> Option<String> {
         && !allowed.contains(value)
     {
         return Some(format!("{path} is {value}, not one of {}", schema["enum"]));
+    }
+    if let Some(n) = value.as_f64() {
+        if let Some(min) = schema["minimum"].as_f64()
+            && n < min
+        {
+            return Some(format!("{path} is {value}, below the minimum {min}"));
+        }
+        if let Some(max) = schema["maximum"].as_f64()
+            && n > max
+        {
+            return Some(format!("{path} is {value}, above the maximum {max}"));
+        }
+    }
+    if let Some(text) = value.as_str() {
+        // Characters, as the founder counts them, not bytes.
+        let length = text.chars().count() as u64;
+        if let Some(min) = schema["minLength"].as_u64()
+            && length < min
+        {
+            return Some(format!("{path} has {length} characters, fewer than {min}"));
+        }
+        if let Some(max) = schema["maxLength"].as_u64()
+            && length > max
+        {
+            return Some(format!("{path} has {length} characters, more than {max}"));
+        }
     }
     if let Some(object) = value.as_object() {
         for key in schema["required"].as_array().into_iter().flatten() {
@@ -73,7 +100,8 @@ mod tests {
             "properties": {
                 "relevant": {"type": "boolean"},
                 "pillar": {"type": "string", "enum": ["flows", "yields"]},
-                "score": {"type": "integer"},
+                "score": {"type": "integer", "minimum": 1, "maximum": 5},
+                "story": {"type": "string", "minLength": 2, "maxLength": 5},
                 "tags": {"type": "array", "items": {"type": "string"}}
             }
         })
@@ -99,6 +127,30 @@ mod tests {
         assert!(
             why(json!({"relevant": true, "pillar": "flows", "score": 2.5})).contains("integer")
         );
+        let flows = |field: &str, v: Value| {
+            let mut answer = json!({"relevant": true, "pillar": "flows"});
+            answer[field] = v;
+            mismatch(&schema(), &answer)
+        };
+        assert!(
+            flows("score", json!(0))
+                .unwrap()
+                .contains("below the minimum 1")
+        );
+        assert!(
+            flows("score", json!(6))
+                .unwrap()
+                .contains("above the maximum 5")
+        );
+        assert_eq!(flows("score", json!(5)), None);
+        assert!(flows("story", json!("a")).unwrap().contains("fewer than 2"));
+        assert!(
+            flows("story", json!("abcdef"))
+                .unwrap()
+                .contains("more than 5")
+        );
+        // Characters, not bytes: five accented letters fit.
+        assert_eq!(flows("story", json!("ééééé")), None);
         assert!(
             why(json!({"relevant": true, "pillar": "flows", "tags": ["a", 2]}))
                 .contains("answer.tags[1]")
