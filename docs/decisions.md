@@ -4,12 +4,12 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 60. An AI block can judge its whole list in one call, and can use the realm's fast model
 
-**Proposed.**
+**Accepted**, with the founder's amendments: an invalid list answer is retried once, then the run fails as an incident; a missing fast connection falls back to the main model with a note; the cross-item risk is accepted.
 
 Today an AI block calls the model once per item. Daily-posts' sort (`pick`) made 51 calls and took nine minutes, and since no call sees the others, two items about the same event got two different story names and both went through `distinct`. Every AI block also uses the realm's main model, so a sort pays the price of a draft.
 
 - **A list mode, not a new block.** An AI block gains an optional `"over": "list"`. The model then gets every item in one call, each with a number, and answers `{"items": [{"n": 1, …}, …]}`: one entry per item it keeps, each checked against the block's schema, which still describes one item's answer. An item the answer leaves out is not kept. Without `over`, one call per item, as today.
-- **What the answer may do.** It may only keep, annotate and order the items it was given: an `n` that is not one of them, or that comes twice, makes the whole answer invalid. An invalid answer is recorded and refused, never repaired: the block keeps nothing, and the run's report says why. The filters (`keep`, `rank`, `distinct`, `limit`) then apply as today, so `distinct` stays a check in code behind the model's grouping.
+- **What the answer may do.** It may only keep, annotate and order the items it was given: an `n` that is not one of them, or that comes twice, makes the whole answer invalid. An invalid answer is recorded and refused, never repaired, and asked once more (a model call has no side effect). If the second answer is invalid too, the block fails and so does the run: a scheduled run's failure is an incident in Needs you and on Telegram, naming the block, so an empty day is never silent. The filters (`keep`, `rank`, `distinct`, `limit`) then apply as today, so `distinct` stays a check in code behind the model's grouping.
 - **Bounds.** A list call takes at most 200 items; the rest are set aside with a note. A checking block (`as`, decision 58) stays one call per item, so one draft's check cannot touch another's.
 - **The model.** An AI block gains an optional `"model": "fast"`: the realm's fast connection, which already exists for chats. Without it, the main model. A realm with no fast connection uses its main model, and the report says so. A block names a tier, never a provider or a key: models and their secrets stay the realm's settings.
 
@@ -17,7 +17,7 @@ For daily-posts: `pick` becomes `"over": "list", "model": "fast"`, and its promp
 
 *Why:* grouping by story is a judgment across items, which one call per item cannot make; asking the model for each item's story and comparing names afterwards relies on it naming one event the same way twice, and it did not. One call is also one latency instead of fifty. A list mode keeps the six blocks (a sort is still an AI block: a prompt, a schema, no tool) and keeps the per-item schema the founder writes. The tier, rather than a model name, keeps the graph file free of anything secret or provider-specific.
 
-*Cost:* items in one call can sway each other: a feed's text addressed to the model could push its own item up or others down. The sort only leads to an approval (the graph rule is unchanged), so the founder still sees every draft, but a list block must not feed an `Act` directly unless its action's level allows it, as for any outside data. One bad answer loses the whole day's sort instead of one item. A sort prompt written for one item must be rewritten for a list. The journal records one call for the list; the report's per-item counts come from the answer.
+*Cost:* items in one call can sway each other: a feed's text addressed to the model could push its own item up or others down. The sort only leads to an approval (the graph rule is unchanged), so the founder still sees every draft, but a list block must not feed an `Act` directly unless its action's level allows it, as for any outside data. Two bad answers in a row lose the whole day's sort instead of one item, and say so as an incident. The founder accepts the cross-item risk: the sort holds no tool, the check runs per item, and every post is approved by hand. A sort prompt written for one item must be rewritten for a list. The journal records one call for the list; the report's per-item counts come from the answer.
 
 ## 59. A report is an item of Needs you, one per run and block, sent to Telegram
 
