@@ -327,6 +327,24 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
             &[],
         )
         .unwrap();
+    // That run's draft block dropped one item (decision 61).
+    store
+        .record_block(&BlockRun {
+            routine: "daily-posts",
+            run: "r1",
+            block: "draft",
+            started_at: due + chrono::Duration::hours(3),
+            outcome: "ok",
+            items_in: 3,
+            items_out: 2,
+            cost_usd: None,
+            error: None,
+            dropped: Some(
+                json!([{"item": "Hack", "reason": "answer.draft has 300 characters, more than 280"}])
+                    .to_string(),
+            ),
+        })
+        .unwrap();
     let (mut fetch, mut ask) = (
         |_: &str| -> Result<crate::pipeline::run::Fetched> {
             panic!("a business read fetches nothing")
@@ -366,8 +384,9 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
         "Your time: 45 min (baseline: 5 h 00 a week, so this week took 15% of it)",
         "Your answers: 0 approved, 0 edited, 0 rejected",
         "Model cost: $0.00 for 0 model call(s)",
-        "- daily-posts: 1 run(s), 0 failed, 1 late, $0.00, 0 s of yours",
+        "- daily-posts: 1 run(s), 0 failed, 1 late, 1 dropped, $0.00, 0 s of yours",
         "Started late: 1\n      - daily-posts: due Mon 2 Nov 07:30 UTC, started 3 h 00 later",
+        "Dropped: 1\n      - daily-posts: answer.draft has 300 characters, more than 280 (1×)",
     ] {
         assert!(first.contains(line), "{line}\n{first}");
     }
