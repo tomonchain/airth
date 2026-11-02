@@ -246,10 +246,11 @@ impl<'a> Agent<'a> {
     ) -> Result<Vec<ContentBlock>> {
         let mut results = Vec::new();
         for (id, name, input) in tool_calls {
-            if self.cancel.is_cancelled() {
+            if self.cancel.is_cancelled() || self.runtime.stopped().is_some() {
+                let why = self.runtime.stopped().unwrap_or(STOPPED_TOOL_RESULT);
                 results.push(ContentBlock::ToolResult {
                     tool_use_id: id,
-                    content: STOPPED_TOOL_RESULT.into(),
+                    content: why.into(),
                     is_error: true,
                 });
                 continue;
@@ -396,6 +397,11 @@ impl<'a> Agent<'a> {
                     state.status = Status::Completed;
                     state.report = Some(final_text);
                 }
+            }
+            // A call that waits for the founder ended the run (decision 56).
+            if let Some(why) = self.runtime.stopped() {
+                state.status = Status::Stopped;
+                state.report = Some(why.to_string());
             }
             self.checkpoint(state)?;
             if state.status == Status::Running

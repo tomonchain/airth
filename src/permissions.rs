@@ -202,12 +202,19 @@ pub enum Answer {
 
 pub trait Approver: Send {
     fn ask(&mut self, request: &PermissionRequest) -> Result<Answer>;
+    /// Whether the founder is watching the run now, to be asked inline
+    /// (decision 56). In doubt, nobody is.
+    fn watched(&self) -> bool {
+        false
+    }
 }
 
 pub struct PermissionGate {
     policy: Policy,
     approver: Box<dyn Approver>,
     grants: Vec<Grant>,
+    /// Once nobody watches the run, nobody does for the rest of it.
+    detached: bool,
 }
 
 impl PermissionGate {
@@ -216,7 +223,27 @@ impl PermissionGate {
             policy,
             approver,
             grants: Vec::new(),
+            detached: false,
         }
+    }
+
+    /// Whether the founder watches the run now and has since it started.
+    pub fn watched(&mut self) -> bool {
+        self.detached = self.detached || !self.approver.watched();
+        !self.detached
+    }
+
+    /// Ask the founder about this very call (decision 56): neither the
+    /// policy's "allow" nor a grant answers for them, and a yes covers this
+    /// call only. A capability the policy denies stays denied.
+    pub fn check_explicit(&mut self, request: &PermissionRequest) -> Result<Verdict> {
+        if self.policy.rule(request.capability) == Rule::Deny {
+            return self.check(request);
+        }
+        Ok(match self.approver.ask(request)? {
+            Answer::Yes | Answer::YesForRun => Verdict::Approved,
+            Answer::No(reason) => Verdict::Denied(reason),
+        })
     }
 
     /// Start with the grants a run already holds (when it is resumed).
@@ -286,6 +313,12 @@ pub fn is_permission_critical(path: &str) -> bool {
 pub struct TerminalApprover;
 
 impl Approver for TerminalApprover {
+    /// Someone at the terminal; not a script or a scheduler with no input.
+    fn watched(&self) -> bool {
+        use std::io::IsTerminal;
+        std::io::stdin().is_terminal()
+    }
+
     fn ask(&mut self, request: &PermissionRequest) -> Result<Answer> {
         let mut err = std::io::stderr().lock();
         writeln!(err)?;

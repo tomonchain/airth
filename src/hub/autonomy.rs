@@ -82,6 +82,68 @@ impl BusinessAuthority {
     }
 }
 
+/// A run the founder started (a chat, an order): the levels do not apply
+/// and the realm's policy does, except that an action that commits is the
+/// founder's own call, each time (decision 56).
+pub struct FounderAuthority {
+    realm: Realm,
+    run: String,
+    declared: Vec<Declared>,
+}
+
+impl FounderAuthority {
+    pub fn for_run(realm: &Realm, state: &State) -> Result<Self> {
+        let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+        Ok(Self {
+            realm: realm.clone(),
+            run: state.id.clone(),
+            declared: crate::actions::all(&realm.config.integrations, &servers),
+        })
+    }
+}
+
+impl Authority for FounderAuthority {
+    fn decide(
+        &mut self,
+        tool: &str,
+        action: &str,
+        arguments: &Value,
+        _call: &str,
+        watched: bool,
+    ) -> Result<Decision> {
+        // What nobody declared commits.
+        let commits = self
+            .declared
+            .iter()
+            .find(|d| d.id == action)
+            .is_none_or(|d| d.class == crate::actions::Class::Commits);
+        if !commits {
+            return Ok(Decision::Policy);
+        }
+        if watched {
+            return Ok(Decision::AskFounder);
+        }
+        let item = Store::of(&self.realm)?.propose(&NewItem {
+            kind: "approval",
+            title: &format!("{action}, from a task you started"),
+            agent: None,
+            routine: None,
+            run: Some(&self.run),
+            action: Some(action),
+            args: &arguments.to_string(),
+            execute_at: None,
+            // Done as proposed, once, on approval (Hub::answer_item).
+            source: &serde_json::json!({"tool": tool}).to_string(),
+            model_call: None,
+        })?;
+        Ok(Decision::Stop(format!(
+            "not done: {action} commits the business and nobody is watching this run, so it waits for the founder's approval in Needs you (item {item}), and is done once if approved. The run stops here."
+        )))
+    }
+
+    fn finish(&mut self, _: i64, _: Option<&str>) {}
+}
+
 impl Authority for BusinessAuthority {
     fn decide(
         &mut self,
@@ -89,6 +151,7 @@ impl Authority for BusinessAuthority {
         action: &str,
         arguments: &Value,
         call: &str,
+        _watched: bool,
     ) -> Result<Decision> {
         // Not declared at all: it commits.
         let (ceiling, start) = self

@@ -17,19 +17,22 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 56. An action that commits always needs the founder's explicit approval, whoever started the run
 
-**Proposed.**
+**Accepted**, with the founder's precisions (watching, detaching, Telegram).
 
-Decision 45's levels apply to the runs Airth starts (routines, their missions). A run the founder starts (a chat, an order) follows the realm's permission policy instead, as before. A realm whose policy allows the network without asking (Hedgen's does) lets such a run send a request that commits the business without asking anyone. So:
+Decision 45's levels apply to the runs Airth starts (routines, their missions). A run the founder starts (a chat, an order) follows the realm's permission policy instead, as before. A realm whose policy allows the network without asking (Hedgen's does) let such a run send a request that commits the business without asking anyone. So:
 
-- **An action of the commits class**, declared so or undeclared (decision 45: what nobody declared commits), **always needs the founder's explicit approval, for that very call**, whoever started the run and whatever the realm's policy says. No "yes for the rest of the run" and no standing grant covers it.
+- **An action of the commits class**, declared so or undeclared (decision 45: what nobody declared commits), **always needs the founder's explicit approval, for that very call**, whoever started the run and whatever the realm's policy says. Neither "yes for the rest of the run" nor a policy's "allow" covers it. A capability the policy denies stays denied.
 - **Where it is asked:**
-  - in a run the founder is watching (a chat open in the app, a run in the terminal), it is asked inline, as a permission is today;
-  - in a run nobody is watching (an order from the command bar, a run whose window was closed, anything started and left), it goes to Needs you and Telegram as an approval item. The run ends there, as a level 1 proposal in a mission does, and the action is done once on approval (decision 45).
+  - in a run the founder is watching (a chat open in the app, a run at a terminal), it is asked inline, as a permission is today, marked as covering this call only;
+  - in a run nobody is watching (an order from the command bar, a run whose window was closed, a run left alone, a terminal with no one at it, or any doubt), it goes to Needs you and Telegram as an approval item, the run stops there, and the action is done once on approval (decision 45). Telegram answers the queue; it never counts as watching a run.
+- **Detaching is final.** Once nobody watches a run, every later action of that run is unwatched, even if someone comes back.
 - **Read and reversible actions** keep following the realm's permission policy in runs the founder starts, as today.
+
+How: a run the founder starts gets an authority of its own, next to the one that applies the levels (`hub/autonomy.rs`). It answers "the policy decides" for read and reversible actions; for a commit it asks the founder if the approver says they watch, otherwise it queues the call and stops the run. The approver says whether the founder watches (`Approver::watched`, no by default); the permission gate remembers when they stopped.
 
 *Why:* the command bar (milestone 5) starts runs the founder does not watch live. Such a run reads outside content (a page, a post, a mail at milestone 7), and an instruction hidden in that content must not be able to make it commit the business. The levels already guarantee this for routines (commits never above level 1); a run the founder starts must not be the way around them.
 
-*Cost:* a chat that pays, signs or publishes something committing now always stops to ask, even in a realm that allows everything. Airth must know whether someone is watching a run: the app and the terminal must say when they are attached, and a run started from the command bar counts as not watched. An unwatched run ends at its first committing action, so its report must say what is pending. The runtime's permission path changes (security code).
+*Cost:* a chat that pays, signs or publishes something committing now always stops to ask, even in a realm that allows everything; so does any call through an integration that declares no actions, since what nobody declared commits. Airth must know whether someone is watching a run: the app and the terminal say when they are attached, and a run started from the command bar counts as not watched. An unwatched run ends at its first committing action; its report says what is pending. A call approved from the queue is done by Airth only for HTTP actions; an MCP tool's call is approved, then done by the founder, as for missions. The old pipelines (decision 30) are not covered: they are being replaced by routines, which apply the levels. The runtime's permission path changed (security code).
 
 ## 55. A failed action is retried only when a retry cannot do it twice
 
