@@ -197,6 +197,25 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
         store().model_calls().unwrap()[0].outcome.as_deref(),
         Some("edited")
     );
+    // Each block's execution, in order, for the founder to follow the run:
+    // waiting at the approval, then the act once the founder answered.
+    let run = waiting[0].run.clone().unwrap();
+    let blocks: Vec<(String, String, i64, i64)> = store()
+        .run_blocks("posts", &run)
+        .unwrap()
+        .into_iter()
+        .map(|b| (b.block, b.outcome, b.items_in, b.items_out))
+        .collect();
+    let row = |b: &str, o: &str, i, out| (b.to_string(), o.to_string(), i, out);
+    assert_eq!(
+        blocks,
+        vec![
+            row("news", "ok", 1, 1),
+            row("draft", "ok", 1, 1),
+            row("ok", "waiting", 1, 0),
+            row("send", "ok", 1, 1)
+        ]
+    );
     // The link is remembered: the next run does not draft it again.
     assert_eq!(
         store()

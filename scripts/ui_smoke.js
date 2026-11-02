@@ -344,6 +344,10 @@ function smokeNext() {
     { id: 3, kind: "delayed", title: "writer: blog.draft", agent: "writer", routine: null, run: null, action: "blog.draft", created_at: null, execute_at: now, status: "pending", revision: 1, text: "{}", editable: false, source: { title: null, link: null } },
     { id: 4, kind: "prepared", title: "reply", agent: "writer", routine: null, run: null, action: "x.reply", created_at: now, execute_at: null, status: "pending", revision: 1, text: "Hi", editable: false, source: { title: null, link: null } }])},
     agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
+  vm.runInContext(`needs.runs = { 1: { routine: "daily-posts", run: "r1", blocks: [
+    { block: "news", started_at: "${now}", finished_at: null, outcome: "ok", items_in: 1, items_out: 1, cost_usd: null, error: null },
+    { block: "ok", started_at: "${now}", finished_at: "${now}", outcome: "waiting", items_in: 1, items_out: 0, cost_usd: 0.004, error: null },
+    { block: "send", started_at: "${now}", finished_at: "${now}", outcome: "failed", items_in: 1, items_out: 1, cost_usd: null, error: "x" }] } };`, ctx);
   show("needs you", { route: { page: "needs-you", realm: "acme" } });
   vm.runInContext(`needs.agent = "writer"; needs.rejecting = 3;`, ctx);
   show("needs you, cancelling a delayed action", { route: { page: "needs-you", realm: "acme" } });
