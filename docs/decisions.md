@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 56. An action that commits always needs the founder's explicit approval, whoever started the run
+
+**Proposed.**
+
+Decision 45's levels apply to the runs Airth starts (routines, their missions). A run the founder starts (a chat, an order) follows the realm's permission policy instead, as before. A realm whose policy allows the network without asking (Hedgen's does) lets such a run send a request that commits the business without asking anyone. So:
+
+- **An action of the commits class**, declared so or undeclared (decision 45: what nobody declared commits), **always needs the founder's explicit approval, for that very call**, whoever started the run and whatever the realm's policy says. No "yes for the rest of the run" and no standing grant covers it.
+- **Where it is asked:**
+  - in a run the founder is watching (a chat open in the app, a run in the terminal), it is asked inline, as a permission is today;
+  - in a run nobody is watching (an order from the command bar, a run whose window was closed, anything started and left), it goes to Needs you and Telegram as an approval item. The run ends there, as a level 1 proposal in a mission does, and the action is done once on approval (decision 45).
+- **Read and reversible actions** keep following the realm's permission policy in runs the founder starts, as today.
+
+*Why:* the command bar (milestone 5) starts runs the founder does not watch live. Such a run reads outside content (a page, a post, a mail at milestone 7), and an instruction hidden in that content must not be able to make it commit the business. The levels already guarantee this for routines (commits never above level 1); a run the founder starts must not be the way around them.
+
+*Cost:* a chat that pays, signs or publishes something committing now always stops to ask, even in a realm that allows everything. Airth must know whether someone is watching a run: the app and the terminal must say when they are attached, and a run started from the command bar counts as not watched. An unwatched run ends at its first committing action, so its report must say what is pending. The runtime's permission path changes (security code).
+
 ## 55. A failed action is retried only when a retry cannot do it twice
 
 **Accepted**, with the founder's amendments (writes, idempotency keys, demotion).
