@@ -252,6 +252,12 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
         ),
         (
             posts(
+                json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "model": "deepseek-flash"}]),
+            ),
+            "unknown variant",
+        ),
+        (
+            posts(
                 json!([{"id": "a", "type": "act", "action": "airth.report", "fields": {"title": "{{answer.title"}}]),
             ),
             "without closing",

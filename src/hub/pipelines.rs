@@ -75,10 +75,22 @@ impl Hub {
             }
             model.as_ref().expect("set above").complete(request)
         };
+        let mut fast_model = None;
+        let mut fast = |request: &crate::models::ModelRequest| {
+            if fast_model.is_none() {
+                let connections = self.connections_for(realm).context("no model available")?;
+                fast_model = Some(connections.fast);
+            }
+            match fast_model.as_ref().expect("set above") {
+                Some(model) => model.complete(request).map(Some),
+                None => Ok(None),
+            }
+        };
         let mut io = Io {
             fetch: &mut fetch,
             ask: &mut ask,
             prices: crate::prices::Prices::load(self.home()),
+            fast: Some(&mut fast),
         };
         f(&mut store, &mut io)
     }

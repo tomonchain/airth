@@ -71,6 +71,15 @@ fn explicit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Stri
     Option::<String>::deserialize(d).map(Some)
 }
 
+/// Which of the realm's models an AI block asks: a tier, never a provider
+/// or a key, which stay the realm's settings (decision 60).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tier {
+    Main,
+    Fast,
+}
+
 /// How an AI block asks about its items.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +119,9 @@ pub enum Kind {
         /// (decision 60). One call per item when absent.
         #[serde(skip_serializing_if = "Option::is_none")]
         over: Option<Over>,
+        /// `fast`: the realm's fast model; its main one when absent.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<Tier>,
     },
     Condition {
         #[serde(rename = "if")]
@@ -380,6 +392,7 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             limit,
             into,
             over,
+            ..
         } => {
             // A check judges each draft alone: one cannot sway another's.
             if over.is_some() && into.is_some() {
