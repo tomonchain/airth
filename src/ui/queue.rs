@@ -47,7 +47,8 @@ impl App {
                     Some("approve") => Answer::Approve,
                     Some("edit") => Answer::Edit(text),
                     Some("reject") => Answer::Reject(text),
-                    _ => bail!("answer approve, edit or reject"),
+                    Some("override") => Answer::Override,
+                    _ => bail!("answer approve, edit, reject or override"),
                 };
                 let seconds = body["seconds"].as_u64().unwrap_or(0);
                 let (item, report) = self.hub.answer_item(
@@ -130,6 +131,8 @@ fn shown(item: &Item) -> Value {
         "execute_at": item.execute_at,
         "status": item.status,
         "revision": item.revision,
+        "flag": item.flag,
+        "flag_reason": item.flag_reason,
         "text": text,
         "editable": item.source["editable"].is_string(),
         // A call shown as it would be made, not prose.
@@ -179,6 +182,8 @@ mod tests {
             execute_at: None,
             status: "pending".into(),
             revision: 1,
+            flag: None,
+            flag_reason: None,
         }
     }
 

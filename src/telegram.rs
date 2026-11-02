@@ -194,7 +194,15 @@ fn item_text(realm: &str, item: &Item) -> String {
         .as_deref()
         .map(|a| format!(" ({a})"))
         .unwrap_or_default();
-    format!("{realm} · {what}{action}\n{}\n\n{whole}", item.title)
+    let flag = match (item.flag.as_deref(), item.flag_reason.as_deref()) {
+        (Some("blocking"), why) => format!(
+            "\n⛔ Flagged by the check: {}. Edit it, or Override to approve it as it is.",
+            why.unwrap_or("no reason given")
+        ),
+        (Some("note"), why) => format!("\nNote from the check: {}", why.unwrap_or("none")),
+        _ => String::new(),
+    };
+    format!("{realm} · {what}{action}\n{}{flag}\n\n{whole}", item.title)
 }
 
 fn buttons(realm: &str, item: &Item) -> Value {
@@ -204,6 +212,15 @@ fn buttons(realm: &str, item: &Item) -> Value {
         "delayed" => json!([[button("Cancel", "r")]]),
         "incident" | "report" => json!([[button("Seen", "a")]]),
         "prepared" => json!([[button("Done", "a")]]),
+        // Blocked by a check: no plain Approve (decision 58).
+        _ if item.flag.as_deref() == Some("blocking") => {
+            let mut row = vec![button("Override", "o")];
+            if item.source["editable"].is_string() {
+                row.push(button("Edit", "e"));
+            }
+            row.push(button("Reject", "r"));
+            json!([row])
+        }
         _ if item.source["editable"].is_string() => {
             json!([[
                 button("Approve", "a"),
@@ -426,6 +443,7 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
             return Ok(());
         }
         "a" => Answer::Approve,
+        "o" => Answer::Override,
         _ => Answer::Reject("from Telegram".into()),
     };
     let text = match hub.answer_item(

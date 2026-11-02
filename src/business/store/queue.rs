@@ -30,6 +30,10 @@ pub struct Item {
     pub execute_at: Option<String>,
     pub status: String,
     pub revision: i64,
+    /// The quality flag a check set (decision 58): `note`, `blocking`, or,
+    /// once the founder dealt with a blocking one, `lifted` or `overridden`.
+    pub flag: Option<String>,
+    pub flag_reason: Option<String>,
 }
 
 /// What the founder decides.
@@ -38,10 +42,16 @@ pub enum Answer {
     /// A new text for the field the item says may be edited.
     Edit(String),
     Reject(String),
+    /// Approve a blocked item as it is (decision 58).
+    Override,
 }
 
+/// The channels the founder answers from, the only ones that may override
+/// a blocking flag (decision 58).
+pub const FOUNDER_CHANNELS: &[&str] = &["app", "telegram"];
+
 const COLUMNS: &str = "id, created_at, kind, title, agent, routine, run, action, args, \
-    original_args, source, model_call, execute_at, status, revision";
+    original_args, source, model_call, execute_at, status, revision, flag, flag_reason";
 
 fn read(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     let json = |i: usize| -> rusqlite::Result<Value> {
@@ -64,6 +74,8 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<Item> {
         execute_at: r.get(12)?,
         status: r.get(13)?,
         revision: r.get(14)?,
+        flag: r.get(15)?,
+        flag_reason: r.get(16)?,
     })
 }
 
@@ -204,7 +216,8 @@ impl Store {
             let item = get(tx, id)?;
             let done = matches!(
                 (&answer, item.status.as_str()),
-                (Answer::Approve, "approved" | "done") | (Answer::Reject(_), "rejected")
+                (Answer::Approve | Answer::Override, "approved" | "done")
+                    | (Answer::Reject(_), "rejected")
             );
             if done {
                 return Ok(item);
@@ -218,9 +231,24 @@ impl Store {
             if revision.is_some_and(|r| r != item.revision) {
                 bail!("item {id} changed since you read it: reload it");
             }
+            let blocked = item.flag.as_deref() == Some("blocking");
+            let mut flag = item.flag.clone();
             let mut args = item.args.clone();
             let (next, event, detail) = match &answer {
+                Answer::Approve if blocked => bail!(
+                    "item {id} is flagged: {}. Edit it, or override the flag",
+                    item.flag_reason.as_deref().unwrap_or("no reason given")
+                ),
                 Answer::Approve => ("approved", "approved", String::new()),
+                Answer::Override if !blocked => bail!("item {id} has no blocking flag to override"),
+                Answer::Override if !FOUNDER_CHANNELS.contains(&channel) => {
+                    bail!("a flag is overridden only from the app or Telegram")
+                }
+                Answer::Override => {
+                    flag = Some("overridden".into());
+                    let why = item.flag_reason.clone().unwrap_or_default();
+                    ("approved", "overridden", why)
+                }
                 Answer::Reject(why) => ("rejected", "rejected", why.clone()),
                 Answer::Edit(text) => {
                     let Some(path) = item.source["editable"].as_str() else {
@@ -230,12 +258,19 @@ impl Store {
                         bail!("an edit needs text");
                     }
                     set_at(&mut args, path, text)?;
+                    if blocked {
+                        // The text is the founder's now: the block goes, and
+                        // the journal says so like an override.
+                        flag = Some("lifted".into());
+                        let why = item.flag_reason.clone().unwrap_or_default();
+                        log(tx, id, "flag lifted by edit", "founder", Some(channel), &why)?;
+                    }
                     ("pending", "edited", String::new())
                 }
             };
             tx.execute(
-                "UPDATE queue SET status = ?2, args = ?3, revision = revision + 1 WHERE id = ?1",
-                params![id, next, args.to_string()],
+                "UPDATE queue SET status = ?2, args = ?3, flag = ?4, revision = revision + 1 WHERE id = ?1",
+                params![id, next, args.to_string(), flag],
             )?;
             log(tx, id, event, "founder", Some(channel), &detail)?;
             tx.execute(

@@ -139,6 +139,7 @@ fn steps(
                     step: i + 1,
                     prompt,
                     dry_run: false,
+                    into: "answer",
                 };
                 items = judge_all(&asking, all, &filters, store, io, &mut out.notes)?.0;
             }
@@ -268,6 +269,11 @@ pub(crate) struct Asking<'a> {
     pub prompt: &'a Prompt,
     /// Calls of a dry run are marked so in the journal.
     pub dry_run: bool,
+    /// Where each item gets its answer: `answer`, or another name so that
+    /// the answer of an earlier block stays (decision 58). With another
+    /// name, an item whose answer failed goes on without one, noted, and
+    /// the item keeps the model call of the block that drafted it.
+    pub into: &'a str,
 }
 
 /// Ask the model about each item, then keep, rank, keep the best of each
@@ -282,8 +288,18 @@ pub(crate) fn judge_all(
 ) -> Result<(Vec<Item>, Judged)> {
     let mut stats = Judged::default();
     let mut kept = Vec::new();
+    let checking = asking.into != "answer";
     for mut item in items {
-        let (answer, call, used) = judge(asking, &item, store, io)?;
+        let judged = judge(asking, &item, store, io);
+        // A check that could not answer must not drop the draft it checks.
+        let (answer, call, used) = match judged {
+            Err(e) if checking => {
+                notes.push(format!("step {}: not checked: {e:#}", asking.step));
+                kept.push(item);
+                continue;
+            }
+            judged => judged?,
+        };
         stats.input_tokens += used.input;
         stats.output_tokens += used.output;
         match used.cost {
@@ -292,11 +308,16 @@ pub(crate) fn judge_all(
         }
         let Some(answer) = answer else {
             stats.invalid += 1;
+            if checking {
+                kept.push(item);
+            }
             continue;
         };
-        item.insert("model_call".into(), call.into());
+        if !checking {
+            item.insert("model_call".into(), call.into());
+        }
         let goes_on = filters.keep.is_none_or(|k| answer[k] == true);
-        item.insert("answer".into(), answer);
+        item.insert(asking.into.into(), answer);
         if goes_on {
             kept.push(item);
         } else {
@@ -305,12 +326,19 @@ pub(crate) fn judge_all(
     }
     if stats.invalid > 0 {
         notes.push(format!(
-            "step {}: {} answer(s) did not match {} and were dropped",
-            asking.step, stats.invalid, asking.prompt.path
+            "step {}: {} answer(s) did not match {} and were {}",
+            asking.step,
+            stats.invalid,
+            asking.prompt.path,
+            if checking {
+                "left unchecked"
+            } else {
+                "dropped"
+            }
         ));
     }
     if let Some(rank) = filters.rank {
-        let score = |item: &Item| item["answer"][rank].as_f64().unwrap_or(f64::MIN);
+        let score = |item: &Item| item[asking.into][rank].as_f64().unwrap_or(f64::MIN);
         // Stable: equal scores keep the feeds' order.
         kept.sort_by(|a, b| score(b).total_cmp(&score(a)));
     }
@@ -318,7 +346,7 @@ pub(crate) fn judge_all(
         let before = kept.len();
         let mut values = HashSet::new();
         // Best first: the first of each value is its best.
-        kept.retain(|item| match item["answer"][distinct.as_str()].as_str() {
+        kept.retain(|item| match item[asking.into][distinct.as_str()].as_str() {
             Some(v) => values.insert(v.trim().to_lowercase()),
             None => true,
         });

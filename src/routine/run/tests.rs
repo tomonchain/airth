@@ -350,3 +350,138 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
     // Retried the same week, it has the same key: it would act once.
     assert!(report(&mut store).contains("[weekly-report/week/2026-W45/report]"));
 }
+
+/// Decision 58: a check is an AI block whose answer goes under its own name,
+/// so the draft stays; its flag goes with the item to the queue. A check
+/// that could not answer leaves the item going on, flagged as unchecked.
+#[test]
+fn a_check_flags_the_item_and_keeps_its_draft() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/post.md", "Draft a post."),
+        (
+            "prompts/post.schema.json",
+            r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#,
+        ),
+        ("prompts/check.md", "Check the draft."),
+        (
+            "prompts/check.schema.json",
+            r#"{"type": "object", "required": ["flag", "reason"], "properties": {"flag": {"enum": ["none", "note", "blocking"]}, "reason": {"type": "string"}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+        {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"]},
+        {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+        {"id": "check", "type": "ai", "prompt": "prompts/check.md", "as": "check"},
+        {"id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft", "flag": "check"}
+    ]}))
+    .unwrap();
+    let mut fetch = |_: &str| {
+        Ok(crate::pipeline::run::Fetched {
+            body: format!(
+                "<rss><channel>{}</channel></rss>",
+                ["Flows", "Buy", "Odd"]
+                    .iter()
+                    .map(|t| format!(
+                        "<item><title>{t}</title><link>https://e.com/{t}</link></item>"
+                    ))
+                    .collect::<String>()
+            ),
+            truncated: false,
+        })
+    };
+    let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+        let seen = format!("{req:?}");
+        let title = ["Flows", "Buy", "Odd"]
+            .into_iter()
+            .find(|t| seen.contains(&format!("https://e.com/{t}")))
+            .unwrap();
+        let text = if seen.contains("Check the draft.") {
+            match title {
+                "Flows" => r#"{"flag": "none", "reason": ""}"#.to_string(),
+                "Buy" => r#"{"flag": "blocking", "reason": "a call to buy"}"#.to_string(),
+                _ => "I cannot say.".to_string(),
+            }
+        } else {
+            json!({"draft": format!("{title}, drafted")}).to_string()
+        };
+        Ok(ModelResponse {
+            content: vec![ContentBlock::Text { text }],
+            stop_reason: StopReason::EndTurn,
+            model: "m".into(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        })
+    };
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+    };
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    let mut act = |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool| -> Result<String> {
+        unreachable!("no act")
+    };
+    let report = run(
+        "posts",
+        &graph,
+        Dry {
+            root: root.path(),
+            store: &mut store,
+            io: &mut io,
+            integrations: &[],
+        },
+        Some(Real {
+            run: "r1",
+            act: &mut act,
+        }),
+        Start::Trigger,
+        Utc::now(),
+    )
+    .unwrap()
+    .to_string();
+    assert!(report.contains("left unchecked"), "{report}");
+    assert!(
+        report.contains("[flagged blocking: a call to buy]: Buy, drafted"),
+        "{report}"
+    );
+    let items = store.queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 3, "{report}");
+    let by = |t: &str| {
+        items
+            .iter()
+            .find(|i| i.args["answer"]["draft"] == format!("{t}, drafted"))
+            .unwrap()
+    };
+    assert_eq!(by("Flows").flag, None);
+    assert_eq!(
+        (by("Buy").flag.as_deref(), by("Buy").flag_reason.as_deref()),
+        (Some("blocking"), Some("a call to buy"))
+    );
+    assert_eq!(by("Odd").flag.as_deref(), Some("note"));
+    assert!(
+        by("Odd")
+            .flag_reason
+            .as_deref()
+            .unwrap()
+            .contains("not checked")
+    );
+    // The founder's answer is the draft's outcome, not the check's.
+    let calls = store.model_calls().unwrap();
+    let draft_calls: Vec<i64> = calls
+        .iter()
+        .filter(|c| c.answer.as_deref().is_some_and(|a| a.contains("drafted")))
+        .map(|c| c.id)
+        .collect();
+    assert!(
+        items
+            .iter()
+            .all(|i| draft_calls.contains(&i.model_call.unwrap()))
+    );
+}

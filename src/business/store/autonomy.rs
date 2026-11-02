@@ -186,13 +186,25 @@ impl Store {
 
     /// Put something in the queue for the founder; its id.
     pub fn propose(&mut self, item: &NewItem) -> Result<i64> {
+        self.propose_flagged(item, None)
+    }
+
+    /// The same, with the quality flag a check set and its reason
+    /// (decision 58): `note` or `blocking`.
+    pub fn propose_flagged(&mut self, item: &NewItem, flag: Option<(&str, &str)>) -> Result<i64> {
+        if let Some((f, _)) = flag
+            && !matches!(f, "note" | "blocking")
+        {
+            anyhow::bail!("a check flags an item note or blocking, not '{f}'");
+        }
         self.write(|tx| {
             let now = Utc::now().to_rfc3339();
             tx.execute(
-                "INSERT INTO queue (created_at, kind, title, agent, routine, run, action, args, original_args, execute_at, source, model_call, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, ?10, ?11, 'pending')",
+                "INSERT INTO queue (created_at, kind, title, agent, routine, run, action, args, original_args, execute_at, source, model_call, status, flag, flag_reason)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, ?10, ?11, 'pending', ?12, ?13)",
                 params![now, item.kind, item.title, item.agent, item.routine, item.run, item.action, item.args,
-                    item.execute_at.map(|t| t.to_rfc3339()), item.source, item.model_call],
+                    item.execute_at.map(|t| t.to_rfc3339()), item.source, item.model_call,
+                    flag.map(|f| f.0), flag.map(|f| f.1)],
             )?;
             let id = tx.last_insert_rowid();
             tx.execute(

@@ -344,7 +344,9 @@ function smokeNext() {
     { id: 3, kind: "delayed", title: "writer: blog.draft", agent: "writer", routine: null, run: null, action: "blog.draft", created_at: null, execute_at: now, status: "pending", revision: 1, text: "{}", editable: false, source: { title: null, link: null } },
     { id: 4, kind: "prepared", title: "reply", agent: "writer", routine: null, run: null, action: "x.reply", created_at: now, execute_at: null, status: "pending", revision: 1, text: "Hi", editable: false, source: { title: null, link: null } },
     { id: 5, kind: "approval", title: "blog.publish, from a task you started", agent: null, routine: null, run: "r9", action: "blog.publish", created_at: now, execute_at: null, status: "pending", revision: 1, text: "POST blog: posts", editable: false, source: { title: null, link: null }, task: { id: "r9", title: null } },
-    { id: 6, kind: "report", title: "Daily watch", agent: "post-writer", routine: "daily-watch", run: "r2", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.\n\nBTC up.", editable: false, source: { title: null, link: null } }])},
+    { id: 6, kind: "report", title: "Daily watch", agent: "post-writer", routine: "daily-watch", run: "r2", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.\n\nBTC up.", editable: false, source: { title: null, link: null } },
+    { id: 7, kind: "approval", title: "BUY ETH", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "BUY ETH NOW", editable: true, flag: "blocking", flag_reason: null, source: { title: null, link: null } },
+    { id: 8, kind: "approval", title: "Long", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "A long post", editable: false, flag: "note", flag_reason: "long", source: { title: null, link: null } }])},
     agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
   vm.runInContext(`needs.runs = { 1: { routine: "daily-posts", run: "r1", blocks: [
     { block: "news", started_at: "${now}", finished_at: null, outcome: "ok", items_in: 1, items_out: 1, cost_usd: null, error: null },
@@ -370,6 +372,8 @@ function smokeNext() {
   vm.runInContext(`needs.agent = "post-writer";`, ctx);
   show("needs you, a report", { route: { page: "needs-you", realm: "acme" } });
   if (!nbody.textContent.includes("Report") || !nbody.textContent.includes("Seen")) problems.push("next/needs you: a report shows without its tag or Seen");
+  if (!nbody.textContent.includes("Flagged by the check") || !nbody.textContent.includes("Override")) problems.push("next/needs you: a blocked item shows without its flag or Override");
+  if (!nbody.textContent.includes("Note from the check") || !nbody.textContent.includes("long A long post")) problems.push("next/needs you: a check's note is missing");
   vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
   show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
   // Routines: every kind of block, a routine refused, then a dry run.

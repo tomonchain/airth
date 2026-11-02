@@ -138,3 +138,121 @@ fn the_founders_time_adds_up_by_agent() {
     let later = Utc::now() + chrono::Duration::minutes(1);
     assert!(s.owner_seconds_by_agent(later).unwrap().is_empty());
 }
+
+fn flagged(store: &mut Store, flag: &str) -> i64 {
+    let args = json!({"answer": {"draft": "BUY ETH NOW"}}).to_string();
+    store
+        .propose_flagged(
+            &NewItem {
+                kind: "approval",
+                title: "Post",
+                agent: Some("post-writer"),
+                routine: Some("daily-posts"),
+                run: Some("r1"),
+                action: None,
+                args: &args,
+                execute_at: None,
+                source: r#"{"block": "ok", "editable": "answer.draft"}"#,
+                model_call: None,
+            },
+            Some((flag, "a call to buy")),
+        )
+        .unwrap()
+}
+
+/// Decision 58: a blocking flag stops Approve; only the founder's override,
+/// from the app or Telegram, approves it as it is, logged with who, when,
+/// the channel and the reason. Overriding what is not blocked is refused.
+#[test]
+fn a_blocking_flag_stops_approve_until_the_founder_overrides_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+    let id = flagged(&mut s, "blocking");
+    let e = s.answer(id, None, Answer::Approve, "app", 3).unwrap_err();
+    assert!(format!("{e:#}").contains("a call to buy"), "{e:#}");
+    let e = s.answer(id, None, Answer::Override, "cli", 3).unwrap_err();
+    assert!(
+        format!("{e:#}").contains("only from the app or Telegram"),
+        "{e:#}"
+    );
+    assert_eq!(s.queue(&["pending"]).unwrap().len(), 1, "still waiting");
+    let item = s.answer(id, None, Answer::Override, "telegram", 3).unwrap();
+    assert_eq!(item.status, "approved");
+    assert_eq!(item.flag.as_deref(), Some("overridden"));
+    let log = s.queue_log(id).unwrap();
+    assert!(
+        log.iter()
+            .any(|(action, by, channel)| action == "overridden"
+                && by == "founder"
+                && channel.as_deref() == Some("telegram")),
+        "{log:?}"
+    );
+    // Tapped twice: nothing more.
+    s.answer(id, None, Answer::Override, "telegram", 3).unwrap();
+    let note = flagged(&mut s, "note");
+    let e = s
+        .answer(note, None, Answer::Override, "app", 3)
+        .unwrap_err();
+    assert!(format!("{e:#}").contains("no blocking flag"), "{e:#}");
+    assert_eq!(
+        s.answer(note, None, Answer::Approve, "app", 3)
+            .unwrap()
+            .status,
+        "approved"
+    );
+}
+
+/// Decision 58, amended: an edit lifts the block, since the text is the
+/// founder's, and is logged like an override; then Approve works.
+#[test]
+fn an_edit_lifts_the_block_and_the_journal_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+    let id = flagged(&mut s, "blocking");
+    let item = s
+        .answer(
+            id,
+            None,
+            Answer::Edit("ETH left the queue.".into()),
+            "app",
+            20,
+        )
+        .unwrap();
+    assert_eq!(
+        (item.status.as_str(), item.flag.as_deref()),
+        ("pending", Some("lifted"))
+    );
+    let log = s.queue_log(id).unwrap();
+    assert!(
+        log.iter()
+            .any(|(action, by, channel)| action == "flag lifted by edit"
+                && by == "founder"
+                && channel.as_deref() == Some("app")),
+        "{log:?}"
+    );
+    assert_eq!(
+        s.answer(id, None, Answer::Approve, "app", 2)
+            .unwrap()
+            .status,
+        "approved"
+    );
+    // A check flags note or blocking, nothing else.
+    let e = s
+        .propose_flagged(
+            &NewItem {
+                kind: "approval",
+                title: "x",
+                agent: None,
+                routine: None,
+                run: None,
+                action: None,
+                args: "{}",
+                execute_at: None,
+                source: "{}",
+                model_call: None,
+            },
+            Some(("overridden", "")),
+        )
+        .unwrap_err();
+    assert!(format!("{e:#}").contains("note or blocking"), "{e:#}");
+}

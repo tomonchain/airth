@@ -95,6 +95,10 @@ pub enum Kind {
         #[serde(default, deserialize_with = "one_or_many")]
         distinct: Vec<String>,
         limit: Option<usize>,
+        /// Where the answer goes: `answer` when absent, another name to keep
+        /// an earlier block's, as a check does (decision 58).
+        #[serde(rename = "as", skip_serializing_if = "Option::is_none")]
+        into: Option<String>,
     },
     Condition {
         #[serde(rename = "if")]
@@ -107,6 +111,10 @@ pub enum Kind {
         show: String,
         editable: Option<String>,
         expires_after: Option<u32>,
+        /// The field holding a check's answer (`flag`, `reason`): the item
+        /// goes to the queue with that quality flag (decision 58).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        flag: Option<String>,
     },
     Act {
         action: String,
@@ -124,6 +132,10 @@ pub struct Test {
 }
 
 const OPS: &[&str] = &["==", "!=", "<", "<=", ">", ">=", "exists"];
+
+/// Fields the engine sets on an item; an AI block's answer cannot take
+/// their place.
+const RESERVED: &[&str] = &["source_id", "approved_by_founder", "model_call", "result"];
 
 /// What a graph is checked against: the business's folder, its declared
 /// actions, and the routine's agent's level for each action.
@@ -265,6 +277,7 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
     if let Some(i) = state.iter().position(|s| *s == 0) {
         bail!("block '{}' is never reached", graph.blocks[i].id);
     }
+    check_flags(graph, &edges)?;
     check_outside(cx, graph, &edges)
 }
 
@@ -354,9 +367,16 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             rank,
             distinct,
             limit,
+            into,
         } => {
             for p in [keep, rank].into_iter().flatten().chain(distinct) {
                 path(p)?;
+            }
+            if let Some(into) = into {
+                crate::realm::validate_name(into).with_context(|| format!("as '{into}'"))?;
+                if RESERVED.contains(&into.as_str()) {
+                    bail!("as '{into}': Airth keeps that field for itself");
+                }
             }
             positive("limit", *limit)?;
             let stem = prompt
@@ -388,8 +408,10 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
             show,
             editable,
             expires_after,
+            flag,
         } => {
             path(show)?;
+            flag.as_deref().map(path).transpose()?;
             editable.as_deref().map(path).transpose()?;
             positive("expires_after", expires_after.map(|h| h as usize))?;
         }
@@ -399,6 +421,37 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
                 crate::realm::validate_name(name).with_context(|| format!("field '{name}'"))?;
                 template(value).with_context(|| format!("field '{name}'"))?;
             }
+        }
+    }
+    Ok(())
+}
+
+/// An approval's `flag` names the answer of a check that comes before it
+/// on every way to it: an item reaching it unchecked would look checked.
+fn check_flags(graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
+    for (i, block) in graph.blocks.iter().enumerate() {
+        let Kind::Approval {
+            flag: Some(flag), ..
+        } = &block.kind
+        else {
+            continue;
+        };
+        // The blocks reaching this one without passing a check named `flag`.
+        let names = |b: &Block| matches!(&b.kind, Kind::Ai { into: Some(n), .. } if n == flag);
+        let mut seen = vec![false; graph.blocks.len()];
+        let mut todo = vec![0];
+        while let Some(j) = todo.pop() {
+            if seen[j] || names(&graph.blocks[j]) {
+                continue;
+            }
+            if j == i {
+                bail!(
+                    "block '{}': its flag '{flag}' is not the answer of a check (an ai block with \"as\": \"{flag}\") on every way to it",
+                    block.id
+                );
+            }
+            seen[j] = true;
+            todo.extend(&edges[j]);
         }
     }
     Ok(())

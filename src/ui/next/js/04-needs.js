@@ -120,10 +120,15 @@ function card(it) {
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
     : it.action ? `If approved: ${it.action} is done, once.` : null;
   const link = it.source && it.source.link;
+  const blocked = it.flag === "blocking";
   return h("article", { class: "approval", "aria-label": it.title },
     h("div", { class: "approval-top" },
       h("span", { class: it.kind === "incident" ? "tag bad" : "tag" }, `${it.title} · ${KIND_TAGS[it.kind] || it.kind}`),
       it.execute_at && h("span", { class: "when" }, `Done at ${clock(it.execute_at)}`)),
+    (blocked || it.flag === "note") && h("p", { class: blocked ? "flag blocking" : "flag" },
+      h("strong", {}, blocked ? "Flagged by the check" : "Note from the check"), ": ",
+      it.flag_reason || "no reason given",
+      blocked && ". Edit it, or override the flag to approve it as it is."),
     editing
       ? h("textarea", { id: `edit-${it.id}`, class: "edit", rows: 5, "aria-label": "New text" }, it.text)
       : h("p", { class: it.call ? "content call" : "content" }, it.text),
@@ -146,11 +151,15 @@ function buttons(it, editing, rejecting) {
   if (it.kind === "incident" || it.kind === "report") return [b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "prepared") return [b("Mark done", "primary", () => answer(it, "approve"))];
   if (it.kind === "delayed") return [b("Cancel it", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
+  // Blocked by a check: no plain Approve; the founder's override is logged.
   return [
-    b("Approve", "primary", () => answer(it, "approve")),
-    it.editable && b("Edit", "plain", () => { needs.editing = it.id; renderPanel(); }),
+    isBlocked(it) ? b("Override", "plain bad", () => answer(it, "override"))
+      : b("Approve", "primary", () => answer(it, "approve")),
+    it.editable && b("Edit", isBlocked(it) ? "primary" : "plain", () => { needs.editing = it.id; renderPanel(); }),
     b("Reject", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
 }
+
+const isBlocked = (it) => it.flag === "blocking";
 
 async function answer(it, kind, text) {
   const seconds = Math.round((Date.now() - (needs.shownAt[it.id] || Date.now())) / 1000);

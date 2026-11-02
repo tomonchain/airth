@@ -271,6 +271,11 @@ const MIGRATIONS: &[&str] = &[
     DROP TABLE queue;
     ALTER TABLE queue_new RENAME TO queue;
     CREATE INDEX queue_by_status ON queue(status, created_at);",
+    // 15: the quality flag a check sets on an item, and its reason
+    // (decision 58): `blocking` until the founder edits or overrides it,
+    // which leaves it `lifted` or `overridden`.
+    "ALTER TABLE queue ADD COLUMN flag TEXT CHECK (flag IN ('note', 'blocking', 'lifted', 'overridden'));
+    ALTER TABLE queue ADD COLUMN flag_reason TEXT;",
 ];
 
 pub struct Store {

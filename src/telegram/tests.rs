@@ -269,3 +269,41 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
             .starts_with("hedgen · approved")
     );
 }
+
+/// Decision 58: on the phone, a blocked item says why and offers Override,
+/// Edit and Reject, never a plain Approve; a note is shown and blocks
+/// nothing.
+#[test]
+fn a_blocked_item_offers_override_not_approve() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::business::store::Store::open(&dir.path().join("business.db")).unwrap();
+    let new = NewItem {
+        kind: "approval",
+        title: "Post",
+        agent: None,
+        routine: Some("daily-posts"),
+        run: Some("r1"),
+        action: None,
+        args: r#"{"answer": {"draft": "BUY ETH NOW"}}"#,
+        execute_at: None,
+        source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+        model_call: None,
+    };
+    store
+        .propose_flagged(&new, Some(("blocking", "a call to buy")))
+        .unwrap();
+    store.propose_flagged(&new, Some(("note", "long"))).unwrap();
+    let items = store.queue(&["pending"]).unwrap();
+    let labels = |item| -> Vec<String> {
+        buttons("hedgen", item)[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(labels(&items[0]), ["Override", "Edit", "Reject"]);
+    assert!(item_text("hedgen", &items[0]).contains("Flagged by the check: a call to buy"));
+    assert_eq!(labels(&items[1]), ["Approve", "Edit", "Reject"]);
+    assert!(item_text("hedgen", &items[1]).contains("Note from the check: long"));
+}
