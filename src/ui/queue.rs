@@ -77,7 +77,24 @@ impl App {
                 json!({"name": name, "title": doc.text("title"), "department": doc.text("department")})
             })
             .collect();
-        Ok(json!({"items": items.iter().map(shown).collect::<Vec<_>>(), "agents": agents}))
+        // An action a task of the founder's proposed (decision 56): the task
+        // it came from, to open it.
+        let titles = realm.run_titles();
+        let items: Vec<Value> = items
+            .iter()
+            .map(|i| {
+                let mut page = shown(i);
+                if let (None, Some(run)) = (&i.routine, &i.run) {
+                    let title = titles
+                        .get(run)
+                        .cloned()
+                        .or_else(|| self.hub.load_run(realm, run).ok().map(|s| s.objective));
+                    page["task"] = json!({"id": run, "title": title});
+                }
+                page
+            })
+            .collect();
+        Ok(json!({"items": items, "agents": agents}))
     }
 }
 
@@ -92,6 +109,7 @@ fn shown(item: &Item) -> Value {
     let text = match (item.source["show"].as_str(), item.kind.as_str()) {
         (Some(path), _) => at(path),
         (None, "incident") => at("detail"),
+        _ if item.source["tool"] == "http_request" => call_text(&item.args),
         _ => None,
     }
     .unwrap_or_else(|| serde_json::to_string_pretty(&item.args).unwrap_or_default());
@@ -114,7 +132,29 @@ fn shown(item: &Item) -> Value {
         "revision": item.revision,
         "text": text,
         "editable": item.source["editable"].is_string(),
+        // A call shown as it would be made, not prose.
+        "call": item.source["show"].is_null() && item.source["tool"] == "http_request",
         "source": {"title": item.args["title"].as_str(), "link": link},
+    })
+}
+
+/// A proposed HTTP call as it would be made: method, address, body.
+fn call_text(args: &Value) -> Option<String> {
+    let url = args["url"].as_str()?;
+    let method = args["method"].as_str().unwrap_or("GET").to_uppercase();
+    let at = match args["integration"].as_str().filter(|i| !i.is_empty()) {
+        Some(integration) => format!("{integration}: {url}"),
+        None => url.to_string(),
+    };
+    Some(match args["body"].as_str().filter(|b| !b.is_empty()) {
+        Some(body) => {
+            let body = serde_json::from_str::<Value>(body)
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or_else(|| body.to_string());
+            format!("{method} {at}\n\n{body}")
+        }
+        None => format!("{method} {at}"),
     })
 }
 
@@ -166,14 +206,60 @@ mod tests {
         // A mission's proposal shows its call as it would be made.
         let call = item(
             "approval",
-            json!({"method": "POST", "url": "https://x"}),
+            json!({"integration": "blog", "method": "post", "url": "posts", "body": "{\"text\":\"Hi\"}"}),
             json!({"tool": "http_request"}),
         );
-        assert!(
-            shown(&call)["text"]
-                .as_str()
-                .unwrap()
-                .contains("\"method\": \"POST\"")
+        assert_eq!(
+            shown(&call)["text"],
+            "POST blog: posts\n\n{\n  \"text\": \"Hi\"\n}"
         );
+        let public = item(
+            "approval",
+            json!({"method": "DELETE", "url": "https://x"}),
+            json!({"tool": "http_request"}),
+        );
+        assert_eq!(shown(&public)["text"], "DELETE https://x");
+        assert_eq!(shown(&public)["call"], true);
+        assert_eq!(shown(&draft)["call"], false);
+    }
+
+    /// An action a task of the founder's proposed shows the task, to open it.
+    #[test]
+    fn an_action_from_a_task_shows_that_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let run = app
+            .hub
+            .create_run(&realm, "Publish the launch post")
+            .unwrap();
+        Store::of(&realm)
+            .unwrap()
+            .propose(&crate::business::store::autonomy::NewItem {
+                kind: "approval",
+                title: "blog.publish, from a task you started",
+                agent: None,
+                routine: None,
+                run: Some(&run.id),
+                action: Some("blog.publish"),
+                args: r#"{"integration": "blog", "method": "POST", "url": "posts"}"#,
+                execute_at: None,
+                source: r#"{"tool": "http_request"}"#,
+                model_call: None,
+            })
+            .unwrap();
+        let page = app.needs_you(&realm).unwrap();
+        let item = &page["items"][0];
+        assert_eq!(item["task"]["id"], run.id.as_str());
+        assert_eq!(item["task"]["title"], "Publish the launch post");
+        assert_eq!(item["text"], "POST blog: posts");
     }
 }
