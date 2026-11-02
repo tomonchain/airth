@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 61. What a run drops reaches the founder: a note on its remaining items, and the weekly count
 
-**Proposed.**
+**Accepted.**
 
 An item whose answer does not fit its schema is asked once more, then dropped, and the run's report names it with why. But a real run's report stays in its journal row: nothing tells the founder that two posts came this morning instead of three. The founder asked that a dropped item reach them, without making it an incident.
 
