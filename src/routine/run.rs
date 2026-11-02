@@ -389,21 +389,29 @@ pub fn run(
                         .iter()
                         .map(|f| format!("{f}: {}", field_text(it, &format!("{into}.{f}"))))
                         .collect();
-                    lines.push(format!(
-                        "kept: {} ({})",
-                        field_text(it, "title"),
-                        values.join(", ")
+                    let values = match values.is_empty() {
+                        true => String::new(),
+                        false => format!(" ({})", values.join(", ")),
+                    };
+                    lines.push(format!("kept: {}{values}", field_text(it, "title")));
+                }
+                // Only the filters the block has: a draft keeps every item.
+                let mut aside = Vec::new();
+                if let Some(keep) = keep {
+                    aside.push(format!("{} not {keep}", stats.not_kept));
+                }
+                aside.push(format!("{} invalid", stats.invalid));
+                if !distinct.is_empty() {
+                    aside.push(format!(
+                        "{} by distinct {}",
+                        stats.by_distinct,
+                        distinct.join(", ")
                     ));
                 }
-                lines.push(format!(
-                    "set aside: {} not {}, {} invalid, {} by distinct {}, {} past the limit",
-                    stats.not_kept,
-                    keep.as_deref().unwrap_or("kept"),
-                    stats.invalid,
-                    stats.by_distinct,
-                    distinct.join(", "),
-                    stats.by_limit
-                ));
+                if limit.is_some() {
+                    aside.push(format!("{} past the limit", stats.by_limit));
+                }
+                lines.push(format!("set aside: {}", aside.join(", ")));
                 lines.push(cost(&stats));
                 block_cost = Some(stats.cost_usd);
                 total.input_tokens += stats.input_tokens;

@@ -141,9 +141,10 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         report.contains("2 read, 0 too old, 0 already seen or repeated, 0 past the max: 2 kept"),
         "{report}"
     );
-    assert!(report.contains("  kept: Flows ()"), "{report}");
+    // A block without sort fields or filters says nothing of them.
+    assert!(report.contains("  kept: Flows\n"), "{report}");
     assert!(
-        report.contains("set aside: 0 not relevant, 0 invalid"),
+        report.contains("set aside: 0 not relevant, 0 invalid\n"),
         "{report}"
     );
     assert!(

@@ -28,10 +28,25 @@ impl Price {
     }
 }
 
-/// List prices of Anthropic's first-party API (October 2026), by model id
-/// prefix. Other providers have none: their costs show as unknown unless
-/// the owner adds prices in `prices.json` in the Airth home.
+/// DeepSeek's list price: cache hits billed apart, nothing extra to write
+/// the cache.
+const fn deepseek(cache_read: f64, input: f64, output: f64) -> Price {
+    Price {
+        input,
+        output,
+        cache_read,
+        cache_write: input,
+    }
+}
+
+/// List prices by model id prefix: Anthropic's first-party API (October
+/// 2026), and the DeepSeek models businesses use (November 2026, peak
+/// hours: off-peak is half, so a cost is an upper estimate). Other models
+/// show as unknown unless the owner adds prices in `prices.json` in the
+/// Airth home.
 const LIST_PRICES: &[(&str, Price)] = &[
+    ("deepseek-v4-pro", deepseek(0.044, 1.32, 3.96)),
+    ("deepseek-flash", deepseek(0.006, 0.30, 1.20)),
     (
         "claude-fable-5-1",
         Price {
@@ -128,6 +143,8 @@ mod tests {
             prices.get("anthropic.claude-opus-5-5").unwrap().cache_read,
             0.20
         );
+        assert_eq!(prices.get("deepseek/deepseek-v4-pro").unwrap().output, 3.96);
+        assert_eq!(prices.get("deepseek-flash").unwrap().cache_write, 0.30);
         // Unknown models have no price, unless the owner adds one.
         assert!(prices.get("openai/gpt-x").is_none());
         let custom = Prices::with(BTreeMap::from([(
