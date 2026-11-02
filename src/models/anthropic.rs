@@ -148,16 +148,25 @@ impl Anthropic {
                     let s = resp.status().as_u16();
                     s == 408 || s == 409 || s == 429 || s >= 500
                 }
-                Err(e) => e.is_timeout() || e.is_connect(),
+                Err(e) => super::worth_retrying(e),
             };
             if retryable && attempt < MAX_RETRIES {
                 attempt += 1;
-                std::thread::sleep(Duration::from_secs(2u64.pow(attempt)));
+                std::thread::sleep(super::backoff(attempt));
                 continue;
             }
             let resp = result.context("request to Anthropic API failed")?;
             let status = resp.status();
-            let text = resp.text()?;
+            // The answer can break off while it is read: ask again then too.
+            let text = match resp.text() {
+                Ok(text) => text,
+                Err(e) if attempt < MAX_RETRIES && super::worth_retrying(&e) => {
+                    attempt += 1;
+                    std::thread::sleep(super::backoff(attempt));
+                    continue;
+                }
+                Err(e) => return Err(e).context("reading the model's answer failed"),
+            };
             if !status.is_success() {
                 bail!("Anthropic API error {status}: {text}");
             }
