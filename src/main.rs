@@ -133,6 +133,11 @@ enum Cmd {
         /// if it is not running (used by Airth.app)
         #[arg(long)]
         detach: bool,
+        /// Serve the app only: no scheduler, no Telegram, no pull-request
+        /// follow-up, no update checks. To look at a copy of a home while
+        /// the real Airth runs.
+        #[arg(long)]
+        preview: bool,
     },
     /// Open Airth in its own window (macOS)
     App,
@@ -409,6 +414,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
                     open_browser: false,
                     max_iterations,
                     realm: None,
+                    background: true,
                 },
             )
             .map(|_| true)
@@ -449,6 +455,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
             port,
             no_open,
             max_iterations,
+            preview,
             ..
         }) => ui::serve(
             ctx.hub(),
@@ -457,6 +464,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
                 open_browser: !no_open,
                 max_iterations,
                 realm: ctx.realm().ok().map(|r| r.name().to_string()),
+                background: !preview,
             },
         )
         .map(|_| true),
@@ -581,6 +589,7 @@ fn desktop_app(ctx: &Ctx) -> Result<bool> {
             open_browser: false,
             max_iterations: 50,
             realm: None,
+            background: true,
         },
     )
     .map(|_| true)
