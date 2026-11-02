@@ -9,6 +9,19 @@ use crate::routine::{Checks, Graph};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// What a real run of a routine did: its report, and each act that failed,
+/// in one line.
+pub struct Ran {
+    pub text: String,
+    pub failed: Vec<String>,
+}
+
+impl std::fmt::Display for Ran {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
 impl Hub {
     /// Call `f` with what the realm's routines are checked against.
     pub fn with_routine_checks<T>(
@@ -66,7 +79,7 @@ impl Hub {
         name: &str,
         run: &str,
         start: crate::routine::run::Start,
-    ) -> Result<String> {
+    ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
         let workspace = Workspace::new(&root)?
@@ -236,13 +249,16 @@ impl Hub {
                 };
                 let real = crate::routine::run::Real { run, act: &mut act };
                 crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
-                    .map(|r| r.to_string())
+                    .map(|r| (r.to_string(), r.failed))
             },
         );
         // What was gathered is reported even when a later block failed.
         let reported = report(realm, name, &graph.agent, run, reports.take());
         match (outcome, reported) {
-            (Ok(text), Ok(lines)) => Ok(format!("{text}\n{lines}").trim_end().to_string()),
+            (Ok((text, failed)), Ok(lines)) => Ok(Ran {
+                text: format!("{text}\n{lines}").trim_end().to_string(),
+                failed,
+            }),
             (Err(e), Ok(_)) => Err(e),
             (Ok(_), Err(e)) => Err(e.context("the run's reports were not recorded")),
             (Err(e), Err(r)) => Err(e.context(format!("and its reports were not recorded: {r:#}"))),
@@ -300,6 +316,7 @@ impl Hub {
             return Ok((item, Some("marked done: the founder did it".into())));
         }
         let routine_block = item.source["block"].as_str();
+        let mut failed = Vec::new();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {
             // A routine's item: the routine resumes after its approval.
             (Some(routine), Some(block), _) => {
@@ -314,7 +331,10 @@ impl Hub {
                     .run
                     .clone()
                     .unwrap_or_else(|| format!("{routine}-{id}"));
-                self.run_routine(realm, routine, &run, start)
+                self.run_routine(realm, routine, &run, start).map(|ran| {
+                    failed = ran.failed;
+                    ran.text
+                })
             }
             // An action a mission proposed: done as it was proposed, once.
             // One to try again stays approved until its last attempt.
@@ -325,15 +345,21 @@ impl Hub {
             },
             _ => return Ok((item, None)),
         };
+        // Approved, but what it was approved for failed: the item says so,
+        // in one line, never as done (the act's incident has the rest).
         let (status, detail) = match &outcome {
+            Ok(_) if !failed.is_empty() => ("failed", failed.join("; ")),
             Ok(report) => (
                 "done",
                 report.lines().last().unwrap_or_default().to_string(),
             ),
-            Err(e) => ("failed", format!("{e:#}")),
+            Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
         };
         store.close_item(id, status, &detail)?;
-        let report = outcome.unwrap_or_else(|e| format!("failed: {e:#}"));
+        let report = match status {
+            "failed" => detail,
+            _ => outcome.unwrap_or_default(),
+        };
         let closed = store.queue(&[status])?.into_iter().find(|i| i.id == id);
         Ok((closed.unwrap_or(item), Some(report)))
     }
@@ -518,7 +544,7 @@ impl Hub {
         let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
         let outcome = self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger);
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
-        let report = outcome.ok();
+        let report = outcome.ok().map(|ran| ran.text);
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
             due: Some(due),
