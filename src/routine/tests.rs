@@ -239,6 +239,17 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
             posts(json!([{"id": "a", "type": "approval", "show": "answer..draft"}])),
             "not a field",
         ),
+        // Decision 60: a check judges each draft alone.
+        (
+            posts(
+                json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "as": "check", "over": "list"}]),
+            ),
+            "judges each item alone",
+        ),
+        (
+            posts(json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "over": "all"}])),
+            "unknown variant",
+        ),
         (
             posts(
                 json!([{"id": "a", "type": "act", "action": "airth.report", "fields": {"title": "{{answer.title"}}]),
