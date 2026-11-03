@@ -635,16 +635,7 @@ fn ask<T>(
         Err(e) => Err(format!("not JSON: {e}")),
     };
     let r = &response;
-    let cost = io.prices.get(&r.model).map(|p| {
-        let fresh = r
-            .input_tokens
-            .saturating_sub(r.cache_read_tokens + r.cache_write_tokens);
-        (fresh as f64 * p.input
-            + r.cache_read_tokens as f64 * p.cache_read
-            + r.cache_write_tokens as f64 * p.cache_write
-            + r.output_tokens as f64 * p.output)
-            / 1_000_000.0
-    });
+    let cost = io.prices.cost(r);
     let error = answer.as_ref().err().cloned();
     store
         .record_call(&NewCall {
