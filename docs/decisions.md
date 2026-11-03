@@ -2,6 +2,39 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 73. The interface is a React app built with shadcn, and its first screen shows the agents at work
+
+**Accepted.** Replaces decision 57's stack and decision 72's part 2 (Preact with `htm`). Decision 72's parts 1 and 3 change as written below.
+
+The founder, 3 November 2026, after #135 to #137: the new interface does not look like the software built with them elsewhere (Clarity Mail: React, shadcn, Tailwind, Lucide). Airth must let them watch their agents work in each business; the pages read as an admin tool instead. The cause is in the rules: decision 57 forbids a framework, a build step and any library for the pages, so every menu, dialog, popover and list is drawn by hand, page by page, in small PRs nobody looks at as a whole.
+
+**1. The stack.** The interface lives in `web/`:
+
+- Vite, React, TypeScript, Tailwind and shadcn (style `base-nova`, on Base UI, as in Clarity Mail), Lucide for icons, Sonner for toasts.
+- `npm run build` in `web/` writes `web/dist/`, which is committed, as the Documents editor's bundle already is (`src/ui/editor/`). Airth serves it from the binary: `cargo build` needs no Node, and running Airth needs nothing installed.
+- `npm run dev` serves the interface on its own port and sends `/api` to a running Airth, for working on it.
+- The API stays as it is. A page that needs data the API lacks gets it through a Rust change of its own.
+- The shadcn components are copied into `web/src/components/ui/` by its CLI, as shadcn intends; they are our code from then on.
+
+**2. The first screen: the agents at work.** Inspired by the agent dashboards of Grok Build and OpenClaw: one row per agent, grouped by state (needs you, working, failed, idle), refreshed live; a selected agent opens its latest activity, its run step by step, and the box to give it an order. Needs you becomes what the agents' work sends up, in the same place. It is built first, as a prototype the founder judges on a copy before anything else moves.
+
+**3. What changes in the rules.**
+
+- The interface's work is judged on screen, by the founder, before it is merged; a page is designed as a whole, not grown feature by feature.
+- The 400-line limit does not apply to `web/` (decision 72's freeze still adds no feature); shadcn's copied components never count.
+- A page may leave out what does not serve its main task; nothing leaves Airth without a decision (decision 42), it moves to another screen.
+- Decision 72's three layouts and `docs/design/DESIGN.md`'s tokens become shadcn's theme variables; they are a starting point, not a frame.
+- `src/ui/next` stays served until `web/` has every page it has; then it leaves, in one PR. The classic interface's plan (decision 72, part 3) is unchanged, its pages moving into `web/`.
+- `node scripts/ui_smoke.js` covers `src/ui/next` while it lives; `web/` is checked by `tsc` and its build in CI.
+
+*Why:* the founder's software built on this stack looks right; Airth's hand-drawn pages do not, and the gap is the components, not the effort. Committing the build output keeps decision 57's real goal: one binary, nothing to install, nothing to build to run Airth.
+
+*Cost:*
+- Node and npm to work on the interface, and a few hundred kilobytes of built files committed on each interface change.
+- npm dependencies, kept to the list above; any other needs a decision.
+- `src/ui/next` is thrown away once replaced, about 4,000 lines.
+- CI gains a job that type-checks and builds `web/` and fails if `web/dist/` is not the committed one.
+
 ## 72. One interface, the new one, built from three page layouts; the classic one leaves once its features have moved
 
 **Proposed.** Replaces decision 71.
