@@ -29,7 +29,7 @@ The HQ's finance (decision 53) waits for a bank read. Until a bank is connected,
 
 ## 67. The Linux sandbox: bubblewrap, built from the same rules as the macOS profile; Landlock later
 
-**Proposed.**
+**Accepted**: the founder said to go on with it.
 
 Decision 29 gates the VPS (milestone 9) on a Linux sandbox, "generated from the same path rules as the macOS profile, with the bench's security tasks passing on Linux". Today `sandbox::available()` is false on Linux, so commands run unconfined there (decision 4, *Cost*).
 

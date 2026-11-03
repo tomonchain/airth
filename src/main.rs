@@ -32,6 +32,8 @@ mod release;
 mod routine;
 mod runtime;
 mod sandbox;
+#[cfg(test)]
+mod scenarios;
 mod scheduler;
 mod service;
 mod state;
@@ -932,10 +934,14 @@ fn doctor(ctx: &Ctx) -> Result<bool> {
     }
     check(
         "command sandbox",
-        if sandbox::available() {
-            Ok("sandbox-exec: commands cannot reach other realms or Airth's data".into())
-        } else {
-            Err("not available on this platform: commands are not confined to the realm (approve them carefully)".into())
+        match (sandbox::available(), cfg!(target_os = "linux")) {
+            (true, linux) => Ok(format!(
+                "{}: commands cannot reach other realms or Airth's data{}",
+                sandbox::name(),
+                if linux { "; without network, not the host's loopback either" } else { "" }
+            )),
+            (false, true) => Err("bubblewrap is missing or cannot start (apt install bubblewrap; user namespaces must be allowed): commands are not confined to the realm".into()),
+            (false, false) => Err("not available on this platform: commands are not confined to the realm (approve them carefully)".into()),
         },
     );
     check("git", version_of("git"));

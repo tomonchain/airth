@@ -49,7 +49,10 @@ fn isolated_runs_are_checked_then_adopted() {
     assert_eq!(state.status, Status::Completed);
     if crate::sandbox::available() {
         assert!(
-            state.events[1].result.contains("Operation not permitted"),
+            // macOS's sandbox and bubblewrap say it each their way.
+            ["Operation not permitted", "Read-only file system"]
+                .iter()
+                .any(|refused| state.events[1].result.contains(refused)),
             "{}",
             state.events[1].result
         );

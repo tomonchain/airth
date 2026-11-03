@@ -59,7 +59,9 @@ use live::*;
 use server::*;
 
 pub(crate) use http::random_token;
-pub use server::{open_url, persistent_token, running_url, serve, start};
+#[cfg(target_os = "macos")]
+pub use server::start;
+pub use server::{open_url, persistent_token, running_url, serve};
 
 const INDEX_HTML: &str = include_str!("index.html");
 // js/ and css/, joined in name order by build.rs.

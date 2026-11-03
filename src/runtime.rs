@@ -151,6 +151,16 @@ impl Runtime {
             Ok(action) => action,
             Err(e) => return (format!("permission denied: {e:#}"), EventStatus::Denied),
         };
+        // Decision 67: on Linux, a command nobody watches is never run
+        // unconfined.
+        if request.capability == crate::permissions::Capability::Execute
+            && crate::sandbox::refuses_unwatched(self.workspace.sandboxed(), self.gate.watched())
+        {
+            return (
+                "not run: nobody watches this run and commands cannot be confined here (bubblewrap is missing or cannot start: see airth doctor)".into(),
+                EventStatus::Denied,
+            );
+        }
         let mut journal = None;
         let mut explicit = false;
         if let (Some(action), Some(authority)) = (&action, self.authority.as_mut()) {
