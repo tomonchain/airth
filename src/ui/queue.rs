@@ -48,7 +48,10 @@ impl App {
                     Some("edit") => Answer::Edit(text),
                     Some("reject") => Answer::Reject(text),
                     Some("override") => Answer::Override,
-                    _ => bail!("answer approve, edit, reject or override"),
+                    Some("retry") => Answer::Retry {
+                        checked: body["checked"].as_bool().unwrap_or(false),
+                    },
+                    _ => bail!("answer approve, edit, reject, override or retry"),
                 };
                 let seconds = body["seconds"].as_u64().unwrap_or(0);
                 let (item, report) = self.hub.answer_item(

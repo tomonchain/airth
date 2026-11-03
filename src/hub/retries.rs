@@ -100,6 +100,22 @@ pub fn next_attempt(
     }
 }
 
+/// What the founder may do from the incident (decision 62): retry at once
+/// when the failure proves nothing was done (`clear`), after checking when
+/// it may have been (`ambiguous`: cut after sending, 5xx, 408, 409), and
+/// never for what commits.
+pub fn founder_retry(class: Class, failure: &Failure, result: &str) -> Option<&'static str> {
+    if class == Class::Commits {
+        return None;
+    }
+    let conflict = result.starts_with("HTTP 409");
+    Some(match failure {
+        Failure::Ambiguous => "ambiguous",
+        Failure::ByAgent if conflict => "ambiguous",
+        _ => "clear",
+    })
+}
+
 /// The header in which `action`'s service takes an idempotency key, if
 /// its declaration names one.
 pub fn idempotency_header<'a>(integrations: &'a [Integration], action: &str) -> Option<&'a str> {
@@ -151,6 +167,7 @@ impl Hub {
             Ok(_) => "it is not in the action journal",
             Err(why) => why,
         };
+        let retry = founder_retry(class, &failure, f.result);
         super::incidents::record(
             realm,
             &super::incidents::Incident {
@@ -160,6 +177,7 @@ impl Hub {
                 routine: f.routine,
                 action: Some(f.action),
                 demote: failure == Failure::ByAgent,
+                retry: retry.map(|r| (f.key, r)),
             },
         )?;
         Ok(None)
@@ -245,6 +263,34 @@ impl Hub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 62: Retry at once when nothing was done, after checking
+    /// when it may have been (409 included), never for what commits.
+    #[test]
+    fn the_founder_retries_what_proves_undone_and_checks_the_rest() {
+        let ok = EventStatus::Ok;
+        let retry = |class, result: &str| founder_retry(class, &classify(ok, result), result);
+        for code in ["400", "401", "403", "404", "422"] {
+            assert_eq!(
+                retry(Class::Reversible, &format!("HTTP {code} X")),
+                Some("clear"),
+                "{code}"
+            );
+        }
+        for code in ["408", "409", "502", "504"] {
+            assert_eq!(
+                retry(Class::Reversible, &format!("HTTP {code} X")),
+                Some("ambiguous"),
+                "{code}"
+            );
+        }
+        let cut = "sent, no answer: request to x failed";
+        assert_eq!(
+            founder_retry(Class::Read, &classify(EventStatus::Error, cut), cut),
+            Some("ambiguous")
+        );
+        assert_eq!(retry(Class::Commits, "HTTP 403 X"), None);
+    }
 
     #[test]
     fn failures_are_told_apart() {
