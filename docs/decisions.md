@@ -2,6 +2,31 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 68. Finance entered by hand, until a bank is connected
+
+**Accepted**, the founder's request: Revolut's API needs a plan upgrade, so decision 54 stays coded but unused for now.
+
+The HQ's finance (decision 53) waits for a bank read. Until a bank is connected, the founder enters the figures by hand in the business's folder.
+
+- **`business/finance.md`**, in the config format:
+  - `cash`: the money in the bank, a number;
+  - `spent`: what the business spent this month, a number;
+  - `as_of`: the date of these figures;
+  - `currency`, optional: the profile's `currency` by default.
+
+  The body is free notes. An unknown key or a wrong value (not a number, not a date) is refused, naming the file and the field. The HQ then shows finance as unknown, with that reason.
+- **The HQ shows them as entered by hand, as of their date:** "Entered by hand · as of 2 Nov".
+  - Cash and out (`spent`) are shown as entered. In is shown as not known.
+  - Runway is `cash ÷ spent`, in months. A month with no spending shows "No spending", as for a bank.
+  - The runway counts in the business's health, as a bank's does (decision 53).
+- **More than 35 days after `as_of`**, the figures turn to unknown, "Entered by hand more than 35 days ago", never shown stale.
+- **A connected bank takes precedence.** Once a bank is connected (decision 54), the HQ shows the bank only, its unknown states included. `finance.md` is then ignored, without being deleted.
+- **Runs cannot write it:** `business/` is read-only for every run (decision 43, amendment), so an agent, or a page it read, cannot change the figures the founder relies on.
+
+*Why:* the runway is the HQ's one finance signal, and the founder knows the two figures it needs. A file in the business folder is the config's own way, versioned in git, so a change shows who made it and when. Turning old figures to unknown keeps decision 54's rule: a figure is shown with its date or not at all.
+
+*Cost:* the founder updates the file at least monthly. `spent` is the month's spending as the founder states it: entered mid-month, it understates the month, so the runway reads longer. The founder enters a full month's spending for a fair runway.
+
 ## 67. The Linux sandbox: bubblewrap, built from the same rules as the macOS profile; Landlock later
 
 **Accepted**: the founder said to go on with it.
