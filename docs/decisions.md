@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 63. Replies: the founder sends a post's link on Telegram; Airth drafts the reply into Typefully, never onto X
 
-**Proposed.**
+**Accepted**, with the founder's precisions: replies are level 1 like posts; the link may come with one line of angle; a post too thin to answer is said, not drafted.
 
 Milestone 4 includes replies. Airth never writes to X through the API (`CLAUDE.md`), and replies on X stay at level 0: the founder publishes them. Today the founder writes a reply as a Typefully draft with the post to answer as `reply_to_url`, by hand. Two questions: how Airth learns which post to answer, and how its reply reaches the founder.
 
@@ -20,11 +20,12 @@ Milestone 4 includes replies. Airth never writes to X through the API (`CLAUDE.m
 
 **How it runs.**
 
+- **The founder's message.** The link alone, or the link and one line of angle ("push back on the yield claim"). The angle goes to the reply prompt as the founder's intent (`founder_angle`), never as a fact about the post.
 - **Trigger.** A message from the founder in the paired chat (decision 52: their chat and their user, never a forwarded or edited message) that holds an `x.com` or `twitter.com` post link starts the business's routine whose trigger is `{"telegram": "x_post"}`. It is an event trigger, which decision 49 already names, not a new block. A message with no such link is ignored, as today.
-- **Read.** A new Read source, `x_post`, fetches the post through oEmbed, through the runtime like any read. It gives one item shaped like a feed item: `title` (the author and the post's first words), `summary` (the post's text, as plain text), `published`, `link` (the post's canonical URL) and `source_id` (that URL). The check prompt and the graph rule then work unchanged. The post's text comes from outside: it reaches no Act without an Approval.
+- **Read.** A new Read source, `x_post`, fetches the post through oEmbed, through the runtime like any read. It gives one item shaped like a feed item: `title` (the author and the post's first words), `summary` (the post's text, as plain text), `published`, `link` (the post's canonical URL) and `source_id` (that URL). The check prompt and the graph rule then work unchanged. The post's text comes from outside: it reaches no Act without an Approval. When the post's own words are too thin to answer (it is mostly an image, a chart, a link or a quoted post), the routine stops there and the bot says so on Telegram; nothing is drafted.
 - **AI: the reply.** A `prompts/reply.md` per business, with its schema (`reply`, at most 280 characters; `angle`). Then the check block (decision 58) on the reply.
 - **Approval.** In Needs you and on Telegram, with the post it answers.
-- **Act: a Typefully draft that answers the post.** A declared action, for example `typefully.create_reply`, `POST /v2/social-sets/{social_set_id}/drafts`, its body fixed: `{"platforms": {"x": {"enabled": true, "posts": [{"text": "{text}"}], "settings": {"reply_to_url": "{reply_to_url}"}}}}`. Never `publish_at`, so it can only be a draft. Class `reversible`, held at level 1: each reply is approved. Nothing reaches X until the founder publishes it in Typefully. That is how this decision reads `CLAUDE.md`'s "replies on X stay at level 0": Airth prepares, the founder posts.
+- **Act: a Typefully draft that answers the post.** A declared action, for example `typefully.create_reply`, `POST /v2/social-sets/{social_set_id}/drafts`, its body fixed: `{"platforms": {"x": {"enabled": true, "posts": [{"text": "{text}"}], "settings": {"reply_to_url": "{reply_to_url}"}}}}`. Never `publish_at`, so it can only be a draft. Class `reversible`, at level 1 like posts: the founder's Approve creates the draft. Nothing reaches X until the founder publishes it in Typefully. That is how this decision reads `CLAUDE.md`'s "replies on X stay at level 0": Airth prepares, the founder posts.
 
 **The reply prompt's contract** (each business writes its own `prompts/reply.md`; Airth only checks its schema):
 
