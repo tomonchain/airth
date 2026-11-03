@@ -349,7 +349,7 @@ function smokeNext() {
   NextNode.prototype.append = function (...items) { for (const x of items) { const n = x instanceof FakeNode ? x : new NextText(String(x)); if (n.parent && n.parent !== this) n.parent.removeChild(n); n.parent = this; this.children.push(n); } };
   NextNode.prototype.replaceChildren = function (...items) { for (const c of this.children) c.parent = null; this.children = []; this.append(...items); };
   const nbody = new NextNode("body");
-  for (const id of ["top", "rail", "panel"]) { const n = new NextNode("div"); n.attrs.id = id; nbody.append(n); }
+  for (const id of ["top", "rail", "panel", "dock"]) { const n = new NextNode("div"); n.attrs.id = id; nbody.append(n); }
   const ctx = {
     Node: FakeNode, Element: NextNode, Date, console, storage,
     document: { createElement: (t) => new NextNode(t), createElementNS: (_, t) => new NextNode(t), createTextNode: (t) => new NextText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s), body: nbody, activeElement: null },
@@ -437,13 +437,18 @@ function smokeNext() {
     const hrefs = {};
     const walk = (n) => { if (n.tag === "a" && n.attrs.title) hrefs[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
     walk(nbody.querySelector("#rail"));
-    const want = { Team: "#/b/acme/team", Tasks: "#/b/acme/tasks", Business: "#/b/acme/business", Settings: "#/settings", "Your profile": "/classic#/owner",
+    const want = { Team: "#/b/acme/team", Tasks: "#/b/acme/tasks", Business: "#/b/acme/business", Settings: "#/settings",
       Routines: "#/b/acme/routines", Calendar: "#/b/acme/calendar", Workshop: "#/workshop", Home: "#/b/acme/home" };
     for (const [label, href] of Object.entries(want)) if (hrefs[label] !== href) problems.push(`next/rail: ${label} goes to ${hrefs[label]}, not ${href}`);
   }
-  // The rail ends with the theme toggle and the founder's profile.
+  // The rail ends with the theme toggle; the founder's account sits at the
+  // header's right, where the command bar was.
   const rail = JSON.stringify(nbody.querySelector("#rail"), (k, v) => (k === "parent" ? undefined : v));
-  if (!/Switch to (light|dark) mode/.test(rail) || !rail.includes("Your profile")) problems.push("next/rail: no theme toggle or profile");
+  if (!/Switch to (light|dark) mode/.test(rail)) problems.push("next/rail: no theme toggle");
+  const account = find(nbody.querySelector("#top"), ".account", true)[0];
+  if (!account || account.attrs.href !== "/classic#/owner") problems.push("next/top: the founder's account is not in the header");
+  if (nbody.querySelector("#top").textContent.includes("Send")) problems.push("next/top: the command bar is still in the header");
+  if (!nbody.querySelector("#dock").textContent.includes("Send")) problems.push("next/dock: no command bar at the bottom of a business page");
   // Search (⌘K): pages, businesses and actions, filtered as you type; Esc
   // closes it.
   show("hq, search", { route: { page: "hq" } });
@@ -498,6 +503,7 @@ function smokeNext() {
   if (!nbody.textContent.includes("No task yet")) problems.push("next/tasks: no empty state");
   show("hq, no order box", { route: { page: "hq" } });
   if (nbody.textContent.includes("Give an order")) problems.push("next/order: the HQ has no order box");
+  if (nbody.querySelector("#dock").children.length) problems.push("next/dock: the HQ shows the command bar");
   // Needs you, with every kind of item and fields left empty.
   vm.runInContext(`Object.assign(needs, { realm: "acme", items: ${JSON.stringify([
     { id: 1, kind: "approval", title: "A post", agent: "post-writer", routine: "daily-posts", run: "r1", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.", editable: true, source: { title: null, link: "https://e.com/1" } },
