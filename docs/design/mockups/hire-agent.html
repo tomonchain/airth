@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hire an agent · Hedgen Ltd</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0F1011}
+a{color:#8FA6FF}a:hover{color:#B8C6FF}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:720px){.rail{flex-direction:row !important;flex-wrap:wrap;flex-basis:100% !important}}
+
+.ch .body,.ch .eyes,.ch .pupils,.ch .acc,.ch .wave,.ch .bubble,.ch .zzz text,.ch .stars,.ch .shadow{transform-box:fill-box;transform-origin:center bottom}
+.ch .eyes{transform-origin:center}
+.st-idle .body{animation:breathe 3.2s ease-in-out infinite}
+.st-idle .eyes,.st-working .eyes,.st-needs .eyes{animation:blink 4.6s infinite}
+.st-working .body{animation:bob .7s ease-in-out infinite}
+.st-working .pupils.look{animation:look 2.4s ease-in-out infinite;transform-box:view-box;transform-origin:0 0}
+.acc.scribble{animation:scribble .35s ease-in-out infinite alternate;transform-origin:center top}
+.acc.scan{animation:scan 2.4s ease-in-out infinite;transform-origin:center bottom}
+.acc.flip{animation:flip 1.2s ease-in-out infinite}
+.st-needs .body{animation:hop 1.6s ease-in-out infinite}
+.ch .wave{animation:wave .9s ease-in-out infinite alternate}
+.ch .bubble{animation:pulse 1.6s ease-in-out infinite}
+.st-incident .body{animation:wobble 1.4s ease-in-out infinite;transform-origin:center bottom}
+.ch .stars{animation:spin 2.2s linear infinite;transform-box:view-box}
+.st-asleep .body{animation:breathe 4.4s ease-in-out infinite}
+.ch .zzz .z1{animation:float 2.8s ease-in infinite}
+.ch .zzz .z2{animation:float 2.8s ease-in 1.4s infinite}
+.ch.hatch .body{animation:hatch 5s cubic-bezier(.3,1.4,.5,1) infinite, breathe 3.2s ease-in-out 1s infinite}
+.ch.hatch .shadow{animation:shadow 5s ease-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.025,.975)}}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes look{0%,100%{transform:translateX(0)}30%{transform:translateX(-3px)}70%{transform:translateX(3px)}}
+@keyframes scribble{from{transform:rotate(-6deg)}to{transform:rotate(6deg)}}
+@keyframes scan{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+@keyframes flip{0%,100%{transform:translateY(0) scaleX(1)}50%{transform:translateY(-2px) scaleX(.92)}}
+@keyframes hop{0%,60%,100%{transform:translateY(0)}70%{transform:translateY(-6px)}80%{transform:translateY(0)}}
+@keyframes wave{from{transform:rotate(-14deg)}to{transform:rotate(16deg)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+@keyframes wobble{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes float{0%{transform:translate(0,4px);opacity:0}20%{opacity:1}100%{transform:translate(6px,-14px);opacity:0}}
+@keyframes hatch{0%{transform:scale(.15) translateY(20px);opacity:0}12%{transform:scale(1.12,.9);opacity:1}18%{transform:scale(.94,1.06)}24%,100%{transform:scale(1)}}
+@keyframes shadow{0%{opacity:0}12%,100%{opacity:1}}
+.spark{animation:spark 5s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spark{0%,8%{opacity:0;transform:scale(.2)}14%{opacity:1;transform:scale(1)}30%,100%{opacity:0;transform:scale(1.4)}}
+@media (prefers-reduced-motion:reduce){.ch *,.spark{animation:none !important}}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; min-height: 100vh; font-family: Inter, system-ui, sans-serif; color: #ECEDEE; background: #0F1011">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px">
+  <div style="display: flex; align-items: center; gap: 16px">
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 0; background: transparent; color: #ECEDEE; font: inherit; font-size: 15px; font-weight: 600">
+      <span aria-hidden="true" style="width: 26px; height: 26px; border-radius: 8px; background: #1E3A2E; color: #5BD08D; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700">H</span>Hedgen Ltd
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B929B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 9 5-5 5 5M7 15l5 5 5-5"/></svg>
+    </button>
+    <span style="font-size: 15px; color: #A3A9B1">Team · Hire an agent</span>
+  </div>
+  <button type="button" style="display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #ECEDEE; color: #0F1011; font: inherit; font-size: 14px; font-weight: 600">
+    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Hire an agent</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto; align-items: stretch">
+  <nav aria-label="Main" class="rail" style="flex: 0 0 72px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 16px">
+    <a href="hq.html" aria-label="HQ" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V21H3z"/></svg></a>
+    <a href="needs-you.html" aria-label="Needs you, 3 items" style="position: relative; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v7H2v-7z"/></svg><span aria-hidden="true" style="position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 4px; background: #F5B353"></span></a>
+    <a href="team.html" aria-label="Team" aria-current="page" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #23262A; color: #ECEDEE"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.9.4 5 2.8 5 5.8"/></svg></a>
+    <a href="routine-editor.html" aria-label="Routines" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/></svg></a>
+    <a href="tasks.html" aria-label="Tasks" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l2 2 3-3M3 13l2 2 3-3M12 6h9M12 13h9M12 20h9"/></svg></a>
+    <a href="calendar.html" aria-label="Calendar" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></a>
+    <div style="flex: 1 1 auto"></div>
+    <a href="#" aria-label="Workshop" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></a>
+    <a href="#" aria-label="Settings" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9BA1A9"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; margin: 0 12px 12px 0; background: #17181A; border: 1px solid #24272B; border-radius: 16px; padding: 28px 32px 40px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+    <section aria-labelledby="hire-t" style="flex: 1 1 460px; min-width: 0; background: #1D1F22; border: 1px solid #2A2D31; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 22px">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+        <span style="font-size: 12px; font-weight: 600; color: #A3A9B1; letter-spacing: 0.04em">HIRE AN AGENT · STEP 3 OF 3</span>
+        <span style="display: flex; gap: 6px" aria-hidden="true"><span style="width: 18px; height: 4px; border-radius: 2px; background: #5BD08D"></span><span style="width: 18px; height: 4px; border-radius: 2px; background: #5BD08D"></span><span style="width: 18px; height: 4px; border-radius: 2px; background: #ECEDEE"></span></span>
+      </div>
+      <h1 id="hire-t" style="margin: 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em">Meet your new Post writer.</h1>
+      <div style="position: relative; display: flex; justify-content: center; align-items: center; height: 260px; border-radius: 16px; background: radial-gradient(circle at 50% 60%, #2A2316 0%, #17181A 62%)">
+        <svg class="spark" aria-hidden="true" width="18" height="18" viewBox="-6 -6 12 12" style="position: absolute; left: 18%; top: 22%; animation-delay: 0s"><path d="M0 -5 L1.4 -1.4 L5 0 L1.4 1.4 L0 5 L-1.4 1.4 L-5 0 L-1.4 -1.4 Z" fill="#F5B353"/></svg><svg class="spark" aria-hidden="true" width="18" height="18" viewBox="-6 -6 12 12" style="position: absolute; left: 76%; top: 18%; animation-delay: 0.1s"><path d="M0 -5 L1.4 -1.4 L5 0 L1.4 1.4 L0 5 L-1.4 1.4 L-5 0 L-1.4 -1.4 Z" fill="#8FA6FF"/></svg><svg class="spark" aria-hidden="true" width="18" height="18" viewBox="-6 -6 12 12" style="position: absolute; left: 14%; top: 64%; animation-delay: 0.2s"><path d="M0 -5 L1.4 -1.4 L5 0 L1.4 1.4 L0 5 L-1.4 1.4 L-5 0 L-1.4 -1.4 Z" fill="#5BD08D"/></svg><svg class="spark" aria-hidden="true" width="18" height="18" viewBox="-6 -6 12 12" style="position: absolute; left: 82%; top: 60%; animation-delay: 0.15s"><path d="M0 -5 L1.4 -1.4 L5 0 L1.4 1.4 L0 5 L-1.4 1.4 L-5 0 L-1.4 -1.4 Z" fill="#F39C4A"/></svg><svg class="spark" aria-hidden="true" width="18" height="18" viewBox="-6 -6 12 12" style="position: absolute; left: 48%; top: 6%; animation-delay: 0.05s"><path d="M0 -5 L1.4 -1.4 L5 0 L1.4 1.4 L0 5 L-1.4 1.4 L-5 0 L-1.4 -1.4 Z" fill="#ECEDEE"/></svg>
+        <svg class="ch st-idle hatch" role="img" aria-label="Post writer character, just hatched" width="200" height="200" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><ellipse cx="100" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(-18 100 76)"/><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="62" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="62" rx="9" ry="10" fill="#fff"/><g class="pupils"><circle cx="49" cy="63" r="4.6" fill="#0F1011"/><circle cx="73" cy="63" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="61" r="1.4" fill="#fff"/><circle cx="74.5" cy="61" r="1.4" fill="#fff"/></g></g><path d="M54 76 q6 5 12 0" fill="none" stroke="#0F1011" stroke-width="2.6" stroke-linecap="round"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 20px; font-weight: 600">Post writer</span>
+        <span style="font-size: 14px; color: #A3A9B1">Marketing and content · drafts the morning posts for X</span>
+        <span style="font-size: 13px; color: #8B929B">Starts at level 1: proposes, you approve. First run tomorrow 07:30.</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <button type="button" style="min-height: 44px; padding: 0 20px; border-radius: 10px; border: 0; background: #ECEDEE; color: #0F1011; font: inherit; font-size: 14px; font-weight: 600">Hire</button>
+        <button type="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #34383D; background: transparent; color: #ECEDEE; font: inherit; font-size: 14px; font-weight: 500"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>Another look</button>
+      </div>
+      <p style="margin: 0; font-size: 12px; color: #6F767F; line-height: 1.5">Colour from the department, accessory from the role, shape and eyes drawn at random. Once hired, the look is saved with the agent and never changes.</p>
+    </section>
+
+    <div style="flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+      <section aria-labelledby="team-t" style="display: flex; flex-direction: column; gap: 12px">
+        <h2 id="team-t" style="margin: 0; font-size: 15px; font-weight: 600">Your team right now</h2>
+        <article style="background: #1D1F22; border: 1px solid #2A2D31; border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 16px">
+          <svg class="ch st-working" role="img" aria-label="Watcher character" width="84" height="84" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g class="acc lens scan"><path d="M60 26 C60 14 66 10 70 6" fill="none" stroke="#2F63C4" stroke-width="4" stroke-linecap="round"/><circle cx="72" cy="3" r="7.5" fill="#ECEDEE"/><circle cx="72" cy="3" r="4.5" fill="#8FA6FF"/><circle cx="70.5" cy="1.5" r="1.6" fill="#fff"/></g><g fill="#2F63C4"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="26" cy="72" rx="6" ry="10" fill="#2F63C4" transform="rotate(18 26 72)"/><ellipse cx="94" cy="72" rx="6" ry="10" fill="#2F63C4" transform="rotate(-18 94 72)"/><g fill="#4C8DFF"><rect x="28" y="24" width="64" height="80" rx="32"/></g><ellipse cx="60" cy="82" rx="20" ry="15" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="54" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="54" rx="9" ry="10" fill="#fff"/><g class="pupils look"><circle cx="49" cy="55" r="4.6" fill="#0F1011"/><circle cx="73" cy="55" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="53" r="1.4" fill="#fff"/><circle cx="74.5" cy="53" r="1.4" fill="#fff"/></g></g><path d="M54 68 q6 5 12 0" fill="none" stroke="#0F1011" stroke-width="2.6" stroke-linecap="round"/></g></svg>
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+            <span style="font-size: 16px; font-weight: 600">Watcher</span>
+            <span style="font-size: 13px; color: #A3A9B1">Reading 14 sources for daily-watch</span>
+            <span style="align-self: flex-start; font-size: 12px; font-weight: 600; background: #1E2740; color: #8FA6FF; border-radius: 999px; padding: 4px 10px">Working</span>
+          </div>
+        </article>
+        <article style="background: #1D1F22; border: 1px solid #2A2D31; border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 16px">
+          <svg class="ch st-needs" role="img" aria-label="Post writer character" width="84" height="84" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><g class="wave" style="transform-origin:94px 70px;transform-box:view-box"><ellipse cx="97" cy="59" rx="6" ry="12" fill="#C7742B" transform="rotate(22 97 59)"/></g><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="62" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="62" rx="9" ry="10" fill="#fff"/><g class="pupils"><circle cx="49" cy="61" r="4.6" fill="#0F1011"/><circle cx="73" cy="61" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="59" r="1.4" fill="#fff"/><circle cx="74.5" cy="59" r="1.4" fill="#fff"/></g></g><ellipse cx="60" cy="77" rx="4" ry="3.6" fill="#0F1011"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g><g class="bubble"><rect x="86" y="11" width="26" height="22" rx="8" fill="#F5B353"/><path d="M92 32 l-4 7 l9 -7 Z" fill="#F5B353"/><text x="99" y="27" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#2A1404">!</text></g></svg>
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+            <span style="font-size: 16px; font-weight: 600">Post writer</span>
+            <span style="font-size: 13px; color: #A3A9B1">A draft for X waits for you</span>
+            <span style="align-self: flex-start; font-size: 12px; font-weight: 600; background: #3A2C14; color: #F5B353; border-radius: 999px; padding: 4px 10px">Needs you</span>
+          </div>
+        </article>
+        <article style="background: #1D1F22; border: 1px solid #2A2D31; border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 16px">
+          <svg class="ch st-asleep" role="img" aria-label="Writer character" width="84" height="84" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#6547C9"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="23" cy="76" rx="6" ry="10" fill="#6547C9" transform="rotate(18 23 76)"/><ellipse cx="97" cy="76" rx="6" ry="10" fill="#6547C9" transform="rotate(-18 97 76)"/><g fill="#8B6CF6"><rect x="25" y="34" width="70" height="70" rx="24"/></g><ellipse cx="60" cy="84" rx="22" ry="13" fill="#fff" fill-opacity=".18"/><g fill="none" stroke="#0F1011" stroke-width="3" stroke-linecap="round"><path d="M42 60 q6 5 12 0"/><path d="M66 60 q6 5 12 0"/></g><ellipse cx="60" cy="75" rx="3" ry="2.2" fill="#0F1011" fill-opacity=".6"/><g transform="translate(60 88)"><g class="acc book"><rect x="-17" y="-11" width="34" height="22" rx="3" fill="#ECEDEE"/><rect x="-1.2" y="-11" width="2.4" height="22" fill="#C9BDFB"/><path d="M-12 -4 H-5 M-12 1 H-5 M5 -4 H12 M5 1 H12" stroke="#8B929B" stroke-width="1.6" stroke-linecap="round"/></g></g></g><g class="zzz" font-family="Inter, sans-serif" font-weight="700" fill="#A3A9B1"><text class="z1" x="88" y="34" font-size="12">z</text><text class="z2" x="97" y="22" font-size="15">z</text></g></svg>
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+            <span style="font-size: 16px; font-weight: 600">Writer</span>
+            <span style="font-size: 13px; color: #A3A9B1">Next run Monday 09:00</span>
+            <span style="align-self: flex-start; font-size: 12px; font-weight: 600; background: #26292D; color: #A3A9B1; border-radius: 999px; padding: 4px 10px">Asleep</span>
+          </div>
+        </article>
+      </section>
+      <section aria-labelledby="st-t" style="display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-t" style="margin: 0; font-size: 15px; font-weight: 600">The animation tells you the state</h2>
+        <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px"><div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 14px; background: #1D1F22; min-width: 0">
+            <svg class="ch st-idle" role="img" aria-label="Post writer, Idle" width="72" height="72" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><ellipse cx="100" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(-18 100 76)"/><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="62" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="62" rx="9" ry="10" fill="#fff"/><g class="pupils"><circle cx="49" cy="63" r="4.6" fill="#0F1011"/><circle cx="73" cy="63" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="61" r="1.4" fill="#fff"/><circle cx="74.5" cy="61" r="1.4" fill="#fff"/></g></g><path d="M54 76 q6 5 12 0" fill="none" stroke="#0F1011" stroke-width="2.6" stroke-linecap="round"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g></svg>
+            <span style="font-size: 13px; font-weight: 600">Idle</span>
+            <span style="font-size: 12px; color: #8B929B; text-align: center">Breathes, blinks</span>
+          </div><div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 14px; background: #1D1F22; min-width: 0">
+            <svg class="ch st-working" role="img" aria-label="Post writer, Working" width="72" height="72" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><ellipse cx="100" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(-18 100 76)"/><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="62" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="62" rx="9" ry="10" fill="#fff"/><g class="pupils look"><circle cx="49" cy="63" r="4.6" fill="#0F1011"/><circle cx="73" cy="63" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="61" r="1.4" fill="#fff"/><circle cx="74.5" cy="61" r="1.4" fill="#fff"/></g></g><path d="M54 76 q6 5 12 0" fill="none" stroke="#0F1011" stroke-width="2.6" stroke-linecap="round"/><g transform="translate(98 58) rotate(28)"><g class="acc pen scribble"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g></svg>
+            <span style="font-size: 13px; font-weight: 600">Working</span>
+            <span style="font-size: 12px; color: #8B929B; text-align: center">A routine runs</span>
+          </div><div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 14px; background: #1D1F22; min-width: 0">
+            <svg class="ch st-needs" role="img" aria-label="Post writer, Needs you" width="72" height="72" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><g class="wave" style="transform-origin:94px 70px;transform-box:view-box"><ellipse cx="97" cy="59" rx="6" ry="12" fill="#C7742B" transform="rotate(22 97 59)"/></g><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g class="eyes"><ellipse cx="48" cy="62" rx="9" ry="10" fill="#fff"/><ellipse cx="72" cy="62" rx="9" ry="10" fill="#fff"/><g class="pupils"><circle cx="49" cy="61" r="4.6" fill="#0F1011"/><circle cx="73" cy="61" r="4.6" fill="#0F1011"/><circle cx="50.5" cy="59" r="1.4" fill="#fff"/><circle cx="74.5" cy="59" r="1.4" fill="#fff"/></g></g><ellipse cx="60" cy="77" rx="4" ry="3.6" fill="#0F1011"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g><g class="bubble"><rect x="86" y="11" width="26" height="22" rx="8" fill="#F5B353"/><path d="M92 32 l-4 7 l9 -7 Z" fill="#F5B353"/><text x="99" y="27" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#2A1404">!</text></g></svg>
+            <span style="font-size: 13px; font-weight: 600">Needs you</span>
+            <span style="font-size: 12px; color: #8B929B; text-align: center">Raises a hand</span>
+          </div><div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 14px; background: #1D1F22; min-width: 0">
+            <svg class="ch st-incident" role="img" aria-label="Post writer, Incident" width="72" height="72" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><ellipse cx="100" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(-18 100 76)"/><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g fill="none" stroke="#0F1011" stroke-width="2.6" stroke-linecap="round"><path d="M44 57 l8 8 m0 -8 l-8 8"/><path d="M68 57 l8 8 m0 -8 l-8 8"/></g><path d="M53 79 q3.5 -4 7 0 q3.5 4 7 0" fill="none" stroke="#0F1011" stroke-width="2.4" stroke-linecap="round"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g><g class="stars" style="transform-origin:60px 27px"><g transform="translate(40 27)"><path d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#F5B353"/></g><g transform="translate(80 25)"><path d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#F5B353"/></g><g transform="translate(60 19) scale(.7)"><path d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#F5B353"/></g></g></svg>
+            <span style="font-size: 13px; font-weight: 600">Incident</span>
+            <span style="font-size: 12px; color: #8B929B; text-align: center">Dazed</span>
+          </div><div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 14px; background: #1D1F22; min-width: 0">
+            <svg class="ch st-asleep" role="img" aria-label="Post writer, Asleep" width="72" height="72" viewBox="0 0 120 120" style="overflow: visible; flex: 0 0 auto"><ellipse class="shadow" cx="60" cy="111" rx="30" ry="4" fill="#000" fill-opacity=".35"/><g class="body"><g fill="#C7742B"><ellipse cx="47" cy="104" rx="9" ry="5"/><ellipse cx="73" cy="104" rx="9" ry="5"/></g><ellipse cx="20" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(18 20 76)"/><ellipse cx="100" cy="76" rx="6" ry="10" fill="#C7742B" transform="rotate(-18 100 76)"/><g fill="#F39C4A"><ellipse cx="60" cy="70" rx="38" ry="35"/></g><ellipse cx="60" cy="84" rx="22" ry="14" fill="#fff" fill-opacity=".18"/><g fill="none" stroke="#0F1011" stroke-width="3" stroke-linecap="round"><path d="M42 62 q6 5 12 0"/><path d="M66 62 q6 5 12 0"/></g><ellipse cx="60" cy="77" rx="3" ry="2.2" fill="#0F1011" fill-opacity=".6"/><g transform="translate(98 58) rotate(28)"><g class="acc pen"><rect x="-3.5" y="0" width="7" height="30" rx="2" fill="#ECEDEE"/><rect x="-3.5" y="0" width="7" height="6" rx="2" fill="#8FA6FF"/><path d="M-3.5 30 L0 38 L3.5 30 Z" fill="#ECEDEE"/><path d="M-1.2 34.5 L0 38 L1.2 34.5 Z" fill="#0F1011"/></g></g></g><g class="zzz" font-family="Inter, sans-serif" font-weight="700" fill="#A3A9B1"><text class="z1" x="88" y="34" font-size="12">z</text><text class="z2" x="97" y="22" font-size="15">z</text></g></svg>
+            <span style="font-size: 13px; font-weight: 600">Asleep</span>
+            <span style="font-size: 12px; color: #8B929B; text-align: center">Nothing scheduled</span>
+          </div></div>
+        <p style="margin: 0; font-size: 12px; color: #6F767F; line-height: 1.5">Animated on Team and when hiring. In lists the character stays still and only moves when its state changes. No motion when the system asks for reduced motion.</p>
+      </section>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+</body>
+</html>
