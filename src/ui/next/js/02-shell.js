@@ -26,13 +26,13 @@ const PINNED = [
 function parseRoute() {
   const m = location.hash.match(/^#\/b\/([^/]+)\/([a-z-]+)/);
   if (m) return { page: m[2], realm: decodeURIComponent(m[1]) };
-  const p = location.hash.match(/^#\/(workshop|settings)/);
+  const p = location.hash.match(/^#\/(workshop|settings|new-business)/);
   if (p) return { page: p[1] };
   return { page: "hq" };
 }
 
 const pageHash = (page, realm = next.realm) =>
-  PINNED.some((p) => p.id === page) || page === "hq" || !realm ? `#/${page}` : `#/b/${enc(realm)}/${page}`;
+  PINNED.some((p) => p.id === page) || ["hq", "new-business"].includes(page) || !realm ? `#/${page}` : `#/b/${enc(realm)}/${page}`;
 
 function renderTop() {
   const top = $("#top");
@@ -55,7 +55,7 @@ function renderTop() {
       h("span", { class: "where" }, inBusiness ? (page ? page.title : "") : "All businesses")),
     inBusiness && next.route.page !== "tasks" && orderBox(),
     next.route.page === "hq"
-      ? h("a", { class: "primary", href: "/#/realms/new" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
+      ? h("a", { class: "primary", href: "#/new-business" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
       : h("a", { class: "where back", href: "/" }, "Current interface"));
 }
 

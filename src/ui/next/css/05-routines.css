@@ -12,6 +12,10 @@
 .dot.bad { background: var(--bad); }
 .graph-head .primary { min-height: 40px; padding: 0 18px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .graph-head .primary[disabled] { opacity: 0.6; cursor: default; }
+.graph-actions { display: flex; gap: 8px; }
+.graph-head .plain { min-height: 40px; padding: 0 16px; border-radius: var(--r-button); border: 1px solid var(--line-strong); background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.graph-head .plain[aria-pressed="true"] { background: var(--raised); }
+.details .in-dev { margin-bottom: 16px; padding: 18px; }
 .graph-sub, .graph-foot { margin: 0; font-size: 14px; color: var(--text-3); max-width: 760px; }
 .graph-sub strong { color: var(--text-2); font-weight: 600; }
 .graph-foot { font-size: 13px; color: var(--text-4); }

@@ -35,7 +35,9 @@ function teamPage() {
     : depts.length === 1 ? `${agents.length === 1 ? "One agent" : `${agents.length} agents`}, ${agents.length === 1 ? "in" : "all in"} ${DEPARTMENT_NAMES[depts[0]] || "no department yet"}.`
     : `${agents.length} agents in ${depts.length} departments.`;
   return h("div", { class: "column wide" },
-    pageHead(null, title, agents.length > 0 && "Your time and cost over the last 30 days."),
+    h("div", { class: "head-row" },
+      pageHead(null, title, agents.length > 0 && "Your time and cost over the last 30 days."),
+      h("a", { class: "button", href: pageHash("hire") }, "Hire an agent")),
     !agents.length && h("div", { class: "empty" }, h("strong", {}, "No agent yet"),
       h("span", {}, "An agent is a file in agents/ in the business folder: its title, its department and its job.")),
     depts.map((d) => h("section", { class: "dept" },
