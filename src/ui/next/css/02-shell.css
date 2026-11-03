@@ -1,7 +1,7 @@
 /* The shell: header, icon rail, main panel (DESIGN.md, Components). */
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-body); }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-body); line-height: 1.55; }
 a { color: var(--accent); }
 a:hover { color: var(--accent-hover); }
 button { font: inherit; }

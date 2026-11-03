@@ -1,11 +1,6 @@
 /* The new interface (decision 57): docs/design/DESIGN.md's tokens, defined
    once. Pages use only these. */
 
-@font-face { font-family: Inter; font-weight: 400; font-display: swap; src: url("/next/fonts/inter-400.woff2") format("woff2"); }
-@font-face { font-family: Inter; font-weight: 500; font-display: swap; src: url("/next/fonts/inter-500.woff2") format("woff2"); }
-@font-face { font-family: Inter; font-weight: 600; font-display: swap; src: url("/next/fonts/inter-600.woff2") format("woff2"); }
-@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url("/next/fonts/jetbrains-mono-400.woff2") format("woff2"); }
-@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/next/fonts/jetbrains-mono-500.woff2") format("woff2"); }
 
 :root {
   /* Type sizes: the classic interface's scale (founder, 3 November 2026). */
@@ -13,7 +8,7 @@
   --fs-caption: 11.5px;
   --fs-small: 12px;
   --fs-secondary: 12.5px;
-  --fs-body: 13px;
+  --fs-body: 14px;
   --fs-section: 14px;
   --fs-card: 15px;
   --fs-value: 18px;
@@ -55,8 +50,9 @@
   --dept-finance: #6C9BD2; --dept-finance-dark: #4A729F;
   --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
 
-  --font: Inter, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, monospace;
+  /* The classic interface's fonts: the system's (the founder's choice). */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --r-chip: 8px;
   --r-button: 10px;

@@ -127,16 +127,6 @@ pub(super) fn static_response(body: &str, kind: &str) -> HttpResponse {
         .with_header(Header::from_bytes("Referrer-Policy", "no-referrer").unwrap())
 }
 
-/// A bundled file that is not text (a font), with the same headers.
-pub(super) fn static_bytes(body: &'static [u8], kind: &str) -> HttpResponse {
-    let text = static_response("", kind);
-    let mut response = Response::from_data(body);
-    for header in text.headers() {
-        response.add_header(header.clone());
-    }
-    response
-}
-
 pub(super) fn content_type(kind: &str) -> Header {
     Header::from_bytes("Content-Type", kind).unwrap()
 }
