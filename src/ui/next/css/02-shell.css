@@ -11,14 +11,18 @@ button { font: inherit; }
 /* A long line inside (a preview that does not wrap) must not widen the page. */
 .shell > *, .body > * { min-width: 0; }
 
-.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+/* The header: compact, 48 px (--top-h). In the Mac app it is the window's
+   title bar, so it starts after the three window buttons. */
+:root { --top-h: 48px; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--top-h); box-sizing: border-box; padding: 6px 12px; }
+:root[data-shell="mac"] .top { padding-left: 84px; }
 .top-left { display: flex; align-items: center; gap: 16px; }
 .anchor { position: relative; }
 .glyph { display: flex; }
 .glyph.dim { color: var(--text-4); }
-.switcher { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: var(--r-button); border: 0; background: transparent; color: var(--text); font-size: var(--fs-section); font-weight: 600; cursor: pointer; }
+.switcher { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px; border-radius: var(--r-button); border: 0; background: transparent; color: var(--text); font-size: var(--fs-section); font-weight: 600; cursor: pointer; }
 .switcher:hover { background: var(--raised); }
-.mark { width: 26px; height: 26px; border-radius: var(--r-chip); background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; font-size: var(--fs-secondary); font-weight: 700; }
+.mark { width: 22px; height: 22px; border-radius: var(--r-chip); background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; font-size: var(--fs-secondary); font-weight: 700; }
 .where { font-size: var(--fs-section); color: var(--text-3); }
 .primary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font-size: var(--fs-body); font-weight: 600; text-decoration: none; cursor: pointer; }
 .primary:hover { color: var(--bg); background: var(--text-2); }
@@ -27,14 +31,16 @@ button { font: inherit; }
 .menu a { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: var(--r-chip); color: var(--text); text-decoration: none; }
 .menu a:hover, .menu a[aria-current] { background: var(--raised); }
 .menu .label { padding: 8px 10px 4px; }
+.menu-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+.mark.add { background: var(--chip); color: var(--text-2); }
 
 .body { display: flex; flex-wrap: wrap; flex: 1 1 auto; align-items: stretch; }
 .rail { flex: 0 0 72px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 16px; }
 /* On a wide screen the rail stays in view as the page scrolls, so its
    bottom items (Workshop, Settings, theme, profile) never leave the screen;
-   64 px is the header's height. */
+   --top-h is the header's height. */
 @media (min-width: 721px) {
-  .rail { position: sticky; top: 0; align-self: flex-start; height: calc(100vh - 64px); box-sizing: border-box; }
+  .rail { position: sticky; top: 0; align-self: flex-start; height: calc(100vh - var(--top-h)); box-sizing: border-box; }
 }
 .rail a, .rail-button { position: relative; width: 44px; height: 44px; border-radius: var(--r-tile); display: flex; align-items: center; justify-content: center; color: var(--icon); }
 .rail-button { border: 0; padding: 0; background: transparent; cursor: pointer; }

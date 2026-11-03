@@ -414,7 +414,16 @@ function smokeNext() {
     preact.render(html\`<\${Finance} f=\${{ source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months" }} />\`, n);
     return n.textContent; })()`, ctx);
   if (!/In, \S+ — Out/.test(byHand)) problems.push(`next/hq: money in by hand is not a dash: ${byHand}`);
+  // New business is in the business switcher's menu, not in the header.
+  show("hq", { route: { page: "hq" } });
+  if (nbody.querySelector("#top").textContent.includes("New business")) problems.push("next/top: New business is still in the header");
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
+  {
+    const links = {};
+    const walk = (n) => { if (n.tag === "a") links[n.textContent.trim()] = n.attrs.href; n.children.forEach(walk); };
+    walk(nbody.querySelector("#top"));
+    if (links["New business"] !== "#/new-business") problems.push(`next/top: the switcher's menu has no New business (${JSON.stringify(links)})`);
+  }
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
