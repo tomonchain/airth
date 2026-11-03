@@ -114,7 +114,7 @@ impl App {
                 "state": state,
                 "title": doc.text("title"),
                 "department": doc.text("department"),
-                "job": doc.body.lines().map(str::trim).find(|l| !l.is_empty()),
+                "job": job(&doc.body),
                 "routines": routines,
                 "waiting": waits,
                 "cost_usd": cost,
@@ -163,10 +163,28 @@ fn fields(doc: &Doc) -> Value {
     Value::Object(out)
 }
 
+/// The card's one line: the body's first line of prose. Agent files open
+/// with headings ("## Mission"), which say nothing on a card.
+fn job(body: &str) -> Option<&str> {
+    body.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::business::store::autonomy::NewItem;
+
+    #[test]
+    fn a_cards_job_line_skips_headings() {
+        assert_eq!(
+            job("\n## Mission\n\nDraft the morning posts.\nMore."),
+            Some("Draft the morning posts.")
+        );
+        assert_eq!(job("Write.\n"), Some("Write."));
+        assert_eq!(job("## Mission\n"), None);
+    }
 
     /// Decision 65 on Team: each agent's look (derived until kept) and its
     /// state from Airth's records: one with an item waiting needs the
