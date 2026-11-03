@@ -194,23 +194,29 @@ pub fn profile(
     out
 }
 
-/// bubblewrap's arguments for the same rules as `profile` (decision 67):
-/// the system read-only, then each rule as a mount, from the shortest path
-/// to the longest, so the most specific one decides. Read is a read-only
-/// bind, read and write a writable one, none an empty folder (or
-/// `/dev/null` over a file), made read-only once the binds inside it are
-/// in place. A rule on a path that does not exist yet, under a writable
-/// parent, is an empty read-only folder there, so nothing can be created
-/// where the rule forbids it; under a read-only parent nothing could be
-/// created anyway, and nothing is mounted. Each pinned path is a mount point of
-/// its own, which cannot be renamed or removed. Without network the
-/// command has its own loopback, not the host's.
-fn bwrap_args(
-    rules: &[(PathBuf, Access)],
-    pinned: &[PathBuf],
-    network: bool,
-    home: Option<&Path>,
-) -> Vec<OsString> {
+/// One mount of bubblewrap's view, in order.
+#[derive(Debug, PartialEq)]
+enum Mount {
+    Bind(PathBuf, Access),
+    /// `/dev/null` over a closed file.
+    Null(PathBuf),
+    /// An empty read-only folder; `made` when bubblewrap creates it as
+    /// its mount point, on the host, since nothing was there.
+    Empty {
+        path: PathBuf,
+        made: bool,
+    },
+}
+
+/// bubblewrap's mounts for the same rules as `profile` (decision 67): each
+/// rule from the shortest path to the longest, so the most specific one
+/// decides. Read is a read-only bind, read and write a writable one, none
+/// an empty folder (or `/dev/null` over a file). A rule on a path not there
+/// yet, under a writable parent, is an empty folder there, so nothing can
+/// be created where the rule forbids it; under a read-only parent nothing
+/// could be created anyway, and nothing is mounted. Each pinned path is a
+/// mount point of its own, which cannot be renamed or removed.
+fn mounts(rules: &[(PathBuf, Access)], pinned: &[PathBuf], home: Option<&Path>) -> Vec<Mount> {
     let mut base = baseline(home);
     // Sockets of the owner's session (D-Bus, keyring, SSH agent): the
     // Linux side of the keychain services macOS denies.
@@ -220,27 +226,94 @@ fn bwrap_args(
     // The system and /dev are the fixed start, not mounts of their own.
     base.retain(|(p, _)| p != Path::new("/") && p != Path::new("/dev"));
     let mut all: Vec<(PathBuf, Access)> = base.into_iter().chain(rules.iter().cloned()).collect();
-    for pin in pinned {
-        let access = all
-            .iter()
-            .filter(|(p, _)| pin.starts_with(p))
-            .max_by_key(|(p, _)| p.components().count())
-            .map_or(Access::Read, |(_, a)| *a);
-        all.push((pin.clone(), access));
-    }
-    all.sort_by_key(|(p, _)| p.components().count());
-    // The access the most specific rule gives `path`; the system is read.
-    let access = |path: &Path| {
+    // The access the most specific rule gives `path`; at equal depth the
+    // workspace's, which comes after; the system is read.
+    let access = |all: &[(PathBuf, Access)], path: &Path| {
         all.iter()
             .filter(|(p, _)| path.starts_with(p))
             .max_by_key(|(p, _)| p.components().count())
             .map_or(Access::Read, |(_, a)| *a)
     };
-    // A path not there yet could be created only under a writable parent.
-    let creatable = |path: &Path| {
-        let parent = path.ancestors().skip(1).find(|a| a.exists());
-        parent.is_some_and(|p| access(p) == Access::ReadWrite)
-    };
+    for pin in pinned {
+        let a = access(&all, pin);
+        all.push((pin.clone(), a));
+    }
+    all.sort_by_key(|(p, _)| p.components().count());
+    let mut out: Vec<Mount> = Vec::new();
+    for (path, a) in &all {
+        let creatable = || {
+            let parent = path.ancestors().skip(1).find(|p| p.exists());
+            parent.is_some_and(|p| access(&all, p) == Access::ReadWrite)
+        };
+        let mount = match (a, path.exists(), path.is_dir()) {
+            (Access::ReadWrite, false, _) => continue,
+            (Access::None, true, false) => Mount::Null(path.clone()),
+            (_, true, true) | (Access::Read | Access::ReadWrite, true, false) => match a {
+                Access::None => Mount::Empty {
+                    path: path.clone(),
+                    made: false,
+                },
+                _ => Mount::Bind(path.clone(), *a),
+            },
+            (_, false, _) if creatable() => Mount::Empty {
+                path: path.clone(),
+                made: true,
+            },
+            (_, false, _) => continue,
+        };
+        // A later mount at the same path replaces an earlier one.
+        out.retain(|m| m.path() != path);
+        out.push(mount);
+    }
+    out
+}
+
+impl Mount {
+    fn path(&self) -> &Path {
+        match self {
+            Mount::Bind(p, _) | Mount::Null(p) | Mount::Empty { path: p, .. } => p,
+        }
+    }
+}
+
+/// The folders bubblewrap creates on the host as mount points for these
+/// rules: empty, and removed once the command ends (`remove_made`).
+pub fn made_folders(
+    rules: &[(PathBuf, Access)],
+    pinned: &[PathBuf],
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
+    if !cfg!(target_os = "linux") {
+        return Vec::new();
+    }
+    mounts(rules, pinned, home)
+        .into_iter()
+        .filter_map(|m| match m {
+            Mount::Empty { path, made: true } => Some(path),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Remove the mount points `made_folders` listed, deepest first, while they
+/// are still empty: a run must not leave a folder where its rules forbid one.
+pub fn remove_made(folders: &[PathBuf]) {
+    let mut folders = folders.to_vec();
+    folders.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    for folder in folders {
+        let _ = std::fs::remove_dir(folder);
+    }
+}
+
+/// bubblewrap's arguments: the system read-only, the mounts, then each
+/// empty folder made read-only once the binds inside it are in place.
+/// Without network the command has its own loopback, not the host's.
+fn bwrap_args(
+    rules: &[(PathBuf, Access)],
+    pinned: &[PathBuf],
+    network: bool,
+    home: Option<&Path>,
+) -> Vec<OsString> {
     let mut args: Vec<OsString> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
         .iter()
         .chain(["--unshare-pid", "--unshare-ipc", "--unshare-uts"].iter())
@@ -250,24 +323,19 @@ fn bwrap_args(
     if !network {
         args.push("--unshare-net".into());
     }
-    let mut closed = Vec::new();
-    for (path, access) in &all {
-        let (op, from): (&str, &Path) = match (access, path.exists(), path.is_dir()) {
-            (Access::ReadWrite, true, _) => ("--bind", path),
-            (Access::ReadWrite, false, _) => continue,
-            (Access::Read, true, _) => ("--ro-bind", path),
-            (Access::None, true, false) => ("--ro-bind", Path::new("/dev/null")),
-            (Access::None | Access::Read, false, _) if !creatable(path) => continue,
-            (Access::None | Access::Read, ..) => {
-                args.extend(["--tmpfs".into(), path.into()]);
-                closed.push(path.clone());
-                continue;
-            }
-        };
-        args.extend([op.into(), from.into(), path.into()]);
+    let mounts = mounts(rules, pinned, home);
+    for m in &mounts {
+        match m {
+            Mount::Bind(p, Access::ReadWrite) => args.extend(["--bind".into(), p.into(), p.into()]),
+            Mount::Bind(p, _) => args.extend(["--ro-bind".into(), p.into(), p.into()]),
+            Mount::Null(p) => args.extend(["--ro-bind".into(), "/dev/null".into(), p.into()]),
+            Mount::Empty { path, .. } => args.extend(["--tmpfs".into(), path.into()]),
+        }
     }
-    for path in closed {
-        args.extend(["--remount-ro".into(), path.into()]);
+    for m in &mounts {
+        if let Mount::Empty { path, .. } = m {
+            args.extend(["--remount-ro".into(), path.into()]);
+        }
     }
     args
 }
@@ -467,6 +535,50 @@ mod tests {
         assert!(
             !refuses(true, false, false, broken),
             "a workspace not sandboxed"
+        );
+    }
+
+    /// A realm whose folder is the home stays writable, though the home is
+    /// closed at the same depth: the workspace's rule comes after. A folder
+    /// bubblewrap makes as a mount point is listed, and removed once empty.
+    #[test]
+    fn bubblewrap_lets_the_workspace_decide_and_lists_what_it_makes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().canonicalize().unwrap();
+        let rules = vec![
+            (home.clone(), Access::ReadWrite),
+            (home.join("routines"), Access::Read),
+        ];
+        let plan = mounts(&rules, &[], Some(&home));
+        assert!(
+            plan.contains(&Mount::Bind(home.clone(), Access::ReadWrite)),
+            "{plan:?}"
+        );
+        assert!(!plan.iter().any(|m| *m
+            == Mount::Empty {
+                path: home.clone(),
+                made: false
+            }));
+        let args = bwrap_args(&rules, &[], true, Some(&home));
+        let home_text = home.to_string_lossy().into_owned();
+        assert!(
+            !args
+                .windows(2)
+                .any(|w| w[0] == "--remount-ro" && w[1] == home_text.as_str()),
+            "{args:?}"
+        );
+        let made = Mount::Empty {
+            path: home.join("routines"),
+            made: true,
+        };
+        assert!(plan.contains(&made), "{plan:?}");
+        std::fs::create_dir_all(home.join("routines")).unwrap();
+        std::fs::create_dir_all(home.join("kept/inside")).unwrap();
+        remove_made(&[home.join("routines"), home.join("kept")]);
+        assert!(!home.join("routines").exists());
+        assert!(
+            home.join("kept/inside").exists(),
+            "never a folder with something in it"
         );
     }
 

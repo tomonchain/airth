@@ -169,6 +169,15 @@ pub fn run_shell_with_input(
     input: Option<&str>,
 ) -> Result<ShellOutput> {
     let mut cmd = sandboxed_command(command, ws, ws.command_network());
+    // Mount points bubblewrap creates where a rule forbids a folder: gone
+    // once the command ends (decision 67).
+    let made = match ws.sandboxed() && sandbox::available() {
+        true => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            sandbox::made_folders(ws.rules(), ws.pinned(), home.as_deref())
+        }
+        false => Vec::new(),
+    };
     cmd.stdin(if input.is_some() {
         Stdio::piped()
     } else {
@@ -216,6 +225,7 @@ pub fn run_shell_with_input(
         }
         std::thread::sleep(Duration::from_millis(50));
     };
+    sandbox::remove_made(&made);
     Ok(ShellOutput {
         code: status.and_then(|s| s.code()),
         signaled: status.is_some_and(|s| s.code().is_none()),
