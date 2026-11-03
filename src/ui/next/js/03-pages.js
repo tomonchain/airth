@@ -1,9 +1,8 @@
 // The pages (decision 72): every page is a component in one of the three
-// layouts (13-ui.js). Pages not moved yet go through Legacy as they are.
+// layouts (13-ui.js), never a layout of its own.
 
 function renderPanel() {
   const panel = $("#panel");
-  panel.classList.toggle("flush", ["needs-you", "routines"].includes(next.route.page) && !next.unauthorized);
   preact.render(html`<${Page} />`, panel);
 }
 
@@ -23,8 +22,8 @@ function Page() {
   if (page === "team" && realm) return html`<${TeamPage} />`;
   if (page === "tasks" && realm) return html`<${TasksPage} />`;
   if (page === "calendar" && realm) return html`<${CalendarPage} />`;
-  const legacy = { "needs-you": needsPage, routines: routinesPage }[page];
-  if (legacy && realm) return html`<${Legacy} node=${legacy()} />`;
+  if (page === "needs-you" && realm) return html`<${NeedsPage} />`;
+  if (page === "routines" && realm) return html`<${RoutinesPage} />`;
   return html`<${DevPage} title="This page" part="page" />`;
 }
 
@@ -64,14 +63,6 @@ const IN_DEVELOPMENT = {
     "Until then, a routine is edited in its file, routines/<name>.json."],
   "page": ["This page", "It is not part of Airth yet."],
 };
-
-/** InDevelopment for the pages still built by the DOM builder (Routines),
-    until they move to components. */
-function inDevelopment(part) {
-  const [title, ...lines] = IN_DEVELOPMENT[part];
-  return h("section", { class: "in-dev", "aria-label": `${title}, in development` },
-    h("span", { class: "in-dev-tag" }, "In development"), h("strong", {}, title), lines.map((l) => h("p", {}, l)));
-}
 
 /** Today, as the page's headline says it: "Monday 2 November". */
 function today() {

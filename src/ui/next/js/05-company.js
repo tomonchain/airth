@@ -14,8 +14,6 @@ function loaded(cache, path) {
   return cache[realm];
 }
 
-const pageHead = (label, title, sub) =>
-  h("header", { class: "page-head" }, label && h("div", { class: "label" }, label), h("h1", { class: "headline" }, title), sub && h("p", { class: "date" }, sub));
 const minutes = (s) => (s < 60 ? `${s} s` : `${Math.round(s / 60)} min`);
 const money = (usd, unpriced) => `$${(usd || 0).toFixed(2)}${unpriced ? ` + ${unpriced} unpriced` : ""}`;
 

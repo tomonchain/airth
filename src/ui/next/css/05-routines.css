@@ -1,24 +1,14 @@
 /* Routines (docs/design/mockups/routine-editor.html): the graph on a dotted
    canvas, its details on the right. */
 
-.panel.flush > .routines { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; }
-.graph { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; background-color: var(--canvas); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 20px 20px; }
-.graph-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
-.picker { display: flex; flex-wrap: wrap; gap: 6px; }
-.pick { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text-3); font: inherit; font-size: var(--fs-body); cursor: pointer; }
-.pick[aria-selected="true"] { color: var(--text); border-color: var(--line-strong); background: var(--raised); }
+.graph { display: flex; flex-direction: column; gap: 16px; margin: -24px; padding: 20px 24px; min-height: calc(100% + 48px); background-color: var(--canvas); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 20px 20px; }
+.routine-pick { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text-3); font: inherit; font-size: var(--fs-body); cursor: pointer; }
+.routine-pick[aria-selected="true"] { color: var(--text); border-color: var(--line-strong); background: var(--raised); }
 .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--ok); }
 .dot.warn { background: var(--warn); }
 .dot.bad { background: var(--bad); }
-.graph-head .primary { min-height: 40px; padding: 0 18px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; }
-.graph-head .primary[disabled] { opacity: 0.6; cursor: default; }
-.graph-actions { display: flex; gap: 8px; }
-.graph-head .plain { min-height: 40px; padding: 0 16px; border-radius: var(--r-button); border: 1px solid var(--line-strong); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-body); font-weight: 500; cursor: pointer; }
-.graph-head .plain[aria-pressed="true"] { background: var(--raised); }
 .details .in-dev { margin-bottom: 16px; padding: 18px; }
-.graph-sub, .graph-foot { margin: 0; font-size: var(--fs-body); color: var(--text-3); max-width: 760px; }
-.graph-sub strong { color: var(--text-2); font-weight: 600; }
-.graph-foot { font-size: var(--fs-secondary); color: var(--text-4); }
+.graph-foot { margin: 0; font-size: var(--fs-secondary); color: var(--text-4); max-width: 760px; }
 
 .flow { list-style: none; margin: 0; padding: 8px 0; display: flex; align-items: stretch; gap: 24px; overflow-x: auto; }
 .node { position: relative; flex: 0 0 160px; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tile); padding: 10px 12px; }
@@ -40,10 +30,7 @@
 .block-report .line.warn { color: var(--warn); }
 
 @media (max-width: 720px) {
-  .panel.flush > .routines { flex-direction: column; flex-wrap: nowrap; }
-  .graph, .routines .details { flex: 0 0 auto; width: 100%; max-width: none; }
-  .graph { padding: 16px; }
-  .routines .details { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .graph { margin: -16px; padding: 16px; }
   .flow { flex-direction: column; gap: 16px; overflow-x: visible; }
   .node { flex: 0 0 auto; }
   .node + .node::before { left: 50%; top: -17px; width: 2px; height: 16px; }
