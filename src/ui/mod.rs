@@ -154,9 +154,9 @@ impl App {
         let method = request.method().clone();
 
         match (&method, path) {
-            // The new interface is the default (decision 57, milestone 5);
-            // the classic one stays reachable until its features move.
-            (Method::Get, "/classic") | (Method::Get, "/classic/") => {
+            // The classic interface is the base, under the new rail
+            // (decision 71); `/classic` stays for links already given.
+            (Method::Get, "/" | "/index.html" | "/classic" | "/classic/") => {
                 return Ok(static_response(INDEX_HTML, "text/html; charset=utf-8"));
             }
             (Method::Get, "/app.js") => {
@@ -174,7 +174,7 @@ impl App {
             (Method::Get, "/favicon.svg") => {
                 return Ok(static_response(FAVICON, "image/svg+xml"));
             }
-            (Method::Get, "/" | "/index.html" | "/next" | "/next/") => {
+            (Method::Get, "/next" | "/next/") => {
                 return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
             }
             (Method::Get, "/next/app.js") => {

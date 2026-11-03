@@ -2,6 +2,29 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 71. The classic interface stays the base, with the new interface's rail and header
+
+**Accepted**, the founder's direction after trying both (3 November 2026): "keep the classic interface, only change its menu for the new interface's menu".
+
+Decision 57 grew a new interface next to the classic one, to replace it at milestone 5. Tried side by side, the founder prefers the classic one's pages and sizes, and the new one's navigation. So:
+
+- **The classic interface is the default page again** (`/`). The new one stays at `/next` for the pages the classic one does not have.
+- **Its sidebar is replaced** by the new interface's icon rail and header bar. The header holds the business switcher, the page's name and the command bar.
+- **The rail has the new interface's entries.** Each opens the classic page where one exists, else the new interface's page:
+  - **Classic pages:** Team → Agents; Routines → Routines; Tasks → Tasks; Calendar → Planning; Business → the business's settings; Settings → the founder's profile and appearance.
+  - **New pages:** HQ, Needs you, Workshop.
+  - **At the top and bottom:** search (⌘K) at the top; the theme toggle and the profile at the bottom.
+- **The classic pages without an entry** (Steering, Documents, Usage, Connectors and skills) stay reachable through search (⌘K) and from the pages that link to them.
+- **Both interfaces show the same rail and header**, so moving between them does not show.
+- **Sizes and themes are the classic interface's.** The new interface's pages use the same scale and themes (as already merged).
+
+*Why:* the founder decides from use. The classic pages are complete and dense; the new rail is easier to scan, and its HQ and Needs you pages have no classic equivalent. Mixing them by page keeps what works in each, without rebuilding pages.
+
+*Cost:*
+- Two interfaces to keep, joined by one rail that has to stay in step in both.
+- Milestone 5's "the new interface becomes the main screen" now means this combined interface. `CLAUDE.md`'s line on it is updated with this change.
+- The classic sidebar's list of recent runs goes; the Tasks page lists them.
+
 ## 70. Agent mail: one OVH mailbox per role, read as untrusted data, sent at level 1 with a blind copy to archive@
 
 **Proposed.**
