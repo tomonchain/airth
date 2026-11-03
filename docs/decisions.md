@@ -2,6 +2,80 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 72. One interface, the new one, built from three page layouts; the classic one leaves once its features have moved
+
+**Proposed.** Replaces decision 71.
+
+The founder, after using decision 71's mix: remove the classic interface, work cleanly on the new one, and stop the layout changing from one page to the next. Today it changes four ways:
+
+| Page | Layout today |
+| --- | --- |
+| HQ | centred 880 px column, extra top space |
+| Business, Tasks, Settings, Workshop | centred 880 px column |
+| Team | 1,100 px block, aligned left |
+| Calendar | full width |
+| Needs you, Routines | three panes against the edges, no page title |
+
+So the page title moves or disappears from one page to the next.
+
+**1. Three page layouts, one header for all.** Every page is built from one of three layouts. Nothing else is allowed: a page that fits none is a decision.
+
+- **The page header, the same on every page.** It sits at the panel's top left, always at the same place:
+  - a label (the business, or "Airth");
+  - the title;
+  - an optional one-line summary under it;
+  - the page's actions on the right.
+
+  The title is the page's name, with the sentence that says what matters today as the summary. On HQ, "One business to watch." becomes the summary of "HQ".
+- **Reading:**
+  - **Content:** one column, aligned left under the header, 880 px at most.
+  - **Pages:** HQ, Business, Tasks, Settings, Workshop, a task's run, the profile.
+- **Board:**
+  - **Content:** the panel's full width under the header, for grids and timelines.
+  - **Pages:** Team, Calendar, Usage.
+- **Workspace:**
+  - **Content:** under the header, a list (300 px), the work in the middle, and details (320 px) on the right; the same widths on every workspace page.
+  - **Pages:** Needs you, Routines, Documents.
+- **The same everywhere:**
+  - the panel's padding;
+  - the rail, the header bar, search and the theme;
+  - one set of components (card, list row, tile, chip, button, empty state, "In development"), defined once in `docs/design/DESIGN.md` and used by every page.
+- **The test:** ui_smoke checks that every page uses one of the three layouts, with the header in it.
+
+**2. Components without a build: Preact with `htm`.** The pages are written as components, so the header, the layouts and the shared parts exist once.
+- **What it is:** Preact (about 4 KB) with `htm` (about 1 KB), the same model as React. Both are vendored as files in `src/ui/vendor/`, so there is no npm build and no Node needed to run Airth, and decision 57's other choices stand.
+- **Not React with a build, nor Next.js:** Airth stays one binary that serves its own pages. Next.js's server rendering serves no purpose there.
+- **Tests:** ui_smoke keeps running with Node alone.
+- **The cost:** two small vendored libraries, which need a decision of their own (`CLAUDE.md`: no new dependency without one); this is it.
+
+**3. Every classic feature moves, or leaves by decision (decision 42).** In this order: first what the beta needs (Hedgen, then Numirama), then the rest.
+
+| Classic | In the new interface | Layout |
+| --- | --- | --- |
+| A task's run: its conversation, approvals, diff, checks, adopt | Tasks → the run | Reading |
+| New task (the composer) | the command bar and Tasks (exists) | — |
+| Business settings: general, models, permissions, repositories, memory, access | Business, and Settings for keys and models | Reading |
+| Connectors and skills | Settings | Reading |
+| Profile, appearance, phone pairing | the profile | Reading |
+| New business, welcome and setup | New business | Reading |
+| Agents: edit a job, give a routine, let go, hire | Team → the agent; Hire | Board, then Reading |
+| Documents (the editor) | Documents | Workspace |
+| Usage | Usage, under Settings | Board |
+| Steering (the strategy) | Business | Reading |
+| Routines and Planning (the old objectives) | leave: the graph routines and Calendar replace them | — |
+
+The classic interface stays served at `/classic` until its last feature has moved. Then it is removed with its code, in one PR. Until then, a page not moved yet shows "In development" with a link to its classic page.
+
+**When:** after Friday's install; nothing in it before then. One PR per page or feature, screenshots at 1440 and 390, under the freeze's rule (features move, none is added).
+
+*Why:* one interface is what the founder asked for, and the only way to stop keeping two in step. A fixed set of layouts makes every page predictable: the title and actions are always in the same place, and a new page cannot invent its own. Components make the shared parts real instead of copied. Preact with `htm` gives that without the build step decision 57 keeps out.
+
+*Cost:*
+- The largest piece of interface work left: about 4,700 lines of classic pages to move, in maybe fifteen PRs.
+- Every existing page of the new interface is rewritten once, into components and layouts.
+- Two vendored libraries.
+- Until the move ends, links to `/classic` for what has not moved.
+
 ## 71. The classic interface stays the base, with the new interface's rail and header
 
 **Accepted**, the founder's direction after trying both (3 November 2026): "keep the classic interface, only change its menu for the new interface's menu".
