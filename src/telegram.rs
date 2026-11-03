@@ -342,6 +342,11 @@ pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> 
         return Ok(());
     }
     let chat = config.chat.unwrap_or_default();
+    // A post link, not as a reply to an item: the founder wants a reply
+    // drafted (decision 63).
+    if message["reply_to_message"].is_null() && crate::routine::x_post::link_in(text).is_some() {
+        return reply_to_post(hub, api, chat, text);
+    }
     let Some(key) = config.editing.clone() else {
         return Ok(());
     };
@@ -382,6 +387,64 @@ pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> 
             send(api, chat, &format!("Not changed: {e:#}"), None)?;
         }
     }
+    Ok(())
+}
+
+/// Draft a reply to the post the founder sent: in the business named first
+/// in the message, else the only one with a reply routine. The draft comes
+/// next, as an item to approve; a post too thin to answer is said.
+fn reply_to_post(hub: &Hub, api: &dyn Api, chat: i64, text: &str) -> Result<()> {
+    let mut replying = Vec::new();
+    for realm in hub.home().realms()? {
+        if realm.config.archived {
+            continue;
+        }
+        let routines = hub.with_routine_checks(&realm, crate::routine::load_all)?;
+        if routines.iter().any(|(_, g)| {
+            g.as_ref()
+                .is_ok_and(|g| g.trigger.telegram.as_deref() == Some("x_post"))
+        }) {
+            replying.push(realm);
+        }
+    }
+    let first = text.split_whitespace().next().unwrap_or_default();
+    let named = replying
+        .iter()
+        .position(|r| r.name() == first.trim_end_matches(':'));
+    let (realm, text) = match (named, replying.as_slice()) {
+        (Some(i), _) => (&replying[i], text.trim_start()[first.len()..].trim_start()),
+        (None, [only]) => (only, text),
+        (None, []) => {
+            send(
+                api,
+                chat,
+                "No business has a reply routine yet (trigger {\"telegram\": \"x_post\"}).",
+                None,
+            )?;
+            return Ok(());
+        }
+        (None, many) => {
+            let names: Vec<&str> = many.iter().map(|r| r.name()).collect();
+            let ask = format!(
+                "Which business? Start the message with its name: {}.",
+                names.join(", ")
+            );
+            send(api, chat, &ask, None)?;
+            return Ok(());
+        }
+    };
+    let said = match hub.reply_to_post(realm, text) {
+        Ok(_) => format!(
+            "{} · reply drafted: it comes next, for your approval.",
+            realm.name()
+        ),
+        Err(e) => format!(
+            "{} · {}",
+            realm.name(),
+            crate::routine::run::one_line(&format!("{e:#}"))
+        ),
+    };
+    send(api, chat, &said, None)?;
     Ok(())
 }
 

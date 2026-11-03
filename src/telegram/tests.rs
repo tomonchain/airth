@@ -437,3 +437,106 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
         .to_string();
     assert!(said.starts_with("hedgen · retry failed: refused"), "{said}");
 }
+
+/// Decision 63 on the phone: the founder's message with a post link drafts
+/// a reply, which comes next for approval; a post too thin to answer is
+/// said; a forwarded message, or a reply to an item, starts nothing.
+#[test]
+fn a_post_link_from_the_founder_drafts_a_reply() {
+    let (_home, root, hub, realm) = business();
+    let api = Fake::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    let link = "https://x.com/jack/status/777";
+    handle(&hub, &api, &mut config, &message(5, 7, link)).unwrap();
+    assert!(
+        api.sent().last().unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("No business has a reply routine")
+    );
+    std::fs::create_dir_all(root.path().join("agents")).unwrap();
+    std::fs::create_dir_all(root.path().join("routines")).unwrap();
+    std::fs::write(root.path().join("agents/writer.md"), "Reply.").unwrap();
+    std::fs::write(
+        root.path().join("routines/replies.json"),
+        json!({"agent": "writer", "trigger": {"telegram": "x_post"}, "blocks": [
+            {"id": "post", "type": "read", "source": "x_post"},
+            {"id": "ok", "type": "approval", "show": "summary"}]})
+        .to_string(),
+    )
+    .unwrap();
+    let oembed = |text: &str| {
+        json!({"url": link, "author_name": "jack",
+            "html": format!("<blockquote><p>{text}</p>&mdash; jack <a href=\"x\">November 3, 2026</a></blockquote>")})
+        .to_string()
+    };
+    let url = crate::routine::x_post::oembed_url(link);
+    crate::hub::TEST_FEEDS.lock().unwrap().insert(
+        url.clone(),
+        oembed("Staking yields fell to 2.8% this week and withdrawals doubled."),
+    );
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, &format!("hedgen {link} push back on the yield claim")),
+    )
+    .unwrap();
+    let said = api.sent().last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        said,
+        "hedgen · reply drafted: it comes next, for your approval."
+    );
+    let items = Store::of(&realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items[0].args["founder_angle"],
+        "push back on the yield claim"
+    );
+    // A forwarded message, or one replying to an item, starts nothing.
+    let before = api.sent().len();
+    let mut forwarded = message(5, 7, link);
+    forwarded["message"]["forward_date"] = json!(1);
+    handle(&hub, &api, &mut config, &forwarded).unwrap();
+    let mut reply = message(5, 7, link);
+    reply["message"]["reply_to_message"] = json!({"message_id": 1});
+    handle(&hub, &api, &mut config, &reply).unwrap();
+    assert_eq!(api.sent().len(), before);
+    assert_eq!(
+        Store::of(&realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .len(),
+        1
+    );
+    // Too thin: said, nothing drafted.
+    crate::hub::TEST_FEEDS
+        .lock()
+        .unwrap()
+        .insert(url, oembed("pic.twitter.com/abc"));
+    handle(&hub, &api, &mut config, &message(5, 7, link)).unwrap();
+    let said = api.sent().last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        said.starts_with("hedgen · not drafted: the post is mostly an image or a chart"),
+        "{said}"
+    );
+    assert_eq!(
+        Store::of(&realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .len(),
+        1
+    );
+}
