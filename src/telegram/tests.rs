@@ -357,3 +357,83 @@ fn an_approved_item_that_failed_to_send_says_so() {
     done.status = "done".into();
     assert!(answered("hedgen", &done, None).starts_with("hedgen · done: HKMA"));
 }
+
+/// Decision 62 on the phone: Retry when nothing was done; "Retry…" first
+/// asks the founder to check when it may have been; an unknown button does
+/// nothing, never a rejection.
+#[test]
+fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
+    let (_home, _root, hub, realm) = business();
+    let incident = |title: &str, retry: Option<&str>| {
+        Store::of(&realm)
+            .unwrap()
+            .propose(&NewItem {
+                kind: "incident",
+                title,
+                agent: None,
+                routine: None,
+                run: None,
+                action: Some("typefully.create_draft"),
+                args: &json!({"detail": "HTTP 403", "key": "posts/a/send", "retry": retry})
+                    .to_string(),
+                execute_at: None,
+                source: r#"{"show": "detail"}"#,
+                model_call: None,
+            })
+            .unwrap()
+    };
+    incident("refused", Some("clear"));
+    incident("cut", Some("ambiguous"));
+    incident("commits", None);
+    let api = Fake::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    push(&hub, &api, &mut config).unwrap();
+    let labels = |n: usize| -> Vec<String> {
+        let markup = &api.sent()[n]["reply_markup"]["inline_keyboard"][0];
+        markup
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(labels(0), ["Retry", "Seen"]);
+    assert_eq!(labels(1), ["Retry…", "Seen"]);
+    assert_eq!(labels(2), ["Seen"]);
+    // "Retry…" asks first; its button is the checked retry.
+    handle(&hub, &api, &mut config, &tap(7, "u/hedgen/2/1")).unwrap();
+    let asked = api.sent().last().unwrap().clone();
+    assert!(
+        asked["text"]
+            .as_str()
+            .unwrap()
+            .contains("Check that nothing was created")
+    );
+    assert_eq!(
+        asked["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
+        "c/hedgen/2/1"
+    );
+    // An unknown button answers nothing and leaves the item waiting.
+    let before = api.sent().len();
+    handle(&hub, &api, &mut config, &tap(7, "z/hedgen/3/1")).unwrap();
+    assert_eq!(api.sent().len(), before);
+    assert!(
+        Store::of(&realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .iter()
+            .any(|i| i.id == 3)
+    );
+    // Retry is taken; this one belongs to no routine, so it says it failed.
+    handle(&hub, &api, &mut config, &tap(7, "t/hedgen/1/1")).unwrap();
+    let said = api.sent().last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(said.starts_with("hedgen · retry failed: refused"), "{said}");
+}
