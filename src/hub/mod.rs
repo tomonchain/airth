@@ -45,6 +45,7 @@ mod retries;
 mod routines;
 mod runs;
 mod skills;
+mod tasks;
 
 pub use changes::Adoption;
 pub use delivery::PrEvent;
@@ -224,6 +225,8 @@ impl Hub {
                 skills_dir: realm.skills_dir(),
                 allowed: state.tools.clone(),
                 delegation: self.delegation_for(realm, state)?,
+                // A task works on files only in a repository of its scope.
+                files: state.agent.is_none() || state.change.is_some(),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                 .with_grants(state.grants.clone()),
@@ -252,6 +255,7 @@ impl Hub {
             &mut *observer,
             hooks.cancel.clone(),
         )
+        .with_prices(crate::prices::Prices::load(self.home()))
         .with_context(context)
         .run(state);
 
@@ -286,6 +290,9 @@ impl Hub {
             ));
             state.save()?;
             observer.changed(state);
+        }
+        if let Err(e) = self.task_ended(realm, state) {
+            eprintln!("warning: could not tell how task {} ended: {e:#}", state.id);
         }
         if state.origin.is_some()
             && let Err(e) = self.objective_run_ended(realm, state)
