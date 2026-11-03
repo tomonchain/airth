@@ -203,4 +203,13 @@ fn an_unwatched_tasks_ask_waits_in_needs_you_then_goes_on() {
     assert!(format!("{:?}", resumed.messages.last()).contains("The founder allowed this"));
     // Taken once.
     assert!(hub.tasks_to_resume().unwrap().is_empty());
+    // That task only: the realm's rules are unchanged, and a later task
+    // starts without the permission.
+    let realm = f.home.realm(f.realm.name()).unwrap();
+    assert_eq!(realm.config.policy.network, Rule::Ask);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let later = hub
+        .start_task(&realm, "writer", "Check tomorrow's rates")
+        .unwrap();
+    assert!(later.grants.is_empty());
 }
