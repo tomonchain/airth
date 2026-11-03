@@ -85,13 +85,18 @@ impl App {
                 "at": at,
             }));
         }
-        let (state, why) = health(graphs.len(), &pending);
+        let finance = crate::hub::finance::shown(realm, now);
+        let runway = finance
+            .as_ref()
+            .and_then(|f| f.get("runway_months").cloned());
+        let (state, why) = health(graphs.len(), &pending, runway.as_ref());
         Ok(json!({
             "name": realm.name(),
             "description": realm.config.description,
             "needs": pending.len(),
             "health": {"state": state, "sentence": why},
             // A business with no routine has nothing Airth measures yet.
+            "finance": finance,
             "vitals": if graphs.is_empty() { Vec::new() } else { vitals(&graphs, &week, &pending) },
             "time": crate::business::store::time::human(week.founder_seconds as u64),
             "cost_usd": week.cost_usd,
@@ -110,27 +115,42 @@ fn when(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
     }
 }
 
-/// Health from the criteria that have data (decision 53): the goal's pace
-/// and the runway are unknown until a measured goal and a bank exist, so
-/// only an open blocking flag can make a business one to watch.
-fn health(routines: usize, pending: &[QueueItem]) -> (&'static str, String) {
-    let unknown = "Goal pace and runway unknown: no measured goal, no bank connected.";
+/// Health from the criteria that have data (decision 53): an open blocking
+/// flag, and the runway once a bank has been read (`runway`: its months,
+/// null for no spending; None when unknown). A runway under 6 months is at
+/// risk whatever the rest; under 12, one to watch. The goal's pace is
+/// unknown until the goal is measured.
+fn health(
+    routines: usize,
+    pending: &[QueueItem],
+    runway: Option<&Value>,
+) -> (&'static str, String) {
     let held = pending
         .iter()
         .filter(|i| i.flag.as_deref() == Some("blocking"))
         .count();
-    match (routines, held) {
-        (0, _) => ("not started", format!("No routine yet. {unknown}")),
-        (_, 0) => (
-            "healthy",
-            format!("Nothing is held by the check. {unknown}"),
-        ),
-        (_, 1) => ("watch", format!("One item is held by the check. {unknown}")),
-        (_, n) => (
-            "watch",
-            format!("{n} items are held by the check. {unknown}"),
-        ),
-    }
+    let months = runway.map(|r| r.as_f64());
+    let unknown = match months {
+        None => "Goal pace and runway unknown: no measured goal, no bank read.",
+        Some(_) => "Goal pace unknown: no measured goal.",
+    };
+    let held_text = match held {
+        0 => "Nothing is held by the check.".to_string(),
+        1 => "One item is held by the check.".to_string(),
+        n => format!("{n} items are held by the check."),
+    };
+    let runway_text = match months {
+        Some(Some(m)) => format!(" Runway {} months.", m.floor()),
+        _ => String::new(),
+    };
+    let state = match (routines, held, months) {
+        (0, _, _) => return ("not started", format!("No routine yet. {unknown}")),
+        (_, _, Some(Some(m))) if m < 6.0 => "at risk",
+        (_, _, Some(Some(m))) if m < 12.0 => "watch",
+        (_, 0, _) => "healthy",
+        _ => "watch",
+    };
+    (state, format!("{held_text}{runway_text} {unknown}"))
 }
 
 /// At most four vitals from what Airth records: what the founder approved
@@ -251,6 +271,23 @@ mod tests {
             cost_usd: None,
             error: None,
         }
+    }
+
+    /// Decision 53: the runway counts once a bank is read; under 6 months
+    /// is at risk whatever the rest, under 12 to watch; unknown never fails.
+    #[test]
+    fn the_runway_sets_health_once_the_bank_is_read() {
+        let state = |runway: Option<Value>| health(1, &[], runway.as_ref()).0;
+        assert_eq!(state(None), "healthy");
+        assert_eq!(state(Some(json!(null))), "healthy");
+        assert_eq!(state(Some(json!(29.0))), "healthy");
+        assert_eq!(state(Some(json!(10.0))), "watch");
+        assert_eq!(state(Some(json!(5.0))), "at risk");
+        let (_, why) = health(1, &[], Some(&json!(29.4)));
+        assert_eq!(
+            why,
+            "Nothing is held by the check. Runway 29 months. Goal pace unknown: no measured goal."
+        );
     }
 
     /// Decision 53: a run's activity sentence is built by code from its

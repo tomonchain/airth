@@ -34,6 +34,8 @@
 .hq .finance-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; }
 .hq .finance-cell + .finance-cell { border-left: 1px solid var(--line); }
 .hq .finance-value { font-size: 16px; font-weight: 600; color: var(--text-5); }
+.hq .finance-value.known { color: var(--text); }
+.hq .block-sub.warn { color: var(--warn); }
 .hq .activity ol { margin: 0; padding: 0; list-style: none; }
 .hq .activity li { display: flex; align-items: center; gap: 12px; min-height: 44px; }
 .hq .activity li + li { border-top: 1px solid var(--line-soft); }

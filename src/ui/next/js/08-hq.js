@@ -43,10 +43,7 @@ function businessSection(b) {
         h("span", { class: "vital-value" }, v.value),
         h("span", { class: "vital-note" }, v.note))))
       : h("p", { class: "no-activity" }, "No vitals yet: they come with its routines, then from its own server."),
-    h("div", { class: "finance" },
-      h("span", { class: "block-label" }, "Finance", h("span", { class: "block-sub" }, "No bank account yet")),
-      h("div", { class: "finance-row" }, ["Cash", "In", "Out", "Runway"].map((label) =>
-        h("div", { class: "finance-cell" }, h("span", { class: "vital-label" }, label), h("span", { class: "finance-value" }, "—"))))),
+    finance(b.finance),
     h("div", { class: "activity" },
       h("span", { class: "block-label" }, "Latest activity", h("span", { class: "block-sub" }, `Your time this week ${b.time} · model cost ${money(b.cost_usd, 0)}`)),
       b.activity.length
@@ -55,4 +52,18 @@ function businessSection(b) {
             h("span", { class: "activity-text" }, h("strong", {}, a.agent_title || a.agent || "Airth"), ` · ${a.sentence}`),
             h("span", { class: "activity-at" }, a.at))))
         : h("span", { class: "no-activity" }, "No run yet")));
+}
+
+/** The bank's part (decision 54): its figures, why they are unknown, or
+    the empty state with no bank connected. */
+function finance(f) {
+  const month = new Date().toLocaleDateString("en-GB", { month: "long" });
+  const sub = !f ? "No bank account yet" : f.unknown ? `Unknown: ${f.unknown}` : f.source;
+  const cells = [["Cash", "cash"], [`In, ${month}`, "in"], [`Out, ${month}`, "out"], ["Runway", "runway"]];
+  return h("div", { class: "finance" },
+    h("span", { class: "block-label" }, "Finance", h("span", { class: f && f.unknown ? "block-sub warn" : "block-sub" }, sub)),
+    h("div", { class: "finance-row" }, cells.map(([label, key]) =>
+      h("div", { class: "finance-cell" },
+        h("span", { class: "vital-label" }, label),
+        h("span", { class: f && !f.unknown ? "finance-value known" : "finance-value" }, f && !f.unknown ? f[key] : f ? "Unknown" : "—")))));
 }
