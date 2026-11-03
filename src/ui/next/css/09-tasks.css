@@ -1,8 +1,6 @@
 /* Tasks (docs/design/mockups/tasks.html): the order box, then the tasks
    grouped by what they wait for. */
 
-.tasks .tasks-head { display: flex; flex-direction: column; gap: 10px; }
-.tasks .tasks-head .headline { font-size: var(--fs-headline); line-height: 1.2; }
 .order.big { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-card); border: 1px solid var(--line); background: var(--card); }
 .order.big textarea { resize: vertical; min-height: 56px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-section); line-height: 1.5; outline: none; }
 .order.big .order-row { justify-content: flex-end; }

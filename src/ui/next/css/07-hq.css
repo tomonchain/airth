@@ -1,7 +1,6 @@
 /* The HQ (docs/design/mockups/hq.html): a section per business, its
    health, vitals, finance and latest activity. */
 
-.hq { gap: 56px; }
 .hq .needs-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; font-size: var(--fs-section); font-weight: 500; color: var(--warn); text-decoration: none; }
 .hq .needs-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--warn); }
 .hq .businesses { display: flex; flex-direction: column; }

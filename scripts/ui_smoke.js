@@ -330,6 +330,14 @@ function smokeNext() {
     setAttribute(k, v) { if (k === "class") this.className = String(v); this.attrs[k] = String(v); }
     removeAttribute(k) { if (k === "class") this.className = ""; delete this.attrs[k]; }
     removeEventListener() {}
+    // Text a component splits into several nodes reads as one; elements
+    // are spaced, as on screen.
+    get textContent() {
+      let out = "";
+      this.children.forEach((c, i) => { out += (i && !(c instanceof NextText && this.children[i - 1] instanceof NextText) ? " " : "") + c.textContent; });
+      return out;
+    }
+    set textContent(v) { this.children = [new NextText(String(v))]; }
   }
   class NextText extends FakeText {
     get data() { return this.text; }
@@ -378,8 +386,10 @@ function smokeNext() {
     // No button that does nothing, no link to nowhere: a button acts or
     // submits its form; a link has an address, or acts.
     const walk = (n, inForm) => {
-      const acts = (n.events || []).includes("click");
-      const form = inForm || (n.events || []).includes("submit");
+      // Preact names an event as the element does: "click", or "Click".
+      const events = (n.events || []).map((e) => e.toLowerCase());
+      const acts = events.includes("click");
+      const form = inForm || events.includes("submit");
       if (n.tag === "button" && !acts && !(form && n.attrs.type === "submit")) problems.push(`next/${label}: a button does nothing: "${n.textContent.trim()}"`);
       if (n.tag === "a" && !acts && (!n.attrs.href || n.attrs.href === "#")) problems.push(`next/${label}: a link goes nowhere: "${n.textContent.trim()}"`);
       n.children.forEach((c) => walk(c, form));
@@ -400,7 +410,9 @@ function smokeNext() {
     if (!nbody.textContent.includes(text)) problems.push(`next/hq: "${text}" is missing`);
   }
   // Decision 68: money in is not entered by hand; it shows as a dash.
-  const byHand = vm.runInContext(`finance({ source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months" }).textContent`, ctx);
+  const byHand = vm.runInContext(`(() => { const n = document.createElement("div");
+    preact.render(html\`<\${Finance} f=\${{ source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months" }} />\`, n);
+    return n.textContent; })()`, ctx);
   if (!/In, \S+ — Out/.test(byHand)) problems.push(`next/hq: money in by hand is not a dash: ${byHand}`);
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
@@ -431,12 +443,13 @@ function smokeNext() {
   if (nbody.querySelector("#search")) problems.push("next/search: it does not close");
   // Decision 72: a page moved to components is one of the three layouts,
   // with the page header in it.
-  for (const [page, realm] of [["business", "acme"], ["settings", null], ["workshop", null], ["hire", "acme"], ["new-business", null]]) {
-    show(`${page}, layout`, { route: { page, realm } });
+  const LAYOUTS = { hq: "reading", business: "reading", tasks: "reading", settings: "reading", workshop: "reading", hire: "reading", "new-business": "reading",
+    team: "board", calendar: "board" };
+  for (const [page, want] of Object.entries(LAYOUTS)) {
+    show(`${page}, layout`, { route: { page, realm: ["settings", "workshop", "new-business", "hq"].includes(page) ? null : "acme" } });
     const layout = find(nbody, ".layout", true)[0];
-    if (!layout || !["reading", "board", "workspace"].includes(layout.attrs["data-layout"]) || !find(layout, ".page-title", true).length) {
-      problems.push(`next/${page}: not one of the three layouts with its header`);
-    }
+    const got = layout && layout.attrs["data-layout"];
+    if (got !== want || !find(layout, ".page-title", true).length) problems.push(`next/${page}: layout ${got}, not ${want} with its header`);
   }
   // What is not built yet shows one panel, saying what it will do.
   for (const [page, realm, title] of [["hire", "acme", "Hire an agent"], ["new-business", null, "Create a business"], ["workshop", null, "Workshop"], ["settings", null, "Mailboxes"]]) {
@@ -464,7 +477,7 @@ function smokeNext() {
     running: [{ id: "r3", order: "Outline the week", agent: "writer", status: "running", line: "1 of 3 steps done", at: "${now}", item: null }],
     done: [{ id: "r4", order: "Summarise the RWA news", agent: null, status: "completed", line: "", at: "${now}", item: null }] };`, ctx);
   show("tasks", { route: { page: "tasks", realm: "acme" } });
-  for (const text of ["Give the order.", "Waiting for you · 1", "Waits for you in Needs you", "To review · 1", "Running · 1", "1 of 3 steps done", "Done · 1", "completed"]) {
+  for (const text of ["Give the order, approve the result.", "Waiting for you · 1", "Waits for you in Needs you", "To review · 1", "Running · 1", "1 of 3 steps done", "Done · 1", "completed"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/tasks: "${text}" is missing`);
   }
   vm.runInContext(`tasks.data.acme = { waiting: [], review: [], running: [], done: [] };`, ctx);
