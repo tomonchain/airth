@@ -256,6 +256,13 @@ impl PermissionGate {
         &self.grants
     }
 
+    /// Whether `check` would ask the founder: the policy asks and no grant
+    /// of the run covers the call.
+    pub fn would_ask(&self, request: &PermissionRequest) -> bool {
+        self.policy.rule(request.capability) == Rule::Ask
+            && !(request.grantable() && self.grants.iter().any(|g| g.covers(request)))
+    }
+
     pub fn check(&mut self, request: &PermissionRequest) -> Result<Verdict> {
         Ok(match self.policy.rule(request.capability) {
             Rule::Allow => Verdict::Allowed,

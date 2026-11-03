@@ -61,3 +61,31 @@ impl Hub {
         Ok(())
     }
 }
+
+impl Hub {
+    /// Tasks the founder allowed to go on, across realms, each ready to
+    /// drive unwatched with the founder's message: taken once.
+    pub fn tasks_to_resume(&self) -> Result<Vec<(Realm, State)>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived {
+                continue;
+            }
+            // Only a stopped run that is not being driven can wait to resume.
+            for summary in self.runs(&realm)? {
+                if summary.status != Status::Stopped || summary.live {
+                    continue;
+                }
+                let run = self.load_run(&realm, &summary.id)?;
+                let Some(message) = run.resume.clone() else {
+                    continue;
+                };
+                let mut state = self.follow_up(&realm, &run.id, &message)?;
+                state.resume = None;
+                state.save()?;
+                out.push((realm.clone(), state));
+            }
+        }
+        Ok(out)
+    }
+}
