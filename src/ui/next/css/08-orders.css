@@ -1,0 +1,21 @@
+/* The command bar (decision 64): an order box in the header of business
+   pages, and the card saying who takes it. */
+
+.top .order { position: relative; flex: 1 1 320px; max-width: 560px; display: flex; gap: 8px; align-items: center; }
+.top .order input { flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; }
+.top .order input::placeholder { color: var(--text-5); }
+.top .order .primary { min-height: 40px; padding: 0 16px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.top .order .primary[disabled] { opacity: 0.6; cursor: default; }
+.order-card { position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; right: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-tile); border: 1px solid var(--line-strong); background: var(--raised); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.order-card p { margin: 0; font-size: 14px; color: var(--text-2); }
+.order-card .note { font-size: 12.5px; color: var(--text-4); }
+.order-card .note.bad { color: var(--bad); }
+.order-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.order-row select { min-height: 40px; padding: 0 10px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14px; }
+.order-row .primary, .order-row .plain { min-height: 40px; padding: 0 14px; border-radius: var(--r-button); font: inherit; font-size: 14px; cursor: pointer; }
+.order-row .primary { border: 0; background: var(--text); color: var(--bg); font-weight: 600; }
+.order-row .plain { border: 1px solid var(--line-strong); background: transparent; color: var(--text-2); }
+
+@media (max-width: 720px) {
+  .top .order { order: 3; flex-basis: 100%; max-width: none; }
+}

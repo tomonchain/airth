@@ -349,6 +349,20 @@ function smokeNext() {
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
   show("unauthorized", { route: { page: "hq" }, unauthorized: true });
+  // The command bar (decision 64): on business pages, who takes the order
+  // and why, a pick when none fits, then where the task went.
+  vm.runInContext(`orders.route = { agent: "writer", why: "It writes the long pieces.", agents: ["watcher", "writer"], order: "Outline the week" };`, ctx);
+  show("order, routed", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("· It writes the long pieces.") || !nbody.textContent.includes("Start")) problems.push("next/order: who takes it and why is missing");
+  vm.runInContext(`orders.route = { error: "no agent's job fits this order: pick the agent", agents: ["writer"], order: "File the VAT" };`, ctx);
+  show("order, none fits", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("pick the agent")) problems.push("next/order: a refused routing is not said");
+  vm.runInContext(`orders.route = null; orders.note = "Started: writer works on it.";`, ctx);
+  show("order, started", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("Started: writer") || !nbody.textContent.includes("See Tasks")) problems.push("next/order: the started task is not said");
+  vm.runInContext(`orders.note = null;`, ctx);
+  show("hq, no order box", { route: { page: "hq" } });
+  if (nbody.textContent.includes("Give an order")) problems.push("next/order: the HQ has no order box");
   // Needs you, with every kind of item and fields left empty.
   vm.runInContext(`Object.assign(needs, { realm: "acme", items: ${JSON.stringify([
     { id: 1, kind: "approval", title: "A post", agent: "post-writer", routine: "daily-posts", run: "r1", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.", editable: true, source: { title: null, link: "https://e.com/1" } },
