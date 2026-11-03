@@ -6,8 +6,8 @@ function renderPanel() {
   panel.classList.toggle("flush", ["needs-you", "routines"].includes(next.route.page) && !next.unauthorized);
   if (next.unauthorized) {
     panel.replaceChildren(h("div", { class: "column" },
-      h("h1", { class: "headline" }, "Open Airth first"),
-      h("p", { class: "lede" }, "This page uses the key of the current interface. Open ", h("a", { href: "/" }, "Airth"), ", then come back here from its menu.")));
+      h("h1", { class: "headline" }, "Open Airth from its link"),
+      h("p", { class: "lede" }, "This page needs Airth's key: open the link airth ui printed on your Mac, or pair your phone again (airth phone).")));
     return;
   }
   const page = next.route.page;
@@ -66,7 +66,7 @@ function settingsPage() {
     h("section", { class: "card classic" },
       h("strong", {}, "Classic interface"),
       h("p", {}, "Everything that has not moved here yet: connectors, keys, models, the Workshop, documents and usage."),
-      h("a", { class: "button", href: "/" }, "Open the classic interface")),
+      h("a", { class: "button", href: "/classic" }, "Open the classic interface")),
     inDevelopment("connectors"),
     inDevelopment("mailboxes"));
 }

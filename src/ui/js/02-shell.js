@@ -250,7 +250,7 @@ function renderFoot() {
     d && !d.model && h("button", { class: "side-warn", type: "button", title: d.model_error || "", onclick: () => go(`#/r/${enc(app.realm)}/settings/models`) }, "⚠ No model configured"),
     app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the business on this platform." }, "⚠ No command sandbox"),
     // The new interface grows next to this one (decision 57).
-    h("a", { class: "side-next", href: "/next" }, "Try the new interface"),
+    h("a", { class: "side-next", href: "/" }, "Back to the new interface"),
     h("div", { class: "me" },
       h("button", { class: "me-btn" + (app.route.view === "owner" ? " active" : ""), type: "button", onclick: () => go("#/owner") },
         pictureMark("avatar", "owner/avatar", app.ownerAvatar, name),

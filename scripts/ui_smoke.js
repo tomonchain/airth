@@ -323,6 +323,15 @@ function smokeNext() {
   vm.createContext(ctx);
   vm.runInContext(code + "\n;globalThis.__next = { next, renderAll, PAGES, PINNED };", ctx);
   const N = ctx.__next;
+  // The default page takes Airth's key from the link it prints (/#token=…).
+  {
+    const kept = {};
+    const linkCtx = { ...ctx, location: { hash: "#token=abc123", hostname: "127.0.0.1" }, history: { replaceState(_, __, h) { kept.hash = h; } },
+      sessionStorage: { getItem: () => null, setItem: (k, v) => { kept[k] = v; } }, localStorage: { getItem: () => null, setItem() {} } };
+    vm.createContext(linkCtx);
+    vm.runInContext(code + "\n;globalThis.__token = token;", linkCtx);
+    if (linkCtx.__token !== "abc123" || kept["airth-token"] !== "abc123" || kept.hash !== "#/hq") problems.push("next: the key in Airth's link is not taken");
+  }
   const realms = [{ name: "acme", description: "", archived: false, default: true }, { name: "perso", description: null, archived: false }];
   const show = (label, state) => {
     Object.assign(N.next, { realms, realm: "acme", unauthorized: false, menuOpen: false }, state);

@@ -138,7 +138,7 @@ function card(it) {
       : h("p", { class: it.call ? "content call" : "content" }, it.text),
     h("div", { class: "meta" },
       link && h("span", {}, "Source: ", h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, (it.source.title || link))),
-      it.task && h("span", {}, "From your task: ", h("a", { href: `/#/r/${enc(next.realm)}/run/${enc(it.task.id)}` }, it.task.title || it.task.id)),
+      it.task && h("span", {}, "From your task: ", h("a", { href: `/classic#/r/${enc(next.realm)}/run/${enc(it.task.id)}` }, it.task.title || it.task.id)),
       what && h("span", {}, what)),
     rejecting && h("input", { id: `why-${it.id}`, class: "why", type: "text", placeholder: "Why? (optional)", "aria-label": "Why you reject it" }),
     h("div", { class: "buttons" }, buttons(it, editing, rejecting)));
@@ -228,5 +228,5 @@ function details(it) {
                 : b.outcome === "failed" ? "failed"
                 : `${b.items_in} → ${b.items_out} · ${secs(b)} s`)))),
     blocks.length > 0 && h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Run cost"), h("span", { class: "tile-value" }, `$${cost.toFixed(2)}`)),
-    h("a", { href: `/#/r/${enc(next.realm)}/routines` }, "Open the routine"));
+    h("a", { href: pageHash("routines") }, "Open the routine"));
 }
