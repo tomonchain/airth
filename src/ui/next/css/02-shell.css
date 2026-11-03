@@ -93,3 +93,9 @@ a.button:hover { background: var(--raised); color: var(--text); }
   .panel { flex: 1 0 auto; margin: 0 8px 8px; padding: 24px 16px; }
   .headline { font-size: var(--fs-headline-small); }
 }
+
+/* The founder's account, at the header's right. */
+.account { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px 0 4px; border-radius: var(--r-pill); color: var(--text); text-decoration: none; font-size: var(--fs-body); font-weight: 500; }
+.account:hover { background: var(--raised); color: var(--text); }
+.account-pic { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; display: flex; align-items: center; justify-content: center; background: var(--chip); color: var(--text-2); font-size: var(--fs-small); font-weight: 600; }
+@media (max-width: 720px) { .account-name { display: none; } }

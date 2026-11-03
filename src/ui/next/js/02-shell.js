@@ -63,7 +63,29 @@ function renderTop() {
     h("div", { class: "top-left" },
       h("div", { class: "anchor" }, switcher, menu),
       h("span", { class: "where" }, inBusiness ? (page ? page.title : "") : "All businesses")),
-    inBusiness && next.route.page !== "tasks" && orderBox());
+    account());
+}
+
+/** The founder's account, at the header's right: their picture or initial,
+    and their name. Their profile is in the classic interface until it moves. */
+function account() {
+  const o = next.owner || {};
+  const name = (o.name || "").trim();
+  return h("a", { class: "account", href: "/classic#/owner", title: "Your profile", "aria-label": name ? `${name}, your profile` : "Your profile" },
+    o.avatar ? h("img", { class: "account-pic", src: `/api/owner/avatar?v=${enc(String(o.avatar))}`, alt: "" })
+      : h("span", { class: "account-pic", "aria-hidden": "true" }, name ? initial(name) : "?"),
+    h("span", { class: "account-name" }, name || "Your profile"));
+}
+
+/** The command bar (decision 64), floating at the bottom of a business's
+    pages; Tasks has its own, larger. */
+function renderDock() {
+  const dock = $("#dock");
+  if (!dock) return;
+  const show = next.realm && !next.unauthorized && !["hq", "tasks"].includes(next.route.page);
+  dock.classList.toggle("on", !!show);
+  $("#panel").classList.toggle("docked", !!show);
+  if (show) dock.replaceChildren(orderBox()); else dock.replaceChildren();
 }
 
 // In the Mac app the page is the title bar (as in the classic interface): an
@@ -99,9 +121,7 @@ function renderRail() {
     PAGES.map(link),
     h("div", { class: "gap" }),
     PINNED.map(link),
-    themeToggle(),
-    // The founder's profile lives in the classic interface until it moves.
-    h("a", { href: "/classic#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
+    themeToggle());
 }
 
 /** Light or dark, kept in this browser and shared with the classic
@@ -118,6 +138,7 @@ function renderAll() {
   renderTop();
   renderRail();
   renderPanel();
+  renderDock();
 }
 
 async function onRoute() {

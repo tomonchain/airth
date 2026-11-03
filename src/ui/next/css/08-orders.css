@@ -1,12 +1,12 @@
 /* The command bar (decision 64): an order box in the header of business
    pages, and the card saying who takes it. */
 
-.top .order { position: relative; flex: 1 1 320px; max-width: 560px; display: flex; gap: 8px; align-items: center; }
-.top .order input { flex: 1 1 auto; min-width: 0; min-height: 34px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: var(--fs-body); }
-.top .order input::placeholder { color: var(--text-5); }
-.top .order .primary { min-height: 34px; padding: 0 16px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; }
-.top .order .primary[disabled] { opacity: 0.6; cursor: default; }
-.order-card { position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; right: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-tile); border: 1px solid var(--line-strong); background: var(--raised); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.dock .order { position: relative; flex: 1 1 320px; max-width: 560px; display: flex; gap: 8px; align-items: center; }
+.dock .order input { flex: 1 1 auto; min-width: 0; min-height: 34px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: var(--fs-body); }
+.dock .order input::placeholder { color: var(--text-5); }
+.dock .order .primary { min-height: 34px; padding: 0 16px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; }
+.dock .order .primary[disabled] { opacity: 0.6; cursor: default; }
+.order-card { position: absolute; z-index: 20; bottom: calc(100% + 10px); left: 0; right: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-tile); border: 1px solid var(--line-strong); background: var(--raised); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
 .order-card p { margin: 0; font-size: var(--fs-body); color: var(--text-2); }
 .order-card .note { font-size: var(--fs-small); color: var(--text-4); }
 .order-card .note.bad { color: var(--bad); }
@@ -17,5 +17,27 @@
 .order-row .plain { border: 1px solid var(--line-strong); background: transparent; color: var(--text-2); }
 
 @media (max-width: 720px) {
-  .top .order { order: 3; flex-basis: 100%; max-width: none; }
+  .dock .order { order: 3; flex-basis: 100%; max-width: none; }
+}
+
+/* The command bar floats at the bottom of a business's pages, in liquid
+   glass: translucent, blurred, a light edge; centred on the panel. */
+.dock { display: none; }
+.dock.on { display: block; position: fixed; z-index: 30; bottom: max(16px, env(safe-area-inset-bottom)); left: calc(72px + (100vw - 72px) / 2); transform: translateX(-50%); width: min(680px, calc(100vw - 72px - 48px)); }
+.dock .order { max-width: none; width: 100%; padding: 6px 6px 6px 8px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18), inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent); }
+.dock .order input { min-height: 40px; border: 0; background: transparent; border-radius: var(--r-pill); }
+.dock .order input:focus { outline: none; }
+.dock .order .primary { min-height: 38px; border-radius: var(--r-pill); }
+.dock .order-card { left: 0; right: 0; border-radius: var(--r-large);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18); }
+/* The page ends above the bar, so its last lines stay readable. */
+.panel.docked { padding-bottom: 112px; }
+@media (max-width: 720px) {
+  .dock.on { left: 8px; right: 8px; transform: none; width: auto; }
 }

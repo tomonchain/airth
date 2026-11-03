@@ -1,4 +1,4 @@
-// The command bar (decision 64), in the header of every business page: an
+// The command bar (decision 64), floating at the bottom of every business page: an
 // order goes to the agent named at its start, else the one routing chooses,
 // shown with why before it starts; the founder can change it. It runs
 // unwatched: what commits or needs a permission waits in Needs you.
@@ -16,7 +16,7 @@ function orderBox() {
 }
 
 function orderCard() {
-  const close = () => { orders.route = orders.note = null; renderTop(); };
+  const close = () => { orders.route = orders.note = null; renderDock(); if (next.route.page === "tasks") renderPanel(); };
   if (orders.note) return h("div", { class: "order-card", role: "status" }, h("p", {}, orders.note),
     h("div", { class: "order-row" }, h("a", { href: railHref("tasks") }, "See Tasks"), h("button", { type: "button", class: "plain", onclick: close }, "Close")));
   const r = orders.route;
@@ -35,14 +35,14 @@ function orderCard() {
 async function routeOrder(text) {
   if (!text.trim()) return;
   Object.assign(orders, { text, busy: true, route: null, note: null });
-  renderTop();
+  renderDock();
   try {
     orders.route = await api(`realms/${enc(next.realm)}/orders/route`, { text });
   } catch (e) {
     orders.route = { error: e.message, agents: [] };
   }
   orders.busy = false;
-  renderTop();
+  renderDock();
   if (next.route.page === "tasks") renderPanel();
 }
 
@@ -55,6 +55,6 @@ async function startOrder(agent) {
   } catch (e) {
     orders.route = { ...orders.route, error: e.message };
   }
-  renderTop();
+  renderDock();
   if (next.route.page === "tasks") renderPanel();
 }
