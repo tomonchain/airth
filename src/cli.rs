@@ -671,6 +671,88 @@ pub fn actions(ctx: &Ctx, command: Option<ActionsCmd>) -> Result<bool> {
 }
 
 #[derive(Subcommand)]
+pub enum BankCmd {
+    /// Connect Revolut Business, read-only: Airth opens its consent page,
+    /// then asks for the address Revolut sends you to
+    Connect {
+        /// The Client ID of the API certificate in Revolut Business
+        #[arg(long)]
+        client_id: String,
+        /// The OAuth redirect URI declared with that certificate
+        #[arg(long)]
+        redirect_uri: String,
+        /// The private key, converted to PKCS#8 DER (revolut.pk8)
+        #[arg(long)]
+        key: std::path::PathBuf,
+    },
+    /// Whether a bank is connected
+    Status,
+    /// Read the bank now: cash, money in and out this month, runway
+    Read,
+    /// Forget the bank's key and tokens
+    Disconnect,
+}
+
+/// The business's bank (decision 54). The address Revolut sends the founder
+/// to is pasted here, in the terminal, never into a chat.
+pub fn bank(ctx: &Ctx, command: BankCmd) -> Result<bool> {
+    let skills = ctx.realm()?.skills_dir();
+    match command {
+        BankCmd::Connect {
+            client_id,
+            redirect_uri,
+            key,
+        } => {
+            let key = std::fs::read(&key).with_context(|| format!("reading {}", key.display()))?;
+            let url = crate::bank::consent_url(crate::bank::CONSENT, &client_id, &redirect_uri)?;
+            println!(
+                "Consent to read access in Revolut Business (it opens in your browser):\n{url}"
+            );
+            let _ = std::process::Command::new("open").arg(&url).status();
+            eprint!("Then paste here the address Revolut sent you to: ");
+            let mut landed = String::new();
+            std::io::stdin().read_line(&mut landed)?;
+            crate::bank::connect(
+                &skills,
+                crate::bank::API,
+                &client_id,
+                &redirect_uri,
+                &key,
+                &landed,
+                chrono::Utc::now(),
+            )?;
+            println!(
+                "Revolut Business connected, read-only. You can delete your copy of the key file."
+            );
+        }
+        BankCmd::Status => match crate::bank::connected(&skills) {
+            true => println!("Revolut Business connected, read-only"),
+            false => println!("no bank connected (airth bank connect)"),
+        },
+        BankCmd::Read => {
+            let f = crate::bank::finance(&skills, chrono::Utc::now())?;
+            let runway = f
+                .runway_months
+                .map_or("no spending in three months".to_string(), |m| {
+                    format!("{m:.1} months")
+                });
+            println!(
+                "cash {:.2} {c}\nin this month {:.2} {c}\nout this month {:.2} {c}\nrunway {runway}",
+                f.cash,
+                f.money_in,
+                f.money_out,
+                c = f.currency
+            );
+        }
+        BankCmd::Disconnect => {
+            crate::bank::disconnect(&skills);
+            println!("bank forgotten: its key and tokens are deleted");
+        }
+    }
+    Ok(true)
+}
+
+#[derive(Subcommand)]
 pub enum TelegramCmd {
     /// Connect your bot: paste the token @BotFather gave you, then open the
     /// link it prints on your phone
