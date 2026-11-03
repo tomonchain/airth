@@ -373,6 +373,17 @@ function smokeNext() {
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
+  // Decision 71: the same rail as the classic interface, its entries to the
+  // classic pages where they show the business.
+  {
+    show("rail", { route: { page: "needs-you", realm: "acme" } });
+    const hrefs = {};
+    const walk = (n) => { if (n.tag === "a" && n.attrs.title) hrefs[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
+    walk(nbody.querySelector("#rail"));
+    const want = { Team: "/#/r/acme/agents", Tasks: "/#/r/acme/tasks", Business: "/#/r/acme/settings", Settings: "/#/r/acme/skills", "Your profile": "/#/owner",
+      Routines: "#/b/acme/routines", Calendar: "#/b/acme/calendar", Workshop: "#/workshop", HQ: "#/hq" };
+    for (const [label, href] of Object.entries(want)) if (hrefs[label] !== href) problems.push(`next/rail: ${label} goes to ${hrefs[label]}, not ${href}`);
+  }
   // The rail ends with the theme toggle and the founder's profile.
   const rail = JSON.stringify(nbody.querySelector("#rail"), (k, v) => (k === "parent" ? undefined : v));
   if (!/Switch to (light|dark) mode/.test(rail) || !rail.includes("Your profile")) problems.push("next/rail: no theme toggle or profile");

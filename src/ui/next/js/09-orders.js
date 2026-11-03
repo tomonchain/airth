@@ -18,7 +18,7 @@ function orderBox() {
 function orderCard() {
   const close = () => { orders.route = orders.note = null; renderTop(); };
   if (orders.note) return h("div", { class: "order-card", role: "status" }, h("p", {}, orders.note),
-    h("div", { class: "order-row" }, h("a", { href: pageHash("tasks") }, "See Tasks"), h("button", { type: "button", class: "plain", onclick: close }, "Close")));
+    h("div", { class: "order-row" }, h("a", { href: railHref("tasks") }, "See Tasks"), h("button", { type: "button", class: "plain", onclick: close }, "Close")));
   const r = orders.route;
   const agents = r.agents || [];
   return h("div", { class: "order-card", role: "dialog", "aria-label": "Who takes the order" },

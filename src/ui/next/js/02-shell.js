@@ -31,6 +31,14 @@ function parseRoute() {
   return { page: "hq" };
 }
 
+// Decision 71: these rail entries open the classic interface's page.
+const CLASSIC_PAGES = { team: "agents", tasks: "tasks", business: "settings", settings: "skills" };
+
+/** Where a rail entry goes: the classic page where one shows the business,
+    else this interface's. The same in both interfaces. */
+const railHref = (page, realm = next.realm) =>
+  CLASSIC_PAGES[page] && realm ? `/#/r/${enc(realm)}/${CLASSIC_PAGES[page]}` : pageHash(page, realm);
+
 const pageHash = (page, realm = next.realm) =>
   PINNED.some((p) => p.id === page) || ["hq", "new-business"].includes(page) || !realm ? `#/${page}` : `#/b/${enc(realm)}/${page}`;
 
@@ -64,7 +72,7 @@ function renderRail() {
     const current = next.route.page === p.id;
     const disabled = !next.realm && PAGES.includes(p);
     const waiting = p.id === "needs-you" && needs.realm === next.realm && needs.items.length;
-    const el = h("a", { href: disabled ? "#/hq" : pageHash(p.id), "aria-label": waiting ? `${p.title}, ${needs.items.length} waiting` : p.title, title: p.title,
+    const el = h("a", { href: disabled ? "#/hq" : railHref(p.id), "aria-label": waiting ? `${p.title}, ${needs.items.length} waiting` : p.title, title: p.title,
         "aria-current": current ? "page" : null, svg: icon(p.icon) });
     if (waiting) el.append(h("span", { class: "dot", "aria-hidden": "true" }));
     return el;
@@ -77,7 +85,7 @@ function renderRail() {
     PINNED.map(link),
     themeToggle(),
     // The founder's profile lives in the classic interface until it moves.
-    h("a", { href: "/classic#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
+    h("a", { href: "/#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
 }
 
 /** Light or dark, kept in this browser and shared with the classic
