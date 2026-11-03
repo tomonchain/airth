@@ -32,7 +32,6 @@ mod release;
 mod routine;
 mod runtime;
 mod sandbox;
-#[cfg(test)]
 mod scenarios;
 mod scheduler;
 mod service;
@@ -268,6 +267,13 @@ enum Cmd {
     Tools,
     /// Check that the environment is ready
     Doctor,
+    /// Run the security scenarios (decision 67): each attempt made by a
+    /// scripted agent in a throwaway business, through the full path
+    Scenarios {
+        /// Only these scenarios, by id (S-01…)
+        #[arg(long)]
+        only: Vec<String>,
+    },
 }
 
 #[derive(clap::Args)]
@@ -497,6 +503,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Bank { command }) => cli::bank(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
+        Some(Cmd::Scenarios { only }) => scenarios(ctx, &only),
         None => prompt_objective().and_then(|objective| {
             run(
                 ctx,
@@ -885,6 +892,26 @@ fn skills(ctx: &Ctx) -> Result<bool> {
         );
     }
     Ok(true)
+}
+
+/// The security scenarios, each with what held or why it failed; true when
+/// all passed under a working sandbox.
+fn scenarios(ctx: &Ctx, only: &[String]) -> Result<bool> {
+    let results = scenarios::run(ctx.home(), only)?;
+    for o in &results.outcomes {
+        let mark = if o.passed {
+            "\x1b[32m✓\x1b[0m"
+        } else {
+            "\x1b[31m✗\x1b[0m"
+        };
+        println!("{mark} {} {}: {}", o.id, o.title, o.detail);
+    }
+    if !results.sandbox {
+        println!(
+            "\x1b[31m✗\x1b[0m sandbox: not working here, so the scenarios do not count (airth doctor)"
+        );
+    }
+    Ok(results.all_passed())
 }
 
 fn doctor(ctx: &Ctx) -> Result<bool> {
