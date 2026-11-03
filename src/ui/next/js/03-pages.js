@@ -21,27 +21,6 @@ function renderPanel() {
   panel.replaceChildren(soonPage(known ? known.title : "This page"));
 }
 
-function hqPage() {
-  const live = next.realms.filter((r) => !r.archived);
-  return h("div", { class: "column hq" },
-    h("header", { class: "page-head" },
-      h("div", { class: "date" }, today()),
-      h("h1", { class: "headline" }, live.length === 1 ? "One business." : `${live.length} businesses.`)),
-    live.length
-      ? h("div", { class: "card rows" }, live.map((r) =>
-          h("a", { class: "row", href: pageHash("needs-you", r.name) },
-            h("span", { class: "mark big", "aria-hidden": "true" }, initial(r.name)),
-            h("span", { class: "grow" },
-              h("span", { class: "name" }, r.name),
-              h("span", { class: "sub" }, r.description || "No description yet")))))
-      : h("div", { class: "empty" },
-          h("strong", {}, "No business yet"),
-          h("span", {}, "Create one with New business: its pages will show here.")),
-    h("div", { class: "empty" },
-      h("strong", {}, "Health, vitals and finance"),
-      h("span", {}, "Each business's health, its vitals and its finance will show here, one section per business.")));
-}
-
 function soonPage(title) {
   return h("div", { class: "column" },
     h("header", { class: "page-head" },

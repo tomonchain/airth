@@ -1,0 +1,53 @@
+/* The HQ (docs/design/mockups/hq.html): a section per business, its
+   health, vitals, finance and latest activity. */
+
+.hq { gap: 56px; }
+.hq .needs-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; font-size: 15px; font-weight: 500; color: var(--warn); text-decoration: none; }
+.hq .needs-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--warn); }
+.hq .businesses { display: flex; flex-direction: column; }
+.hq .business-section { display: flex; flex-direction: column; gap: 20px; padding: 28px 0; border-top: 1px solid var(--line); }
+.hq .business-section:last-child { border-bottom: 1px solid var(--line); }
+.hq .business-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; }
+.hq .business-top h2 { margin: 0; font-size: 22px; font-weight: 600; }
+.hq .business-top h2 a { color: var(--text); text-decoration: none; }
+.hq .health { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; color: var(--ok); }
+.hq .health-dot { width: 10px; height: 10px; border-radius: 5px; background: var(--ok); }
+.hq .watch .health { color: var(--warn); }
+.hq .watch .health-dot { background: var(--warn); }
+.hq .at-risk .health { color: var(--bad); }
+.hq .at-risk .health-dot { background: var(--bad); }
+.hq .not-started .health { color: var(--text-3); }
+.hq .not-started .health-dot { background: transparent; border: 2px solid var(--text-4); box-sizing: border-box; }
+.hq .not-started h2 a { color: var(--text-2); }
+.hq .health-why { margin: -8px 0 0; font-size: 16px; line-height: 1.5; color: var(--text-2); }
+.hq .vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.hq .vital { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--r-tile); background: var(--card); min-width: 0; }
+.hq .vital-label, .hq .vital-note { font-size: 12px; color: var(--text-4); overflow-wrap: anywhere; }
+.hq .vital-value { font-size: 22px; font-weight: 600; color: var(--text); }
+.hq .vital.out { background: var(--warn-bg); }
+.hq .vital.out .vital-label, .hq .vital.out .vital-note { color: var(--warn-muted); }
+.hq .vital.out .vital-value { color: var(--warn); }
+.hq .finance, .hq .activity { display: flex; flex-direction: column; gap: 8px; }
+.hq .block-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text-3); letter-spacing: 0.04em; text-transform: uppercase; }
+.hq .block-sub { font-weight: 400; letter-spacing: 0; color: var(--text-5); text-transform: none; }
+.hq .finance-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); border: 1px solid var(--line); border-radius: var(--r-tile); }
+.hq .finance-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; }
+.hq .finance-cell + .finance-cell { border-left: 1px solid var(--line); }
+.hq .finance-value { font-size: 16px; font-weight: 600; color: var(--text-5); }
+.hq .activity ol { margin: 0; padding: 0; list-style: none; }
+.hq .activity li { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.hq .activity li + li { border-top: 1px solid var(--line-soft); }
+.hq .agent-mark { flex: 0 0 auto; width: 24px; height: 24px; border-radius: var(--r-chip); background: var(--agent); }
+.hq .activity-text { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hq .activity-text strong { font-weight: 600; color: var(--text); }
+.hq .activity-at { flex: 0 0 auto; font-size: 12px; color: var(--text-4); }
+.hq .no-activity { display: flex; align-items: center; min-height: 44px; font-size: 14px; color: var(--text-4); }
+.hq .hq-foot { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-5); }
+
+@media (max-width: 720px) {
+  .hq .finance-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hq .finance-cell + .finance-cell { border-left: 0; }
+  .hq .finance-cell:nth-child(even) { border-left: 1px solid var(--line); }
+  .hq .finance-cell:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .hq .activity-text { white-space: normal; }
+}

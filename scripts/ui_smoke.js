@@ -332,8 +332,18 @@ function smokeNext() {
     // A list handed to the DOM as is shows its items' addresses as text.
     if (nbody.textContent.includes("#/")) problems.push(`next/${label}: an address shows as text`);
   };
+  // The HQ: a business to watch with each part, one not started.
+  vm.runInContext(`hq.data = { headline: "One business to watch.", needs: 2, businesses: [
+    { name: "acme", description: "", needs: 2, health: { state: "watch", sentence: "One item is held by the check. Goal pace and runway unknown: no measured goal, no bank connected." },
+      vitals: [{ label: "daily-posts", value: "9", note: "Approved this week", out: false }, { label: "Dropped this week", value: "1", note: "too long", out: true }, { label: "Quality", value: "1 flag", note: "a call to buy", out: true }],
+      time: "45 min", cost_usd: 0.42, activity: [{ agent: "post-writer", agent_title: "Post writer", sentence: "daily-posts read 58, kept 3, 3 sent to you", at: "07:31" }, { agent: null, agent_title: null, sentence: "weekly-report read 1", at: "Mon" }] },
+    { name: "perso", description: null, needs: 0, health: { state: "not started", sentence: "No routine yet." }, vitals: [], time: "0 s", cost_usd: 0, activity: [] }] };`, ctx);
   show("hq", { route: { page: "hq" } });
+  for (const text of ["One business to watch.", "2 things need you", "Watch", "Not started", "Dropped this week", "1 flag", "No bank account yet", "Post writer", "daily-posts read 58, kept 3, 3 sent to you", "Airth", "No run yet", "model cost $0.42"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/hq: "${text}" is missing`);
+  }
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
+  vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
   show("unauthorized", { route: { page: "hq" }, unauthorized: true });

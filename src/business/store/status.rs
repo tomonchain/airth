@@ -93,6 +93,8 @@ pub struct RoutineWeek {
     pub late: i64,
     /// Items its runs dropped (decision 61).
     pub dropped: i64,
+    /// Its items the founder approved, as they were or overridden.
+    pub approved: i64,
 }
 
 /// What one pipeline's model calls cost over a period.
@@ -229,6 +231,16 @@ impl Store {
                     started_at,
                 });
             }
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT q.routine, COUNT(*) FROM queue_log l JOIN queue q ON q.id = l.item
+             WHERE l.by = 'founder' AND l.action IN ('approved', 'overridden') AND l.at >= ?1
+             AND q.kind = 'approval' AND q.routine IS NOT NULL GROUP BY q.routine",
+        )?;
+        for row in stmt.query_map(params![at], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
+            let (name, approved) = row?;
+            let r = by_name.entry(name.clone()).or_default();
+            (r.routine, r.approved) = (name, approved);
         }
         // Every run, by hand or scheduled, keeps what each block dropped.
         let mut reasons: BTreeMap<(String, String), i64> = BTreeMap::new();
@@ -495,14 +507,17 @@ mod tests {
             .unwrap();
         let week = store.routines_week(since).unwrap();
         let routine =
-            |routine: &str, runs, failed, cost_usd, founder_seconds, dropped| RoutineWeek {
-                routine: routine.into(),
-                runs,
-                failed,
-                cost_usd,
-                founder_seconds,
-                late: 0,
-                dropped,
+            |routine: &str, runs, failed, cost_usd, founder_seconds, dropped, approved| {
+                RoutineWeek {
+                    routine: routine.into(),
+                    runs,
+                    failed,
+                    cost_usd,
+                    founder_seconds,
+                    late: 0,
+                    dropped,
+                    approved,
+                }
             };
         assert_eq!(
             week,
@@ -518,9 +533,10 @@ mod tests {
                 actions_failed: 1,
                 incidents: 1,
                 routines: vec![
-                    routine("by-hand", 0, 0, 0.0, 0, 0),
-                    routine("posts", 2, 1, 0.25, 100, 3),
-                    routine("watch", 0, 0, 0.0, 5, 0),
+                    routine("by-hand", 0, 0, 0.0, 0, 0, 0),
+                    // Approved as it was, and after an edit.
+                    routine("posts", 2, 1, 0.25, 100, 3, 2),
+                    routine("watch", 0, 0, 0.0, 5, 0, 0),
                 ],
                 late: vec![],
                 // Decision 61: each reason once, with how often.

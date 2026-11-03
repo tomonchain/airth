@@ -45,6 +45,7 @@ mod company;
 mod extensions;
 mod general;
 mod graphs;
+mod hq;
 mod http;
 mod live;
 mod queue;
@@ -280,6 +281,7 @@ impl App {
             Self::company_routes,
             Self::graph_routes,
             Self::calendar_routes,
+            Self::hq_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {
