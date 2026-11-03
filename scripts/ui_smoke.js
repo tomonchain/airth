@@ -402,7 +402,7 @@ function smokeNext() {
   vm.runInContext(`company.team.acme = { agents: [
     { name: "watcher", title: null, department: "marketing", job: null, look: "0a1b2c3d", look_saved: true, accessory: "lens", state: "asleep", routines: [{ name: "daily-watch", schedule: null, last: null }], waiting: 0, cost_usd: 0, unpriced: 0, seconds: 0 },
     { name: "writer", title: "Writer", department: null, job: "Write.", look: "ff00aa11", look_saved: false, accessory: null, state: "needs", routines: [{ name: "weekly", schedule: "mon 09:00", last: { at: "${now}", ok: false } }], waiting: 2, cost_usd: 1.5, unpriced: 3, seconds: 900 }] };
-    company.profile.acme = { profile: { name: null, legal_name: "Acme Ltd", links: ["https://a.com"] }, goal: {}, lines: [{ name: "news", fields: { title: null, kind: null, status: null } }], repos: [{ name: "site", url: null }], missing: ["business/profile.md: country"] };`, ctx);
+    company.profile.acme = { profile: { name: null, legal_name: "Acme Ltd", country: "GB", fiscal_year_end: "11-30", links: ["https://a.com"] }, goal: {}, lines: [{ name: "news", fields: { title: null, kind: null, status: null } }], repos: [{ name: "site", url: null }], missing: ["business/profile.md: country"] };`, ctx);
   show("team", { route: { page: "team", realm: "acme" } });
   // Decision 65: each agent's state in words, "Keep this look" only for
   // a look not saved yet; the character drawn from seed, department, state.
@@ -419,6 +419,8 @@ function smokeNext() {
   // What waits for an agent is said beside its state, not after a routine.
   if (!nbody.textContent.includes("Needs you 2 items wait for you")) problems.push("next/team: what waits is not said beside the agent's state");
   show("business", { route: { page: "business", realm: "acme" } });
+  // Decision 66: a UK company's year end reads as its accounting reference date.
+  if (!nbody.textContent.includes("Accounting reference date") || nbody.textContent.includes("Fiscal year end")) problems.push("next/business: a UK company's year end is not called its accounting reference date");
   vm.runInContext(`company.team.acme = { agents: [] }; company.profile.acme = { error: "agents/x.md: unknown field 'foo'", repos: [] };`, ctx);
   show("team, no agent", { route: { page: "team", realm: "acme" } });
   show("business, config refused", { route: { page: "business", realm: "acme" } });
