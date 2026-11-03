@@ -112,11 +112,12 @@ fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
     Ok(())
 }
 
-/// What the HQ shows of a business's bank: None with no bank connected;
-/// else its figures as words, or why they are unknown.
+/// What the HQ shows of a business's finance: a connected bank's figures,
+/// else those the founder entered by hand (decision 68), else None; as
+/// words, or why they are unknown.
 pub fn shown(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
     if !crate::bank::connected(&realm.skills_dir()) {
-        return None;
+        return by_hand(realm, now);
     }
     Some(match kept(realm) {
         Some(Kept::Read { finance }) if now - finance.read_at < Duration::days(1) => {
@@ -136,6 +137,46 @@ pub fn shown(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
     })
 }
 
+/// Figures entered by hand are shown for this long after their date, then
+/// as unknown: never stale (decision 68).
+const BY_HAND_DAYS: i64 = 35;
+
+/// `business/finance.md`'s figures, as the HQ shows a bank's; None without
+/// the file.
+fn by_hand(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
+    let root = realm.root().ok()?;
+    let doc = match crate::business::config::finance(&root) {
+        Ok(doc) => doc?,
+        Err(e) => return Some(json!({"unknown": format!("{e:#}")})),
+    };
+    let number = |key| doc.text(key).and_then(|v| v.parse::<f64>().ok());
+    let as_of = doc
+        .text("as_of")
+        .and_then(|v| chrono::NaiveDate::parse_from_str(&v, "%Y-%m-%d").ok());
+    let (Some(cash), Some(spent), Some(as_of)) = (number("cash"), number("spent"), as_of) else {
+        return Some(json!({"unknown": "business/finance.md needs cash, spent and as_of"}));
+    };
+    if (now.with_timezone(&chrono::Local).date_naive() - as_of).num_days() > BY_HAND_DAYS {
+        return Some(
+            json!({"unknown": format!("Entered by hand more than {BY_HAND_DAYS} days ago")}),
+        );
+    }
+    let currency = doc.text("currency").or_else(|| {
+        let profile = std::fs::read_to_string(root.join("business/profile.md")).ok()?;
+        crate::frontmatter::parse(&profile).text("currency")
+    });
+    let money = |amount: f64| money(amount, currency.as_deref().unwrap_or_default());
+    let runway = (spent > 0.0).then(|| cash / spent);
+    Some(json!({
+        "source": format!("Entered by hand · as of {}", as_of.format("%-d %b")),
+        "cash": money(cash),
+        "in": null,
+        "out": money(spent),
+        "runway": runway.map_or("No spending".to_string(), |m| format!("{} months", m.floor())),
+        "runway_months": runway,
+    }))
+}
+
 /// An amount as the founder reads it: "£12,300".
 fn money(amount: f64, currency: &str) -> String {
     let whole = amount.round() as i64;
@@ -152,6 +193,7 @@ fn money(amount: f64, currency: &str) -> String {
         "GBP" => format!("{sign}£{grouped}"),
         "EUR" => format!("{sign}€{grouped}"),
         "USD" => format!("{sign}${grouped}"),
+        "" => format!("{sign}{grouped}"),
         other => format!("{sign}{grouped} {other}"),
     }
 }
@@ -159,6 +201,77 @@ fn money(amount: f64, currency: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 68: figures entered by hand show with their date and a
+    /// runway, until 35 days old; a wrong value says why; a connected bank
+    /// takes precedence.
+    #[test]
+    fn figures_by_hand_until_a_bank_is_connected() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        let now = Utc::now();
+        assert_eq!(shown(&realm, now), None, "no file, no figures");
+        std::fs::create_dir_all(root.join("business")).unwrap();
+        std::fs::write(
+            root.join("business/profile.md"),
+            "---\ncurrency: GBP\n---\n",
+        )
+        .unwrap();
+        let enter = |as_of: chrono::NaiveDate, cash: &str| {
+            std::fs::write(
+                root.join("business/finance.md"),
+                format!(
+                    "---\ncash: {cash}\nspent: 1000\nas_of: {as_of}\n---\nFrom the bank's app.\n"
+                ),
+            )
+            .unwrap();
+        };
+        let today = now.with_timezone(&chrono::Local).date_naive();
+        enter(today - Duration::days(35), "8000");
+        let f = shown(&realm, now).unwrap();
+        assert!(
+            f["source"]
+                .as_str()
+                .unwrap()
+                .starts_with("Entered by hand · as of ")
+        );
+        assert_eq!(
+            (f["cash"].as_str(), f["out"].as_str()),
+            (Some("£8,000"), Some("£1,000"))
+        );
+        assert!(f["in"].is_null(), "money in is not entered by hand");
+        assert_eq!(f["runway_months"], 8.0);
+        enter(today - Duration::days(36), "8000");
+        assert_eq!(
+            shown(&realm, now).unwrap()["unknown"],
+            "Entered by hand more than 35 days ago"
+        );
+        enter(today, "lots");
+        assert!(
+            shown(&realm, now).unwrap()["unknown"]
+                .as_str()
+                .unwrap()
+                .contains("cash 'lots'")
+        );
+        enter(today, "8000");
+        let access = realm.skills_dir().join("mcp-auth/revolut.json");
+        std::fs::create_dir_all(access.parent().unwrap()).unwrap();
+        std::fs::write(&access, "{}").unwrap();
+        assert_eq!(
+            shown(&realm, now).unwrap(),
+            json!({"unknown": "Not read yet"}),
+            "the bank, once connected, takes precedence"
+        );
+    }
 
     #[test]
     fn amounts_read_like_money() {
