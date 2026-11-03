@@ -66,7 +66,7 @@ function settingsPage() {
     h("section", { class: "card classic" },
       h("strong", {}, "Classic interface"),
       h("p", {}, "Everything that has not moved here yet: connectors, keys, models, the Workshop, documents and usage."),
-      h("a", { class: "button", href: "/classic" }, "Open the classic interface")),
+      h("a", { class: "button", href: "/" }, "Open the classic interface")),
     inDevelopment("connectors"),
     inDevelopment("mailboxes"));
 }

@@ -32,7 +32,7 @@ function tasksPage() {
 }
 
 function taskRow(realm, group, t) {
-  const href = group === "waiting" ? pageHash("needs-you") : `/classic#/r/${enc(realm)}/run/${enc(t.id)}`;
+  const href = group === "waiting" ? pageHash("needs-you") : `/#/r/${enc(realm)}/run/${enc(t.id)}`;
   return h("a", { class: `task ${group}`, href },
     h("span", { class: "task-dot", "aria-hidden": "true" }),
     h("span", { class: "task-order" }, t.order),
