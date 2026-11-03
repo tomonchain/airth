@@ -17,6 +17,7 @@ function renderPanel() {
   if (page === "routines" && next.realm) return panel.replaceChildren(routinesPage());
   if (page === "business" && next.realm) return panel.replaceChildren(businessPage());
   if (page === "calendar" && next.realm) return panel.replaceChildren(calendarPage());
+  if (page === "tasks" && next.realm) return panel.replaceChildren(tasksPage());
   const known = [...PAGES, ...PINNED].find((p) => p.id === page);
   panel.replaceChildren(soonPage(known ? known.title : "This page"));
 }

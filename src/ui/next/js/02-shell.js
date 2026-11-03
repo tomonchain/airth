@@ -53,7 +53,7 @@ function renderTop() {
     h("div", { class: "top-left" },
       h("div", { class: "anchor" }, switcher, menu),
       h("span", { class: "where" }, inBusiness ? (page ? page.title : "") : "All businesses")),
-    inBusiness && orderBox(),
+    inBusiness && next.route.page !== "tasks" && orderBox(),
     next.route.page === "hq"
       ? h("a", { class: "primary", href: "/#/realms/new" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
       : h("a", { class: "where back", href: "/" }, "Current interface"));
