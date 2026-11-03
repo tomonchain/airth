@@ -20,8 +20,8 @@ const agentName = (a) => {
   const d = needs.agents.find((x) => x.name === a);
   return (d && d.title) || a;
 };
-function avatar(agent, size = 40) {
-  return h("span", { class: `avatar s${size}`, "aria-hidden": "true", style: `--agent: ${agentColour(agent)}` }, initial(agentName(agent)));
+function Avatar({ agent, size = 40 }) {
+  return html`<span class=${`avatar s${size}`} aria-hidden="true" style=${`--agent: ${agentColour(agent)}`}>${initial(agentName(agent))}</span>`;
 }
 
 const needs = {
@@ -50,8 +50,11 @@ async function loadNeeds() {
   if (next.route.page === "needs-you") renderPanel();
 }
 
-function needsPage() {
-  if (needs.realm !== next.realm) return h("div", { class: "column" }, h("p", { class: "lede" }, "Loading…"));
+/** Needs you, in the Workspace layout (decision 72): the agents waiting,
+    the open agent's items, and the run an item came from. */
+function NeedsPage() {
+  const header = { label: next.realm, title: "Needs you" };
+  if (needs.realm !== next.realm) return html`<${Workspace} header=${header} main=${html`<p class="lede">Loading…</p>`} />`;
   const byAgent = new Map();
   for (const it of needs.items) {
     const key = it.agent || "";
@@ -60,10 +63,15 @@ function needsPage() {
   }
   if (needs.agent === undefined || !byAgent.has(needs.agent || "")) needs.agent = byAgent.size ? [...byAgent.keys()][0] || null : undefined;
   const open = byAgent.get(needs.agent || "") || [];
-  return h("div", { class: "needs" }, agentList(byAgent), thread(open), details(open.find((i) => i.routine && i.run)));
+  const n = needs.items.length;
+  const summary = !n ? "Nothing waits for you." : `${n === 1 ? "One item waits" : `${n} items wait`} for you, from ${byAgent.size === 1 ? "one agent" : `${byAgent.size} agents`}.`;
+  return html`<${Workspace} header=${{ ...header, summary }}
+    list=${html`<${AgentList} byAgent=${byAgent} />`}
+    main=${html`<${Thread} items=${open} />`}
+    details=${html`<${Details} it=${open.find((i) => i.routine && i.run)} />`} />`;
 }
 
-function agentList(byAgent) {
+function AgentList({ byAgent }) {
   const dept = (a) => { const d = needs.agents.find((x) => x.name === a); return a ? (d && d.department) || "" : "leadership"; };
   const groups = new Map();
   const q = needs.find.toLowerCase();
@@ -73,42 +81,41 @@ function agentList(byAgent) {
     if (!groups.has(d)) groups.set(d, []);
     groups.get(d).push([a, items]);
   }
-  return h("section", { class: "agents", "aria-label": "Agents waiting for you" },
-    h("label", { for: "find", class: "sr-only" }, "Search"),
-    h("input", { id: "find", type: "search", placeholder: "Search", value: needs.find,
-      oninput: (e) => { needs.find = e.target.value; renderPanel(); $("#find").focus(); } }),
-    !byAgent.size && h("div", { class: "empty" }, h("strong", {}, "Nothing waits for you"),
-      h("span", {}, "Approvals, incidents and prepared actions show here as the agents ask.")),
-    [...groups].map(([d, list]) => [
-      h("span", { class: "group" }, DEPARTMENT_NAMES[d] || "No department yet"),
-      list.map(([a, items]) => {
+  const choose = (e, a) => { e.preventDefault(); needs.agent = a || null; needs.editing = needs.rejecting = null; renderPanel(); };
+  return html`<div class="pane-stack" aria-label="Agents waiting for you">
+    <label for="find" class="sr-only">Search</label>
+    <input id="find" type="search" placeholder="Search" value=${needs.find} onInput=${(e) => { needs.find = e.target.value; renderPanel(); }} />
+    ${!byAgent.size && html`<div class="empty"><strong>Nothing waits for you</strong>
+      <span>Approvals, incidents and prepared actions show here as the agents ask.</span></div>`}
+    ${[...groups].map(([d, list]) => html`<span class="group">${DEPARTMENT_NAMES[d] || "No department yet"}</span>
+      ${list.map(([a, items]) => {
         const first = items[0];
         const incident = items.some((i) => i.kind === "incident");
-        return h("a", { class: "agent", href: "#", "aria-current": (a || null) === needs.agent ? "true" : null,
-            onclick: (e) => { e.preventDefault(); needs.agent = a || null; needs.editing = needs.rejecting = null; renderPanel(); } },
-          h("span", { class: "badged" }, avatar(a), h("span", { class: incident ? "badge bad" : "badge" }, incident ? "!" : String(items.length))),
-          h("span", { class: "who" },
-            h("span", { class: "line" }, h("span", { class: "name" }, agentName(a)), h("span", { class: "time" }, clock(first.created_at))),
-            h("span", { class: "sub" }, `${first.title} · ${first.text}`)));
-      })]));
+        return html`<a class="agent" href="#" aria-current=${(a || null) === needs.agent ? "true" : null} onClick=${(e) => choose(e, a)}>
+          <span class="badged"><${Avatar} agent=${a} /><span class=${incident ? "badge bad" : "badge"}>${incident ? "!" : String(items.length)}</span></span>
+          <span class="who"><span class="line"><span class="name">${agentName(a)}</span><span class="time">${clock(first.created_at)}</span></span>
+            <span class="sub">${first.title} · ${first.text}</span></span>
+        </a>`;
+      })}`)}
+  </div>`;
 }
 
-function thread(items) {
-  if (!items.length) return h("section", { class: "thread" });
+function Thread({ items }) {
+  if (!items.length) return null;
   const a = needs.agent;
   const d = needs.agents.find((x) => x.name === a);
-  return h("section", { class: "thread", "aria-label": agentName(a) },
-    h("header", { class: "thread-head" }, avatar(a, 34), h("h1", {}, agentName(a)),
-      d && d.department && h("span", { class: "chip" }, DEPARTMENT_NAMES[d.department] || d.department)),
-    h("div", { class: "thread-body" },
-      needs.error && h("p", { class: "note bad" }, needs.error),
-      needs.note && h("p", { class: "note" }, needs.note),
-      items.map(card)));
+  return html`<div class="thread" aria-label=${agentName(a)}>
+    <div class="thread-head"><${Avatar} agent=${a} size=${34} /><h2>${agentName(a)}</h2>
+      ${d && d.department && html`<span class="chip">${DEPARTMENT_NAMES[d.department] || d.department}</span>`}</div>
+    ${needs.error && html`<p class="note bad">${needs.error}</p>`}
+    ${needs.note && html`<p class="note">${needs.note}</p>`}
+    ${items.map((it) => html`<${Card} it=${it} />`)}
+  </div>`;
 }
 
 const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident", report: "Report", deadline: "Legal deadline" };
 
-function card(it) {
+function Card({ it }) {
   needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
   const editing = needs.editing === it.id;
   const rejecting = needs.rejecting === it.id;
@@ -124,33 +131,35 @@ function card(it) {
     : it.action ? `If approved: ${it.action} is done, once.` : null;
   const link = it.source && it.source.link;
   const blocked = it.flag === "blocking";
-  return h("article", { class: "approval", "aria-label": it.title },
-    h("div", { class: "approval-top" },
-      h("span", { class: it.kind === "incident" ? "tag bad" : "tag" }, `${it.title} · ${KIND_TAGS[it.kind] || it.kind}`),
-      it.execute_at && h("span", { class: "when" }, `Done at ${clock(it.execute_at)}`)),
-    (blocked || it.flag === "note") && h("p", { class: blocked ? "flag blocking" : "flag" },
-      h("strong", {}, blocked ? "Flagged by the check" : "Note from the check"), ": ",
-      it.flag_reason || "no reason given",
-      blocked && ". Edit it, or override the flag to approve it as it is."),
-    it.note && h("p", { class: "flag" }, h("strong", {}, "Also in this run"), ": ", it.note),
-    editing
-      ? h("textarea", { id: `edit-${it.id}`, class: "edit", rows: 5, "aria-label": "New text" }, it.text)
-      : h("p", { class: it.call ? "content call" : "content" }, it.text),
-    h("div", { class: "meta" },
-      link && h("span", {}, "Source: ", h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, (it.source.title || link))),
-      it.task && h("span", {}, "From your task: ", h("a", { href: `/classic#/r/${enc(next.realm)}/run/${enc(it.task.id)}` }, it.task.title || it.task.id)),
-      what && h("span", {}, what)),
-    rejecting && h("input", { id: `why-${it.id}`, class: "why", type: "text", placeholder: "Why? (optional)", "aria-label": "Why you reject it" }),
-    h("div", { class: "buttons" }, buttons(it, editing, rejecting)));
+  return html`<article class="approval" aria-label=${it.title}>
+    <div class="approval-top">
+      <span class=${it.kind === "incident" ? "tag bad" : "tag"}>${it.title} · ${KIND_TAGS[it.kind] || it.kind}</span>
+      ${it.execute_at && html`<span class="when">Done at ${clock(it.execute_at)}</span>`}
+    </div>
+    ${(blocked || it.flag === "note") && html`<p class=${blocked ? "flag blocking" : "flag"}>
+      <strong>${blocked ? "Flagged by the check" : "Note from the check"}</strong>: ${it.flag_reason || "no reason given"}${blocked && ". Edit it, or override the flag to approve it as it is."}</p>`}
+    ${it.note && html`<p class="flag"><strong>Also in this run</strong>: ${it.note}</p>`}
+    ${editing
+      ? html`<textarea id=${`edit-${it.id}`} class="edit" rows="5" aria-label="New text">${it.text}</textarea>`
+      : html`<p class=${it.call ? "content call" : "content"}>${it.text}</p>`}
+    <div class="meta">
+      ${link && html`<span>Source: <a href=${link} target="_blank" rel="noopener noreferrer">${it.source.title || link}</a></span>`}
+      ${it.task && html`<span>From your task: <a href=${`/classic#/r/${enc(next.realm)}/run/${enc(it.task.id)}`}>${it.task.title || it.task.id}</a></span>`}
+      ${what && html`<span>${what}</span>`}
+    </div>
+    ${rejecting && html`<input id=${`why-${it.id}`} class="why" type="text" placeholder="Why? (optional)" aria-label="Why you reject it" />`}
+    <div class="buttons">${buttons(it, editing, rejecting)}</div>
+  </article>`;
 }
 
 function buttons(it, editing, rejecting) {
-  const b = (label, cls, onclick) => h("button", { type: "button", class: cls, onclick }, label);
+  const b = (label, cls, onclick) => html`<button type="button" class=${cls} onClick=${onclick}>${label}</button>`;
+  const value = (id) => { const el = document.querySelector(id); return el ? el.value : ""; };
   if (editing) return [
-    b("Save the edit", "primary", () => answer(it, "edit", $(`#edit-${it.id}`).value)),
+    b("Save the edit", "primary", () => answer(it, "edit", value(`#edit-${it.id}`))),
     b("Cancel", "plain", () => { needs.editing = null; renderPanel(); })];
   if (rejecting) return [
-    b(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", () => answer(it, "reject", $(`#why-${it.id}`).value)),
+    b(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", () => answer(it, "reject", value(`#why-${it.id}`))),
     b("Keep it", "plain", () => { needs.rejecting = null; renderPanel(); })];
   // Decision 62: an ambiguous failure is retried once the founder checked.
   if (needs.confirming === it.id) return [
@@ -198,7 +207,7 @@ function clock(at) {
 }
 
 // The run an item came from, block by block (decision 49).
-function details(it) {
+function Details({ it }) {
   if (!it) return null;
   const run = needs.runs[it.id];
   if (run === undefined) {
@@ -211,22 +220,20 @@ function details(it) {
   const state = blocks.some((b) => b.outcome === "failed") ? ["Failed", "bad"]
     : blocks.some((b) => b.outcome === "waiting") ? ["Waiting for you", "warn"] : ["Done", "ok"];
   const cost = blocks.reduce((sum, b) => sum + (b.cost_usd || 0), 0);
-  const secs = (b) => b.finished_at ? Math.max(0, Math.round((new Date(b.finished_at) - new Date(b.started_at)) / 1000)) : 0;
-  return h("aside", { class: "details", "aria-labelledby": "details-title" },
-    h("h2", { id: "details-title" }, "Routine details"),
-    h("div", { class: "details-head" },
-      blocks.length > 0 && h("span", { class: `state ${state[1]}` }, state[0]),
-      h("span", {}, it.routine, blocks.length > 0 && ` · started ${clock(blocks[0].started_at)}`)),
-    run === null || run === undefined ? h("p", { class: "note" }, "Loading…")
-      : !blocks.length ? h("p", { class: "note" }, "No step was recorded for this run. Runs record each step from now on.")
-      : h("div", { class: "steps" },
-          h("span", { class: "steps-label" }, "Steps"),
-          blocks.map((b, n) => h("div", { class: "step" },
-            h("span", {}, `${n + 1} · ${b.block}`),
-            h("span", { class: `step-out ${b.outcome}` },
-              b.outcome === "waiting" ? `${b.items_in} waiting for you`
-                : b.outcome === "failed" ? "failed"
-                : `${b.items_in} → ${b.items_out} · ${secs(b)} s`)))),
-    blocks.length > 0 && h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Run cost"), h("span", { class: "tile-value" }, `$${cost.toFixed(2)}`)),
-    h("a", { href: pageHash("routines") }, "Open the routine"));
+  const secs = (b) => (b.finished_at ? Math.max(0, Math.round((new Date(b.finished_at) - new Date(b.started_at)) / 1000)) : 0);
+  return html`<div class="details" aria-labelledby="details-title">
+    <h2 id="details-title">Routine details</h2>
+    <div class="details-head">
+      ${blocks.length > 0 && html`<span class=${`state ${state[1]}`}>${state[0]}</span>`}
+      <span>${it.routine}${blocks.length > 0 && ` · started ${clock(blocks[0].started_at)}`}</span>
+    </div>
+    ${run === null || run === undefined ? html`<p class="note">Loading…</p>`
+      : !blocks.length ? html`<p class="note">No step was recorded for this run. Runs record each step from now on.</p>`
+      : html`<div class="steps"><span class="steps-label">Steps</span>${blocks.map((b, n) => html`<div class="step">
+          <span>${n + 1} · ${b.block}</span>
+          <span class=${`step-out ${b.outcome}`}>${b.outcome === "waiting" ? `${b.items_in} waiting for you` : b.outcome === "failed" ? "failed" : `${b.items_in} → ${b.items_out} · ${secs(b)} s`}</span>
+        </div>`)}</div>`}
+    ${blocks.length > 0 && html`<div class="tile"><span class="tile-label">Run cost</span><span class="tile-value">$${cost.toFixed(2)}</span></div>`}
+    <a href=${pageHash("routines")}>Open the routine</a>
+  </div>`;
 }

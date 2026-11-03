@@ -444,7 +444,7 @@ function smokeNext() {
   // Decision 72: a page moved to components is one of the three layouts,
   // with the page header in it.
   const LAYOUTS = { hq: "reading", business: "reading", tasks: "reading", settings: "reading", workshop: "reading", hire: "reading", "new-business": "reading",
-    team: "board", calendar: "board" };
+    team: "board", calendar: "board", "needs-you": "workspace", routines: "workspace" };
   for (const [page, want] of Object.entries(LAYOUTS)) {
     show(`${page}, layout`, { route: { page, realm: ["settings", "workshop", "new-business", "hq"].includes(page) ? null : "acme" } });
     const layout = find(nbody, ".layout", true)[0];

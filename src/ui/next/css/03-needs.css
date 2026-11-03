@@ -1,12 +1,11 @@
 /* Needs you (docs/design/mockups/needs-you.html): the agents waiting, the
    open agent's items as approval cards. */
 
-.panel.flush { padding: 0; overflow: hidden; display: flex; }
-.needs { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; }
+/* A workspace's list (decision 72), and the parts of Needs you inside it. */
+.pane-stack { display: flex; flex-direction: column; gap: 6px; }
 
-.agents { flex: 1 1 300px; min-width: 0; max-width: 360px; border-right: 1px solid var(--line-soft); padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; }
-.agents input { min-height: 44px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 0 14px; font: inherit; font-size: var(--fs-body); margin-bottom: 10px; }
-.agents .group { font-size: var(--fs-caption); color: var(--text-4); padding: 6px 8px; }
+.pane-stack input { min-height: 44px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 0 14px; font: inherit; font-size: var(--fs-body); margin-bottom: 10px; }
+.pane-stack .group { font-size: var(--fs-caption); color: var(--text-4); padding: 6px 8px; }
 .agent { display: flex; min-width: 0; gap: 12px; padding: 12px; border-radius: var(--r-tile); color: var(--text); text-decoration: none; }
 .agent:hover, .agent[aria-current] { background: var(--raised); color: var(--text); }
 .agent .who { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -22,11 +21,10 @@
 .badge { position: absolute; right: -4px; bottom: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--text); color: var(--bg); font-size: var(--fs-xs); font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid var(--panel); }
 .badge.bad { background: var(--bad); }
 
-.thread { flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; }
-.thread-head { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line-soft); }
-.thread-head h1 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
+.thread { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+.thread-head { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line-soft); }
+.thread-head h2 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
 .chip { font-size: var(--fs-caption); color: var(--text-2); background: var(--chip); border-radius: 6px; padding: 3px 8px; }
-.thread-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
 .note { margin: 0; font-size: var(--fs-body); color: var(--text-2); }
 .note.bad { color: var(--bad); }
 
@@ -46,7 +44,7 @@
 .buttons .plain:hover { background: var(--raised); }
 .buttons .bad { color: var(--bad); }
 
-.details { flex: 1 1 300px; min-width: 0; max-width: 340px; border-left: 1px solid var(--line-soft); padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.details { display: flex; flex-direction: column; gap: 20px; }
 .details h2 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
 .details-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--fs-body); }
 .state { font-size: var(--fs-caption); font-weight: 600; border-radius: var(--r-chip); padding: 4px 10px; }
@@ -64,13 +62,6 @@
 .tile-label { font-size: var(--fs-caption); color: var(--text-4); }
 .tile-value { font-size: var(--fs-section); font-weight: 600; }
 
-@media (max-width: 720px) {
-  .needs { flex-direction: column; flex-wrap: nowrap; }
-  .agents, .thread, .details { flex: 0 0 auto; width: 100%; max-width: none; }
-  .details { border-left: 0; border-top: 1px solid var(--line-soft); }
-  .agents { border-right: 0; border-bottom: 1px solid var(--line-soft); }
-  .thread-body { padding: 16px; }
-}
 
 /* A check's quality flag on an item (decision 58). */
 .flag { margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text-2); background: var(--chip); border-radius: var(--r-chip); padding: 8px 12px; }

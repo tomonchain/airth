@@ -27,3 +27,9 @@
   .ws-list, .ws-details { flex: 0 0 auto; border: 0; border-bottom: 1px solid var(--line-soft); }
   .ws-main { padding: 16px; }
 }
+
+/* Buttons in a page header: the primary one, and plain ones beside it. */
+.page-actions .primary { min-height: 40px; padding: 0 18px; border: 0; }
+.page-actions .primary[disabled] { opacity: 0.6; cursor: default; }
+.button-plain { min-height: 40px; padding: 0 16px; border-radius: var(--r-button); border: 1px solid var(--line-strong); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-body); font-weight: 500; cursor: pointer; }
+.button-plain:hover, .button-plain[aria-pressed="true"] { background: var(--raised); }

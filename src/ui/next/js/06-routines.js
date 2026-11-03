@@ -43,61 +43,68 @@ function blockText(b) {
   }
 }
 
-function routinesPage() {
+/** Routines, in the Workspace layout (decision 72): the routines, the open
+    one's graph, its details. */
+function RoutinesPage() {
   const realm = next.realm;
   const data = loaded(routines.data, "graphs");
-  const head = (title, sub) => pageHead(realm, title, sub);
-  if (!data) return h("div", { class: "column" }, head("Routines"), h("p", { class: "lede" }, "Loading…"));
-  if (data.error) return h("div", { class: "column" }, head("Routines"), h("p", { class: "note bad" }, data.error));
+  const header = { label: realm, title: "Routines" };
+  const only = (main) => html`<${Workspace} header=${header} main=${main} />`;
+  if (!data) return only(html`<p class="lede">Loading…</p>`);
+  if (data.error) return only(html`<p class="note bad">${data.error}</p>`);
   const list = data.routines || [];
-  if (!list.length) return h("div", { class: "column" }, head("No routine yet."),
-    h("div", { class: "empty" }, h("strong", {}, "No routine yet"),
-      h("span", {}, "A routine is a file in routines/ in the business folder: a trigger, then its blocks. The editor comes later.")));
+  if (!list.length) return only(html`<div class="empty"><strong>No routine yet</strong>
+    <span>A routine is a file in routines/ in the business folder: a trigger, then its blocks.</span></div>`);
   if (!list.some((r) => r.name === routines.open[realm])) routines.open[realm] = list[0].name;
   const r = list.find((x) => x.name === routines.open[realm]);
-  return h("div", { class: "routines" }, graphSection(list, r), routineDetails(r));
+  const key = `${realm}/${r.name}`;
+  const g = r.graph;
+  const summary = g && html`${g.description ? g.description.replace(/([^.!?])$/, "$1.") : "No description."} Owned by <strong>${r.agent_title || g.agent}</strong>.`;
+  const actions = g && html`
+    <button type="button" class="button-plain" aria-pressed=${routines.editing ? "true" : "false"} onClick=${() => { routines.editing = !routines.editing; renderPanel(); }}>Edit</button>
+    <button type="button" class="primary" disabled=${!!routines.running[key]} onClick=${() => dryRun(r)}>${routines.running[key] ? "Running…" : "Dry run"}</button>`;
+  return html`<${Workspace} header=${{ ...header, summary, actions }}
+    list=${html`<${RoutineList} list=${list} open=${r.name} />`}
+    main=${html`<${Graph} r=${r} />`}
+    details=${html`<${RoutineDetails} r=${r} />`} />`;
 }
 
-function graphSection(list, r) {
+function RoutineList({ list, open }) {
+  return html`<div class="pane-stack" role="tablist" aria-label="Routines">${list.map((x) => html`
+    <button type="button" role="tab" class="routine-pick" aria-selected=${x.name === open ? "true" : "false"}
+        onClick=${() => { routines.open[next.realm] = x.name; renderPanel(); }}>
+      <span class=${`dot ${x.error ? "bad" : x.runs[0] && !x.runs[0].ok ? "warn" : "ok"}`} aria-hidden="true"></span>
+      <span class="mono">${x.name}</span>
+    </button>`)}</div>`;
+}
+
+function Graph({ r }) {
   const key = `${next.realm}/${r.name}`;
   const report = routines.dry[key];
   const g = r.graph;
-  return h("section", { class: "graph", "aria-label": "Routine graph" },
-    h("div", { class: "graph-head" },
-      h("div", { class: "picker", role: "tablist", "aria-label": "Routines" }, list.map((x) =>
-        h("button", { type: "button", role: "tab", class: "pick", "aria-selected": x.name === r.name ? "true" : "false",
-            onclick: () => { routines.open[next.realm] = x.name; renderPanel(); } },
-          h("span", { class: `dot ${x.error ? "bad" : x.runs[0] && !x.runs[0].ok ? "warn" : "ok"}`, "aria-hidden": "true" }),
-          h("span", { class: "mono" }, x.name)))),
-      g && h("div", { class: "graph-actions" },
-        h("button", { type: "button", class: "plain", "aria-pressed": routines.editing ? "true" : "false",
-          onclick: () => { routines.editing = !routines.editing; renderPanel(); } }, "Edit"),
-        h("button", { type: "button", class: "primary", disabled: routines.running[key] ? true : null, onclick: () => dryRun(r) },
-          routines.running[key] ? "Running…" : "Dry run"))),
-    g ? [
-      h("p", { class: "graph-sub" },
-        g.description ? g.description.replace(/([^.!?])$/, "$1.") : "No description.",
-        " Owned by ", h("strong", {}, r.agent_title || g.agent), "."),
-      h("ol", { class: "flow" },
-        h("li", { class: "node" }, ...nodeBody("Trigger", ...triggerText(g.trigger, r.next_at))),
-        g.blocks.map((b) => {
-          const [title, sub] = blockText(b);
-          const ran = report && report.blocks && report.blocks.find((x) => x.id === b.id);
-          const current = routines.block[key] === b.id;
-          return h("li", { class: "node" },
-            h("button", { type: "button", class: "node-button", "aria-pressed": current ? "true" : "false",
-                onclick: () => { routines.block[key] = current ? null : b.id; renderPanel(); } },
-              ...nodeBody(BLOCK_TYPES[b.type] || b.type, title, sub),
-              report && report.blocks && h("span", { class: `node-out ${!ran ? "none" : ran.notes.length ? "warn" : "ok"}` },
-                !ran ? "not reached" : `${ran.notes.length ? "!" : "✓"} ${ran.items_in} → ${ran.items_out} · ${ran.secs.toFixed(1)} s`)));
-        })),
-      blockReport(report, routines.block[key]),
-    ] : h("p", { class: "note bad" }, r.error),
-    h("p", { class: "graph-foot" }, "A dry run reads and asks the model for real, takes every approval as given, and only shows what each act would do. Nothing is sent."));
+  if (!g) return html`<p class="note bad">${r.error}</p>`;
+  return html`<section class="graph" aria-label="Routine graph">
+    <ol class="flow">
+      <li class="node"><${NodeBody} type="Trigger" title=${triggerText(g.trigger, r.next_at)[0]} sub=${triggerText(g.trigger, r.next_at)[1]} /></li>
+      ${g.blocks.map((b) => {
+        const [title, sub] = blockText(b);
+        const ran = report && report.blocks && report.blocks.find((x) => x.id === b.id);
+        const current = routines.block[key] === b.id;
+        return html`<li class="node"><button type="button" class="node-button" aria-pressed=${current ? "true" : "false"}
+            onClick=${() => { routines.block[key] = current ? null : b.id; renderPanel(); }}>
+          <${NodeBody} type=${BLOCK_TYPES[b.type] || b.type} title=${title} sub=${sub} />
+          ${report && report.blocks && html`<span class=${`node-out ${!ran ? "none" : ran.notes.length ? "warn" : "ok"}`}>
+            ${!ran ? "not reached" : `${ran.notes.length ? "!" : "✓"} ${ran.items_in} → ${ran.items_out} · ${ran.secs.toFixed(1)} s`}</span>`}
+        </button></li>`;
+      })}
+    </ol>
+    <${BlockReport} report=${report} open=${routines.block[key]} />
+    <p class="graph-foot">A dry run reads and asks the model for real, takes every approval as given, and only shows what each act would do. Nothing is sent.</p>
+  </section>`;
 }
 
-function nodeBody(type, title, sub) {
-  return [h("span", { class: "node-type" }, type), h("span", { class: "node-title" }, title), sub && h("span", { class: "node-sub" }, sub)];
+function NodeBody({ type, title, sub }) {
+  return html`<span class="node-type">${type}</span><span class="node-title">${title}</span>${sub && html`<span class="node-sub">${sub}</span>`}`;
 }
 
 function triggerText(t, nextAt) {
@@ -106,6 +113,8 @@ function triggerText(t, nextAt) {
     return [when, [at, nextAt && `next ${clock(nextAt)}`].filter(Boolean).join(" · ")];
   }
   if (t.webhook) return ["Webhook", t.webhook];
+  // Decision 63: a post link the founder sends the bot.
+  if (t.telegram) return ["From Telegram", t.telegram === "x_post" ? "a post link you send" : t.telegram];
   return ["By hand", ""];
 }
 
@@ -124,44 +133,39 @@ async function dryRun(r) {
   renderPanel();
 }
 
-function routineDetails(r) {
+function RoutineDetails({ r }) {
   const key = `${next.realm}/${r.name}`;
   const report = routines.dry[key];
-  return h("aside", { class: "details", "aria-labelledby": "routine-details" },
-    h("h2", { id: "routine-details" }, "Routine details"),
-    routines.editing && inDevelopment("routine-edit"),
-    routines.running[key] ? h("p", { class: "note" }, "Dry run going: the feeds are read and the model asked. It can take a minute.")
-      : report && report.error ? h("p", { class: "note bad" }, report.error)
-      : report ? dryReport(report)
-      : lastRuns(r));
+  return html`<div class="details" aria-labelledby="routine-details">
+    <h2 id="routine-details">Routine details</h2>
+    ${routines.editing && html`<${InDevelopment} part="routine-edit" />`}
+    ${routines.running[key] ? html`<p class="note">Dry run going: the feeds are read and the model asked. It can take a minute.</p>`
+      : report && report.error ? html`<p class="note bad">${report.error}</p>`
+      : report ? html`<${DryReport} report=${report} />`
+      : html`<${LastRuns} r=${r} />`}
+  </div>`;
 }
 
-function dryReport(report) {
+function DryReport({ report }) {
   const notes = report.blocks.reduce((n, b) => n + b.notes.length, 0);
-  return [
-    h("div", { class: "details-head" },
-      h("span", { class: `state ${notes ? "warn" : "ok"}` }, notes ? `${notes} note${notes === 1 ? "" : "s"}` : "Done"),
-      h("span", {}, `Dry run · ${clock(report.at)}`)),
-    h("div", { class: "steps" },
-      h("span", { class: "steps-label" }, "Steps"),
-      report.blocks.map((b, n) => h("div", { class: "step" },
-        h("span", {}, `${n + 1} · ${b.id}`),
-        h("span", { class: `step-out ${b.notes.length ? "waiting" : "ok"}` }, `${b.items_in} → ${b.items_out} · ${b.secs.toFixed(1)} s`)))),
-    h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Model cost"), h("span", { class: "tile-value" }, report.cost.replace(/^cost: /, ""))),
-  ];
+  return html`<div class="details-head"><span class=${`state ${notes ? "warn" : "ok"}`}>${notes ? `${notes} note${notes === 1 ? "" : "s"}` : "Done"}</span><span>Dry run · ${clock(report.at)}</span></div>
+    <div class="steps"><span class="steps-label">Steps</span>${report.blocks.map((b, n) => html`<div class="step">
+      <span>${n + 1} · ${b.id}</span><span class=${`step-out ${b.notes.length ? "waiting" : "ok"}`}>${b.items_in} → ${b.items_out} · ${b.secs.toFixed(1)} s</span></div>`)}</div>
+    <div class="tile"><span class="tile-label">Model cost</span><span class="tile-value">${report.cost.replace(/^cost: /, "")}</span></div>`;
 }
 
 /** What the open block did in the last dry run, under the graph. */
-function blockReport(report, open) {
+function BlockReport({ report, open }) {
   if (!report || !report.blocks) return null;
-  if (!open) return h("p", { class: "note" }, "Choose a block to see what it did.");
+  if (!open) return html`<p class="note">Choose a block to see what it did.</p>`;
   const ran = report.blocks.find((b) => b.id === open);
-  if (!ran) return h("p", { class: "note" }, `${open} was not reached in this dry run.`);
-  return h("section", { class: "block-report", "aria-label": `What ${ran.id} did` },
-    h("h2", {}, `What ${ran.id} did`),
-    ran.lines.map((l) => h("pre", { class: "line" }, l)),
-    ran.notes.map((l) => h("pre", { class: "line warn" }, l)),
-    !ran.lines.length && !ran.notes.length && h("p", { class: "note" }, "Nothing to say: its items went on."));
+  if (!ran) return html`<p class="note">${open} was not reached in this dry run.</p>`;
+  return html`<section class="block-report" aria-label=${`What ${ran.id} did`}>
+    <h2>What ${ran.id} did</h2>
+    ${ran.lines.map((l) => html`<pre class="line">${l}</pre>`)}
+    ${ran.notes.map((l) => html`<pre class="line warn">${l}</pre>`)}
+    ${!ran.lines.length && !ran.notes.length && html`<p class="note">Nothing to say: its items went on.</p>`}
+  </section>`;
 }
 
 /** How late a scheduled run started, past the 15 minutes of grace. */
@@ -171,16 +175,13 @@ function late(run) {
   return secs > 15 * 60 ? minutes(Math.round(secs)) : null;
 }
 
-function lastRuns(r) {
-  return [
-    h("div", { class: "steps" },
-      h("span", { class: "steps-label" }, "Last runs"),
-      !r.runs.length && h("p", { class: "note" }, "No run yet. Each scheduled run shows here once it ends."),
-      r.runs.map((x) => h("div", { class: "step" },
-        h("span", {}, clock(x.at), late(x) && h("span", { class: "late" }, ` · ${late(x)} late`)),
-        h("span", { class: `step-out ${x.ok ? "ok" : "failed"}`, title: x.error || "" }, x.ok ? "Done" : "Failed")))),
-    h("div", { class: "tile" }, h("span", { class: "tile-label" }, "Model cost, last 7 days"),
-      h("span", { class: "tile-value" }, money(r.cost_usd, r.unpriced))),
-    h("p", { class: "note" }, "Run it dry to see each block's items, what it would ask you and what it would do."),
-  ];
+function LastRuns({ r }) {
+  return html`<div class="steps"><span class="steps-label">Last runs</span>
+      ${!r.runs.length && html`<p class="note">No run yet. Each scheduled run shows here once it ends.</p>`}
+      ${r.runs.map((x) => html`<div class="step">
+        <span>${clock(x.at)}${late(x) && html`<span class="late"> · ${late(x)} late</span>`}</span>
+        <span class=${`step-out ${x.ok ? "ok" : "failed"}`} title=${x.error || ""}>${x.ok ? "Done" : "Failed"}</span></div>`)}
+    </div>
+    <div class="tile"><span class="tile-label">Model cost, last 7 days</span><span class="tile-value">${money(r.cost_usd, r.unpriced)}</span></div>
+    <p class="note">Run it dry to see each block's items, what it would ask you and what it would do.</p>`;
 }
