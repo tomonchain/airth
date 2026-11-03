@@ -417,4 +417,21 @@ function smokeNext() {
   show("routines, a dry run refused", { route: { page: "routines", realm: "acme" } });
   vm.runInContext(`routines.data.acme = { routines: [] };`, ctx);
   show("routines, none yet", { route: { page: "routines", realm: "acme" } });
+  // Calendar: the week from today, each state of a run, the late starts.
+  vm.runInContext(`calendar.data.acme = { title: "This week: 5 routine runs.", total: 5, days: [
+    { weekday: "Tue", day: "3", today: true, runs: [
+      { routine: "daily-watch", agent: "watcher", time: "07:00", state: "done" },
+      { routine: "daily-posts", agent: "post-writer", time: "07:30", state: "late" },
+      { routine: "noon", agent: null, time: "12:00", state: "failed" },
+      { routine: "evening", agent: "watcher", time: "18:00", state: "next" }] },
+    { weekday: "Wed", day: "4", today: false, runs: [{ routine: "daily-watch", agent: "watcher", time: "07:00", state: "planned" }] },
+    { weekday: "Thu", day: "5", today: false, runs: [] }],
+    late: [{ routine: "daily-posts", due: "Mon 2 Nov, 07:30", late_by: 90 }] };`, ctx);
+  show("calendar, the week", { route: { page: "calendar", realm: "acme" } });
+  for (const text of ["This week: 5 routine runs.", "Tue · today", "Started late", "Failed", "Next", "Nothing scheduled", "Due Mon 2 Nov, 07:30, started 90 min late"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/calendar: "${text}" is missing`);
+  }
+  vm.runInContext(`calendar.data.acme = { title: "No routine runs this week.", total: 0, days: [], late: [] };`, ctx);
+  show("calendar, empty", { route: { page: "calendar", realm: "acme" } });
+  if (!nbody.textContent.includes("every scheduled run started on time")) problems.push("next/calendar: no late start is not said");
 }

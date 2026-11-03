@@ -40,6 +40,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server};
 
+mod calendar;
 mod company;
 mod extensions;
 mod general;
@@ -278,6 +279,7 @@ impl App {
             Self::queue_routes,
             Self::company_routes,
             Self::graph_routes,
+            Self::calendar_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {
