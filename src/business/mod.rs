@@ -259,6 +259,43 @@ pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
     write_body(&root.join(AGENTS).join(format!("{name}.md")), text)
 }
 
+/// An agent's look (decision 65): the seed in its file's `look`, else
+/// one derived from its name, so it is stable either way; and whether it
+/// is saved.
+pub fn look(root: &Path, name: &str) -> (String, bool) {
+    let saved = std::fs::read_to_string(root.join(AGENTS).join(format!("{name}.md")))
+        .ok()
+        .and_then(|t| crate::frontmatter::parse(&t).text("look"))
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| l.len() == 8 && l.chars().all(|c| c.is_ascii_hexdigit()));
+    match saved {
+        Some(seed) => (seed, true),
+        None => (
+            crate::update::sha256_hex(name.as_bytes())[..8].to_string(),
+            false,
+        ),
+    }
+}
+
+/// "Keep this look", the founder's gesture (decision 65): the seed derived
+/// from the agent's name is written into its file, so a rename keeps the
+/// character. A look already saved never changes.
+pub fn keep_look(root: &Path, name: &str) -> Result<String> {
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    let (seed, saved) = look(root, name);
+    if saved {
+        anyhow::bail!("{name}'s look is saved already: it never changes");
+    }
+    let path = root.join(AGENTS).join(format!("{name}.md"));
+    let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
+    let kept = match text.strip_prefix("---\n") {
+        Some(rest) => format!("---\nlook: {seed}\n{rest}"),
+        None => format!("---\nlook: {seed}\n---\n{text}"),
+    };
+    std::fs::write(&path, kept)?;
+    Ok(seed)
+}
+
 /// Let the agent `name` go: its file is removed.
 pub fn remove_job(root: &Path, name: &str) -> Result<()> {
     crate::realm::validate_name(name).context("invalid agent name")?;
@@ -549,5 +586,45 @@ mod tests {
         let b = briefing(root.path()).unwrap().unwrap();
         assert!(b.contains("[cut here: read business/profile.md for the rest]"));
         assert_eq!(b.chars().filter(|c| *c == 'é').count(), MAX_PROFILE_CHARS);
+    }
+
+    /// Decision 65: a look is a seed; derived from the name until the
+    /// founder keeps it, then saved in the agent's file for good, so a
+    /// rename keeps the character; a saved look never changes.
+    #[test]
+    fn a_look_is_derived_then_kept_for_good() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(AGENTS)).unwrap();
+        std::fs::write(
+            root.join("agents/writer.md"),
+            "---\ntitle: Writer\n---\nWrite.\n",
+        )
+        .unwrap();
+        let (derived, saved) = look(root, "writer");
+        assert!(!saved);
+        assert_eq!(derived.len(), 8);
+        assert_eq!(look(root, "writer").0, derived, "stable before it is kept");
+        assert_eq!(keep_look(root, "writer").unwrap(), derived);
+        assert_eq!(look(root, "writer"), (derived.clone(), true));
+        let file = std::fs::read_to_string(root.join("agents/writer.md")).unwrap();
+        assert!(
+            file.starts_with(&format!("---\nlook: {derived}\ntitle: Writer\n---")),
+            "{file}"
+        );
+        assert!(
+            keep_look(root, "writer").is_err(),
+            "never changes once saved"
+        );
+        // Renamed, it keeps its character; without a saved look it would not.
+        std::fs::rename(root.join("agents/writer.md"), root.join("agents/author.md")).unwrap();
+        assert_eq!(look(root, "author"), (derived.clone(), true));
+        std::fs::write(root.join("agents/bare.md"), "Write.\n").unwrap();
+        keep_look(root, "bare").unwrap();
+        assert!(
+            std::fs::read_to_string(root.join("agents/bare.md"))
+                .unwrap()
+                .starts_with("---\nlook: ")
+        );
     }
 }
