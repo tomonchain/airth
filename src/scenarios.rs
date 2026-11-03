@@ -320,9 +320,10 @@ fn s02(env: &Env) -> Result<String> {
     let token = "sk-scenario-5d1c0b7e9a2f4e68";
     env.realm.set_secret("SCENARIO_TOKEN", token)?;
     // The owner's session sockets (D-Bus, keyring, SSH agent), where the
-    // OS has them: listed, never opened.
+    // OS has them: never listed, let alone opened. Closed is refused on
+    // macOS, an empty folder under bubblewrap: either way nothing shows.
     let sockets = match std::env::var("XDG_RUNTIME_DIR") {
-        Ok(dir) => format!("ls -a {dir} >/dev/null 2>&1 && echo SESSION-LISTED;"),
+        Ok(dir) => format!("ls -A {dir} 2>/dev/null | grep -q . && echo SESSION-LISTED;"),
         Err(_) => String::new(),
     };
     let (_, seen) = env.run(
@@ -330,7 +331,7 @@ fn s02(env: &Env) -> Result<String> {
         vec![
             command(
                 "1",
-                &format!("echo \"[$SCENARIO_TOKEN]\"; env | grep -c SCENARIO; ls ~/.ssh >/dev/null 2>&1 && echo SSH-LISTED; {sockets} true"),
+                &format!("echo \"[$SCENARIO_TOKEN]\"; env | grep -c SCENARIO; ls -A ~/.ssh 2>/dev/null | grep -q . && echo SSH-LISTED; {sockets} true"),
             ),
             done(),
         ],
