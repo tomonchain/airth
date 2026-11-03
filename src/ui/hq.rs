@@ -116,7 +116,7 @@ fn when(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
 }
 
 /// Health from the criteria that have data (decision 53): an open blocking
-/// flag, and the runway once a bank has been read (`runway`: its months,
+/// flag, and the runway once finance is known (`runway`: its months,
 /// null for no spending; None when unknown). A runway under 6 months is at
 /// risk whatever the rest; under 12, one to watch. The goal's pace is
 /// unknown until the goal is measured.
@@ -131,7 +131,7 @@ fn health(
         .count();
     let months = runway.map(|r| r.as_f64());
     let unknown = match months {
-        None => "Goal pace and runway unknown: no measured goal, no bank read.",
+        None => "Goal pace and runway unknown: no measured goal, no finance figures.",
         Some(_) => "Goal pace unknown: no measured goal.",
     };
     let held_text = match held {

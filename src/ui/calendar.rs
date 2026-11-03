@@ -60,8 +60,97 @@ impl App {
             .collect();
         let mut page = week(&routines, now);
         page["late"] = late.into();
+        let today = now.with_timezone(&Local).date_naive();
+        let legal = deadlines(&realm.root()?, today, &store.filings()?);
+        // A deadline within the week shows on its day too.
+        for (d, day) in page["days"]
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let date = (today + Duration::days(d as i64)).to_string();
+            let due = legal["items"].as_array().into_iter().flatten();
+            day["deadlines"] = due
+                .filter(|i| i["date"] == date.as_str())
+                .map(|i| i["title"].clone())
+                .collect();
+        }
+        page["deadlines"] = legal;
         Ok(page)
     }
+}
+
+/// The legal deadlines due over the next twelve months (decision 66), or,
+/// for each rule, why its date is unknown: the profile's fields it needs.
+fn deadlines(
+    root: &std::path::Path,
+    today: chrono::NaiveDate,
+    filed: &[(String, String)],
+) -> Value {
+    let profile = std::fs::read_to_string(root.join("business/profile.md")).unwrap_or_default();
+    let profile = crate::frontmatter::parse(&profile);
+    let (Some(country), Some(form)) = (profile.text("country"), profile.text("legal_form")) else {
+        return json!({"items": [], "note": "Legal deadlines come once the business profile gives the company's country and legal form."});
+    };
+    let rules = match crate::legal::rules(&country, &form) {
+        Ok(rules) if rules.is_empty() => {
+            return json!({"items": [], "note": format!("No legal calendar yet for this country and legal form ({country}, {form}).")});
+        }
+        Ok(rules) => rules,
+        Err(e) => return json!({"items": [], "note": format!("{e:#}")}),
+    };
+    let note = "Computed from the business profile, by the rules for its country and legal form, each with its source. Not legal advice: check with your accountant.";
+    let company = match crate::legal::Company::of(&profile) {
+        Ok(company) => company,
+        Err(e) => {
+            let words: Vec<&str> = crate::legal::missing(&profile)
+                .iter()
+                .map(|k| match *k {
+                    "incorporated_on" => "incorporation date",
+                    "fiscal_year_end" => "accounting reference date",
+                    "legal_form" => "legal form",
+                    other => other,
+                })
+                .collect();
+            let why = match words.is_empty() {
+                true => format!("{e:#}"),
+                false => format!("{} missing", words.join(" and ")),
+            };
+            let items: Vec<Value> = rules
+                .iter()
+                .map(|r| json!({"title": r.title, "authority": r.authority, "unknown": format!("Date unknown: {why}")}))
+                .collect();
+            return json!({"items": items, "note": note});
+        }
+    };
+    let year = today + Duration::days(365);
+    let items: Vec<Value> = crate::legal::deadlines(&company, &rules, year)
+        .into_iter()
+        .map(|d| {
+            let done = filed
+                .iter()
+                .any(|(r, p)| r == d.rule && *p == d.period_end.to_string());
+            (d, done)
+        })
+        // Passed: shown while unfiled, for as long as Needs you holds it.
+        .filter(|(d, done)| {
+            d.due <= year && (d.due >= today || !done && (today - d.due).num_days() <= 30)
+        })
+        .map(|(d, filed)| {
+            json!({
+                "title": d.title,
+                "authority": d.authority,
+                "date": d.due.to_string(),
+                "due": d.due.format("%a %-d %b %Y").to_string(),
+                "days_left": (d.due - today).num_days(),
+                "filed": filed,
+                "period_end": d.period_end.format("%-d %b %Y").to_string(),
+                "source": d.source.iter().find(|s| s.starts_with("https://")),
+            })
+        })
+        .collect();
+    json!({"items": items, "note": note})
 }
 
 fn local(at: DateTime<Utc>, format: &str) -> String {
@@ -169,6 +258,68 @@ mod tests {
     /// The week from today: each run of each schedule on its day and time;
     /// today's past ones say what became of them (done, late past the
     /// grace, failed, not run); each routine's next one is marked.
+    /// Decision 66 on Calendar: Hedgen's next deadlines over twelve months,
+    /// as Companies House publishes them; without the dates in the profile,
+    /// each rule says which are missing.
+    #[test]
+    fn deadlines_come_from_the_profile() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("business")).unwrap();
+        let profile =
+            |text: &str| std::fs::write(root.path().join("business/profile.md"), text).unwrap();
+        profile("---\ncountry: GB\nlegal_form: ltd\nincorporated_on: TODO\n---\n");
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+        let unknown = deadlines(root.path(), today, &[]);
+        assert_eq!(unknown["items"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            unknown["items"][0]["unknown"],
+            "Date unknown: incorporation date and accounting reference date missing"
+        );
+        profile(
+            "---\ncountry: GB\nlegal_form: ltd\nincorporated_on: 2025-11-07\nfiscal_year_end: 11-30\n---\n",
+        );
+        let known = deadlines(root.path(), today, &[]);
+        let items = known["items"].as_array().unwrap();
+        assert_eq!(
+            (
+                items[0]["title"].as_str(),
+                items[0]["date"].as_str(),
+                items[0]["days_left"].as_i64()
+            ),
+            (Some("Confirmation statement"), Some("2026-11-20"), Some(17))
+        );
+        assert!(
+            items
+                .iter()
+                .all(|i| i["date"].as_str().unwrap() <= "2027-11-03"),
+            "twelve months"
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i["title"] == "Annual accounts" && i["date"] == "2027-08-07")
+        );
+        // Passed: shown while unfiled, gone once filed.
+        let day_after = chrono::NaiveDate::from_ymd_opt(2026, 11, 21).unwrap();
+        let unfiled = deadlines(root.path(), day_after, &[]);
+        assert_eq!(unfiled["items"][0]["date"], "2026-11-20");
+        assert_eq!(unfiled["items"][0]["days_left"], -1);
+        let filed = [(
+            "confirmation-statement".to_string(),
+            "2026-11-06".to_string(),
+        )];
+        let later = deadlines(root.path(), day_after, &filed);
+        assert_ne!(
+            later["items"][0]["date"], "2026-11-20",
+            "filed, a passed date goes"
+        );
+        profile("---\ncountry: FR\nlegal_form: sas\n---\n");
+        assert_eq!(
+            deadlines(root.path(), today, &[])["note"],
+            "No legal calendar yet for this country and legal form (FR, sas)."
+        );
+    }
+
     #[test]
     fn the_week_shows_each_run_and_what_became_of_todays() {
         let now = at(0, 12, 0, Utc::now());

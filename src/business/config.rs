@@ -15,9 +15,17 @@ const PROFILE: &[&str] = &[
     "currency", "bank", "domain", "links",
     // A task's budget (decision 64): optional, with defaults.
     "task_max_minutes", "task_max_cost_usd",
+    // The last confirmation statement's date, when filed early, and how
+    // many days ahead deadlines are reminded (decision 66).
+    "confirmation_date", "reminders",
 ];
 /// Fields Airth has a default for: never listed as left to fill.
-const PROFILE_OPTIONAL: &[&str] = &["task_max_minutes", "task_max_cost_usd"];
+const PROFILE_OPTIONAL: &[&str] = &[
+    "task_max_minutes",
+    "task_max_cost_usd",
+    "confirmation_date",
+    "reminders",
+];
 const GOAL: &[&str] = &[
     "goal",
     "measure",
@@ -26,6 +34,8 @@ const GOAL: &[&str] = &[
     "milestones",
     "baseline_minutes",
 ];
+/// Finance entered by hand until a bank is connected (decision 68).
+const FINANCE: &[&str] = &["cash", "spent", "as_of", "currency"];
 const LINE: &[&str] = &["title", "kind", "status"];
 #[rustfmt::skip]
 const AGENT: &[&str] = &[
@@ -136,6 +146,34 @@ fn folder(
     Ok(out)
 }
 
+/// `business/finance.md`, the figures the founder enters by hand
+/// (decision 68): None without the file; refused, naming the field, when a
+/// value is wrong.
+pub fn finance(root: &Path) -> Result<Option<Doc>> {
+    const FILE: &str = "business/finance.md";
+    if !root.join(FILE).exists() {
+        return Ok(None);
+    }
+    read(root, FILE, FINANCE, &mut Vec::new(), |d| {
+        for key in ["cash", "spent"] {
+            if let Some(v) = d.text(key)
+                && v.parse::<f64>().map_or(true, |n| !n.is_finite())
+            {
+                bail!("{key} '{v}' is not a number like 12300.50");
+            }
+        }
+        if d.text("spent")
+            .and_then(|v| v.parse::<f64>().ok())
+            .is_some_and(|n| n < 0.0)
+        {
+            bail!("spent is what went out this month: a number of zero or more");
+        }
+        date(d, "as_of")?;
+        Ok(Vec::new())
+    })
+    .map(Some)
+}
+
 fn one_of(d: &Doc, key: &str, allowed: &[&str]) -> Result<()> {
     match d.text(key) {
         Some(v) if !allowed.contains(&v.as_str()) => {
@@ -162,6 +200,12 @@ fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
         bail!("country '{c}' is not an ISO code like GB or FR");
     }
     date(d, "incorporated_on")?;
+    date(d, "confirmation_date")?;
+    for days in d.list("reminders") {
+        if days.parse::<u16>().is_err() {
+            bail!("reminders '{days}' is not a number of days: [30, 7]");
+        }
+    }
     if let Some(v) = d.text("fiscal_year_end") {
         NaiveDate::parse_from_str(&format!("2024-{v}"), "%Y-%m-%d")
             .with_context(|| format!("fiscal_year_end '{v}' is not a month and day like 03-31"))?;
@@ -216,6 +260,35 @@ mod tests {
 
     /// Decisions 64 and 65's fields load: an agent's scope and look, the
     /// profile's task budget.
+    /// Decision 68: finance by hand is optional; a value that is not a
+    /// number or a date, money out below zero, or an unknown key is refused.
+    #[test]
+    fn finance_by_hand_is_checked() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(finance(root.path()).unwrap().is_none());
+        std::fs::create_dir_all(root.path().join("business")).unwrap();
+        let write =
+            |text: &str| std::fs::write(root.path().join("business/finance.md"), text).unwrap();
+        write("---\ncash: 8000.50\nspent: 0\nas_of: 2026-11-02\ncurrency: EUR\n---\n");
+        assert_eq!(
+            finance(root.path()).unwrap().unwrap().text("cash").unwrap(),
+            "8000.50"
+        );
+        for (text, error) in [
+            ("---\ncash: lots\n---\n", "cash 'lots' is not a number"),
+            ("---\nspent: -5\n---\n", "zero or more"),
+            ("---\nas_of: 2 Nov\n---\n", "as_of '2 Nov' is not a date"),
+            ("---\nbalance: 1\n---\n", "balance"),
+        ] {
+            write(text);
+            let e = format!("{:#}", finance(root.path()).unwrap_err());
+            assert!(
+                e.contains("business/finance.md") && e.contains(error),
+                "{e}"
+            );
+        }
+    }
+
     #[test]
     fn task_and_character_fields_load() {
         let root = tempfile::tempdir().unwrap();
@@ -239,6 +312,37 @@ mod tests {
             config.profile.text("task_max_minutes").as_deref(),
             Some("10")
         );
+    }
+
+    /// Decision 66: the last confirmation date is optional, and a date.
+    #[test]
+    fn the_confirmation_date_is_a_date() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nconfirmation_date: 2026-10-01\n---\n",
+        );
+        assert!(
+            load(r)
+                .unwrap()
+                .missing
+                .iter()
+                .all(|m| !m.contains("confirmation_date"))
+        );
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nconfirmation_date: soon\n---\n",
+        );
+        assert!(format!("{:#}", load(r).unwrap_err()).contains("confirmation_date 'soon'"));
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nreminders: [30, a week]\n---\n",
+        );
+        assert!(format!("{:#}", load(r).unwrap_err()).contains("reminders 'a week'"));
     }
     #[test]
     fn a_business_loads_with_what_is_left_to_fill() {

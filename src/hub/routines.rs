@@ -355,6 +355,12 @@ impl Hub {
             let closed = store.queue(&[status])?.into_iter().find(|i| i.id == id);
             return Ok((closed.unwrap_or(item), Some(detail)));
         }
+        // Filed (decision 66): recorded, and its other reminders close.
+        if item.kind == "deadline" {
+            store.record_filing(id)?;
+            store.close_item(id, "done", "filed by the founder")?;
+            return Ok((item, Some("filed".into())));
+        }
         if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;
             return Ok((item, Some("seen".into())));

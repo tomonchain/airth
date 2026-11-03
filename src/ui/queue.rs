@@ -139,6 +139,8 @@ fn shown(item: &Item) -> Value {
         "note": item.note,
         // Decision 62: whether a failed action can be retried from here.
         "retry": item.args["retry"].as_str(),
+        // Decision 66: an overdue deadline is closed by Filed only.
+        "overdue": item.args["overdue"] == true,
         "text": text,
         "editable": item.source["editable"].is_string(),
         // A call shown as it would be made, not prose.

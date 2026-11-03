@@ -270,6 +270,42 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
     );
 }
 
+/// Decision 66: a legal deadline is answered Filed or Seen on the phone; an
+/// overdue one, Filed only.
+#[test]
+fn a_deadline_is_filed_or_seen_and_overdue_only_filed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::business::store::Store::open(&dir.path().join("business.db")).unwrap();
+    for (key, overdue) in [("cs/2026-11-06/30", false), ("cs/2026-11-06/overdue", true)] {
+        store
+            .propose(&NewItem {
+                kind: "deadline",
+                title: "Confirmation statement due Fri 20 Nov 2026",
+                agent: None,
+                routine: None,
+                run: None,
+                action: None,
+                args: &json!({"detail": "Companies House.", "overdue": overdue}).to_string(),
+                execute_at: None,
+                source: &json!({"key": key, "show": "detail"}).to_string(),
+                model_call: None,
+            })
+            .unwrap();
+    }
+    let items = store.queue(&["pending"]).unwrap();
+    let labels = |item| -> Vec<String> {
+        buttons("hedgen", item)[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(labels(&items[0]), ["Filed", "Seen"]);
+    assert_eq!(labels(&items[1]), ["Filed"]);
+    assert!(item_text("hedgen", &items[0]).starts_with("hedgen · Legal deadline"));
+}
+
 /// Decision 58: on the phone, a blocked item says why and offers Override,
 /// Edit and Reject, never a plain Approve; a note is shown and blocks
 /// nothing.

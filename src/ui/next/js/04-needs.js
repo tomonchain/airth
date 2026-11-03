@@ -106,7 +106,7 @@ function thread(items) {
       items.map(card)));
 }
 
-const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident", report: "Report" };
+const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident", report: "Report", deadline: "Legal deadline" };
 
 function card(it) {
   needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
@@ -119,6 +119,7 @@ function card(it) {
     : it.retry === "ambiguous" ? "It may have been done: check before you retry. Seen closes it."
     : it.kind === "incident" || it.kind === "report" ? "Seen closes it."
     : it.kind === "prepared" ? "Airth does nothing: mark it done once you did it."
+    : it.kind === "deadline" ? "Airth does not file it: answer Filed once you did."
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
     : it.action ? `If approved: ${it.action} is done, once.` : null;
   const link = it.source && it.source.link;
@@ -161,6 +162,8 @@ function buttons(it, editing, rejecting) {
     b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "incident" || it.kind === "report") return [b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "prepared") return [b("Mark done", "primary", () => answer(it, "approve"))];
+  if (it.kind === "deadline") return [b("Filed", "primary", () => answer(it, "approve")),
+    !it.overdue && b("Seen", "plain", () => answer(it, "reject", "seen"))];
   if (it.kind === "delayed") return [b("Cancel it", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
   // Blocked by a check: no plain Approve; the founder's override is logged.
   return [
