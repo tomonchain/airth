@@ -82,7 +82,9 @@ pub fn next_attempt(
         Failure::NotSent | Failure::NotDone(_) => {}
         Failure::Ambiguous if class == Class::Read || keyed => {}
         Failure::Ambiguous => {
-            return Err("it may have been done; check before trying it again by hand");
+            return Err(
+                "it may have been done; check that nothing was created before you retry it",
+            );
         }
         Failure::ByAgent | Failure::Other => {
             return Err("trying again would fail the same way");

@@ -346,6 +346,8 @@ function smokeNext() {
     { id: 5, kind: "approval", title: "blog.publish, from a task you started", agent: null, routine: null, run: "r9", action: "blog.publish", created_at: now, execute_at: null, status: "pending", revision: 1, text: "POST blog: posts", editable: false, source: { title: null, link: null }, task: { id: "r9", title: null } },
     { id: 6, kind: "report", title: "Daily watch", agent: "post-writer", routine: "daily-watch", run: "r2", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.\n\nBTC up.", editable: false, source: { title: null, link: null } },
     { id: 7, kind: "approval", title: "BUY ETH", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "BUY ETH NOW", editable: true, flag: "blocking", flag_reason: null, note: 'draft: 1 of 3 dropped: "Hack" (too long)', source: { title: null, link: null } },
+    { id: 9, kind: "incident", title: "typefully.create_draft failed in daily-posts", agent: "post-writer", routine: "daily-posts", run: null, action: "typefully.create_draft", created_at: now, execute_at: null, status: "pending", revision: 1, text: "HTTP 403", editable: false, retry: "clear", source: { title: null, link: null } },
+    { id: 10, kind: "incident", title: "blog.draft failed", agent: "post-writer", routine: "daily-posts", run: null, action: "blog.draft", created_at: now, execute_at: null, status: "pending", revision: 1, text: "cut after sending", editable: false, retry: "ambiguous", source: { title: null, link: null } },
     { id: 8, kind: "approval", title: "Long", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "A long post", editable: false, flag: "note", flag_reason: "long", source: { title: null, link: null } }])},
     agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
   vm.runInContext(`needs.runs = { 1: { routine: "daily-posts", run: "r1", blocks: [
@@ -375,6 +377,11 @@ function smokeNext() {
   if (!nbody.textContent.includes("Flagged by the check") || !nbody.textContent.includes("Override")) problems.push("next/needs you: a blocked item shows without its flag or Override");
   if (!nbody.textContent.includes("Note from the check") || !nbody.textContent.includes("long A long post")) problems.push("next/needs you: a check's note is missing");
   if (!nbody.textContent.includes("Also in this run") || !nbody.textContent.includes('draft: 1 of 3 dropped: "Hack" (too long)')) problems.push("next/needs you: what the run dropped is missing");
+  if (!nbody.textContent.includes("Nothing was done: Retry does it once") || !nbody.textContent.includes("Retry…") || !nbody.textContent.includes("It may have been done")) problems.push("next/needs you: an incident's Retry is missing");
+  vm.runInContext(`needs.confirming = 10;`, ctx);
+  show("needs you, confirming a retry", { route: { page: "needs-you", realm: "acme" } });
+  if (!nbody.textContent.includes("Nothing was created: retry")) problems.push("next/needs you: an ambiguous retry is not confirmed first");
+  vm.runInContext(`needs.confirming = null;`, ctx);
   vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
   show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
   // Routines: every kind of block, a routine refused, then a dry run.
