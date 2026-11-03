@@ -48,14 +48,15 @@ function agentCard(a) {
     h("div", { class: "agent-top" },
       h("span", { class: "character", svg: character(a, 72) }),
       h("div", { class: "agent-id" }, h("h3", {}, a.title || a.name), h("span", {}, a.job || "No job written yet"),
-        h("span", { class: `agent-state ${a.state || "idle"}` }, CH_STATES[a.state] || "Idle"))),
+        h("span", { class: `agent-state ${a.state || "idle"}` }, CH_STATES[a.state] || "Idle"),
+        // The agent's, whatever routine it comes from: beside its state.
+        a.waiting > 0 && h("a", { class: "agent-waiting", href: pageHash("needs-you") }, `${a.waiting} ${a.waiting === 1 ? "item waits" : "items wait"} for you`))),
     h("div", { class: "chips" },
       !a.routines.length && h("span", { class: "chip" }, "No routine yet"),
       a.routines.map((r) => [
         h("span", { class: "chip mono" }, r.schedule ? `${r.name} · ${r.schedule}` : r.name),
         r.last && h("span", { class: r.last.ok ? "chip ok" : "chip bad" }, `${r.last.ok ? "Ran" : "Failed"} ${clock(r.last.at)}`),
-      ]),
-      a.waiting > 0 && h("a", { class: "chip warn", href: pageHash("needs-you") }, `${a.waiting} ${a.waiting === 1 ? "waits" : "wait"} for you`)),
+      ])),
     // Decision 65: an agent hired before keeps its look by the founder's gesture.
     !a.look_saved && h("div", { class: "keep-look" },
       h("span", {}, "Its look comes from its name for now."),

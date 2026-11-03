@@ -416,6 +416,8 @@ function smokeNext() {
   if (!plain.includes("var(--dept-none)") || !plain.includes("st-idle")) problems.push("next/character: an unknown department or state is not drawn plainly");
   const twice = vm.runInContext(`character({ look: "0a1b2c3d", department: "sales" }) === character({ look: "0a1b2c3d", department: "sales" })`, ctx);
   if (!twice) problems.push("next/character: the same seed does not draw the same character");
+  // What waits for an agent is said beside its state, not after a routine.
+  if (!nbody.textContent.includes("Needs you 2 items wait for you")) problems.push("next/team: what waits is not said beside the agent's state");
   show("business", { route: { page: "business", realm: "acme" } });
   vm.runInContext(`company.team.acme = { agents: [] }; company.profile.acme = { error: "agents/x.md: unknown field 'foo'", repos: [] };`, ctx);
   show("team, no agent", { route: { page: "team", realm: "acme" } });
