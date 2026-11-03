@@ -60,6 +60,12 @@ impl Hub {
                 plan_done: s.plan.iter().filter(|p| p.status.is_closed()).count(),
                 plan_total: s.plan.len(),
                 asked_by: s.origin.as_ref().and_then(|o| o.chain.last().cloned()),
+                agent: s.agent.clone(),
+                report: s
+                    .report
+                    .as_deref()
+                    .and_then(|r| r.lines().find(|l| !l.trim().is_empty()))
+                    .map(|l| l.chars().take(160).collect()),
                 routine: s.origin.map(|o| o.objective),
                 id: s.id,
                 objective: s.objective,
@@ -170,6 +176,10 @@ pub struct RunSummary {
     pub routine: Option<String>,
     /// The routine that asked for it, when another one did (decision 41).
     pub asked_by: Option<String>,
+    /// A task's agent (decision 64).
+    pub agent: Option<String>,
+    /// The first line of its report, if it has one.
+    pub report: Option<String>,
 }
 
 impl RunSummary {
