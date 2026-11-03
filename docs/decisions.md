@@ -2,6 +2,92 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 70. Agent mail: one OVH mailbox per role, read as untrusted data, sent at level 1 with a blind copy to archive@
+
+**Proposed.**
+
+Milestone 7: at least one role handles mail under `CLAUDE.md`'s six rules. IMAP and SMTP are a new kind of integration (integrations are HTTP-only, decision 10), so they are security code with a decision and tests of their own.
+
+- **One mailbox per role, on the business's domain.**
+  - **The address:** the agent's file gives it (`mailbox: support@hedgen.xyz`, a field decision 43 already has).
+  - **The credentials:** the password is a realm secret in the Airth home, bound to the mail integration, never in the business folder, never seen by a model (decisions 7 and 10). Never the founder's personal mailbox.
+  - **The provider:** OVH MX Plan: IMAP `ssl0.ovh.net:993` and SMTP `ssl0.ovh.net:465`, both TLS only, the certificate checked. A mailbox's servers are its config, so another provider is config, not code.
+- **Reading: incoming mail is untrusted data.**
+  - **Fetching:** Airth fetches new mail over IMAP every few minutes (`UID SEARCH`, then `BODY.PEEK[]`, so the server keeps its unread state). Nothing on the server is deleted or moved.
+  - **Storing:** each message is stored once in `business.db`: message id, thread, sender, recipients, subject, date, and plain text. HTML is reduced to text; attachments are named, not opened.
+  - **Use:** a routine reads it through a `Read` block (`"source": "mailbox"`). An `AI` block holds no tool, so the step that reads mail can act on nothing (rule 2).
+  - **No inbound mail triggers an action.** A mail can start a routine (trigger "mail received"). But anything downstream of a mail reaches an `Act` only through an `Approval`, whatever the action's level. The graph check refuses any other graph. This is stricter than the general rule on outside content: there, a level can allow it; for mail, no level can.
+- **Bank details: always the founder (rule 4).** A deterministic check in code, not a model, flags any mail that mentions a change of bank details: IBAN, sort code, account number, RIB, "new bank", "updated payment details" and the like, in English and French. It raises an item in Needs you and on Telegram, without exception. The mail's routine goes on, but nothing from that mail can be approved without the founder seeing the flag.
+- **Sending: level 1, recorded, copied, signed.**
+  - **The action:** `mail.send` is a declared action of each mailbox (to, subject, text, and the thread it answers). Its ceiling is 1 for the beta: every mail waits for the founder's approval.
+  - **New correspondents (rule 3):** an address never written to before is marked on the approval.
+  - **Code's additions:** the code, never the model, adds:
+    - a blind copy to `archive@<domain>`;
+    - the signature "Prepared by an AI agent of <business> and sent with the founder's approval";
+    - `In-Reply-To` and `References` for a reply.
+  - **What is recorded:** each sent mail is recorded in `business.db`: agent, approval item, thread, recipients, subject, the server's answer. This is append-only evidence (decision 47).
+  - **Idempotence:** sending is idempotent by the approval item: a retried run never sends twice (decision 55). A send whose outcome is unknown, cut after the data, is an incident, never retried blindly.
+- **DNS:** SPF, DKIM and DMARC are set at OVH by the founder. `airth doctor` lists what to check. Cold outreach stays out of the beta, and would only ever use a separate domain.
+- **Code and crates.** Blocking I/O, as everywhere (decision 1).
+  - **SMTP:** `lettre`, a mature client with a blocking transport and rustls. Writing SMTP and MIME by hand is where mail goes wrong (encoding, headers, line lengths).
+  - **IMAP:** a small client of our own, over the `rustls` Airth already builds: only `LOGIN`, `SELECT`, `UID SEARCH` and `UID FETCH`. The Rust IMAP crates are either unmaintained or async.
+  - **Reading MIME:** `mail-parser`, with no dependencies, which parses what senders send, encodings included.
+  - Three new direct dependencies, each named here for why the standard library or an existing crate is not enough.
+- **Tests: against a local mail server only.** A small fake IMAP and SMTP server in the tests, on `127.0.0.1`. Plain TCP is allowed only for a loopback address, and only in tests. The tests cover:
+  - fetch once by UID;
+  - the bank-details flag;
+  - an Act downstream of mail refused without an Approval;
+  - the blind copy, signature and thread headers on what reaches the server;
+  - a retried send not sent twice;
+  - a password never in a model's input.
+
+  No test talks to OVH.
+
+*Why:* a mailbox per role keeps the legal and practical boundary of the business: the founder's own mail stays out, and what each agent sends is traceable. Reading mail as data that cannot act is the same defence as for posts and pages, and is the main defence against instructions hidden in mail. Copying and signing in code keeps both true whatever a model writes.
+
+*Cost:*
+- Mail code is security code to maintain, with three new dependencies.
+- Polling, not push, so mail arrives within minutes.
+- Every mail waits for the founder in the beta.
+- The keyword check will flag some innocent mail, and rule 4 prefers that.
+- OVH accounts and DNS are set up by the founder.
+
+## 69. The routine editor v1: parameters edited in place by the founder, checked before they are written; no graph library yet
+
+**Proposed.**
+
+Milestone 5 asks for the routine editor v1, without full drag and drop: see and edit each block's parameters, a dry run from the page, and validation errors shown where they are. Decision 57 left the graph library to the editor's own decision. The graph format (decision 49) does not change.
+
+- **No graph library for v1.** The graph stays drawn as today, by the page's own code: the blocks in order, the branches of a condition labelled, and the row scrolling sideways when it is wider than the page.
+  - Without drag and drop, nothing needs a library.
+  - Decision 57's exception stays open for the editor that adds and links blocks.
+- **The founder edits parameters, not the shape.** Selecting a block opens its parameters in the details panel (`docs/design/mockups/routine-editor.html`), as form fields of the block's type:
+  - **Trigger:** schedule;
+  - **Read:** source, time range, limit, `distinct`;
+  - **AI:** prompt file (among `prompts/`), model (main or fast), all at once or item by item, limit, `as`;
+  - **Condition:** its test;
+  - **Approval:** what is editable, expiry, the flag field;
+  - **Act:** the action (among those declared) and its fields;
+  - and the routine's description.
+
+  Adding, removing or relinking blocks stays in the file, or is asked of an agent as a change the founder adopts ("Ask an agent to change this routine" in the mockup).
+- **Saving is the founder's write, checked first.**
+  - **Allowed:** the app writes `routines/<name>.json` in the business folder. Decision 44 forbids runs to write the config, not the founder, as with "Keep this look" (decision 65). The route takes the app's token only; no run and no agent can call it.
+  - **The same check as loading:** the edited graph goes through the checks that loading uses (unknown keys, schema keywords, declared actions, and the rule that outside content reaches an `Act` only through an `Approval` unless its level allows it). The graph validation code is not changed: it gains this one caller.
+  - **Refused, nothing is written:** each error shows on its block and field, from the block id the check already names.
+  - **Accepted:** written atomically, keys in the file's own order, so `git diff` shows only what changed. This needs serde_json's `preserve_order` feature: `indexmap` is already in the lockfile, so no new crate.
+  - **A file that changed on disk since the page read it** (the founder editing it in another editor) is refused with "changed since you opened it": never overwritten.
+  - **Git:** Airth does not commit. The change shows in git like any edit by hand, and the founder commits it.
+- **Dry run from the page.** The existing dry run (`graphs/<name>/dry-run`), on what is saved: a dry run of unsaved edits would run a graph nobody checked. The page shows each block's state from the run (items in and out, time, what it would ask and do), as the mockup's details do. An edit the founder has not saved disables Dry run until it is saved.
+- **Two fixes from the dress rehearsal come with it:** the graph no longer clips its last blocks, and a routine started from Telegram says so instead of "By hand".
+
+*Why:* the founder tunes routines often (a limit, a prompt, an expiry), and doing it in a JSON file is the friction milestone 5 removes. Checking with the loader's own code means the editor cannot write a graph Airth would refuse, and the security rule on outside content holds whatever the page sends. A library brings nothing until blocks move.
+
+*Cost:*
+- A form per block type to keep in step with the format; a new key in the format needs its field in the editor.
+- `preserve_order` changes how every JSON object keeps its keys in Airth (insertion order instead of sorted), which tests must not rely on.
+- Edits are not versioned by Airth; git does that, once the founder commits.
+
 ## 68. Finance entered by hand, until a bank is connected
 
 **Accepted**, the founder's request: Revolut's API needs a plan upgrade, so decision 54 stays coded but unused for now.
