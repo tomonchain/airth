@@ -2,6 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 62. The founder can retry a failed action from its incident, once it is clear nothing was done
+
+**Accepted.** Coded after point B, outside the service installed for it.
+
+An approved action that fails becomes an incident (decision 55), and its idempotency key stays `failed`: Airth never does it again, even once the cause is fixed. On 2 November the Typefully integration still called API v1; the approved HKMA draft got a 403, and once the declaration was fixed it could be re-sent only by hand, with a command outside Airth.
+
+- **Retry on the incident.** An incident from a failed action offers **Retry**, in Needs you and on Telegram. Only the founder's channels (the app and Telegram) can answer it, as for Override (decision 58).
+- **Offered directly when the failure proves nothing was done:** the service refused the request with a 4xx other than 408 and 409 (for example 400, 401, 403, 404, 422).
+- **Ambiguous failures ask first.** The answer was cut after the request was sent, the service answered 5xx (502, 504) or 408 or 409, or no status came back. In these cases the incident says the action may have been done. Retry then asks the founder to confirm they checked that nothing was created, before it is offered.
+- **Same key, done once.** A retry uses the action's own idempotency key: it moves from `failed` back to in flight, and its attempts and log record the retry, who asked for it, when and from which channel. It is done at most once per Retry, never twice for the same key once it has succeeded. A retry that fails again leaves a new incident, under the same rules.
+- **Rebuilt, not replayed.** The request is rebuilt from the approved item and the action's current declaration, as the routine would build it now: a corrected declaration, like the Typefully one, is what a retry uses. The fields come from the item as approved; nothing is re-drafted.
+- **Never for commits.** An action of the commits class is never retried from an incident: it goes through a new explicit approval (decision 56), or the founder does it.
+
+*Why:* a failure the founder has fixed (a key, a declaration) should not need a command outside Airth to finish what they already approved. Refusals that prove nothing happened are safe to retry; the others could duplicate a draft, a mail or a payment, so the founder checks first. Rebuilding from the current declaration is what makes a fix count.
+
+*Cost:* the action journal gains a `failed` → `in_flight` move, allowed only from a founder's Retry, in the access layer (security code). An incident must keep what failed (status code, whether the request was sent) to tell a clear refusal from an ambiguous one. Telegram gets a Retry button and, for ambiguous failures, a confirmation step. A retry rebuilt from a changed declaration can send something slightly different from what the first attempt sent; the item's approved fields stay the same.
+
 ## 61. What a run drops reaches the founder: a note on its remaining items, and the weekly count
 
 **Accepted.**
