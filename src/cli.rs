@@ -789,7 +789,10 @@ pub fn routines(ctx: &Ctx, command: Option<RoutinesCmd>) -> Result<bool> {
     if let Some(RoutinesCmd::Run { name }) = command {
         let run = format!("{name}-{}", chrono::Utc::now().format("%Y%m%dT%H%M%S"));
         let start = crate::routine::run::Start::Trigger;
-        println!("{}", ctx.hub().run_routine(&realm, &name, &run, start)?);
+        println!(
+            "{}",
+            ctx.hub().run_routine(&realm, &name, &run, start, None)?
+        );
         return Ok(true);
     }
     if let Some(RoutinesCmd::DryRun { name }) = command {
