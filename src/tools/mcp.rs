@@ -298,6 +298,8 @@ struct Session {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     stderr: Arc<Mutex<String>>,
+    /// Set once the server's stderr is read to its end.
+    stderr_done: Arc<std::sync::atomic::AtomicBool>,
     next_id: u64,
 }
 
@@ -321,8 +323,10 @@ impl Session {
             }
         });
         let stderr = Arc::new(Mutex::new(String::new()));
+        let stderr_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         if let Some(mut err) = child.stderr.take() {
             let sink = stderr.clone();
+            let done = stderr_done.clone();
             std::thread::spawn(move || {
                 let mut buf = [0u8; 4096];
                 while let Ok(n) = err.read(&mut buf) {
@@ -334,6 +338,7 @@ impl Session {
                         s.push_str(&String::from_utf8_lossy(&buf[..n]));
                     }
                 }
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
             });
         }
         Ok(Self {
@@ -341,6 +346,7 @@ impl Session {
             child,
             lines,
             stderr,
+            stderr_done,
             next_id: 1,
         })
     }
@@ -350,9 +356,33 @@ impl Session {
             .stdin
             .as_mut()
             .context("the MCP server's input is closed")?;
-        writeln!(stdin, "{message}")
-            .and_then(|_| stdin.flush())
-            .map_err(|e| anyhow!("the MCP server stopped reading: {e}{}", self.stderr_tail()))
+        let written = writeln!(stdin, "{message}").and_then(|_| stdin.flush());
+        if let Err(e) = written {
+            // It may have exited before reading: its own words say why.
+            if self.exited() {
+                bail!("the MCP server exited{}", self.stderr_tail());
+            }
+            bail!("the MCP server stopped reading: {e}{}", self.stderr_tail());
+        }
+        Ok(())
+    }
+
+    /// Whether the server exited, waiting a second at most for it and for
+    /// its stderr to be read to the end.
+    fn exited(&mut self) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                while !self.stderr_done.load(std::sync::atomic::Ordering::SeqCst)
+                    && Instant::now() < deadline
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
     }
 
     fn stderr_tail(&self) -> String {
@@ -403,8 +433,8 @@ impl Session {
                 Ok(line) => line,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => {
-                    // Give the stderr reader a moment to collect the last words.
-                    std::thread::sleep(Duration::from_millis(100));
+                    // Its last words, read to the end.
+                    self.exited();
                     bail!("the MCP server exited{}", self.stderr_tail());
                 }
             };
@@ -815,6 +845,30 @@ done
         )
         .unwrap_err()
         .to_string();
+        assert!(
+            err.contains("exited") && err.contains("missing token"),
+            "{err}"
+        );
+    }
+
+    /// A server gone before Airth writes to it: the error says it exited,
+    /// with its own words, not only that the pipe broke.
+    #[test]
+    fn a_server_gone_before_reading_says_why() {
+        let (_dir, ws, _) = setup();
+        let mut session = Session::start("echo 'missing token' >&2; exit 3", &ws).unwrap();
+        while session.child.try_wait().unwrap().is_none() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let err = session
+            .request(
+                "initialize",
+                json!({}),
+                Duration::from_secs(5),
+                &CancelToken::default(),
+            )
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("exited") && err.contains("missing token"),
             "{err}"
