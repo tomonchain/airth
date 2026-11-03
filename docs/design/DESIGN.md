@@ -69,6 +69,7 @@ Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Po
 - **Status pill:** dot + word (Healthy, Watch, At risk, Not started, On track, Waiting for you). Not started uses a hollow grey dot.
 - **Vital tile:** label 12, value 22/600, sub-line 12. Amber background and text when out of range.
 - **Finance strip:** one bordered row of four cells (Cash, In, Out, Runway) with the source and sync time on the right of its label.
+- **Search (⌘K):** from the classic interface. A dialog over the page, opened with ⌘K (Ctrl+K) or the search icon at the top of the rail. It lists pages, businesses, the open business's tasks and the theme, filtered as you type; arrows choose, Enter goes, Esc closes.
 - **Activity row:** agent avatar 24 px, bold agent name, one sentence, time on the right; 44 px high, ellipsis on overflow.
 - **Agent avatar:** rounded square in the agent's colour with its icon; a small count badge for pending items, red `!` for an incident.
 - **Approval card:** tag (`Draft for X · needs you`), expiry on the right, the content, its source, what approving does, then Approve (primary), Edit, Reject (`--bad` text).
