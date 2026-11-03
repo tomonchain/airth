@@ -365,6 +365,32 @@ impl Hub {
             store.close_item(id, "done", "done by the founder")?;
             return Ok((item, Some("marked done: the founder did it".into())));
         }
+        // A task's question (decision 64): allowed, the run holds that
+        // permission and goes on, unwatched, at the service's next turn.
+        if let (Some(ask), Some(run)) =
+            (item.source.get("ask").filter(|a| a.is_object()), &item.run)
+        {
+            let mut state = self.load_run(realm, run)?;
+            state.grants.push(crate::permissions::Grant {
+                capability: crate::permissions::Capability::parse(
+                    ask["capability"].as_str().unwrap_or_default(),
+                )?,
+                scope: ask["scope"].as_str().map(str::to_string),
+            });
+            state.resume = Some(format!(
+                "The founder allowed this: {}. Go on with the order.",
+                item.args["preview"]
+                    .as_str()
+                    .unwrap_or("the step you asked for")
+            ));
+            state.save()?;
+            store.close_item(id, "done", "allowed: the task goes on")?;
+            let closed = store.queue(&["done"])?.into_iter().find(|i| i.id == id);
+            return Ok((
+                closed.unwrap_or(item),
+                Some("allowed: the task goes on".into()),
+            ));
+        }
         let routine_block = item.source["block"].as_str();
         let mut failed = Vec::new();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {
