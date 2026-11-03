@@ -928,3 +928,62 @@ fn an_integration_with_declared_actions_takes_nothing_else() {
     }
     assert_eq!(*hits.lock().unwrap(), vec!["/v1/drafts/hedgen"]);
 }
+
+/// Decision 54: the bank's key and tokens are runtime-only. A run in the
+/// business's realm cannot read them, by path or by command, and they are
+/// in no command's environment.
+#[test]
+fn a_run_cannot_see_the_banks_key_or_tokens() {
+    let mut f = fixture();
+    f.realm.config.policy.execute = Rule::Allow;
+    f.realm.save().unwrap();
+    let skills = f.realm.skills_dir();
+    std::fs::create_dir_all(skills.join("mcp-auth")).unwrap();
+    let key = crate::bank::key_path(&skills);
+    std::fs::write(&key, "bank-key-value").unwrap();
+    let tokens = skills.join("mcp-auth/revolut.json");
+    std::fs::write(&tokens, r#"{"refresh_token": "bank-refresh-value"}"#).unwrap();
+    let (key, tokens) = (key.canonicalize().unwrap(), tokens.canonicalize().unwrap());
+    let (hub, seen, _) = make_hub(
+        &f.home,
+        vec![
+            call("1", "read_file", json!({"path": key})),
+            call("2", "read_file", json!({"path": tokens})),
+            call(
+                "3",
+                "execute_command",
+                json!({"command": format!("cat {} {}; env", key.display(), tokens.display())}),
+            ),
+            done("ok"),
+        ],
+    );
+    let state = hub
+        .dispatch(&f.realm, "snoop", config(10), hooks(&mut NoObserver, false))
+        .unwrap();
+    for event in &state.events[..2] {
+        assert!(
+            event.result.contains("outside the workspace"),
+            "{}",
+            event.result
+        );
+    }
+    let env = f.realm.command_env().unwrap();
+    assert!(
+        !format!("{env:?}").contains("bank-"),
+        "never in a command's environment"
+    );
+    // Commands are only stopped by the sandbox.
+    if crate::sandbox::available() {
+        assert!(
+            !state.events[2].result.contains("bank-key-value"),
+            "{}",
+            state.events[2].result
+        );
+        assert!(
+            !state.events[2].result.contains("bank-refresh-value"),
+            "{}",
+            state.events[2].result
+        );
+        assert!(!format!("{:?}", seen.lock().unwrap()).contains("bank-"));
+    }
+}

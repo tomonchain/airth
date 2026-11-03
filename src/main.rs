@@ -1,5 +1,6 @@
 mod actions;
 mod agent;
+mod bank;
 mod business;
 mod cancel;
 mod cli;
@@ -238,6 +239,11 @@ enum Cmd {
     Actions {
         #[command(subcommand)]
         command: Option<cli::ActionsCmd>,
+    },
+    /// The business's bank, read-only: Revolut Business (decision 54)
+    Bank {
+        #[command(subcommand)]
+        command: cli::BankCmd,
     },
     /// Your Telegram bot: what waits for you, on your phone
     Telegram {
@@ -484,6 +490,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Routines { command }) => cli::routines(ctx, command),
         Some(Cmd::Queue { command }) => cli::queue(ctx, command),
         Some(Cmd::Telegram { command }) => cli::telegram(ctx, command),
+        Some(Cmd::Bank { command }) => cli::bank(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
         None => prompt_objective().and_then(|objective| {
