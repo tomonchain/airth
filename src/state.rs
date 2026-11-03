@@ -221,6 +221,9 @@ pub struct State {
     /// agent of the business, within its scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// A task the founder allowed to go on: the message it resumes with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<String>,
     /// For a bot's run: the realm's extensions it may use (see `RealmTools`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
@@ -274,6 +277,7 @@ impl State {
             budget: Budget::default(),
             origin: None,
             agent: None,
+            resume: None,
             tools: None,
             tier: None,
             context: None,

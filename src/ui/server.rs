@@ -299,6 +299,15 @@ pub(super) fn run_scheduler(runner: Runner) {
             Err(e) => eprintln!("delayed actions: {e:#}"),
         }
         // Reports nobody looked at in a week (decision 59).
+        // Tasks the founder allowed to go on, unwatched (decision 64).
+        match runner.hub.tasks_to_resume() {
+            Ok(ready) => {
+                for (realm, state) in ready {
+                    runner.spawn(realm, state, Job::Alone);
+                }
+            }
+            Err(e) => eprintln!("tasks: {e:#}"),
+        }
         // Connected banks, at most once an hour (decision 54).
         match runner.hub.refresh_finance(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),

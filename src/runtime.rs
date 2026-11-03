@@ -24,6 +24,16 @@ pub trait Authority: Send {
     ) -> anyhow::Result<Decision>;
     /// What became of an action decided `Act`.
     fn finish(&mut self, journal: i64, error: Option<&str>);
+    /// The realm's rules would ask the founder, and nobody watches the run:
+    /// why it stops, its question put in Needs you (decision 64), or None
+    /// to let the approver answer as before.
+    fn ask_unwatched(
+        &mut self,
+        _tool: &str,
+        _request: &PermissionRequest,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
 }
 
 pub enum Decision {
@@ -166,6 +176,22 @@ impl Runtime {
                     return (why, EventStatus::Denied);
                 }
                 // Unsure what the agent may do: it does not act alone.
+                Err(e) => return (format!("not done: {e:#}"), EventStatus::Denied),
+            }
+        }
+        // An ask nobody is there to answer becomes the founder's question in
+        // Needs you, and the run stops: never a silent wait (decision 64).
+        if !explicit
+            && self.gate.would_ask(&request)
+            && !self.gate.watched()
+            && let Some(authority) = self.authority.as_mut()
+        {
+            match authority.ask_unwatched(name, &request) {
+                Ok(Some(why)) => {
+                    self.stopped = Some(why.clone());
+                    return (why, EventStatus::Denied);
+                }
+                Ok(None) => {}
                 Err(e) => return (format!("not done: {e:#}"), EventStatus::Denied),
             }
         }

@@ -135,3 +135,72 @@ fn a_task_over_its_budget_tells_the_founder() {
         1
     );
 }
+
+/// Decision 64: in a task nobody watches, a permission the realm's rules
+/// would ask becomes the founder's question in Needs you, never a silent
+/// wait; allowed, the task holds that permission and is ready to go on.
+#[test]
+fn an_unwatched_tasks_ask_waits_in_needs_you_then_goes_on() {
+    let mut f = fixture();
+    agent(f.root.path(), "writer", "");
+    f.realm.config.policy.network = Rule::Ask;
+    f.realm.save().unwrap();
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            call(
+                "1",
+                "http_request",
+                json!({"method": "GET", "url": "https://example.com/rates"}),
+            ),
+            done("never reached"),
+        ],
+    );
+    let mut state = hub
+        .start_task(&f.realm, "writer", "Check today's rates")
+        .unwrap();
+    hub.drive(
+        &f.realm,
+        &mut state,
+        config(10),
+        hooks(&mut NoObserver, true),
+    )
+    .unwrap();
+    assert_eq!(state.status, Status::Stopped, "{:?}", state.report);
+    assert!(
+        state.events[0]
+            .result
+            .contains("the founder is asked in Needs you (item 1)"),
+        "{}",
+        state.events[0].result
+    );
+    let items = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "writer asks to use network");
+    assert_eq!(items[0].source["ask"]["capability"], "network");
+    // The founder allows it, from the phone.
+    let (_, said) = hub
+        .answer_item(
+            &f.realm,
+            items[0].id,
+            None,
+            crate::business::store::queue::Answer::Approve,
+            "telegram",
+            3,
+        )
+        .unwrap();
+    assert_eq!(said.as_deref(), Some("allowed: the task goes on"));
+    let ready = hub.tasks_to_resume().unwrap();
+    assert_eq!(ready.len(), 1);
+    let (_, resumed) = &ready[0];
+    assert!(
+        resumed
+            .grants
+            .iter()
+            .any(|g| g.capability == crate::permissions::Capability::Network)
+    );
+    assert!(resumed.resume.is_none());
+    assert!(format!("{:?}", resumed.messages.last()).contains("The founder allowed this"));
+    // Taken once.
+    assert!(hub.tasks_to_resume().unwrap().is_empty());
+}
