@@ -2,6 +2,83 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 66. The legal calendar: deadlines computed from the legal identity, by rules written as data with their source
+
+**Proposed.**
+
+Decision 43 left the legal calendar's rules to milestone 2: "derived from `country`, `incorporated_on` and `fiscal_year_end`". A missed filing costs a penalty and, for Companies House, can end in the company being struck off. Hedgen's first one is close: Companies House shows its first confirmation statement **due 20 November 2026**.
+
+**Fields: a UK Ltd.** `business/profile.md` already has them (decision 43). Their names stay; the app shows the product words.
+
+| Field | UK meaning | Hedgen, from Companies House |
+| --- | --- | --- |
+| `registration_number` | Company number | 16838911 |
+| `incorporated_on` | Incorporation date | 2025-11-07 |
+| `fiscal_year_end` | Accounting reference date, as `MM-DD`; shown as "Accounting reference date" for a GB company | 11-30 |
+| `registered_office` | Registered office | 71-75 Shelton Street, Covent Garden, London, WC2H 9JQ |
+
+Two new optional fields:
+- `confirmation_date`: the date on the last confirmation statement filed. It is empty before the first one. Filing early moves the next review period, so Airth needs that date. Airth never writes it (decision 44): when the founder answers **Filed** on time, the record in the database is enough, so the field is only needed after an early filing.
+- `reminders`: how many days ahead each reminder comes, `[30, 7]` by default.
+
+**A French SAS** later: SIREN in `registration_number`, the *date de clôture* in `fiscal_year_end`. Its rules (liasse fiscale, approbation des comptes, dépôt au greffe, CFE) are written when Numirama is registered, in the same format.
+
+**The rules are data, with their source.** One file per obligation in Airth, `src/legal/gb/<obligation>.md`, in the config format (flat front matter, prose in the body).
+- **Front matter:**
+  - `title` and `authority`;
+  - `forms` (`[ltd]`);
+  - `from`: what the deadline counts from (one of a fixed set of dates computed in code: incorporation, end of the confirmation review period, end of the period of accounts, end of a Corporation Tax period);
+  - `after`: the delay, such as `14d`, `9m`, `9m1d` or `12m`;
+  - `months`: how months are counted;
+  - `first`: the rule for the first period, where it differs;
+  - `source`: the official pages and the statute section;
+  - `checked`: the date the rule was last checked against its source.
+- **Body:** the rule in plain words.
+- **Shared by every business:** rules are not one business's config. A business's files never change a rule.
+- **Checked by tests:** each rule's test reproduces dates its authority has published for a real case: Companies House's page for Hedgen, and the examples on GOV.UK.
+- **Ambiguity:** where a rule can be read two ways, Airth takes the earlier date, and the rule's file says so.
+
+**The four UK rules** (private company, profits under £1.5 million):
+
+| Obligation | Deadline | Source | Hedgen's next |
+| --- | --- | --- | --- |
+| Confirmation statement (Companies House) | 14 days after the review period ends. The period runs 12 months from incorporation, then from the day after the last confirmation date. | Companies Act 2006 s853A; [confirmation statement guidance](https://www.gov.uk/guidance/confirmation-statement-guidance) | review to 6 Nov 2026, due **20 Nov 2026** (matches Companies House) |
+| Annual accounts (Companies House) | 9 months after the end of the accounting reference period. A first period longer than 12 months: the later of 21 months after incorporation and 3 months after its end. A period ending on a month's last day ends on the last day of the due month. | Companies Act 2006 s391(4), s442, s443 | first period to 30 Nov 2026, due **7 Aug 2027** (matches Companies House) |
+| Company Tax Return, CT600 (HMRC) | 12 months after the end of the period of accounts; for a period longer than 12 months, both returns by then | [Company Tax Returns](https://www.gov.uk/company-tax-returns); [accounting periods](https://www.gov.uk/corporation-tax-accounting-period) | two returns, due **30 Nov 2027** |
+| Corporation Tax payment (HMRC) | 9 months and 1 day after the end of each Corporation Tax period. A period is at most 12 months, so a first period of accounts longer than that splits in two. | Taxes Management Act 1970 s59D; [Pay Corporation Tax](https://www.gov.uk/pay-corporation-tax); [first accounts](https://www.gov.uk/first-company-accounts-and-return) | 7 Nov 2025 to 6 Nov 2026: **7 Aug 2027**. 7 to 30 Nov 2026: **31 Aug 2027** |
+
+For the second payment, sources differ: counting from 30 November, some give 31 August, others 1 September. Airth takes 31 August, the earlier. The founder checks both payment dates once against HMRC's letter on Corporation Tax periods: HMRC sets the first period, and its letter is the authority.
+
+**Where deadlines show:**
+- **Calendar**, a section **Deadlines**:
+  - the next occurrence of each obligation over twelve months: date, days left, authority and the rule's source;
+  - a deadline within the week also among the week's days;
+  - a field left `TODO` that a rule needs: Calendar names the field instead of a date.
+- **Needs you and Telegram**, at each reminder (30 and 7 days before by default):
+  - **One item:** of kind `deadline`, "Confirmation statement due 20 Nov 2026, Companies House", with the source.
+  - **Two answers:** **Filed** records the filing, and nothing more comes for that occurrence. **Seen** closes this reminder only.
+  - **Overdue:** the day after a date passes unfiled, an item says it is overdue. It stays until the founder answers Filed.
+  - **A reminder whose day has passed:** at the first run, as for Hedgen's 30-day reminder, its item comes at once.
+- **When the check runs:** once a day, in the server's tick, with no model involved.
+  - **Idempotent:** one item per obligation, occurrence and reminder, kept by a unique key in `business.db`.
+  - **Failure:** a failure of the check is an incident.
+
+**Stored:** one table in `business.db`, `legal_filings`, through the access layer, append-only like all evidence (decision 47). Each row is an obligation, the occurrence (its period end), when it was filed, and the queue item that recorded it. A later confirmation period counts from the last confirmation date: the later of `confirmation_date` and the last filing recorded.
+
+**Not covered:** VAT returns (when `vat_number` is set), payroll, Corporation Tax instalments (profits over £1.5 million), and moving the accounting reference date (the founder changes the field). A line goes to the backlog.
+
+*Why:*
+- **Fields:** the dates follow from fields the founder already keeps. Computing them keeps one source of truth, the company's identity, instead of dates typed by hand that go stale.
+- **Rules as data:** a rule written as data with its source can be checked by reading it next to the statute, and tested against dates the authority itself publishes. Code holds only the date arithmetic, so a rule that changes is a file to edit.
+- **Earlier date:** taking it on ambiguity makes a doubt cost a few days of margin, never a penalty.
+
+*Cost:*
+- Four rule files to keep current. Their `checked` date says when they were last read against the source.
+- A small date module, with month arithmetic in two forms: the Companies Act's month-end rule and corresponding dates.
+- One table, one item kind, and a daily check in the server's tick.
+- The founder fills `confirmation_date` after an early filing.
+- Not legal advice: the Calendar links to each source, and the founder's accountant remains the authority.
+
 ## 65. Agent characters: drawn by code from a seed saved when the agent is hired
 
 **Accepted**, with the founder's precision: Team offers "Keep this look" for agents hired before.
