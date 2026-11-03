@@ -394,9 +394,7 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
     Ok(())
 }
 
-/// A running app server: requests are served on their own thread. Only the
-/// Mac's desktop app starts one without blocking.
-#[cfg(target_os = "macos")]
+/// A running app server: requests are served on their own thread.
 pub struct Running {
     pub url: String,
     registry: Registry,
@@ -404,9 +402,10 @@ pub struct Running {
     thread: std::thread::JoinHandle<()>,
 }
 
-#[cfg(target_os = "macos")]
 impl Running {
-    /// Stop the runs in progress (they can be resumed) and forget the server.
+    /// Stop the runs in progress (they can be resumed) and forget the server:
+    /// the Mac's desktop app does, when it quits.
+    #[cfg(target_os = "macos")]
     pub fn stop(&self) {
         let lives: Vec<Arc<Live>> = self.registry.lock().unwrap().values().cloned().collect();
         for live in &lives {
@@ -423,7 +422,6 @@ impl Running {
 }
 
 /// Start the app server, the scheduler and the updater, without blocking.
-#[cfg(target_os = "macos")]
 pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
     let server = Server::http(("127.0.0.1", options.port))
         .or_else(|_| Server::http(("127.0.0.1", 0)))
