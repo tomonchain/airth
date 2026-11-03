@@ -7,6 +7,7 @@ use super::*;
 use crate::actions::Declared;
 use crate::business::store::Store;
 use crate::business::store::autonomy::{Begin, NewAction, NewItem};
+use crate::permissions::PermissionRequest;
 use crate::runtime::{Authority, Decision};
 use serde_json::Value;
 
@@ -89,6 +90,8 @@ pub struct FounderAuthority {
     realm: Realm,
     run: String,
     declared: Vec<Declared>,
+    /// A task's agent (decision 64): its asks go to Needs you.
+    agent: Option<String>,
 }
 
 impl FounderAuthority {
@@ -98,6 +101,7 @@ impl FounderAuthority {
             realm: realm.clone(),
             run: state.id.clone(),
             declared: crate::actions::all(&realm.config.integrations, &servers),
+            agent: state.agent.clone(),
         })
     }
 }
@@ -142,6 +146,34 @@ impl Authority for FounderAuthority {
     }
 
     fn finish(&mut self, _: i64, _: Option<&str>) {}
+
+    /// In a task nobody watches, what the realm's rules would ask becomes
+    /// the founder's question in Needs you; the task resumes once allowed.
+    fn ask_unwatched(&mut self, tool: &str, request: &PermissionRequest) -> Result<Option<String>> {
+        let Some(agent) = &self.agent else {
+            return Ok(None);
+        };
+        let item = Store::of(&self.realm)?.propose(&NewItem {
+            kind: "approval",
+            title: &format!("{agent} asks to use {}", request.capability.as_str()),
+            agent: Some(agent),
+            routine: None,
+            run: Some(&self.run),
+            action: None,
+            args: &serde_json::json!({"preview": request.preview}).to_string(),
+            execute_at: None,
+            source: &serde_json::json!({
+                "show": "preview",
+                "tool": tool,
+                "ask": {"capability": request.capability.as_str(), "scope": request.scope},
+            })
+            .to_string(),
+            model_call: None,
+        })?;
+        Ok(Some(format!(
+            "not done: nobody is watching this task, so the founder is asked in Needs you (item {item}); the task stops here and goes on once allowed."
+        )))
+    }
 }
 
 impl Authority for BusinessAuthority {
