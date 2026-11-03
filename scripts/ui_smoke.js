@@ -391,6 +391,8 @@ function smokeNext() {
     { id: 7, kind: "approval", title: "BUY ETH", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "BUY ETH NOW", editable: true, flag: "blocking", flag_reason: null, note: 'draft: 1 of 3 dropped: "Hack" (too long)', source: { title: null, link: null } },
     { id: 9, kind: "incident", title: "typefully.create_draft failed in daily-posts", agent: "post-writer", routine: "daily-posts", run: null, action: "typefully.create_draft", created_at: now, execute_at: null, status: "pending", revision: 1, text: "HTTP 403", editable: false, retry: "clear", source: { title: null, link: null } },
     { id: 10, kind: "incident", title: "blog.draft failed", agent: "post-writer", routine: "daily-posts", run: null, action: "blog.draft", created_at: now, execute_at: null, status: "pending", revision: 1, text: "cut after sending", editable: false, retry: "ambiguous", source: { title: null, link: null } },
+    { id: 11, kind: "deadline", title: "Confirmation statement due Fri 20 Nov 2026", agent: null, routine: null, run: null, action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "Companies House, for the period to 6 Nov 2026.", editable: false, overdue: false, source: { title: null, link: "https://www.gov.uk/guidance/confirmation-statement-guidance" } },
+    { id: 12, kind: "deadline", title: "Overdue: Annual accounts was due Sat 7 Aug 2027", agent: null, routine: null, run: null, action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "It stays here until you answer Filed.", editable: false, overdue: true, source: { title: null, link: null } },
     { id: 8, kind: "approval", title: "Long", agent: "post-writer", routine: "daily-posts", run: "r3", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "A long post", editable: false, flag: "note", flag_reason: "long", source: { title: null, link: null } }])},
     agents: [{ name: "post-writer", title: null, department: "marketing" }, { name: "writer", title: "Writer", department: null }] });`, ctx);
   vm.runInContext(`needs.runs = { 1: { routine: "daily-posts", run: "r1", blocks: [
@@ -407,6 +409,19 @@ function smokeNext() {
   show("team, no agent", { route: { page: "team", realm: "acme" } });
   show("business, config refused", { route: { page: "business", realm: "acme" } });
   show("needs you", { route: { page: "needs-you", realm: "acme" } });
+  // Decision 66: a deadline is answered Filed or Seen; an overdue one, Filed
+  // only. They are Airth's own, beside its incidents.
+  vm.runInContext(`needs.agent = null;`, ctx);
+  show("needs you, Airth's own", { route: { page: "needs-you", realm: "acme" } });
+  if (!nbody.textContent.includes("Airth does not file it")) problems.push("next/needs: a legal deadline does not say Airth does not file it");
+  const buttonsOf = (title) => {
+    const cards = [];
+    const walk = (n) => { if (n.tag === "article" && n.textContent.includes(title)) cards.push(n); (n.children || []).forEach(walk); };
+    walk(nbody);
+    return cards.length ? cards[cards.length - 1].textContent : "";
+  };
+  if (!/Filed.*Seen/.test(buttonsOf("Confirmation statement due"))) problems.push("next/needs: a deadline is not answered Filed or Seen");
+  if (/Seen/.test(buttonsOf("Overdue: Annual accounts"))) problems.push("next/needs: an overdue deadline can be closed without Filed");
   vm.runInContext(`needs.agent = "writer"; needs.rejecting = 3;`, ctx);
   show("needs you, cancelling a delayed action", { route: { page: "needs-you", realm: "acme" } });
   vm.runInContext(`needs.agent = "post-writer"; needs.editing = 1; needs.rejecting = null;`, ctx);
@@ -468,13 +483,21 @@ function smokeNext() {
       { routine: "noon", agent: null, time: "12:00", state: "failed" },
       { routine: "evening", agent: "watcher", time: "18:00", state: "next" }] },
     { weekday: "Wed", day: "4", today: false, runs: [{ routine: "daily-watch", agent: "watcher", time: "07:00", state: "planned" }] },
-    { weekday: "Thu", day: "5", today: false, runs: [] }],
-    late: [{ routine: "daily-posts", due: "Mon 2 Nov, 07:30", late_by: 90 }] };`, ctx);
+    { weekday: "Thu", day: "5", today: false, runs: [] },
+    { weekday: "Fri", day: "6", today: false, runs: [], deadlines: ["Corporation Tax payment"] }],
+    late: [{ routine: "daily-posts", due: "Mon 2 Nov, 07:30", late_by: 90 }],
+    deadlines: { note: "Computed from the business profile.", items: [
+      { title: "Confirmation statement", authority: "Companies House", date: "2026-11-20", due: "Fri 20 Nov 2026", days_left: 17, period_end: "6 Nov 2026", source: "https://www.gov.uk/guidance/confirmation-statement-guidance" },
+      { title: "Annual accounts", authority: "Companies House", date: "2027-08-07", due: "Sat 7 Aug 2027", days_left: 277, period_end: "30 Nov 2026", source: null, filed: true },
+      { title: "Corporation Tax payment", authority: "HMRC", date: "2026-11-02", due: "Mon 2 Nov 2026", days_left: -1, period_end: "1 Feb 2026", source: null }] } };`, ctx);
   show("calendar, the week", { route: { page: "calendar", realm: "acme" } });
-  for (const text of ["This week: 5 routine runs.", "Tue · today", "Started late", "Failed", "Next", "Nothing scheduled", "Due Mon 2 Nov, 07:30, started 90 min late"]) {
+  for (const text of ["This week: 5 routine runs.", "Tue · today", "Started late", "Failed", "Next", "Nothing scheduled", "Due Mon 2 Nov, 07:30, started 90 min late", "Deadlines", "Due Fri 20 Nov 2026 · in 17 days", "for the period to 6 Nov 2026", "Source", "Filed · due Sat 7 Aug 2027", "Overdue · was due Mon 2 Nov 2026", "Due Corporation Tax payment"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/calendar: "${text}" is missing`);
   }
-  vm.runInContext(`calendar.data.acme = { title: "No routine runs this week.", total: 0, days: [], late: [] };`, ctx);
+  // A deadline whose date the profile does not give yet says why.
+  vm.runInContext(`calendar.data.acme = { title: "No routine runs this week.", total: 0, days: [], late: [],
+    deadlines: { note: "Computed from the business profile.", items: [{ title: "Annual accounts", authority: "Companies House", unknown: "Date unknown: incorporation date missing" }] } };`, ctx);
   show("calendar, empty", { route: { page: "calendar", realm: "acme" } });
+  if (!nbody.textContent.includes("Date unknown: incorporation date missing")) problems.push("next/calendar: an unknown deadline does not say why");
   if (!nbody.textContent.includes("every scheduled run started on time")) problems.push("next/calendar: no late start is not said");
 }

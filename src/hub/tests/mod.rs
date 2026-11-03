@@ -15,6 +15,7 @@ mod changes;
 mod finance;
 mod founder;
 mod gate;
+mod legal;
 mod models;
 mod objectives;
 mod pipelines;

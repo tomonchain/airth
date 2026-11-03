@@ -17,6 +17,7 @@ mod icon;
 mod images;
 mod integration;
 mod isolation;
+mod legal;
 mod memory;
 mod models;
 mod notify;
