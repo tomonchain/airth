@@ -394,10 +394,22 @@ function smokeNext() {
     { block: "ok", started_at: "${now}", finished_at: "${now}", outcome: "waiting", items_in: 1, items_out: 0, cost_usd: 0.004, error: null },
     { block: "send", started_at: "${now}", finished_at: "${now}", outcome: "failed", items_in: 1, items_out: 1, cost_usd: null, error: "x" }] } };`, ctx);
   vm.runInContext(`company.team.acme = { agents: [
-    { name: "watcher", title: null, department: "marketing", job: null, routines: [{ name: "daily-watch", schedule: null, last: null }], waiting: 0, cost_usd: 0, unpriced: 0, seconds: 0 },
-    { name: "writer", title: "Writer", department: null, job: "Write.", routines: [{ name: "weekly", schedule: "mon 09:00", last: { at: "${now}", ok: false } }], waiting: 2, cost_usd: 1.5, unpriced: 3, seconds: 900 }] };
+    { name: "watcher", title: null, department: "marketing", job: null, look: "0a1b2c3d", look_saved: true, accessory: "lens", state: "asleep", routines: [{ name: "daily-watch", schedule: null, last: null }], waiting: 0, cost_usd: 0, unpriced: 0, seconds: 0 },
+    { name: "writer", title: "Writer", department: null, job: "Write.", look: "ff00aa11", look_saved: false, accessory: null, state: "needs", routines: [{ name: "weekly", schedule: "mon 09:00", last: { at: "${now}", ok: false } }], waiting: 2, cost_usd: 1.5, unpriced: 3, seconds: 900 }] };
     company.profile.acme = { profile: { name: null, legal_name: "Acme Ltd", links: ["https://a.com"] }, goal: {}, lines: [{ name: "news", fields: { title: null, kind: null, status: null } }], repos: [{ name: "site", url: null }], missing: ["business/profile.md: country"] };`, ctx);
   show("team", { route: { page: "team", realm: "acme" } });
+  // Decision 65: each agent's state in words, "Keep this look" only for
+  // a look not saved yet; the character drawn from seed, department, state.
+  if (!nbody.textContent.includes("Needs you") || !nbody.textContent.includes("Asleep")) problems.push("next/team: an agent's state is not said");
+  if ((nbody.textContent.match(/Keep this look/g) || []).length !== 1) problems.push("next/team: Keep this look is not offered once, to the agent without a saved look");
+  const drawn = vm.runInContext(`character({ look: "0a1b2c3d", department: "marketing", accessory: "pen", state: "needs", title: "Writer" }, 72)`, ctx);
+  for (const part of ['class="ch st-needs"', "var(--dept-marketing)", 'class="bubble"', 'class="acc"', 'aria-label="Writer, needs you"']) {
+    if (!drawn.includes(part)) problems.push(`next/character: ${part} is missing`);
+  }
+  const plain = vm.runInContext(`character({ look: "bad", department: "spaceships", state: "dancing" }, 72)`, ctx);
+  if (!plain.includes("var(--dept-none)") || !plain.includes("st-idle")) problems.push("next/character: an unknown department or state is not drawn plainly");
+  const twice = vm.runInContext(`character({ look: "0a1b2c3d", department: "sales" }) === character({ look: "0a1b2c3d", department: "sales" })`, ctx);
+  if (!twice) problems.push("next/character: the same seed does not draw the same character");
   show("business", { route: { page: "business", realm: "acme" } });
   vm.runInContext(`company.team.acme = { agents: [] }; company.profile.acme = { error: "agents/x.md: unknown field 'foo'", repos: [] };`, ctx);
   show("team, no agent", { route: { page: "team", realm: "acme" } });

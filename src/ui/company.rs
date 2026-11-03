@@ -17,6 +17,11 @@ impl App {
     ) -> Result<Option<HttpResponse>> {
         Ok(Some(match (method, segments) {
             (Method::Get, ["realms", r, "team"]) => json_response(200, self.team(&self.realm(r)?)?),
+            // "Keep this look" (decision 65): the founder's gesture.
+            (Method::Post, ["realms", r, "agents", name, "look"]) => {
+                let seed = crate::business::keep_look(&self.realm(r)?.root()?, name)?;
+                json_response(200, json!({"look": seed}))
+            }
             (Method::Get, ["realms", r, "company"]) => {
                 json_response(200, self.company(&self.realm(r)?)?)
             }
@@ -39,6 +44,13 @@ impl App {
         let costs = store.pipeline_costs(since)?;
         let seconds = store.owner_seconds_by_agent(since)?;
         let waiting = store.queue(&["pending"])?;
+        let tasks: Vec<_> = self
+            .hub
+            .runs(realm)?
+            .into_iter()
+            .filter(|r| r.agent.is_some())
+            .collect();
+        let root = realm.root()?;
         let mut agents = Vec::new();
         for (name, doc) in &config.agents {
             let mine: Vec<(&String, crate::routine::Graph)> = graphs
@@ -64,13 +76,47 @@ impl App {
                     unpriced += c.unpriced;
                 }
             }
+            let waits = waiting
+                .iter()
+                .filter(|i| i.agent.as_deref() == Some(name))
+                .count();
+            let mine_tasks: Vec<_> = tasks
+                .iter()
+                .filter(|t| t.agent.as_deref() == Some(name))
+                .collect();
+            let failed = routines.iter().any(|r| r["last"]["ok"] == false)
+                || mine_tasks
+                    .first()
+                    .is_some_and(|t| t.display_status() == "failed");
+            let scheduled = routines.iter().any(|r| !r["schedule"].is_null());
+            // Its state, from Airth's records (decision 65).
+            let state = match (
+                waits > 0,
+                failed,
+                mine_tasks.iter().any(|t| t.live),
+                scheduled,
+            ) {
+                (true, ..) => "needs",
+                (_, true, ..) => "incident",
+                (_, _, true, _) => "working",
+                (_, _, _, false) => "asleep",
+                _ => "idle",
+            };
+            let (look, look_saved) = crate::business::look(&root, name);
+            let accessory = doc
+                .text("accessory")
+                .filter(|a| ["pen", "lens", "book"].contains(&a.trim()));
             agents.push(json!({
                 "name": name,
+                "look": look,
+                "look_saved": look_saved,
+                "accessory": accessory,
+                "state": state,
                 "title": doc.text("title"),
                 "department": doc.text("department"),
                 "job": doc.body.lines().map(str::trim).find(|l| !l.is_empty()),
                 "routines": routines,
-                "waiting": waiting.iter().filter(|i| i.agent.as_deref() == Some(name)).count(),
+                "waiting": waits,
                 "cost_usd": cost,
                 "unpriced": unpriced,
                 "seconds": seconds.iter().find(|(a, _)| a.as_deref() == Some(name)).map_or(0, |(_, s)| *s),
@@ -115,4 +161,79 @@ fn fields(doc: &Doc) -> Value {
         );
     }
     Value::Object(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::business::store::autonomy::NewItem;
+
+    /// Decision 65 on Team: each agent's look (derived until kept) and its
+    /// state from Airth's records: one with an item waiting needs the
+    /// founder; one with nothing scheduled sleeps.
+    #[test]
+    fn team_shows_each_agents_look_and_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(
+            root.join("agents/writer.md"),
+            "---\ntitle: Writer\ndepartment: marketing\naccessory: book\n---\nWrite.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("agents/clerk.md"),
+            "---\ntitle: Clerk\nlook: 0a1b2c3d\naccessory: wand\n---\nFile.\n",
+        )
+        .unwrap();
+        Store::of(&realm)
+            .unwrap()
+            .propose(&NewItem {
+                kind: "approval",
+                title: "A draft",
+                agent: Some("writer"),
+                routine: None,
+                run: None,
+                action: None,
+                args: "{}",
+                execute_at: None,
+                source: "{}",
+                model_call: None,
+            })
+            .unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let team = app.team(&realm).unwrap();
+        let agent = |name: &str| {
+            team["agents"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["name"] == name)
+                .unwrap()
+                .clone()
+        };
+        let (writer, clerk) = (agent("writer"), agent("clerk"));
+        assert_eq!(writer["state"], "needs");
+        assert_eq!(writer["look_saved"], false);
+        assert_eq!(writer["look"].as_str().unwrap().len(), 8);
+        assert_eq!(writer["accessory"], "book");
+        assert_eq!(clerk["state"], "asleep", "nothing scheduled");
+        assert_eq!(
+            (clerk["look"].as_str(), clerk["look_saved"].as_bool()),
+            (Some("0a1b2c3d"), Some(true))
+        );
+        assert!(
+            clerk["accessory"].is_null(),
+            "only the accessories Airth draws"
+        );
+    }
 }
