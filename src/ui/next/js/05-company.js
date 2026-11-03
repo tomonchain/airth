@@ -77,35 +77,45 @@ const IDENTITY = [
 ];
 const show = (v) => (v == null || v === "" ? null : Array.isArray(v) ? v.join(", ") : String(v));
 
-function businessPage() {
+/** What is left to fill, in words: "business/profile.md: registered_office"
+    reads "Profile: registered office". */
+function missingWords(m) {
+  const [file, field] = m.split(": ");
+  const where = { "business/profile.md": "Profile", "business/goal.md": "Goal" }[file]
+    || file.replace(/^agents\/(.+)\.md$/, "Agent $1").replace(/^business\/lines\/(.+)\.md$/, "Line $1");
+  return field ? `${where}: ${field.replace(/_/g, " ")}` : where;
+}
+
+/** Business: the company's identity, goal, lines and repositories, read from
+    its folder (decision 43). */
+function BusinessPage() {
   const data = loaded(company.profile, "company");
-  if (!data) return h("div", { class: "column" }, pageHead(next.realm, "Business"), h("p", { class: "lede" }, "Loading…"));
+  const header = { label: next.realm, title: "Business" };
+  if (!data) return html`<${Reading} header=${header}><p class="lede">Loading…</p></${Reading}>`;
   const p = data.profile || {};
   const g = data.goal || {};
   // Decision 66: a UK company's year end is its accounting reference date.
-  const words = (k, label) => k === "fiscal_year_end" && p.country === "GB" ? "Accounting reference date" : label;
-  const facts = (pairs, src) => h("dl", { class: "facts" }, pairs.map(([k, label]) => [
-    h("dt", {}, words(k, label)), h("dd", { class: show(src[k]) ? null : "unknown" }, show(src[k]) || "Not filled yet")]));
-  return h("div", { class: "column" },
-    pageHead(next.realm, show(p.name) || next.realm),
-    data.error && h("p", { class: "note bad" }, `The config cannot be read: ${data.error}`),
-    h("section", { class: "card" }, h("h2", { class: "label" }, "Legal identity"), facts(IDENTITY, p)),
-    h("section", { class: "card" }, h("h2", { class: "label" }, "Goal"),
-      facts([["goal", "Goal"], ["measure", "Measure"], ["target", "Target"], ["by", "By"], ["milestones", "Milestones"]], g)),
-    h("section", { class: "card" }, h("h2", { class: "label" }, "Lines"),
-      (data.lines || []).length
-        ? h("div", { class: "rows" }, data.lines.map((l) => h("div", { class: "row" },
-            h("span", { class: "grow" }, h("span", { class: "name" }, show(l.fields.title) || l.name),
-              h("span", { class: "sub" }, [show(l.fields.kind), show(l.fields.status)].filter(Boolean).join(" · ") || "No kind or status yet")))))
-        : h("p", { class: "note" }, "No line yet: an editorial line, a range or a brand is a file in business/lines/.")),
-    h("section", { class: "card" }, h("h2", { class: "label" }, "Repositories"),
-      (data.repos || []).length
-        ? h("div", { class: "rows" }, data.repos.map((r) => h("div", { class: "row" },
-            h("span", { class: "grow" }, h("span", { class: "name" }, r.name), h("span", { class: "sub" }, r.url || "On this Mac only")))))
-        : h("p", { class: "note" }, "No repository yet.")),
-    (data.missing || []).length > 0 && h("section", { class: "card" }, h("h2", { class: "label" }, "Left to fill"),
-      h("ul", { class: "missing" }, data.missing.map((m) => h("li", { class: "mono" }, m)))),
-    h("p", { class: "note" }, "The config lives in the business folder; edit it there, or ask an agent through a change you adopt."));
+  const words = (k, label) => (k === "fiscal_year_end" && p.country === "GB" ? "Accounting reference date" : label);
+  const facts = (pairs, src) => html`<dl class="facts">${pairs.map(([k, label]) => html`
+    <dt>${words(k, label)}</dt><dd class=${show(src[k]) ? null : "unknown"}>${show(src[k]) || "Not filled yet"}</dd>`)}</dl>`;
+  const rows = (items, row, empty) => (items || []).length
+    ? html`<div class="rows">${items.map(row)}</div>` : html`<p class="note">${empty}</p>`;
+  return html`<${Reading} header=${{ ...header, summary: show(p.name) || null }}>
+    ${data.error && html`<p class="note bad">The config cannot be read: ${data.error}</p>`}
+    <section class="card"><h2 class="label">Legal identity</h2>${facts(IDENTITY, p)}</section>
+    <section class="card"><h2 class="label">Goal</h2>
+      ${facts([["goal", "Goal"], ["measure", "Measure"], ["target", "Target"], ["by", "By"], ["milestones", "Milestones"]], g)}</section>
+    <section class="card"><h2 class="label">Lines</h2>
+      ${rows(data.lines, (l) => html`<div class="row"><span class="grow"><span class="name">${show(l.fields.title) || l.name}</span>
+        <span class="sub">${[show(l.fields.kind), show(l.fields.status)].filter(Boolean).join(" · ") || "No kind or status yet"}</span></span></div>`,
+        "No line yet: an editorial line, a range or a brand is a file in business/lines/.")}</section>
+    <section class="card"><h2 class="label">Repositories</h2>
+      ${rows(data.repos, (r) => html`<div class="row"><span class="grow"><span class="name">${r.name}</span>
+        <span class="sub">${r.url || "On this Mac only"}</span></span></div>`, "No repository yet.")}</section>
+    ${(data.missing || []).length > 0 && html`<section class="card"><h2 class="label">Left to fill</h2>
+      <ul class="missing">${data.missing.map((m) => html`<li>${missingWords(m)}</li>`)}</ul></section>`}
+    <p class="note">The config lives in the business folder; edit it there, or ask an agent through a change you adopt.</p>
+  </${Reading}>`;
 }
 
 async function keepLook(a) {

@@ -153,12 +153,12 @@ Each business can have developer agents working on its own platforms, using the 
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
 - Visual reference: `docs/design/DESIGN.md` and `docs/design/mockups/`. Build pages from the tokens and components in `DESIGN.md`, never by copying the mockups' inline styles.
-- **One interface, two sets of pages (decision 71).** The classic interface is the base, under the new interface's rail and header; the new interface (`/next`) serves the pages the classic one does not have (HQ, Needs you, Workshop). Each milestone ships its features in whichever page they belong to. Nothing is removed on the way.
-- Stack: vanilla JavaScript and CSS in `src/ui`, served by Airth, no build step; a graph library only for the routine editor, through the `src/ui/editor` bundle (decision 57).
+- **One interface (decision 72).** The new interface, at `/`, built from three page layouts (reading, board, workspace) with one page header. The classic interface stays at `/classic` until each of its features has moved, or left by decision (decision 42); then it is removed.
+- Stack: JavaScript and CSS in `src/ui`, served by Airth, no build step; pages are Preact components written with `htm`, both vendored in `src/ui/vendor/preact/` (decision 72); a graph library only for the routine editor, through the `src/ui/editor` bundle (decision 57).
 
 ## Scope: the beta
 
-The beta is reached when: Hedgen runs on its own for 4 consecutive weeks; founder time on Hedgen is measured weekly and stays well below the manual baseline; Numirama is connected with configuration and a connector only, without a line of Rust specific to it; the interface under the new rail is the main screen (decision 71); at least one role handles mail under the rules above; Airth runs on a Linux VPS with a Linux sandbox and the security scenarios green on Linux; everything in the queue can be handled from Telegram.
+The beta is reached when: Hedgen runs on its own for 4 consecutive weeks; founder time on Hedgen is measured weekly and stays well below the manual baseline; Numirama is connected with configuration and a connector only, without a line of Rust specific to it; the new interface is the main screen (decision 72); at least one role handles mail under the rules above; Airth runs on a Linux VPS with a Linux sandbox and the security scenarios green on Linux; everything in the queue can be handled from Telegram.
 
 Milestones, in order. One starts only when the previous one's gate is passed. Every milestone's gate also includes: **its features are visible and usable in the new interface.**
 
@@ -166,7 +166,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 2. **Data model.** SQLite per business and its access layer, business folder, legal identity, agents and departments in config. *Gate: Hedgen Ltd fully described in config, no Hedgen data in code.*
 3. **Engine and queue.** Pipeline engine with routines as graph files, approval queue, founder-time ledger, heartbeats, Telegram.
 4. **Hedgen routines.** Watch, production to Typefully, replies, weekly report (through Telegram and Needs you), and the Writer: a weekly article, as a mission launched by an Act (Trigger → Read → Act "Launch a mission" → Approval → Act "publish"), its agent in `agents/`.
-5. **Interface, the finish.** The full HQ, the routine editor v1 (no full drag and drop), the command bar, and the classic interface's pages under the new rail and header (decision 71), as the main screen; one bank read-only for the HQ's finance: Revolut Business (decision 54).
+5. **Interface, the finish.** The full HQ, the routine editor v1 (no full drag and drop), the command bar, and every classic feature moved into the new interface (decision 72), the main screen; one bank read-only for the HQ's finance: Revolut Business (decision 54).
 6. **Hedgen proof.** 4 stable weeks, founder time below baseline.
 7. **Agent mail.** IMAP and SMTP integration, one mailbox per role.
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.

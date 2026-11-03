@@ -15,10 +15,10 @@ function searchItems() {
   add("Go to", "HQ", "#/hq");
   if (next.realm) PAGES.forEach((p) => add("Go to", p.title, railHref(p.id), next.realm));
   PINNED.forEach((p) => add("Go to", p.title, railHref(p.id)));
-  add("Go to", "Your profile", "/#/owner");
+  add("Go to", "Your profile", "/classic#/owner");
   for (const group of ["waiting", "review", "running", "done"]) {
     for (const t of (search.tasks && search.tasks[group]) || []) {
-      add(`Tasks in ${next.realm}`, t.order, group === "waiting" ? pageHash("needs-you") : `/#/r/${enc(next.realm)}/run/${enc(t.id)}`, t.agent);
+      add(`Tasks in ${next.realm}`, t.order, group === "waiting" ? pageHash("needs-you") : `/classic#/r/${enc(next.realm)}/run/${enc(t.id)}`, t.agent);
     }
   }
   for (const r of next.realms || []) {
