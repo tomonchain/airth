@@ -7,6 +7,12 @@ const enc = encodeURIComponent;
 
 /** Build an element. Strings become text nodes: content is never parsed as
  *  HTML. `svg` takes constant icon markup only, never data. */
+// Components (decision 72): Preact with htm, vendored in /next/vendor.js.
+// `html` writes a component's markup; `h` below is the older DOM builder,
+// used by the pages not moved to components yet.
+const html = htm.bind(preact.h);
+const { useState, useEffect, useLayoutEffect, useRef } = preactHooks;
+
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {

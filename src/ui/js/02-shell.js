@@ -22,17 +22,17 @@ function renderNav() {
     icon(ic), extra);
   $("#side-nav").replaceChildren(
     h("button", { class: "rail-link", type: "button", onclick: openPalette, title: `Search (${modKey}K)`, "aria-label": "Search" }, icon("search")),
-    entry("/next#/hq", "hq", "HQ", false),
-    entry(r && `/next#/b/${r}/needs-you`, "inbox", "Needs you", false, waiting > 0 && h("span", { class: "rail-dot", "aria-hidden": "true" })),
+    entry("/#/hq", "hq", "HQ", false),
+    entry(r && `/#/b/${r}/needs-you`, "inbox", "Needs you", false, waiting > 0 && h("span", { class: "rail-dot", "aria-hidden": "true" })),
     entry(r && `#/r/${r}/agents`, "team", "Team", v === "agents"),
     // The classic Routines and Planning pages predate routines as graphs
     // (decision 49) and legal deadlines: the new pages show them.
-    entry(r && `/next#/b/${r}/routines`, "refresh", "Routines", false),
+    entry(r && `/#/b/${r}/routines`, "refresh", "Routines", false),
     entry(r && `#/r/${r}/tasks`, "listCheck", "Tasks", ["tasks", "run", "new"].includes(v)),
-    entry(r && `/next#/b/${r}/calendar`, "calendar", "Calendar", false),
+    entry(r && `/#/b/${r}/calendar`, "calendar", "Calendar", false),
     entry(r && `#/r/${r}/settings`, "business", "Business", v === "settings"),
     h("div", { class: "rail-gap" }),
-    entry("/next#/workshop", "workshop", "Workshop", false),
+    entry("/#/workshop", "workshop", "Workshop", false),
     entry(r && `#/r/${r}/skills`, "gear", "Settings", v === "skills"),
     themeToggle(),
     entry("#/owner", "profile", "Your profile", v === "owner"),

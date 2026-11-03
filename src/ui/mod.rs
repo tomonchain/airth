@@ -70,6 +70,16 @@ const APP_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
 const THEME_JS: &str = include_str!("theme.js");
 /// The Documents editor (CodeMirror), built from editor/ by editor/build.sh.
 const EDITOR_JS: &str = include_str!("vendor/editor.js");
+/// Preact, its hooks and htm (decision 72), vendored and joined in the
+/// order they need each other: no build step, nothing fetched.
+const NEXT_VENDOR_JS: &str = concat!(
+    include_str!("vendor/preact/preact-10.29.8.umd.js"),
+    "\n",
+    include_str!("vendor/preact/hooks-10.29.8.umd.js"),
+    "\n",
+    include_str!("vendor/preact/htm-3.1.1.umd.js"),
+    "\n",
+);
 const FAVICON: &str = include_str!("favicon.svg");
 /// The new interface, served at /next next to the current one (decision 57).
 const NEXT_HTML: &str = include_str!("next/index.html");
@@ -154,9 +164,9 @@ impl App {
         let method = request.method().clone();
 
         match (&method, path) {
-            // The classic interface is the base, under the new rail
-            // (decision 71); `/classic` stays for links already given.
-            (Method::Get, "/" | "/index.html" | "/classic" | "/classic/") => {
+            // One interface, the new one (decision 72); the classic one
+            // stays at `/classic` until its last feature has moved.
+            (Method::Get, "/classic" | "/classic/") => {
                 return Ok(static_response(INDEX_HTML, "text/html; charset=utf-8"));
             }
             (Method::Get, "/app.js") => {
@@ -174,8 +184,11 @@ impl App {
             (Method::Get, "/favicon.svg") => {
                 return Ok(static_response(FAVICON, "image/svg+xml"));
             }
-            (Method::Get, "/next" | "/next/") => {
+            (Method::Get, "/" | "/index.html" | "/next" | "/next/") => {
                 return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
+            }
+            (Method::Get, "/next/vendor.js") => {
+                return Ok(static_response(NEXT_VENDOR_JS, "text/javascript; charset=utf-8"));
             }
             (Method::Get, "/next/app.js") => {
                 return Ok(static_response(NEXT_JS, "text/javascript; charset=utf-8"));

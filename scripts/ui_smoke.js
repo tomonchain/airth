@@ -189,9 +189,9 @@ const main = body.querySelector("#main");
     const links = {};
     const walk = (n) => { if (n.tag === "a") links[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
     walk(body.querySelector("#side-nav"));
-    const want = { HQ: "/next#/hq", Team: "/agents", Routines: "/routines", Tasks: "/tasks", Calendar: "/calendar", Business: "/settings", Workshop: "/next#/workshop", Settings: "/skills", "Your profile": "#/owner" };
+    const want = { HQ: "/#/hq", Team: "/agents", Routines: "/routines", Tasks: "/tasks", Calendar: "/calendar", Business: "/settings", Workshop: "/#/workshop", Settings: "/skills", "Your profile": "#/owner" };
     for (const [label, end] of Object.entries(want)) if (!(links[label] || "").endsWith(end)) problems.push(`rail: ${label} goes to ${links[label]}, not …${end}`);
-    if (!(links["Needs you"] || "").startsWith("/next#/b/")) problems.push(`rail: Needs you goes to ${links["Needs you"]}`);
+    if (!(links["Needs you"] || "").startsWith("/#/b/")) problems.push(`rail: Needs you goes to ${links["Needs you"]}`);
   }
   A.renderFoot(); check("foot", body.querySelector("#sidebar-foot"));
   A.renderRealmSwitch(); check("realm switch", body.querySelector("#realm-switch"));
@@ -308,19 +308,52 @@ function smokeNext() {
   // The current interface's scripts patched FakeNode's append for their
   // own use; the new interface's elements start from the plain DOM's
   // behaviour, which turns a list into text, so its own patch is tested.
-  class NextNode extends FakeNode {}
-  NextNode.prototype.append = function (...items) { for (const x of items) { const n = x instanceof FakeNode ? x : new FakeText(String(x)); n.parent = this; this.children.push(n); } };
-  NextNode.prototype.replaceChildren = function (...items) { this.children = []; this.append(...items); };
+  // Enough of the DOM for Preact (decision 72) as well as for the DOM builder.
+  class NextNode extends FakeNode {
+    constructor(tag) { super(tag); this.style = { setProperty() {}, removeProperty() {} }; }
+    get childNodes() { return this.children; }
+    get firstChild() { return this.children[0] || null; }
+    get nextSibling() { const s = this.parent ? this.parent.children : []; return s[s.indexOf(this) + 1] || null; }
+    get parentNode() { return this.parent; }
+    get nodeType() { return 1; }
+    get localName() { return this.tag; }
+    get nodeName() { return this.tag.toUpperCase(); }
+    appendChild(n) { return this.insertBefore(n, null); }
+    insertBefore(n, ref) {
+      if (n.parent) n.parent.removeChild(n);
+      n.parent = this;
+      const i = ref ? this.children.indexOf(ref) : -1;
+      if (i < 0) this.children.push(n); else this.children.splice(i, 0, n);
+      return n;
+    }
+    removeChild(n) { this.children = this.children.filter((c) => c !== n); n.parent = null; return n; }
+    setAttribute(k, v) { if (k === "class") this.className = String(v); this.attrs[k] = String(v); }
+    removeAttribute(k) { if (k === "class") this.className = ""; delete this.attrs[k]; }
+    removeEventListener() {}
+  }
+  class NextText extends FakeText {
+    get data() { return this.text; }
+    set data(v) { this.text = String(v); }
+    get nodeType() { return 3; }
+    get parentNode() { return this.parent; }
+    get nextSibling() { const s = this.parent ? this.parent.children : []; return s[s.indexOf(this) + 1] || null; }
+  }
+  NextNode.prototype.append = function (...items) { for (const x of items) { const n = x instanceof FakeNode ? x : new NextText(String(x)); if (n.parent && n.parent !== this) n.parent.removeChild(n); n.parent = this; this.children.push(n); } };
+  NextNode.prototype.replaceChildren = function (...items) { for (const c of this.children) c.parent = null; this.children = []; this.append(...items); };
   const nbody = new NextNode("body");
   for (const id of ["top", "rail", "panel"]) { const n = new NextNode("div"); n.attrs.id = id; nbody.append(n); }
   const ctx = {
     Node: FakeNode, Element: NextNode, Date, console, storage,
-    document: { createElement: (t) => new NextNode(t), createTextNode: (t) => new FakeText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s), body: nbody, activeElement: null },
+    document: { createElement: (t) => new NextNode(t), createElementNS: (_, t) => new NextNode(t), createTextNode: (t) => new NextText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s), body: nbody, activeElement: null },
+    setTimeout, clearTimeout, requestAnimationFrame: (f) => setTimeout(f, 0), cancelAnimationFrame: clearTimeout,
     location: { hash: "" }, window: { addEventListener() {} },
     sessionStorage: storage, localStorage: storage,
   };
   const dir = path.join(__dirname, "..", "src", "ui", "next", "js");
-  const code = fs.readdirSync(dir).filter((f) => f.endsWith(".js")).sort()
+  // The vendored libraries first, in the order /next/vendor.js joins them.
+  const vendor = ["preact-10.29.8.umd.js", "hooks-10.29.8.umd.js", "htm-3.1.1.umd.js"]
+    .map((f) => fs.readFileSync(path.join(__dirname, "..", "src", "ui", "vendor", "preact", f), "utf8")).join("\n");
+  const code = vendor + "\n" + fs.readdirSync(dir).filter((f) => f.endsWith(".js")).sort()
     .map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n").replace(/\nboot\(\);\s*$/, "\n");
   vm.createContext(ctx);
   vm.runInContext(code + "\n;globalThis.__next = { next, renderAll, PAGES, PINNED };", ctx);
@@ -373,14 +406,13 @@ function smokeNext() {
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
-  // Decision 71: the same rail as the classic interface, its entries to the
-  // classic pages where they show the business.
+  // Decision 72: every rail entry opens this interface's page.
   {
     show("rail", { route: { page: "needs-you", realm: "acme" } });
     const hrefs = {};
     const walk = (n) => { if (n.tag === "a" && n.attrs.title) hrefs[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
     walk(nbody.querySelector("#rail"));
-    const want = { Team: "/#/r/acme/agents", Tasks: "/#/r/acme/tasks", Business: "/#/r/acme/settings", Settings: "/#/r/acme/skills", "Your profile": "/#/owner",
+    const want = { Team: "#/b/acme/team", Tasks: "#/b/acme/tasks", Business: "#/b/acme/business", Settings: "#/settings", "Your profile": "/classic#/owner",
       Routines: "#/b/acme/routines", Calendar: "#/b/acme/calendar", Workshop: "#/workshop", HQ: "#/hq" };
     for (const [label, href] of Object.entries(want)) if (hrefs[label] !== href) problems.push(`next/rail: ${label} goes to ${hrefs[label]}, not ${href}`);
   }
@@ -397,6 +429,15 @@ function smokeNext() {
   if (!found().includes("Calendar") || found().includes("Settings")) problems.push(`next/search: the query does not filter: ${found().slice(0, 200)}`);
   vm.runInContext(`closeSearch()`, ctx);
   if (nbody.querySelector("#search")) problems.push("next/search: it does not close");
+  // Decision 72: a page moved to components is one of the three layouts,
+  // with the page header in it.
+  for (const [page, realm] of [["business", "acme"], ["settings", null], ["workshop", null], ["hire", "acme"], ["new-business", null]]) {
+    show(`${page}, layout`, { route: { page, realm } });
+    const layout = find(nbody, ".layout", true)[0];
+    if (!layout || !["reading", "board", "workspace"].includes(layout.attrs["data-layout"]) || !find(layout, ".page-title", true).length) {
+      problems.push(`next/${page}: not one of the three layouts with its header`);
+    }
+  }
   // What is not built yet shows one panel, saying what it will do.
   for (const [page, realm, title] of [["hire", "acme", "Hire an agent"], ["new-business", null, "Create a business"], ["workshop", null, "Workshop"], ["settings", null, "Mailboxes"]]) {
     show(page, { route: { page, realm } });

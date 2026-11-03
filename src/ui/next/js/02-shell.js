@@ -31,13 +31,8 @@ function parseRoute() {
   return { page: "hq" };
 }
 
-// Decision 71: these rail entries open the classic interface's page.
-const CLASSIC_PAGES = { team: "agents", tasks: "tasks", business: "settings", settings: "skills" };
-
-/** Where a rail entry goes: the classic page where one shows the business,
-    else this interface's. The same in both interfaces. */
-const railHref = (page, realm = next.realm) =>
-  CLASSIC_PAGES[page] && realm ? `/#/r/${enc(realm)}/${CLASSIC_PAGES[page]}` : pageHash(page, realm);
+/** Where a rail entry goes: this interface's page (decision 72). */
+const railHref = (page, realm = next.realm) => pageHash(page, realm);
 
 const pageHash = (page, realm = next.realm) =>
   PINNED.some((p) => p.id === page) || ["hq", "new-business"].includes(page) || !realm ? `#/${page}` : `#/b/${enc(realm)}/${page}`;
@@ -85,7 +80,7 @@ function renderRail() {
     PINNED.map(link),
     themeToggle(),
     // The founder's profile lives in the classic interface until it moves.
-    h("a", { href: "/#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
+    h("a", { href: "/classic#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
 }
 
 /** Light or dark, kept in this browser and shared with the classic

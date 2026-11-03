@@ -65,6 +65,16 @@ Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Po
 - Spacing on a 4 px grid; usual gaps 8, 10, 12, 16, 20, 28.
 - Main panel: margin 0 12 12 0, radius 16, padding 32–36. The HQ content column is centred, max 880 px.
 
+## Page layouts (decision 72)
+
+Every page is one of three layouts, with the same page header at the panel's top left: a label (the business, or "Airth"), the page's name as its title (`--fs-headline`), an optional one-line summary that says what matters today, and the page's actions on the right. A page that fits none of the three is a decision.
+
+- **Reading:** one column under the header, aligned with it, 880 px at most. HQ, Business, Tasks, Settings, Workshop, a task's run, the profile.
+- **Board:** the panel's full width under the header. Team, Calendar, Usage.
+- **Workspace:** under the header, a list (300 px), the work in the middle, its details (320 px), in one bordered block. Needs you, Routines, Documents.
+
+Pages are Preact components (`html` from htm); the header and the layouts are `PageHeader`, `Reading`, `Board` and `Workspace` in `src/ui/next/js/13-ui.js`.
+
 ## Components
 
 - **Shell:** header (business switcher on the left, primary action on the right), icon rail 72 px wide (HQ, Needs you, Team, Routines, Tasks, Calendar; Workshop, Settings, the theme toggle and the founder's profile pinned at the bottom, in view as the page scrolls), main panel. Needs you shows an amber dot when something waits.
