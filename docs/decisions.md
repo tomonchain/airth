@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 62. The founder can retry a failed action from its incident, once it is clear nothing was done
 
-**Proposed.**
+**Accepted.** Coded after point B, outside the service installed for it.
 
 An approved action that fails becomes an incident (decision 55), and its idempotency key stays `failed`: Airth never does it again, even once the cause is fixed. On 2 November the Typefully integration still called API v1; the approved HKMA draft got a 403, and once the declaration was fixed it could be re-sent only by hand, with a command outside Airth.
 
