@@ -5,7 +5,7 @@
 //! on Telegram, not one an hour.
 
 use super::*;
-use crate::bank::{Finance, Reauthorize};
+use crate::bank::{Finance, Reauthorize, Refused};
 use crate::business::store::Store;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,8 @@ use serde_json::{Value, json};
 const FILE: &str = "finance.json";
 /// The incident a refused consent raises.
 pub const REAUTHORIZE: &str = "Revolut access needs re-authorizing";
+/// The incident another refusal raises, with Revolut's message.
+pub const REFUSED: &str = "Revolut refused a request";
 
 /// What Airth last knew of the bank.
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,28 +66,18 @@ impl Hub {
                             at: now,
                         },
                     )?;
-                    let told = Store::of(&realm)?
-                        .queue(&["pending"])?
-                        .iter()
-                        .any(|i| i.kind == "incident" && i.title == REAUTHORIZE);
-                    if !told {
-                        super::incidents::record(
-                            &realm,
-                            &super::incidents::Incident {
-                                title: REAUTHORIZE,
-                                detail: &format!(
-                                    "{e:#}\n\nThe business's finance shows as unknown until you consent again: airth bank connect --realm {}.",
-                                    realm.name()
-                                ),
-                                agent: None,
-                                routine: None,
-                                action: None,
-                                demote: false,
-                                retry: None,
-                            },
-                        )?;
-                    }
+                    let detail = format!(
+                        "{e:#}\n\nThe business's finance shows as unknown until you consent again: airth bank connect --realm {}.",
+                        realm.name()
+                    );
+                    tell(&realm, REAUTHORIZE, &detail)?;
                     out.push(format!("{}: {REAUTHORIZE}", realm.name()));
+                }
+                // Another refusal: an ordinary incident with Revolut's
+                // message; the last figures stay until a day old.
+                Err(e) if e.downcast_ref::<Refused>().is_some() => {
+                    tell(&realm, REFUSED, &format!("{e:#}"))?;
+                    out.push(format!("{}: {e:#}", realm.name()));
                 }
                 // Revolut down or the network: the last figures stay, and
                 // turn unknown once a day old.
@@ -94,6 +86,30 @@ impl Hub {
         }
         Ok(out)
     }
+}
+
+/// An incident titled `title`, unless one is open already: once, not once
+/// an hour.
+fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
+    let open = Store::of(realm)?
+        .queue(&["pending"])?
+        .iter()
+        .any(|i| i.kind == "incident" && i.title == title);
+    if !open {
+        super::incidents::record(
+            realm,
+            &super::incidents::Incident {
+                title,
+                detail,
+                agent: None,
+                routine: None,
+                action: None,
+                demote: false,
+                retry: None,
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// What the HQ shows of a business's bank: None with no bank connected;
