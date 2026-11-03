@@ -97,28 +97,6 @@ function closePalette() {
   if (prevFocus && prevFocus.focus && document.contains(prevFocus)) prevFocus.focus();
 }
 
-/** Phone-sized windows: the sidebar opens over the page, on demand. */
-const narrow = () => window.matchMedia("(max-width: 760px)").matches;
-
-/** The sidebar hides only on a phone, where it opens over the page. */
-function sidebarHidden() {
-  return narrow();
-}
-
-// Crossing the phone-size boundary: closed on a phone, the owner's choice otherwise.
-window.matchMedia("(max-width: 760px)").addEventListener("change", () => {
-  const root = $("#app");
-  if (root) root.classList.toggle("side-hidden", sidebarHidden());
-});
-
-// On a phone, a tap outside the open sidebar closes it.
-document.addEventListener("click", (e) => {
-  const root = $("#app");
-  if (!narrow() || !root || root.classList.contains("side-hidden")) return;
-  if (e.target.closest && (e.target.closest(".sidebar") || e.target.closest(".side-open"))) return;
-  root.classList.add("side-hidden");
-});
-
 // In the Mac app the page is the title bar: an empty spot of the top strip
 // moves the window, and a double click zooms it, as in other Mac apps.
 const TITLE_BAR = 44;
@@ -136,10 +114,6 @@ document.addEventListener("mousedown", (e) => {
 document.addEventListener("dblclick", (e) => {
   if (onTitleBar(e)) window.ipc.postMessage("zoom");
 });
-
-function toggleSidebar() {
-  if (narrow()) $("#app").classList.toggle("side-hidden");
-}
 
 document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;

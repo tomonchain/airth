@@ -11,10 +11,10 @@ Decision 57 grew a new interface next to the classic one, to replace it at miles
 - **The classic interface is the default page again** (`/`). The new one stays at `/next` for the pages the classic one does not have.
 - **Its sidebar is replaced** by the new interface's icon rail and header bar. The header holds the business switcher, the page's name and the command bar.
 - **The rail has the new interface's entries.** Each opens the classic page where one exists, else the new interface's page:
-  - **Classic pages:** Team → Agents; Routines → Routines; Tasks → Tasks; Calendar → Planning; Business → the business's settings; Settings → the founder's profile and appearance.
-  - **New pages:** HQ, Needs you, Workshop.
-  - **At the top and bottom:** search (⌘K) at the top; the theme toggle and the profile at the bottom.
-- **The classic pages without an entry** (Steering, Documents, Usage, Connectors and skills) stay reachable through search (⌘K) and from the pages that link to them.
+  - **Classic pages:** Team → Agents; Tasks → Tasks; Business → the business's settings; Settings → Connectors and skills, the classic page that leads to permissions, keys and models (`CLAUDE.md`'s Settings).
+  - **New pages:** HQ, Needs you, Workshop. Routines and Calendar too: the classic Routines and Planning pages predate routines as graphs (decision 49) and legal deadlines (decision 66), so they would show a business's routines as none.
+  - **At the top and bottom:** search (⌘K) at the top; the theme toggle and the founder's profile (classic) at the bottom.
+- **The classic pages without an entry** (Steering, Documents, Usage, the classic Routines and Planning) stay reachable through search (⌘K) and from the pages that link to them.
 - **Both interfaces show the same rail and header**, so moving between them does not show.
 - **Sizes and themes are the classic interface's.** The new interface's pages use the same scale and themes (as already merged).
 

@@ -406,11 +406,6 @@ function unauthorized() {
 }
 
 async function boot() {
-  $("#side-close").append(icon("sidebar"));
-  $("#side-open").append(icon("sidebar"));
-  $("#side-close").addEventListener("click", toggleSidebar);
-  $("#side-open").addEventListener("click", toggleSidebar);
-  if (sidebarHidden()) $("#app").classList.add("side-hidden");
   window.addEventListener("hashchange", onRoute);
   if (app.unauthorized) return renderMain();
   try {
