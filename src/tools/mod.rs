@@ -69,6 +69,9 @@ pub struct RealmTools {
     pub allowed: Option<Vec<String>>,
     /// For a routine's run: the routines it may ask for work (decision 41).
     pub delegation: Option<delegate::Delegation>,
+    /// Whether files and commands are offered. A task with no repository
+    /// in its agent's scope has none (decision 64).
+    pub files: bool,
 }
 
 /// What a bot can be given, by name: the realm's integrations, MCP
@@ -111,7 +114,11 @@ pub fn pipeline_tools(integrations: Vec<Integration>) -> Vec<Box<dyn Tool>> {
 pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
     let allowed = realm.allowed;
     let allows = |name: &str| allowed.as_ref().is_none_or(|a| a.iter().any(|n| n == name));
-    let mut tools = default_tools();
+    let mut tools = if realm.files {
+        default_tools()
+    } else {
+        Vec::new()
+    };
     tools.push(Box::new(plan::UpdatePlan { plan: realm.plan }));
     tools.push(Box::new(http::HttpRequest {
         integrations: realm
@@ -446,6 +453,7 @@ mod tests {
             skills_dir: skills.clone(),
             allowed,
             delegation: None,
+            files: true,
         });
         let http = tools
             .iter()

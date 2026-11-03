@@ -395,6 +395,7 @@ pub fn objective(ctx: &Ctx, command: ObjectiveCmd) -> Result<bool> {
                     max_iterations,
                     max_tokens,
                     max_minutes,
+                    max_cost_usd: None,
                 },
                 approval_wait_minutes: wait,
                 enabled: true,

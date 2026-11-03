@@ -21,6 +21,7 @@ impl Hub {
             skills_dir: PathBuf::from("/nonexistent"),
             allowed: None,
             delegation: None,
+            files: true,
         })
         .iter()
         .map(|t| {

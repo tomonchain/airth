@@ -21,6 +21,7 @@ mod pipelines;
 mod retries;
 mod routines;
 mod runs;
+mod tasks;
 
 #[derive(Default)]
 struct Scripted {

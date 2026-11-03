@@ -289,6 +289,7 @@ impl RunOpts {
             max_iterations: None,
             max_tokens: self.max_tokens,
             max_minutes: self.max_minutes,
+            max_cost_usd: None,
         })
     }
 }

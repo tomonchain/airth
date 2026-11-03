@@ -169,6 +169,57 @@ pub fn job(root: &Path, name: &str) -> Result<Job> {
     })
 }
 
+/// What an agent may use in a task (decision 64), from its file's front
+/// matter, comma-separated: the realm's integrations, skills (MCP servers,
+/// catalog skills) and repositories by name. Nothing declared: nothing
+/// beyond read-only web.
+#[derive(Debug, Default, PartialEq)]
+pub struct Scope {
+    pub integrations: Vec<String>,
+    pub skills: Vec<String>,
+    pub repos: Vec<String>,
+}
+
+pub fn scope(root: &Path, name: &str) -> Result<Scope> {
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    let path = format!("{AGENTS}/{name}.md");
+    let file = std::fs::read_to_string(root.join(&path))
+        .with_context(|| format!("no agent {name}: {path} is missing"))?;
+    let front = crate::frontmatter::parse(&file);
+    let list = |key: &str| -> Vec<String> {
+        front
+            .text(key)
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+    Ok(Scope {
+        integrations: list("integrations"),
+        skills: list("skills"),
+        repos: list("repos"),
+    })
+}
+
+/// A task's budget (decision 64): minutes and model cost in dollars, from
+/// `business/profile.md` (`task_max_minutes`, `task_max_cost_usd`), else
+/// 30 minutes and $1.
+pub fn task_budget(root: &Path) -> (u32, f64) {
+    let front = std::fs::read_to_string(root.join(DIR).join(PROFILE))
+        .map(|t| crate::frontmatter::parse(&t))
+        .ok();
+    let field = |key: &str| front.as_ref().and_then(|f| f.text(key));
+    (
+        field("task_max_minutes")
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(30),
+        field("task_max_cost_usd")
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(1.0),
+    )
+}
+
 /// Every agent of the business with its job, by name.
 pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
     migrate(root)?;

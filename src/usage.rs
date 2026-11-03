@@ -163,6 +163,16 @@ pub fn report<Tz: TimeZone>(
 
 /// A run's model calls. Runs from before calls were recorded (or the part of
 /// a run that predates it) count as one call when the run started.
+/// What a run's model calls cost so far, by `prices`; calls to a model
+/// without a known price count nothing.
+pub fn run_cost(state: &State, prices: &Prices) -> f64 {
+    let mut tokens = Tokens::default();
+    for call in &state.usage {
+        tokens.add(call, prices.get(&call.model));
+    }
+    tokens.cost.total()
+}
+
 fn calls(state: &State) -> Vec<Usage> {
     let mut calls = state.usage.clone();
     let input: u64 = calls.iter().map(|u| u.input).sum();

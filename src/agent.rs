@@ -20,6 +20,9 @@ pub struct AgentConfig {
     pub max_tokens: Option<u64>,
     /// Wall-clock time the run may take, approvals included.
     pub max_duration: Option<std::time::Duration>,
+    /// Model cost in dollars the run may reach, counted with the agent's
+    /// prices.
+    pub max_cost_usd: Option<f64>,
     /// When the conversation the model sees grows past this many tokens,
     /// replace it by the model's summary (None: never).
     pub compact_at: Option<u64>,
@@ -36,6 +39,7 @@ impl AgentConfig {
             max_iterations,
             max_tokens: None,
             max_duration: None,
+            max_cost_usd: None,
             compact_at: Some(DEFAULT_COMPACT_AT),
         }
     }
@@ -52,13 +56,16 @@ impl AgentConfig {
             let d = std::time::Duration::from_secs(u64::from(min) * 60);
             self.max_duration = Some(self.max_duration.map_or(d, |m| m.min(d)));
         }
+        if let Some(n) = budget.max_cost_usd {
+            self.max_cost_usd = Some(self.max_cost_usd.map_or(n, |m| m.min(n)));
+        }
         self
     }
 }
 
 /// An execution budget the owner sets on a run or an objective. Unset limits
 /// fall back to the client's defaults.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Budget {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,6 +74,9 @@ pub struct Budget {
     pub max_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_minutes: Option<u32>,
+    /// Model cost in dollars, by list prices (decision 64).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_cost_usd: Option<f64>,
 }
 
 impl Budget {
@@ -81,6 +91,9 @@ impl Budget {
         }
         if let Some(n) = self.max_tokens {
             parts.push(format!("{n} tokens"));
+        }
+        if let Some(n) = self.max_cost_usd {
+            parts.push(format!("${n:.2}"));
         }
         if let Some(n) = self.max_minutes {
             parts.push(format!("{n} minutes"));
@@ -116,6 +129,8 @@ pub struct Agent<'a> {
     observer: &'a mut dyn Observer,
     cancel: CancelToken,
     context: Option<String>,
+    /// To count a cost budget with.
+    prices: crate::prices::Prices,
 }
 
 impl<'a> Agent<'a> {
@@ -133,7 +148,15 @@ impl<'a> Agent<'a> {
             observer,
             cancel,
             context: None,
+            prices: crate::prices::Prices::default(),
         }
+    }
+
+    /// The prices a cost budget is counted with (the owner's, not only the
+    /// list's).
+    pub fn with_prices(mut self, prices: crate::prices::Prices) -> Self {
+        self.prices = prices;
+        self
     }
 
     /// Tell the agent this about its realm, instead of the plain-workspace
@@ -170,6 +193,14 @@ impl<'a> Agent<'a> {
             && used >= max
         {
             return Some(format!("used its token budget ({used} of {max})"));
+        }
+        if let Some(max) = &c.max_cost_usd {
+            let spent = crate::usage::run_cost(state, &self.prices);
+            if spent >= *max {
+                return Some(format!(
+                    "reached its cost budget (${spent:.2} of ${max:.2})"
+                ));
+            }
         }
         if let Some(max) = c.max_duration
             && started.elapsed() >= max
@@ -1003,5 +1034,63 @@ mod tests {
         assert_eq!(state.usage[1].cache_read, 450);
         assert_eq!(state.usage[1].model, "scripted");
         assert!(state.report.unwrap().contains("token budget"));
+    }
+
+    /// Decision 64: a task past its model cost stops, saying so; the cost is
+    /// counted with the prices it was given.
+    #[test]
+    fn stops_when_the_cost_budget_is_spent() {
+        let dir = tempfile::tempdir().unwrap();
+        let costly = || ModelResponse {
+            input_tokens: 600,
+            output_tokens: 0,
+            ..resp(
+                vec![ContentBlock::ToolUse {
+                    id: "x".into(),
+                    name: "list_directory".into(),
+                    input: json!({}),
+                }],
+                StopReason::ToolUse,
+            )
+        };
+        let model = Scripted {
+            responses: RefCell::new(vec![costly(), costly(), costly()]),
+            seen: RefCell::new(vec![]),
+        };
+        let runtime = Runtime::new(
+            default_tools(),
+            PermissionGate::new(Policy::default(), Box::new(Approve)),
+            Workspace::new(dir.path()).unwrap(),
+            CancelToken::default(),
+        );
+        let mut observer = NoObserver;
+        let budget = Budget {
+            max_cost_usd: Some(1.0),
+            ..Budget::default()
+        };
+        // $1,000 per million input tokens: $0.60 a call.
+        let price = crate::prices::Price {
+            input: 1000.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        };
+        let prices = crate::prices::Prices::with([("scripted".to_string(), price)].into());
+        let mut agent = Agent::new(
+            &model,
+            runtime,
+            AgentConfig::new(10).within(&budget),
+            &mut observer,
+            CancelToken::default(),
+        )
+        .with_prices(prices);
+        let mut state = State::new("x", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.status, Status::Stopped);
+        assert_eq!(state.iterations, 2);
+        assert_eq!(
+            state.report.as_deref(),
+            Some("Stopped: reached its cost budget ($1.20 of $1.00).")
+        );
     }
 }

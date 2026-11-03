@@ -217,6 +217,10 @@ pub struct State {
     /// The objective that started this run, when it started on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
+    /// A task's agent (decision 64): the founder's order, worked as this
+    /// agent of the business, within its scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     /// For a bot's run: the realm's extensions it may use (see `RealmTools`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
@@ -269,6 +273,7 @@ impl State {
             grants: Vec::new(),
             budget: Budget::default(),
             origin: None,
+            agent: None,
             tools: None,
             tier: None,
             context: None,
