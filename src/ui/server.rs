@@ -299,6 +299,11 @@ pub(super) fn run_scheduler(runner: Runner) {
             Err(e) => eprintln!("delayed actions: {e:#}"),
         }
         // Reports nobody looked at in a week (decision 59).
+        // Connected banks, at most once an hour (decision 54).
+        match runner.hub.refresh_finance(chrono::Utc::now()) {
+            Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
+            Err(e) => eprintln!("finance: {e:#}"),
+        }
         match runner.hub.expire_reports(chrono::Utc::now()) {
             Ok(gone) => gone
                 .iter()

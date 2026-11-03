@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 mod autonomy;
 mod changes;
+mod finance;
 mod founder;
 mod gate;
 mod models;
