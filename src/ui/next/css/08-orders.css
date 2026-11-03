@@ -2,9 +2,9 @@
    pages, and the card saying who takes it. */
 
 .top .order { position: relative; flex: 1 1 320px; max-width: 560px; display: flex; gap: 8px; align-items: center; }
-.top .order input { flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: var(--fs-body); }
+.top .order input { flex: 1 1 auto; min-width: 0; min-height: 34px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: var(--fs-body); }
 .top .order input::placeholder { color: var(--text-5); }
-.top .order .primary { min-height: 40px; padding: 0 16px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; }
+.top .order .primary { min-height: 34px; padding: 0 16px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; }
 .top .order .primary[disabled] { opacity: 0.6; cursor: default; }
 .order-card { position: absolute; z-index: 20; top: calc(100% + 8px); left: 0; right: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-tile); border: 1px solid var(--line-strong); background: var(--raised); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
 .order-card p { margin: 0; font-size: var(--fs-body); color: var(--text-2); }

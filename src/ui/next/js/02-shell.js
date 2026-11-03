@@ -51,16 +51,36 @@ function renderTop() {
     h("a", { href: "#/hq", role: "menuitem", "aria-current": next.route.page === "hq" ? "page" : null }, h("span", { class: "mark", "aria-hidden": "true" }, "A"), "Airth HQ"),
     next.realms.filter((r) => !r.archived).map((r) =>
       h("a", { href: pageHash("needs-you", r.name), role: "menuitem", "aria-current": inBusiness && r.name === next.realm ? "page" : null },
-        h("span", { class: "mark", "aria-hidden": "true" }, initial(r.name)), r.name)));
+        h("span", { class: "mark", "aria-hidden": "true" }, initial(r.name)), r.name)),
+    // Creating a business starts where businesses are chosen, as in the
+    // classic interface.
+    h("div", { class: "menu-sep", role: "separator" }),
+    h("a", { href: "#/new-business", role: "menuitem", "aria-current": next.route.page === "new-business" ? "page" : null },
+      h("span", { class: "mark add", "aria-hidden": "true", svg: icon("plus", 14, 2.4) }), "New business"));
   top.replaceChildren(
     h("div", { class: "top-left" },
       h("div", { class: "anchor" }, switcher, menu),
       h("span", { class: "where" }, inBusiness ? (page ? page.title : "") : "All businesses")),
-    inBusiness && next.route.page !== "tasks" && orderBox(),
-    next.route.page === "hq"
-      ? h("a", { class: "primary", href: "#/new-business" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
-      : null);
+    inBusiness && next.route.page !== "tasks" && orderBox());
 }
+
+// In the Mac app the page is the title bar (as in the classic interface): an
+// empty spot of the header moves the window, a double click zooms it.
+const TITLE_BAR_CONTROLS = "button, a, input, textarea, select, label, [role=button], [role=menu]";
+function onTitleBar(e) {
+  if (document.documentElement.dataset.shell !== "mac" || !window.ipc) return false;
+  const top = $("#top");
+  if (e.button !== 0 || !top || !top.contains(e.target)) return false;
+  return !(e.target.closest && e.target.closest(TITLE_BAR_CONTROLS));
+}
+document.addEventListener("mousedown", (e) => {
+  if (!onTitleBar(e)) return;
+  e.preventDefault(); // no text selection from a title bar press
+  if (e.detail === 1) window.ipc.postMessage("drag");
+});
+document.addEventListener("dblclick", (e) => {
+  if (onTitleBar(e)) window.ipc.postMessage("zoom");
+});
 
 function renderRail() {
   const link = (p) => {
