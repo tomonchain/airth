@@ -37,6 +37,8 @@ pub(crate) mod incidents;
 mod models;
 mod objectives;
 mod pipelines;
+#[cfg(test)]
+pub(crate) use pipelines::TEST_FEEDS;
 mod repos;
 mod retries;
 mod routines;
