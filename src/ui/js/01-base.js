@@ -42,6 +42,12 @@ if (typeof Element !== "undefined") {
 const TB = (d) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
 const ICON = {
+  // The rail's (decision 71), as in the new interface.
+  hq: TB("M3 10.5 12 3l9 7.5V21H3z"),
+  team: TB("M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15.5 14.2c2.9.4 5 2.8 5 5.8M12 8a3 3 0 1 1-6 0a3 3 0 0 1 6 0M19.5 9a2.5 2.5 0 1 1-5 0a2.5 2.5 0 0 1 5 0"),
+  business: TB("M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M3 21h18M8 7h4M8 11h4M8 15h4"),
+  workshop: TB("M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"),
+  profile: TB("M16 8a4 4 0 1 1-8 0a4 4 0 0 1 8 0M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"),
   send: TB("M12 5v14m6-8l-6-6m-6 6l6-6"),
   mic: TB("M9 5a3 3 0 0 1 3-3a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3a3 3 0 0 1-3-3zM5 10a7 7 0 0 0 14 0M8 21h8m-4-4v4"),
   stop: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M17 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3"/></svg>',
@@ -346,9 +352,6 @@ function welcomed() {
 }
 
 async function onRoute() {
-  // On a phone, going somewhere closes the sidebar and the More sheet.
-  if (narrow()) $("#app").classList.add("side-hidden");
-  closeMoreSheet();
   const before = app.route;
   app.route = parseRoute();
   if (docsUi.quick) { docsUi.quick.remove(); docsUi.quick = null; }

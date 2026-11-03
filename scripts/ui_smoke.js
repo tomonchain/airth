@@ -48,7 +48,7 @@ function find(root, sel, first) {
   return out;
 }
 const body = new FakeNode("body");
-for (const id of ["app", "main", "realm-switch", "side-nav", "tabbar", "sidebar-foot", "side-close", "side-open"]) {
+for (const id of ["app", "main", "realm-switch", "side-nav", "sidebar-foot", "top-title"]) {
   const n = new FakeNode("div"); n.attrs.id = id; body.append(n);
 }
 const storage = { getItem: () => null, setItem() {} };
@@ -158,7 +158,7 @@ const fixtures = {
 const jsDir = path.join(__dirname, "..", "src", "ui", "js");
 const src = fs.readdirSync(jsDir).filter((f) => f.endsWith(".js")).sort()
   .map((f) => fs.readFileSync(path.join(jsDir, f), "utf8")).join("").replace(/\nboot\(\);\s*$/, "\n");
-const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderTabbar, openMoreSheet, closeMoreSheet, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
+const exportsCode = `\n;globalThis.__app = { app, skillUi, routineUi, welcomeUi, WELCOME_STEPS, connUi, transcriptNodes, sideNodes, approvalCard, renderRunList, renderNav, renderFoot, renderRealmSwitch, renderMain, renderRunShell, renderRun,
   setApi: (f) => { api = f; } };`;
 (0, eval)(src + exportsCode);
 const A = globalThis.__app;
@@ -182,15 +182,17 @@ function check(label, nodes) {
 const main = body.querySelector("#main");
 (async () => {
   const live = { state, live: false, pending: null, checks_required: false, title: null, version: 0 };
-  A.renderNav(); check("nav", body.querySelector("#side-nav"));
-  A.renderTabbar(); check("tab bar", body.querySelector("#tabbar"));
-  if (body.querySelector("#tabbar").children.length !== 5) problems.push("tab bar: five tabs expected");
-  A.openMoreSheet();
-  const more = body.querySelector("#more-sheet");
-  if (!more || !more.textContent.includes("Routines") || !more.textContent.includes("perso")) problems.push("more sheet: incomplete");
-  else check("more sheet", more);
-  A.closeMoreSheet();
-  if (body.querySelector("#more-sheet")) problems.push("more sheet: not closed");
+  A.renderNav(); check("rail", body.querySelector("#side-nav"));
+  // Decision 71: the new interface's entries, each to the classic page where
+  // one exists, else the new interface's.
+  {
+    const links = {};
+    const walk = (n) => { if (n.tag === "a") links[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
+    walk(body.querySelector("#side-nav"));
+    const want = { HQ: "/next#/hq", Team: "/agents", Routines: "/routines", Tasks: "/tasks", Calendar: "/calendar", Business: "/settings", Workshop: "/next#/workshop", Settings: "/skills", "Your profile": "#/owner" };
+    for (const [label, end] of Object.entries(want)) if (!(links[label] || "").endsWith(end)) problems.push(`rail: ${label} goes to ${links[label]}, not …${end}`);
+    if (!(links["Needs you"] || "").startsWith("/next#/b/")) problems.push(`rail: Needs you goes to ${links["Needs you"]}`);
+  }
   A.renderFoot(); check("foot", body.querySelector("#sidebar-foot"));
   A.renderRealmSwitch(); check("realm switch", body.querySelector("#realm-switch"));
   A.app.route = { view: "run", realm: "acme", id: state.id };

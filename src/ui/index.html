@@ -16,19 +16,14 @@
 </head>
 <body>
 <div id="app" class="app">
-  <aside class="sidebar">
-    <div class="side-top">
-      <div class="realm-switch" id="realm-switch"></div>
-      <button class="icon-action" id="side-close" type="button" title="Close the menu" aria-label="Close the menu"></button>
-    </div>
-    <nav class="side-nav" id="side-nav" aria-label="Airth"></nav>
-    <div class="sidebar-foot" id="sidebar-foot"></div>
-  </aside>
-  <button class="icon-action side-open" id="side-open" type="button" title="Menu" aria-label="Open the menu"></button>
-
+  <header class="topbar">
+    <div class="realm-switch" id="realm-switch"></div>
+    <span class="top-title" id="top-title"></span>
+    <div class="top-right" id="sidebar-foot"></div>
+  </header>
+  <nav class="rail" id="side-nav" aria-label="Airth"></nav>
   <main class="main" id="main"></main>
 </div>
-<nav class="tabbar" id="tabbar" aria-label="Sections"></nav>
 <script src="/app.js"></script>
 </body>
 </html>

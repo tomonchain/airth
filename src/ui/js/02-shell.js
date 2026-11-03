@@ -5,93 +5,43 @@ let realmMenuOpen = false;
 function renderSidebar() {
   renderRealmSwitch();
   renderNav();
-  renderTabbar();
   renderRunList();
   renderFoot();
   updateTitle();
 }
 
-/** The business's six sections (decision 37), then what it is made of. */
+/** The rail (decision 71): the new interface's entries, each opening the
+    classic page where one exists, else the new interface's. */
 function renderNav() {
   const v = app.route.view;
   const r = app.realm && enc(app.realm);
   const waiting = (app.realms.find((x) => x.name === app.realm) || {}).needs_approval || 0;
+  const entry = (href, ic, label, active, extra) => h("a", { class: "rail-link" + (active ? " active" : ""), href: href || "#/",
+      title: label, "aria-label": extra ? `${label}, ${waiting} waiting` : label, "aria-current": active ? "page" : null,
+      "aria-disabled": href ? null : "true" },
+    icon(ic), extra);
   $("#side-nav").replaceChildren(
-    h("button", { class: "nav-link", type: "button", onclick: openPalette, title: "Search tasks, pages, businesses and actions" },
-      icon("search"), h("span", { class: "grow" }, "Search"), h("kbd", { class: "nav-kbd" }, modKey + "K")),
-    navLink(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "count" }, String(waiting))),
-    navLink(r ? `#/r/${r}/routines` : null, "refresh", "Routines", v === "routines"),
-    navLink(r ? `#/r/${r}/planning` : null, "calendar", "Planning", v === "planning"),
-    navLink(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run"),
-    navLink(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
-    navLink("#/usage", "chart", "Usage", v === "usage"),
-    h("div", { class: "section-label" }, "Business"),
-    navLink(r ? `#/r/${r}/documents` : null, "folder", "Documents", v === "documents"),
-    navLink(r ? `#/r/${r}/skills` : null, "plug", "Connectors & skills", v === "skills"),
+    h("button", { class: "rail-link", type: "button", onclick: openPalette, title: `Search (${modKey}K)`, "aria-label": "Search" }, icon("search")),
+    entry("/next#/hq", "hq", "HQ", false),
+    entry(r && `/next#/b/${r}/needs-you`, "inbox", "Needs you", false, waiting > 0 && h("span", { class: "rail-dot", "aria-hidden": "true" })),
+    entry(r && `#/r/${r}/agents`, "team", "Team", v === "agents"),
+    // The classic Routines and Planning pages predate routines as graphs
+    // (decision 49) and legal deadlines: the new pages show them.
+    entry(r && `/next#/b/${r}/routines`, "refresh", "Routines", false),
+    entry(r && `#/r/${r}/tasks`, "listCheck", "Tasks", ["tasks", "run", "new"].includes(v)),
+    entry(r && `/next#/b/${r}/calendar`, "calendar", "Calendar", false),
+    entry(r && `#/r/${r}/settings`, "business", "Business", v === "settings"),
+    h("div", { class: "rail-gap" }),
+    entry("/next#/workshop", "workshop", "Workshop", false),
+    entry(r && `#/r/${r}/skills`, "gear", "Settings", v === "skills"),
+    themeToggle(),
+    entry("#/owner", "profile", "Your profile", v === "owner"),
   );
 }
 
-/** On a phone, the sections the thumb needs most, at the bottom; More opens the rest. */
-function renderTabbar() {
-  const bar = $("#tabbar");
-  if (!bar) return;
-  const v = app.route.view;
-  const r = app.realm && enc(app.realm);
-  const waiting = (app.realms.find((x) => x.name === app.realm) || {}).needs_approval || 0;
-  const tab = (hash, ic, label, active, extra) => h("button", { class: "tab-item" + (active ? " on" : ""), type: "button", disabled: !hash,
-    "aria-current": active ? "page" : null, onclick: () => hash && go(hash) }, icon(ic), h("span", null, label), extra);
-  const rest = ["routines", "usage", "documents", "skills", "settings", "owner"].includes(v);
-  bar.replaceChildren(
-    tab(r ? `#/r/${r}/steering` : null, "compass", "Steering", v === "steering", waiting > 0 && h("span", { class: "tab-count" }, String(waiting))),
-    tab(r ? `#/r/${r}/tasks` : null, "listCheck", "Tasks", v === "tasks" || v === "run" || v === "new"),
-    tab(r ? `#/r/${r}/planning` : null, "calendar", "Planning", v === "planning"),
-    tab(r ? `#/r/${r}/agents` : null, "brain", "Agents", v === "agents"),
-    h("button", { class: "tab-item" + (rest ? " on" : ""), type: "button", "aria-haspopup": "dialog", onclick: (e) => { e.stopPropagation(); openMoreSheet(); } }, icon("dots"), h("span", null, "More")));
-}
-
-/** On a phone, More: a sheet from the bottom with what the tab bar leaves out. */
-function openMoreSheet() {
-  closeMoreSheet();
-  const r = app.realm && enc(app.realm);
-  const v = app.route.view;
-  const to = (hash) => () => { closeMoreSheet(); go(hash); };
-  const row = (hash, ic, label, active) => h("button", { class: "more-row" + (active ? " on" : ""), type: "button", disabled: !hash, onclick: hash ? to(hash) : null },
-    icon(ic), h("span", { class: "grow" }, label), h("span", { class: "more-chev", "aria-hidden": "true" }, "›"));
-  const others = app.realms.filter((x) => !x.archived && x.name !== app.realm);
-  const current = app.realms.find((x) => x.name === app.realm);
-  const dark = window.airthTheme && window.airthTheme.current() === "dark";
-  const sheet = h("div", { class: "more-sheet", role: "dialog", "aria-modal": "true", "aria-label": "More" },
-    h("div", { class: "more-grip", "aria-hidden": "true" }),
-    h("div", { class: "more-business" },
-      pictureMark("realm-mark", `${realmPath(app.realm || "")}/image`, current && current.image, app.realm),
-      h("div", { class: "grow" }, h("div", { class: "strong" }, app.realm || "No business"), h("div", { class: "muted small" }, "Business")),
-      r && h("button", { class: "icon-action", type: "button", "aria-label": "Business settings", onclick: to(`#/r/${r}/settings`) }, icon("gear"))),
-    others.length > 0 && h("div", { class: "more-group" },
-      h("div", { class: "more-label" }, "Switch to"),
-      others.map((x) => h("button", { class: "more-row", type: "button", onclick: to(`#/r/${enc(x.name)}/steering`) },
-        pictureMark("realm-mark small", `${realmPath(x.name)}/image`, x.image, x.name), h("span", { class: "grow" }, x.name),
-        x.needs_approval > 0 && h("span", { class: "tab-count static" }, String(x.needs_approval))))),
-    h("div", { class: "more-group" },
-      row(r && `#/r/${r}/routines`, "refresh", "Routines", v === "routines"),
-      row("#/usage", "chart", "Usage", v === "usage"),
-      row(r && `#/r/${r}/documents`, "folder", "Documents", v === "documents"),
-      row(r && `#/r/${r}/skills`, "plug", "Connectors & skills", v === "skills")),
-    h("div", { class: "more-group" },
-      row("#/owner", "notes", (app.ownerName || "").trim() || "Your profile", v === "owner"),
-      row("#/realms/new", "plus", "New business", v === "new-realm"),
-      h("button", { class: "more-row", type: "button", onclick: () => { closeMoreSheet(); openPalette(); } }, icon("search"), h("span", { class: "grow" }, "Search")),
-      h("button", { class: "more-row", type: "button", onclick: (e) => { window.airthTheme && window.airthTheme.set(dark ? "light" : "dark", e); closeMoreSheet(); renderFoot(); } },
-        icon(dark ? "sun" : "moon"), h("span", { class: "grow" }, dark ? "Light mode" : "Dark mode"))));
-  const back = h("div", { class: "more-back", id: "more-sheet", onclick: (e) => { if (e.target === back) closeMoreSheet(); } }, sheet);
-  document.body.append(back);
-}
-
-function closeMoreSheet() {
-  const el = $("#more-sheet");
-  if (el) el.remove();
-}
-
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMoreSheet(); });
+/** The page's name in the header, as the rail calls it. */
+const VIEW_TITLES = { agents: "Team", routines: "Routines", tasks: "Tasks", run: "Tasks", new: "Tasks", planning: "Calendar", settings: "Business",
+  skills: "Settings", owner: "Your profile", steering: "Steering", usage: "Usage", documents: "Documents", "new-realm": "New business", welcome: "Welcome" };
 
 /** Which date group a run falls in, ChatGPT style. */
 function dateGroup(iso) {
@@ -241,28 +191,15 @@ function editInPlace(el, id, current) {
   input.addEventListener("blur", () => finish(true));
 }
 
+/** The header's right side: an update to install, and what is missing. */
 function renderFoot() {
   const foot = $("#sidebar-foot");
   const d = app.realmDetail;
-  const name = (app.ownerName || "").trim();
   foot.replaceChildren(
     updateWidget(),
     d && !d.model && h("button", { class: "side-warn", type: "button", title: d.model_error || "", onclick: () => go(`#/r/${enc(app.realm)}/settings/models`) }, "⚠ No model configured"),
-    app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the business on this platform." }, "⚠ No command sandbox"),
-    // The new interface grows next to this one (decision 57).
-    h("a", { class: "side-next", href: "/next" }, "The new interface"),
-    h("div", { class: "me" },
-      h("button", { class: "me-btn" + (app.route.view === "owner" ? " active" : ""), type: "button", onclick: () => go("#/owner") },
-        pictureMark("avatar", "owner/avatar", app.ownerAvatar, name),
-        h("span", { class: "me-name" }, name || "Your profile")),
-      themeToggle(),
-      app.realm && h("button", { class: "icon-action" + (app.route.view === "settings" ? " active" : ""), type: "button", title: "Business settings", "aria-label": "Business settings",
-        onclick: () => go(`#/r/${enc(app.realm)}/settings`) }, icon("gear"))));
-}
-
-function navLink(hash, iconName, label, active, extra) {
-  return h("button", { class: "nav-link" + (active ? " active" : ""), type: "button", disabled: !hash, onclick: () => hash && go(hash) },
-    icon(iconName), h("span", { class: "grow" }, label), extra);
+    app.info && !app.info.sandbox && h("div", { class: "side-warn", title: "Commands are not confined to the business on this platform." }, "⚠ No command sandbox"));
+  $("#top-title").textContent = VIEW_TITLES[app.route.view] || "";
 }
 
 function changeBadge(r) {
