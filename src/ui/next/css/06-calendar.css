@@ -31,6 +31,8 @@
 .calendar .deadlines .late-row .sub { color: var(--text-3); }
 .calendar .deadlines .late-row .sub.warn { color: var(--warn); }
 .calendar .deadlines a.sub { color: var(--accent); }
+.calendar .slot.deadline { box-shadow: 0 0 0 1px var(--warn); }
+.calendar .slot.deadline .time { color: var(--warn); }
 
 @media (max-width: 720px) {
   .calendar .week { grid-template-columns: 1fr; overflow-x: visible; }

@@ -313,6 +313,11 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
             Err(e) => eprintln!("finance: {e:#}"),
         }
+        // Legal deadlines: their reminders, then overdue (decision 66).
+        match runner.hub.remind_deadlines(chrono::Utc::now()) {
+            Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
+            Err(e) => eprintln!("legal deadlines: {e:#}"),
+        }
         match runner.hub.expire_reports(chrono::Utc::now()) {
             Ok(gone) => gone
                 .iter()

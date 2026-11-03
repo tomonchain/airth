@@ -61,14 +61,33 @@ impl App {
         let mut page = week(&routines, now);
         page["late"] = late.into();
         let today = now.with_timezone(&Local).date_naive();
-        page["deadlines"] = deadlines(&realm.root()?, today);
+        let legal = deadlines(&realm.root()?, today, &store.filings()?);
+        // A deadline within the week shows on its day too.
+        for (d, day) in page["days"]
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let date = (today + Duration::days(d as i64)).to_string();
+            let due = legal["items"].as_array().into_iter().flatten();
+            day["deadlines"] = due
+                .filter(|i| i["date"] == date.as_str())
+                .map(|i| i["title"].clone())
+                .collect();
+        }
+        page["deadlines"] = legal;
         Ok(page)
     }
 }
 
 /// The legal deadlines due over the next twelve months (decision 66), or,
 /// for each rule, why its date is unknown: the profile's fields it needs.
-fn deadlines(root: &std::path::Path, today: chrono::NaiveDate) -> Value {
+fn deadlines(
+    root: &std::path::Path,
+    today: chrono::NaiveDate,
+    filed: &[(String, String)],
+) -> Value {
     let profile = std::fs::read_to_string(root.join("business/profile.md")).unwrap_or_default();
     let profile = crate::frontmatter::parse(&profile);
     let (Some(country), Some(form)) = (profile.text("country"), profile.text("legal_form")) else {
@@ -108,14 +127,24 @@ fn deadlines(root: &std::path::Path, today: chrono::NaiveDate) -> Value {
     let year = today + Duration::days(365);
     let items: Vec<Value> = crate::legal::deadlines(&company, &rules, year)
         .into_iter()
-        .filter(|d| d.due >= today && d.due <= year)
         .map(|d| {
+            let done = filed
+                .iter()
+                .any(|(r, p)| r == d.rule && *p == d.period_end.to_string());
+            (d, done)
+        })
+        // Passed: shown while unfiled, for as long as Needs you holds it.
+        .filter(|(d, done)| {
+            d.due <= year && (d.due >= today || !done && (today - d.due).num_days() <= 30)
+        })
+        .map(|(d, filed)| {
             json!({
                 "title": d.title,
                 "authority": d.authority,
                 "date": d.due.to_string(),
                 "due": d.due.format("%a %-d %b %Y").to_string(),
                 "days_left": (d.due - today).num_days(),
+                "filed": filed,
                 "period_end": d.period_end.format("%-d %b %Y").to_string(),
                 "source": d.source.iter().find(|s| s.starts_with("https://")),
             })
@@ -240,7 +269,7 @@ mod tests {
             |text: &str| std::fs::write(root.path().join("business/profile.md"), text).unwrap();
         profile("---\ncountry: GB\nlegal_form: ltd\nincorporated_on: TODO\n---\n");
         let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
-        let unknown = deadlines(root.path(), today);
+        let unknown = deadlines(root.path(), today, &[]);
         assert_eq!(unknown["items"].as_array().unwrap().len(), 4);
         assert_eq!(
             unknown["items"][0]["unknown"],
@@ -249,7 +278,7 @@ mod tests {
         profile(
             "---\ncountry: GB\nlegal_form: ltd\nincorporated_on: 2025-11-07\nfiscal_year_end: 11-30\n---\n",
         );
-        let known = deadlines(root.path(), today);
+        let known = deadlines(root.path(), today, &[]);
         let items = known["items"].as_array().unwrap();
         assert_eq!(
             (
@@ -270,17 +299,23 @@ mod tests {
                 .iter()
                 .any(|i| i["title"] == "Annual accounts" && i["date"] == "2027-08-07")
         );
-        let later = deadlines(
-            root.path(),
-            chrono::NaiveDate::from_ymd_opt(2026, 11, 21).unwrap(),
-        );
+        // Passed: shown while unfiled, gone once filed.
+        let day_after = chrono::NaiveDate::from_ymd_opt(2026, 11, 21).unwrap();
+        let unfiled = deadlines(root.path(), day_after, &[]);
+        assert_eq!(unfiled["items"][0]["date"], "2026-11-20");
+        assert_eq!(unfiled["items"][0]["days_left"], -1);
+        let filed = [(
+            "confirmation-statement".to_string(),
+            "2026-11-06".to_string(),
+        )];
+        let later = deadlines(root.path(), day_after, &filed);
         assert_ne!(
             later["items"][0]["date"], "2026-11-20",
-            "a passed date is not next"
+            "filed, a passed date goes"
         );
         profile("---\ncountry: FR\nlegal_form: sas\n---\n");
         assert_eq!(
-            deadlines(root.path(), today)["note"],
+            deadlines(root.path(), today, &[])["note"],
             "No legal calendar yet for this country and legal form (FR, sas)."
         );
     }
