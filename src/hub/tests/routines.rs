@@ -558,3 +558,64 @@ fn an_ambiguous_failure_asks_first_and_what_commits_is_never_retried() {
     assert!(format!("{e:#}").contains("offers no retry"), "{e:#}");
     assert_eq!(paths.lock().unwrap().len(), 1);
 }
+
+/// Decision 63: a post link from the founder runs the business's reply
+/// routine on that post, the rest of the message as their angle; a business
+/// without one, or a post too thin to answer, says why and drafts nothing.
+#[test]
+fn a_post_link_runs_the_reply_routine() {
+    let link = "https://x.com/jack/status/2026";
+    let oembed = |text: &str| {
+        json!({"url": link, "author_name": "jack",
+            "html": format!("<blockquote><p>{text}</p>&mdash; jack <a href=\"x\">November 3, 2026</a></blockquote>")})
+        .to_string()
+    };
+    let f = fixture();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let e = hub
+        .reply_to_post(&f.realm, &format!("{link} push back"))
+        .unwrap_err();
+    assert!(format!("{e:#}").contains("no routine for replies"), "{e:#}");
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "Reply.").unwrap();
+    std::fs::write(
+        root.join("routines/replies.json"),
+        json!({"agent": "writer", "trigger": {"telegram": "x_post"}, "blocks": [
+            {"id": "post", "type": "read", "source": "x_post"},
+            {"id": "ok", "type": "approval", "show": "summary"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let url = crate::routine::x_post::oembed_url(link);
+    crate::hub::pipelines::TEST_FEEDS.lock().unwrap().insert(
+        url.clone(),
+        oembed("Staking yields fell to 2.8% this week and withdrawals doubled."),
+    );
+    hub.reply_to_post(
+        &f.realm,
+        "https://twitter.com/jack/status/2026?s=46 push back on the yield claim",
+    )
+    .unwrap();
+    let items = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].routine.as_deref(), Some("replies"));
+    assert_eq!(items[0].args["link"], link);
+    assert_eq!(items[0].args["source_id"], link);
+    assert_eq!(
+        items[0].args["founder_angle"],
+        "push back on the yield claim"
+    );
+    crate::hub::pipelines::TEST_FEEDS
+        .lock()
+        .unwrap()
+        .insert(url, oembed("gm https://t.co/abc"));
+    let e = hub.reply_to_post(&f.realm, link).unwrap_err();
+    assert!(
+        format!("{e:#}").contains("not drafted: the post is mostly a link or a quoted post"),
+        "{e:#}"
+    );
+    assert!(hub.reply_to_post(&f.realm, "no link at all").is_err());
+}

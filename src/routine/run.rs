@@ -24,6 +24,9 @@ use std::time::Instant;
 
 /// Where an item keeps the id of what it was read from.
 pub(super) const SOURCE: &str = "source_id";
+/// What a post the founder sent starts its routine with (decision 63).
+pub const POST_LINK: &str = "post_link";
+pub const ANGLE: &str = "angle";
 /// Set on an item the founder approved.
 const APPROVED: &str = "approved_by_founder";
 
@@ -183,7 +186,13 @@ pub struct Dry<'a, 'b> {
 /// gave, with the item as the founder left it.
 pub enum Start {
     Trigger,
-    After { block: String, item: Item },
+    /// Started by an event that brings its item: a post the founder sent
+    /// (decision 63).
+    Event(Item),
+    After {
+        block: String,
+        item: Item,
+    },
 }
 
 /// What does a real run's acts: it gets the action, its fields, the act's
@@ -261,6 +270,7 @@ pub fn run(
     let resumed = matches!(start, Start::After { .. });
     match start {
         Start::Trigger => inbox[0].push(Item::new()),
+        Start::Event(item) => inbox[0].push(item),
         Start::After { block, item } => {
             let at = graph
                 .blocks
@@ -310,6 +320,23 @@ pub fn run(
                     field_text(&week, "week")
                 ));
                 (vec![week], Vec::new())
+            }
+            Kind::Read { source, .. } if source == "x_post" => {
+                // The post the founder sent, through X's oEmbed; too thin to
+                // answer stops the run, said, before anything is drafted.
+                let mut read = Vec::new();
+                for it in &items {
+                    let link = super::x_post::link_in(&field_text(it, POST_LINK))
+                        .context("no post link to read")?;
+                    let fetched = (dry.io.fetch)(&super::x_post::oembed_url(&link))?;
+                    let mut post =
+                        super::x_post::item(&fetched.body, &link, &field_text(it, ANGLE))?;
+                    let id = field_text(&post, "link");
+                    post.insert(SOURCE.into(), id.into());
+                    lines.push(format!("the post {}", field_text(&post, "link")));
+                    read.push(post);
+                }
+                (read, Vec::new())
             }
             Kind::Read {
                 source,
