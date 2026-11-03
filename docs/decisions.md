@@ -212,7 +212,7 @@ The HQ never adds up figures across businesses. It shows one section per busines
 Open points, not decided here:
 
 - the `get_vitals` schema: the shape of each value, its unit, when it was measured, and what Airth does when the server is down or answers late;
-- how a run's activity sentence is produced: an AI block (a prompt, a schema and a journal entry, like any model call) or a template filled from the run's record.
+- ~~how a run's activity sentence is produced~~ **Closed** (founder, 3 November 2026): by code, from the run's record (routine, what each block read, kept, sent to the founder and did, or where it failed), never by a model. The sentence is rebuilt from that record when the HQ shows it, so it never says more than the record.
 
 *Why:* the founder runs several companies with separate legal and financial lives; a total across them would mean nothing and would mix what decision 42 keeps apart. A few signals per business, highlighted only when out of range, show where to look in a glance. Vitals come from the business's own server because each business measures different things, and Airth must not hold code specific to one of them. Counting a missing figure as unknown rather than failed keeps a business without a bank or a measurable goal from looking at risk for the wrong reason.
 

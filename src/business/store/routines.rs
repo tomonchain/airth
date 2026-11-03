@@ -50,6 +50,17 @@ impl Store {
         })
     }
 
+    /// The latest runs, newest first: routine and run, by when their last
+    /// block ran.
+    pub fn latest_runs(&self, limit: usize) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT routine, run FROM routine_blocks GROUP BY routine, run
+             ORDER BY MAX(started_at) DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The blocks of `routine`'s run `run`, in the order they ran.
     pub fn run_blocks(&self, routine: &str, run: &str) -> Result<Vec<BlockRow>> {
         let mut stmt = self.conn.prepare(
