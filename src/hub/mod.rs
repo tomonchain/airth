@@ -37,6 +37,7 @@ pub(crate) mod finance;
 pub(crate) mod incidents;
 mod models;
 mod objectives;
+pub(crate) mod orders;
 mod pipelines;
 #[cfg(test)]
 pub(crate) use pipelines::TEST_FEEDS;

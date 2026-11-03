@@ -48,6 +48,7 @@ mod graphs;
 mod hq;
 mod http;
 mod live;
+mod orders;
 mod queue;
 mod realms;
 mod runs;
@@ -268,6 +269,7 @@ impl App {
                 [.., "approval"]
                     | [.., "stop"]
                     | ["realms", _, "graphs", _, "dry-run"]
+                    | ["realms", _, "orders", "route"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
             );
@@ -282,6 +284,7 @@ impl App {
             Self::graph_routes,
             Self::calendar_routes,
             Self::hq_routes,
+            Self::order_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {
