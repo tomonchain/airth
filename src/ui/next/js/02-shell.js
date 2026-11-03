@@ -11,6 +11,8 @@ const next = {
 // The pages of a business, in the rail's order; Workshop and Settings are
 // pinned at the bottom.
 const PAGES = [
+  // The business's own home; the HQ of every business is in the switcher.
+  { id: "home", title: "Home", icon: "hq" },
   { id: "needs-you", title: "Needs you", icon: "needs" },
   { id: "team", title: "Team", icon: "team" },
   { id: "routines", title: "Routines", icon: "routines" },
@@ -50,7 +52,7 @@ function renderTop() {
     h("div", { class: "label" }, "Switch to"),
     h("a", { href: "#/hq", role: "menuitem", "aria-current": next.route.page === "hq" ? "page" : null }, h("span", { class: "mark", "aria-hidden": "true" }, "A"), "Airth HQ"),
     next.realms.filter((r) => !r.archived).map((r) =>
-      h("a", { href: pageHash("needs-you", r.name), role: "menuitem", "aria-current": inBusiness && r.name === next.realm ? "page" : null },
+      h("a", { href: pageHash("home", r.name), role: "menuitem", "aria-current": inBusiness && r.name === next.realm ? "page" : null },
         h("span", { class: "mark", "aria-hidden": "true" }, initial(r.name)), r.name)),
     // Creating a business starts where businesses are chosen, as in the
     // classic interface.
@@ -94,7 +96,6 @@ function renderRail() {
   };
   $("#rail").replaceChildren(
     h("button", { type: "button", class: "rail-button", "aria-label": "Search (⌘K)", title: "Search (⌘K)", svg: icon("search"), onclick: openSearch }),
-    h("a", { href: "#/hq", "aria-label": "HQ", title: "HQ", "aria-current": next.route.page === "hq" ? "page" : null, svg: icon("hq") }),
     PAGES.map(link),
     h("div", { class: "gap" }),
     PINNED.map(link),

@@ -9,12 +9,16 @@ const HEALTH = { healthy: "Healthy", watch: "Watch", "at risk": "At risk", "not 
 
 /** The HQ, in the Reading layout (decision 72): the sentence that says
     what matters today is the header's summary. */
+/** The HQ's figures, once: the HQ and each business's home read them. */
+function loadHq() {
+  if (hq.data !== undefined) return hq.data;
+  hq.data = null;
+  api("hq").then((d) => { hq.data = d; renderPanel(); }).catch((e) => { hq.data = { error: e.message }; renderPanel(); });
+  return hq.data;
+}
+
 function HqPage() {
-  if (hq.data === undefined) {
-    hq.data = null;
-    api("hq").then((d) => { hq.data = d; renderPanel(); }).catch((e) => { hq.data = { error: e.message }; renderPanel(); });
-  }
-  const d = hq.data;
+  const d = loadHq();
   const header = { label: today(), title: "HQ" };
   if (!d) return html`<${Reading} kind="hq" header=${header}><p class="lede">Loading…</p></${Reading}>`;
   if (d.error) return html`<${Reading} kind="hq" header=${header}><p class="note bad">${d.error}</p></${Reading}>`;
@@ -29,14 +33,30 @@ function HqPage() {
   </${Reading}>`;
 }
 
-function BusinessSection({ b }) {
+/** A business's home, in the Reading layout: its section of the HQ, alone
+    (the same figures, from the same records). */
+function HomePage() {
+  const d = loadHq();
+  const header = { label: next.realm, title: "Home" };
+  if (!d) return html`<${Reading} kind="hq" header=${header}><p class="lede">Loading…</p></${Reading}>`;
+  if (d.error) return html`<${Reading} kind="hq" header=${header}><p class="note bad">${d.error}</p></${Reading}>`;
+  const b = d.businesses.find((x) => x.name === next.realm);
+  if (!b) return html`<${Reading} kind="hq" header=${header}><p class="note">This business is not in the HQ: it may be archived.</p></${Reading}>`;
+  const needs = b.needs > 0 && html`<a class="needs-link" href=${pageHash("needs-you")}>
+    <span class="needs-dot" aria-hidden="true"></span>${b.needs === 1 ? "1 thing needs you" : `${b.needs} things need you`}<span aria-hidden="true"> →</span></a>`;
+  return html`<${Reading} kind="hq" header=${{ ...header, summary: b.health.sentence, actions: needs }}>
+    <${BusinessSection} b=${b} home=${true} />
+  </${Reading}>`;
+}
+
+function BusinessSection({ b, home }) {
   const state = b.health.state;
-  return html`<div class=${`business-section ${state.replace(" ", "-")}`}>
+  return html`<div class=${`business-section ${state.replace(" ", "-")}${home ? " home" : ""}`}>
     <div class="business-top">
-      <h2><a href=${pageHash("needs-you", b.name)}>${b.name}</a></h2>
+      ${home ? html`<h2>Health</h2>` : html`<h2><a href=${pageHash("home", b.name)}>${b.name}</a></h2>`}
       <span class="health"><span class="health-dot" aria-hidden="true"></span>${HEALTH[state] || state}</span>
     </div>
-    <p class="health-why">${b.health.sentence}</p>
+    ${!home && html`<p class="health-why">${b.health.sentence}</p>`}
     ${b.vitals.length
       ? html`<div class="vitals">${b.vitals.map((v) => html`<div class=${v.out ? "vital out" : "vital"}>
           <span class="vital-label">${v.label}</span><span class="vital-value">${v.value}</span><span class="vital-note">${v.note}</span></div>`)}</div>`

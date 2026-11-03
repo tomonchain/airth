@@ -52,3 +52,6 @@
   .hq .finance-cell:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .hq .activity-text { white-space: normal; }
 }
+/* A business's home: its section alone, without the HQ's dividers. */
+.hq .business-section.home { padding-top: 0; border-top: 0; }
+.hq .business-section.home:last-child { border-bottom: 0; }
