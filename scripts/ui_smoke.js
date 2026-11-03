@@ -422,7 +422,7 @@ function smokeNext() {
   show("home", { route: { page: "home", realm: "acme" } });
   // Its title is the fact that matters most; under it, the item to handle
   // first and the way to the rest.
-  for (const text of ["One item is held by the check.", "A post on ETH", "Needs you · 2h ago", "a call to buy", "Handle it", "1 more thing needs you", "Dropped this week", "daily-posts"]) {
+  for (const text of ["One item is held by the check.", "A post on ETH", "To approve · 2h ago", "a call to buy", "Handle it", "1 more thing needs you", "Dropped this week", "daily-posts"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/home: "${text}" is missing`);
   }
   if (nbody.textContent.includes("Not started")) problems.push("next/home: another business shows on this one's home");
@@ -553,39 +553,44 @@ function smokeNext() {
   vm.runInContext(`company.team.acme = { agents: [] }; company.profile.acme = { error: "agents/x.md: unknown field 'foo'", repos: [] };`, ctx);
   show("team, no agent", { route: { page: "team", realm: "acme" } });
   show("business, config refused", { route: { page: "business", realm: "acme" } });
+  // Needs you: every item by urgency, the most pressing open first.
   show("needs you", { route: { page: "needs-you", realm: "acme" } });
+  for (const text of ["12 items wait for you, 5 urgent.", "Urgent", "To decide", "To do yourself", "Going out", "To read", "1 of 12", "Incident", "Where it comes from"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/needs: "${text}" is missing`);
+  }
+  if (vm.runInContext(`needs.sel`, ctx) !== 2) problems.push("next/needs: the most pressing item is not open first");
+  const open = (id, extra = "") => { vm.runInContext(`needs.sel = ${id}; ${extra}`, ctx); show(`needs you, item ${id}`, { route: { page: "needs-you", realm: "acme" } }); };
+  const opened = () => { const a = find(nbody, "article", true); return a.length ? a[0].textContent : ""; };
   // Decision 66: a deadline is answered Filed or Seen; an overdue one, Filed
-  // only. They are Airth's own, beside its incidents.
-  vm.runInContext(`needs.agent = null;`, ctx);
-  show("needs you, Airth's own", { route: { page: "needs-you", realm: "acme" } });
-  if (!nbody.textContent.includes("Airth does not file it")) problems.push("next/needs: a legal deadline does not say Airth does not file it");
-  const buttonsOf = (title) => {
-    const cards = [];
-    const walk = (n) => { if (n.tag === "article" && n.textContent.includes(title)) cards.push(n); (n.children || []).forEach(walk); };
-    walk(nbody);
-    return cards.length ? cards[cards.length - 1].textContent : "";
-  };
-  if (!/Filed.*Seen/.test(buttonsOf("Confirmation statement due"))) problems.push("next/needs: a deadline is not answered Filed or Seen");
-  if (/Seen/.test(buttonsOf("Overdue: Annual accounts"))) problems.push("next/needs: an overdue deadline can be closed without Filed");
-  vm.runInContext(`needs.agent = "writer"; needs.rejecting = 3;`, ctx);
-  show("needs you, cancelling a delayed action", { route: { page: "needs-you", realm: "acme" } });
-  vm.runInContext(`needs.agent = "post-writer"; needs.editing = 1; needs.rejecting = null;`, ctx);
-  show("needs you, editing", { route: { page: "needs-you", realm: "acme" } });
-  vm.runInContext(`needs.agent = null; needs.editing = null;`, ctx);
-  show("needs you, a commit from a task", { route: { page: "needs-you", realm: "acme" } });
-  if (!nbody.textContent.includes("From your task")) problems.push("next/needs you: the task a commit came from is missing");
-  vm.runInContext(`needs.agent = "post-writer";`, ctx);
-  show("needs you, a report", { route: { page: "needs-you", realm: "acme" } });
-  if (!nbody.textContent.includes("Report") || !nbody.textContent.includes("Seen")) problems.push("next/needs you: a report shows without its tag or Seen");
-  if (!nbody.textContent.includes("Flagged by the check") || !nbody.textContent.includes("Override")) problems.push("next/needs you: a blocked item shows without its flag or Override");
-  if (!nbody.textContent.includes("Note from the check") || !nbody.textContent.includes("long A long post")) problems.push("next/needs you: a check's note is missing");
-  if (!nbody.textContent.includes("Also in this run") || !nbody.textContent.includes('draft: 1 of 3 dropped: "Hack" (too long)')) problems.push("next/needs you: what the run dropped is missing");
-  if (!nbody.textContent.includes("Nothing was done: Retry does it once") || !nbody.textContent.includes("Retry…") || !nbody.textContent.includes("It may have been done")) problems.push("next/needs you: an incident's Retry is missing");
-  vm.runInContext(`needs.confirming = 10;`, ctx);
-  show("needs you, confirming a retry", { route: { page: "needs-you", realm: "acme" } });
-  if (!nbody.textContent.includes("Nothing was created: retry")) problems.push("next/needs you: an ambiguous retry is not confirmed first");
-  vm.runInContext(`needs.confirming = null;`, ctx);
-  vm.runInContext(`needs.items = []; needs.agent = undefined;`, ctx);
+  // only. Airth does not file it.
+  open(11);
+  if (!opened().includes("Airth does not file it")) problems.push("next/needs: a legal deadline does not say Airth does not file it");
+  if (!/Filed.*Seen/.test(opened())) problems.push("next/needs: a deadline is not answered Filed or Seen");
+  open(12);
+  if (/Seen/.test(opened()) || !opened().includes("Overdue deadline")) problems.push("next/needs: an overdue deadline can be closed without Filed, or is not urgent");
+  open(3, "needs.rejecting = 3;");
+  if (!opened().includes("Cancel it") || !opened().includes("Keep it")) problems.push("next/needs: cancelling a delayed action is not offered");
+  open(1, "needs.rejecting = null; needs.editing = 1;");
+  if (!opened().includes("Save the edit")) problems.push("next/needs: editing is not offered");
+  open(5, "needs.editing = null;");
+  if (!opened().includes("From your task")) problems.push("next/needs you: the task a commit came from is missing");
+  open(6);
+  if (!opened().includes("Report") || !opened().includes("Seen")) problems.push("next/needs you: a report shows without its tag or Seen");
+  open(7);
+  if (!opened().includes("Flagged by the check") || !opened().includes("Override") || opened().includes("Approve")) problems.push("next/needs you: a blocked item shows without its flag, or with Approve");
+  if (!opened().includes("Also in this run") || !opened().includes('draft: 1 of 3 dropped: "Hack" (too long)')) problems.push("next/needs you: what the run dropped is missing");
+  open(8);
+  if (!opened().includes("Note from the check") || !opened().includes("A long post")) problems.push("next/needs you: a check's note is missing");
+  open(9);
+  if (!opened().includes("Nothing was done: Retry does it once")) problems.push("next/needs you: an incident's Retry is missing");
+  open(10);
+  if (!opened().includes("Retry…") || !opened().includes("It may have been done")) problems.push("next/needs you: an ambiguous incident's Retry is missing");
+  open(10, "needs.confirming = 10;");
+  if (!opened().includes("Nothing was created: retry")) problems.push("next/needs you: an ambiguous retry is not confirmed first");
+  // The run an item came from follows the open item.
+  open(1, "needs.confirming = null;");
+  if (!nbody.textContent.includes("1 for you") || !nbody.textContent.includes("Run cost")) problems.push("next/needs: the open item's run is not shown");
+  vm.runInContext(`needs.items = []; needs.sel = null;`, ctx);
   show("needs you, nothing waits", { route: { page: "needs-you", realm: "acme" } });
   // Routines: every kind of block, a routine refused, then a dry run.
   vm.runInContext(`routines.data.acme = { routines: [

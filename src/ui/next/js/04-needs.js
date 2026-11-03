@@ -28,7 +28,7 @@ const needs = {
   realm: null,
   items: [],
   agents: [],
-  agent: undefined, // the agent whose items are open; null for Airth's own
+  sel: null, // the open item's id
   find: "",
   editing: null, // the item whose text is being edited
   rejecting: null, // the item being rejected
@@ -50,146 +50,192 @@ async function loadNeeds() {
   if (next.route.page === "needs-you") renderPanel();
 }
 
-/** Needs you, in the Workspace layout (decision 72): the agents waiting,
-    the open agent's items, and the run an item came from. */
+/** An icon from ICON_PATHS, as a component. */
+function Icon({ name, size = 16 }) {
+  return html`<span class="ico" aria-hidden="true" dangerouslySetInnerHTML=${{ __html: icon(name, size) }}></span>`;
+}
+
+/** What an item is, in the founder's words: its icon, tone and label. A
+    blocked approval and an overdue deadline are urgent like an incident. */
+function kindOf(it) {
+  if (it.kind === "incident") return { icon: "alert", tone: "bad", label: "Incident", rank: 0 };
+  if (it.flag === "blocking") return { icon: "shield", tone: "bad", label: "Held by the check", rank: 1 };
+  if (it.kind === "deadline") return it.overdue ? { icon: "calendar", tone: "bad", label: "Overdue deadline", rank: 1 }
+    : { icon: "calendar", tone: "warn", label: "Legal deadline", rank: 2 };
+  if (it.kind === "approval") return { icon: "approve", tone: "warn", label: "To approve", rank: 3 };
+  if (it.kind === "prepared") return { icon: "hand", tone: "info", label: "You do it", rank: 4 };
+  if (it.kind === "delayed") return { icon: "clock", tone: "info", label: "Goes out unless you cancel", rank: 5 };
+  if (it.kind === "report") return { icon: "doc", tone: "plain", label: "Report", rank: 6 };
+  return { icon: "info", tone: "plain", label: it.kind, rank: 3 };
+}
+const SECTIONS = [[[0, 1], "Urgent"], [[2, 3], "To decide"], [[4], "To do yourself"], [[5], "Going out"], [[6], "To read"]];
+
+/** The items in the order to handle them: the most pressing first, the
+    oldest first within a kind (the same order as the home's first item). */
+function sortedNeeds() {
+  return needs.items.slice().sort((a, b) => kindOf(a).rank - kindOf(b).rank || String(a.created_at || "").localeCompare(String(b.created_at || "")));
+}
+
+/** Needs you, in the Workspace layout (decision 72): every item by
+    urgency, the open one, and where it comes from. */
 function NeedsPage() {
   const header = { label: next.realm, title: "Needs you" };
   if (needs.realm !== next.realm) return html`<${Workspace} header=${header} main=${html`<p class="lede">Loading…</p>`} />`;
-  const byAgent = new Map();
-  for (const it of needs.items) {
-    const key = it.agent || "";
-    if (!byAgent.has(key)) byAgent.set(key, []);
-    byAgent.get(key).push(it);
-  }
-  if (needs.agent === undefined || !byAgent.has(needs.agent || "")) needs.agent = byAgent.size ? [...byAgent.keys()][0] || null : undefined;
-  const open = byAgent.get(needs.agent || "") || [];
-  const n = needs.items.length;
-  const summary = !n ? "Nothing waits for you." : `${n === 1 ? "One item waits" : `${n} items wait`} for you, from ${byAgent.size === 1 ? "one agent" : `${byAgent.size} agents`}.`;
+  const items = sortedNeeds();
+  if (!items.some((i) => i.id === needs.sel)) needs.sel = items.length ? items[0].id : null;
+  const it = items.find((i) => i.id === needs.sel);
+  const urgent = items.filter((i) => kindOf(i).rank <= 1).length;
+  const summary = !items.length ? "Nothing waits for you."
+    : `${items.length === 1 ? "One item waits" : `${items.length} items wait`} for you${urgent ? `, ${urgent} urgent` : ""}. Most pressing first.`;
+  if (!items.length) return html`<${Workspace} header=${{ ...header, summary }} main=${html`<${AllDone} />`} />`;
   return html`<${Workspace} header=${{ ...header, summary }}
-    list=${html`<${AgentList} byAgent=${byAgent} />`}
-    main=${html`<${Thread} items=${open} />`}
-    details=${html`<${Details} it=${open.find((i) => i.routine && i.run)} />`} />`;
+    list=${html`<${NeedsList} items=${items} />`}
+    main=${html`<${Item} it=${it} pos=${items.indexOf(it)} items=${items} />`}
+    details=${html`<${Origin} it=${it} />`} />`;
 }
 
-function AgentList({ byAgent }) {
-  const dept = (a) => { const d = needs.agents.find((x) => x.name === a); return a ? (d && d.department) || "" : "leadership"; };
-  const groups = new Map();
-  const q = needs.find.toLowerCase();
-  for (const [a, items] of byAgent) {
-    if (q && !agentName(a).toLowerCase().includes(q) && !items.some((i) => i.title.toLowerCase().includes(q))) continue;
-    const d = dept(a);
-    if (!groups.has(d)) groups.set(d, []);
-    groups.get(d).push([a, items]);
-  }
-  const choose = (e, a) => { e.preventDefault(); needs.agent = a || null; needs.editing = needs.rejecting = null; renderPanel(); };
-  return html`<div class="pane-stack" aria-label="Agents waiting for you">
-    <label for="find" class="sr-only">Search</label>
-    <input id="find" type="search" placeholder="Search" value=${needs.find} onInput=${(e) => { needs.find = e.target.value; renderPanel(); }} />
-    ${!byAgent.size && html`<div class="empty"><strong>Nothing waits for you</strong>
-      <span>Approvals, incidents and prepared actions show here as the agents ask.</span></div>`}
-    ${[...groups].map(([d, list]) => html`<span class="group">${DEPARTMENT_NAMES[d] || "No department yet"}</span>
-      ${list.map(([a, items]) => {
-        const first = items[0];
-        const incident = items.some((i) => i.kind === "incident");
-        return html`<a class="agent" href="#" aria-current=${(a || null) === needs.agent ? "true" : null} onClick=${(e) => choose(e, a)}>
-          <span class="badged"><${Avatar} agent=${a} /><span class=${incident ? "badge bad" : "badge"}>${incident ? "!" : String(items.length)}</span></span>
-          <span class="who"><span class="line"><span class="name">${agentName(a)}</span><span class="time">${clock(first.created_at)}</span></span>
-            <span class="sub">${first.title} · ${first.text}</span></span>
-        </a>`;
-      })}`)}
+function AllDone() {
+  return html`<div class="all-done">
+    ${needs.note && html`<p class="toast"><${Icon} name="check" />${needs.note}</p>`}
+    <span class="all-done-mark"><${Icon} name="approve" size=${40} /></span>
+    <strong>Nothing waits for you</strong>
+    <span>Approvals, incidents, deadlines and prepared actions show here as your agents ask.</span>
   </div>`;
 }
 
-function Thread({ items }) {
-  if (!items.length) return null;
-  const a = needs.agent;
-  const d = needs.agents.find((x) => x.name === a);
-  return html`<div class="thread" aria-label=${agentName(a)}>
-    <div class="thread-head"><${Avatar} agent=${a} size=${34} /><h2>${agentName(a)}</h2>
-      ${d && d.department && html`<span class="chip">${DEPARTMENT_NAMES[d.department] || d.department}</span>`}</div>
-    ${needs.error && html`<p class="note bad">${needs.error}</p>`}
-    ${needs.note && html`<p class="note">${needs.note}</p>`}
-    ${items.map((it) => html`<${Card} it=${it} />`)}
+const select = (id) => { needs.sel = id; needs.editing = needs.rejecting = needs.confirming = null; needs.note = null; renderPanel(); };
+
+function NeedsList({ items }) {
+  const q = needs.find.trim().toLowerCase();
+  const shown = items.filter((i) => !q || `${i.title} ${i.text} ${agentName(i.agent)} ${i.routine || ""}`.toLowerCase().includes(q));
+  return html`<div class="pane-stack" aria-label="What waits for you">
+    <div class="find"><${Icon} name="search" /><label for="find" class="sr-only">Search</label>
+      <input id="find" type="search" placeholder="Search" value=${needs.find} onInput=${(e) => { needs.find = e.target.value; renderPanel(); }} /></div>
+    ${!shown.length && html`<p class="note">Nothing matches.</p>`}
+    ${SECTIONS.map(([ranks, title]) => {
+      const part = shown.filter((i) => ranks.includes(kindOf(i).rank));
+      return part.length > 0 && html`<span class="group">${title}<span class="group-count">${part.length}</span></span>
+        ${part.map((i) => html`<${Row} it=${i} />`)}`;
+    })}
   </div>`;
 }
 
-const KIND_TAGS = { approval: "Needs you", delayed: "Done unless you cancel", prepared: "Prepared · you do it", incident: "Incident", report: "Report", deadline: "Legal deadline" };
+function Row({ it }) {
+  const k = kindOf(it);
+  const preview = String(it.text || "").split("\n").find((l) => l.trim()) || "";
+  return html`<a class="nrow" href="#" aria-current=${it.id === needs.sel ? "true" : null} onClick=${(e) => { e.preventDefault(); select(it.id); }}>
+    <span class=${`kind-mark ${k.tone}`}><${Icon} name=${k.icon} /></span>
+    <span class="nrow-body">
+      <span class="nrow-title">${it.title}</span>
+      ${preview && preview !== "{}" && html`<span class="nrow-preview">${preview}</span>`}
+      <span class="nrow-meta"><span class="dot" style=${`--agent: ${agentColour(it.agent)}`}></span>${agentName(it.agent)}${it.created_at && html` · ${ago(it.created_at)}`}</span>
+    </span>
+  </a>`;
+}
 
-function Card({ it }) {
-  needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
-  const editing = needs.editing === it.id;
-  const rejecting = needs.rejecting === it.id;
+/** What answering does, said before the founder answers. */
+function consequence(it) {
   // An action a task of the founder's proposed (decision 56): the task
   // stopped there, and waits for nothing else.
-  const what = it.task && it.action ? `If approved: ${it.action} is done, once. The task stopped here.`
+  return it.task && it.action ? `If approved: ${it.action} is done, once. The task stopped here.`
     : it.retry === "clear" ? "Nothing was done: Retry does it once, as the action is declared now. Seen closes it."
     : it.retry === "ambiguous" ? "It may have been done: check before you retry. Seen closes it."
     : it.kind === "incident" || it.kind === "report" ? "Seen closes it."
     : it.kind === "prepared" ? "Airth does nothing: mark it done once you did it."
     : it.kind === "deadline" ? "Airth does not file it: answer Filed once you did."
+    : it.kind === "delayed" && it.execute_at ? `Goes out at ${clock(it.execute_at)} unless you cancel it.`
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
     : it.action ? `If approved: ${it.action} is done, once.` : null;
-  const link = it.source && it.source.link;
+}
+
+function Item({ it, pos, items }) {
+  needs.shownAt[it.id] = needs.shownAt[it.id] || Date.now();
+  const k = kindOf(it);
+  const editing = needs.editing === it.id;
   const blocked = it.flag === "blocking";
-  return html`<article class="approval" aria-label=${it.title}>
-    <div class="approval-top">
-      <span class=${it.kind === "incident" ? "tag bad" : "tag"}>${it.title} · ${KIND_TAGS[it.kind] || it.kind}</span>
-      ${it.execute_at && html`<span class="when">Done at ${clock(it.execute_at)}</span>`}
+  const link = it.source && it.source.link;
+  const what = consequence(it);
+  const step = (d) => { const n = items[pos + d]; if (n) select(n.id); };
+  const text = String(it.text || "");
+  // Edit and Reject put the cursor in their field, so the keys flow on.
+  useEffect(() => {
+    const field = document.querySelector(`#edit-${it.id}`) || document.querySelector(`#why-${it.id}`);
+    if (field && field.focus) field.focus();
+  }, [editing, needs.rejecting === it.id]);
+  return html`<article class="item" aria-label=${it.title}>
+    ${needs.note && html`<p class="toast" role="status"><${Icon} name="check" />${needs.note}</p>`}
+    ${needs.error && html`<p class="note bad">${needs.error}</p>`}
+    <div class="item-top">
+      <span class=${`kind-tag ${k.tone}`}><${Icon} name=${k.icon} />${k.label}</span>
+      <span class="item-nav">
+        <span class="item-pos">${pos + 1} of ${items.length}</span>
+        <button type="button" class="icon-button" aria-label="Previous item (K)" title="Previous (K)" disabled=${pos === 0} onClick=${() => step(-1)}><${Icon} name="up" /></button>
+        <button type="button" class="icon-button" aria-label="Next item (J)" title="Next (J)" disabled=${pos === items.length - 1} onClick=${() => step(1)}><${Icon} name="down" /></button>
+      </span>
     </div>
-    ${(blocked || it.flag === "note") && html`<p class=${blocked ? "flag blocking" : "flag"}>
-      <strong>${blocked ? "Flagged by the check" : "Note from the check"}</strong>: ${it.flag_reason || "no reason given"}${blocked && ". Edit it, or override the flag to approve it as it is."}</p>`}
-    ${it.note && html`<p class="flag"><strong>Also in this run</strong>: ${it.note}</p>`}
+    <h2 class="item-title">${it.title}</h2>
+    <p class="item-from"><${Avatar} agent=${it.agent} size=${20} />${agentName(it.agent)}${it.routine && html` · <span class="mono">${it.routine}</span>`}${it.created_at && html` · ${ago(it.created_at)}`}</p>
+    ${(blocked || it.flag === "note") && html`<p class=${blocked ? "callout bad" : "callout"}><${Icon} name=${blocked ? "shield" : "info"} />
+      <span><strong>${blocked ? "Flagged by the check" : "Note from the check"}</strong>: ${it.flag_reason || "no reason given"}${blocked && ". Edit it, or override the flag to approve it as it is."}</span></p>`}
+    ${it.note && html`<p class="callout"><${Icon} name="filter" /><span><strong>Also in this run</strong>: ${it.note}</span></p>`}
     ${editing
-      ? html`<textarea id=${`edit-${it.id}`} class="edit" rows="5" aria-label="New text">${it.text}</textarea>`
-      : html`<p class=${it.call ? "content call" : "content"}>${it.text}</p>`}
+      ? html`<textarea id=${`edit-${it.id}`} class="edit" rows="6" aria-label="New text">${text}</textarea>`
+      : text && text !== "{}" && html`<div class=${it.call ? "content call" : "content"}>${text}</div>`}
+    ${it.editable && !editing && html`<span class="count">${text.length} characters</span>`}
     <div class="meta">
-      ${link && html`<span>Source: <a href=${link} target="_blank" rel="noopener noreferrer">${it.source.title || link}</a></span>`}
-      ${it.task && html`<span>From your task: <a href=${`/classic#/r/${enc(next.realm)}/run/${enc(it.task.id)}`}>${it.task.title || it.task.id}</a></span>`}
-      ${what && html`<span>${what}</span>`}
+      ${link && html`<span><${Icon} name="link" /><a href=${link} target="_blank" rel="noopener noreferrer">${it.source.title || link}</a></span>`}
+      ${it.task && html`<span><${Icon} name="tasks" />From your task: <a href=${`/classic#/r/${enc(next.realm)}/run/${enc(it.task.id)}`}>${it.task.title || it.task.id}</a></span>`}
+      ${what && html`<span><${Icon} name="arrow" />${what}</span>`}
     </div>
-    ${rejecting && html`<input id=${`why-${it.id}`} class="why" type="text" placeholder="Why? (optional)" aria-label="Why you reject it" />`}
-    <div class="buttons">${buttons(it, editing, rejecting)}</div>
+    ${needs.rejecting === it.id && html`<input id=${`why-${it.id}`} class="why" type="text" placeholder="Why? (optional)" aria-label="Why you reject it" />`}
+    <div class="buttons">${actions(it).filter(Boolean).map((a) => html`<button type="button" class=${a.cls} onClick=${a.run}>
+      ${a.icon && html`<${Icon} name=${a.icon} />`}${a.label}${a.key && html`<kbd>${a.key}</kbd>`}</button>`)}</div>
   </article>`;
 }
 
-function buttons(it, editing, rejecting) {
-  const b = (label, cls, onclick) => html`<button type="button" class=${cls} onClick=${onclick}>${label}</button>`;
+/** The answers an item takes, the main one first. A key is a shortcut. */
+function actions(it) {
+  const a = (label, cls, icon, run, key) => ({ label, cls, icon, run, key });
   const value = (id) => { const el = document.querySelector(id); return el ? el.value : ""; };
-  if (editing) return [
-    b("Save the edit", "primary", () => answer(it, "edit", value(`#edit-${it.id}`))),
-    b("Cancel", "plain", () => { needs.editing = null; renderPanel(); })];
-  if (rejecting) return [
-    b(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", () => answer(it, "reject", value(`#why-${it.id}`))),
-    b("Keep it", "plain", () => { needs.rejecting = null; renderPanel(); })];
+  const open = (field) => () => { needs[field] = it.id; renderPanel(); };
+  if (needs.editing === it.id) return [
+    a("Save the edit", "primary", "check", () => answer(it, "edit", value(`#edit-${it.id}`))),
+    a("Cancel", "plain", null, () => { needs.editing = null; renderPanel(); })];
+  if (needs.rejecting === it.id) return [
+    a(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", "x", () => answer(it, "reject", value(`#why-${it.id}`))),
+    a("Keep it", "plain", null, () => { needs.rejecting = null; renderPanel(); })];
   // Decision 62: an ambiguous failure is retried once the founder checked.
   if (needs.confirming === it.id) return [
-    b("Nothing was created: retry", "primary", () => answer(it, "retry", "", { checked: true })),
-    b("Back", "plain", () => { needs.confirming = null; renderPanel(); })];
-  if (it.retry === "clear") return [b("Retry", "primary", () => answer(it, "retry")), b("Seen", "plain", () => answer(it, "approve"))];
-  if (it.retry === "ambiguous") return [
-    b("Retry…", "plain", () => { needs.confirming = it.id; renderPanel(); }),
-    b("Seen", "primary", () => answer(it, "approve"))];
-  if (it.kind === "incident" || it.kind === "report") return [b("Seen", "primary", () => answer(it, "approve"))];
-  if (it.kind === "prepared") return [b("Mark done", "primary", () => answer(it, "approve"))];
-  if (it.kind === "deadline") return [b("Filed", "primary", () => answer(it, "approve")),
-    !it.overdue && b("Seen", "plain", () => answer(it, "reject", "seen"))];
-  if (it.kind === "delayed") return [b("Cancel it", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
+    a("Nothing was created: retry", "primary", "retry", () => answer(it, "retry", "", { checked: true })),
+    a("Back", "plain", null, () => { needs.confirming = null; renderPanel(); })];
+  const seen = (cls) => a("Seen", cls, "check", () => answer(it, "approve"), "A");
+  if (it.retry === "clear") return [a("Retry", "primary", "retry", () => answer(it, "retry")), seen("plain")];
+  if (it.retry === "ambiguous") return [a("Retry…", "plain", "retry", open("confirming")), seen("primary")];
+  if (it.kind === "incident" || it.kind === "report") return [seen("primary")];
+  if (it.kind === "prepared") return [a("Mark done", "primary", "check", () => answer(it, "approve"), "A")];
+  if (it.kind === "deadline") return [a("Filed", "primary", "check", () => answer(it, "approve"), "A"),
+    !it.overdue && a("Seen", "plain", null, () => answer(it, "reject", "seen"))];
+  if (it.kind === "delayed") return [a("Cancel it", "plain bad", "x", open("rejecting"), "R")];
   // Blocked by a check: no plain Approve; the founder's override is logged.
   return [
-    isBlocked(it) ? b("Override", "plain bad", () => answer(it, "override"))
-      : b("Approve", "primary", () => answer(it, "approve")),
-    it.editable && b("Edit", isBlocked(it) ? "primary" : "plain", () => { needs.editing = it.id; renderPanel(); }),
-    b("Reject", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
+    isBlocked(it) ? a("Override", "plain bad", "shield", () => answer(it, "override"))
+      : a("Approve", "primary", "check", () => answer(it, "approve"), "A"),
+    it.editable && a("Edit", isBlocked(it) ? "primary" : "plain", "pencil", open("editing"), "E"),
+    a("Reject", "plain bad", "x", open("rejecting"), "R")];
 }
 
 const isBlocked = (it) => it.flag === "blocking";
 
 async function answer(it, kind, text, extra) {
   const seconds = Math.round((Date.now() - (needs.shownAt[it.id] || Date.now())) / 1000);
+  // The next item opens once this one is answered.
+  const order = sortedNeeds();
+  const after = order[order.indexOf(it) + 1] || order[order.indexOf(it) - 1];
   try {
     const out = await api(`realms/${enc(next.realm)}/queue/${it.id}`, { answer: kind, text: text || "", revision: it.revision, seconds, ...extra });
     const done = kind === "edit" ? "edited; it still waits for your approval" : out.item.status;
     needs.note = `${it.title}: ${out.report || done}`;
+    if (kind !== "edit" && after) needs.sel = after.id;
   } catch (e) {
     needs.note = `${it.title}: ${e.message}`;
   }
@@ -197,6 +243,21 @@ async function answer(it, kind, text, extra) {
   needs.realm = null;
   loadNeeds();
 }
+
+// Shortcuts on Needs you: J and K move, A gives the main answer when it
+// has one (Approve, Seen, Filed, Mark done), E edits, R rejects. Never while
+// typing.
+document.addEventListener("keydown", (e) => {
+  if (next.route.page !== "needs-you" || e.metaKey || e.ctrlKey || e.altKey || search.open) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "")) return;
+  const items = sortedNeeds();
+  const pos = items.findIndex((i) => i.id === needs.sel);
+  const key = e.key.toLowerCase();
+  if (key === "j" || e.key === "ArrowDown") { if (items[pos + 1]) { e.preventDefault(); select(items[pos + 1].id); } return; }
+  if (key === "k" || e.key === "ArrowUp") { if (pos > 0) { e.preventDefault(); select(items[pos - 1].id); } return; }
+  const act = pos >= 0 && actions(items[pos]).find((x) => x && x.key && x.key.toLowerCase() === key);
+  if (act) { e.preventDefault(); act.run(); }
+});
 
 /** "07:31" today, else "2 Nov". */
 function clock(at) {
@@ -206,9 +267,25 @@ function clock(at) {
   return today ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-// The run an item came from, block by block (decision 49).
-function Details({ it }) {
+const STEP_ICONS = { ok: "check", waiting: "clock", failed: "x" };
+
+/** Where the open item comes from: its agent, its routine and the run,
+    block by block (decision 49). */
+function Origin({ it }) {
   if (!it) return null;
+  const d = needs.agents.find((x) => x.name === it.agent);
+  const dept = it.agent ? d && d.department : "leadership";
+  return html`<div class="details origin" aria-labelledby="details-title">
+    <h2 id="details-title">Where it comes from</h2>
+    <div class="origin-agent"><${Avatar} agent=${it.agent} size=${34} />
+      <span><strong>${agentName(it.agent)}</strong><span class="sub">${DEPARTMENT_NAMES[dept] || "No department yet"}</span></span></div>
+    ${it.routine && it.run ? html`<${Run} it=${it} />`
+      : html`<p class="note">${it.kind === "deadline" ? "From the business's legal calendar." : it.task ? "From a task you started." : it.routine ? `From ${it.routine}.` : "Not from a routine's run."}</p>`}
+    ${it.routine && html`<a class="origin-link" href=${pageHash("routines")}><${Icon} name="routines" />Open the routine</a>`}
+  </div>`;
+}
+
+function Run({ it }) {
   const run = needs.runs[it.id];
   if (run === undefined) {
     needs.runs[it.id] = null;
@@ -216,24 +293,18 @@ function Details({ it }) {
       .then((r) => { needs.runs[it.id] = r; renderPanel(); })
       .catch(() => { needs.runs[it.id] = { blocks: [] }; renderPanel(); });
   }
-  const blocks = (run && run.blocks) || [];
-  const state = blocks.some((b) => b.outcome === "failed") ? ["Failed", "bad"]
-    : blocks.some((b) => b.outcome === "waiting") ? ["Waiting for you", "warn"] : ["Done", "ok"];
+  if (!run) return html`<p class="note">Loading…</p>`;
+  const blocks = run.blocks || [];
+  if (!blocks.length) return html`<p class="note">No step was recorded for this run. Runs record each step from now on.</p>`;
   const cost = blocks.reduce((sum, b) => sum + (b.cost_usd || 0), 0);
   const secs = (b) => (b.finished_at ? Math.max(0, Math.round((new Date(b.finished_at) - new Date(b.started_at)) / 1000)) : 0);
-  return html`<div class="details" aria-labelledby="details-title">
-    <h2 id="details-title">Routine details</h2>
-    <div class="details-head">
-      ${blocks.length > 0 && html`<span class=${`state ${state[1]}`}>${state[0]}</span>`}
-      <span>${it.routine}${blocks.length > 0 && ` · started ${clock(blocks[0].started_at)}`}</span>
-    </div>
-    ${run === null || run === undefined ? html`<p class="note">Loading…</p>`
-      : !blocks.length ? html`<p class="note">No step was recorded for this run. Runs record each step from now on.</p>`
-      : html`<div class="steps"><span class="steps-label">Steps</span>${blocks.map((b, n) => html`<div class="step">
-          <span>${n + 1} · ${b.block}</span>
-          <span class=${`step-out ${b.outcome}`}>${b.outcome === "waiting" ? `${b.items_in} waiting for you` : b.outcome === "failed" ? "failed" : `${b.items_in} → ${b.items_out} · ${secs(b)} s`}</span>
-        </div>`)}</div>`}
-    ${blocks.length > 0 && html`<div class="tile"><span class="tile-label">Run cost</span><span class="tile-value">$${cost.toFixed(2)}</span></div>`}
-    <a href=${pageHash("routines")}>Open the routine</a>
+  return html`<div class="run" aria-label="The run's steps">
+    <span class="run-label"><span class="mono">${it.routine}</span> · started ${clock(blocks[0].started_at)}</span>
+    ${blocks.map((b) => html`<div class=${`rstep ${b.outcome}`}>
+      <span class="rstep-mark"><${Icon} name=${STEP_ICONS[b.outcome] || "check"} size=${12} /></span>
+      <span class="rstep-name">${b.block}</span>
+      <span class="rstep-out">${b.outcome === "waiting" ? `${b.items_in} for you` : b.outcome === "failed" ? "failed" : `${b.items_in} → ${b.items_out} · ${secs(b)} s`}</span>
+    </div>`)}
+    <span class="run-cost">Run cost <strong>$${cost.toFixed(2)}</strong></span>
   </div>`;
 }

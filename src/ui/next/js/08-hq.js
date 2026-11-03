@@ -52,11 +52,11 @@ function HomePage() {
 /** The item in Needs you to handle first, and the way to the rest. */
 function First({ it, count }) {
   if (!it) return html`<p class="first-none">Nothing waits for you.</p>`;
-  // Needs you opens on the agent whose item it is.
-  const open = () => { needs.agent = it.agent || null; };
+  // Needs you opens on this item.
+  const open = () => { needs.sel = it.id; };
   const rest = count - 1;
   return html`<section class="first" aria-label="To handle first">
-    <span class="first-kind">${KIND_TAGS[it.kind] || it.kind}${it.created_at && html` · ${ago(it.created_at)}`}</span>
+    <span class=${`first-kind ${kindOf(it).tone}`}><${Icon} name=${kindOf(it).icon} />${kindOf(it).label}${it.created_at && html` · ${ago(it.created_at)}`}</span>
     <a class="first-title" href=${pageHash("needs-you")} onClick=${open}>${it.title}</a>
     ${it.flag_reason && html`<span class="first-why">${it.flag_reason}</span>`}
     <span class="first-row">
