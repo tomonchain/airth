@@ -188,7 +188,10 @@ impl App {
                 return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
             }
             (Method::Get, "/next/vendor.js") => {
-                return Ok(static_response(NEXT_VENDOR_JS, "text/javascript; charset=utf-8"));
+                return Ok(static_response(
+                    NEXT_VENDOR_JS,
+                    "text/javascript; charset=utf-8",
+                ));
             }
             (Method::Get, "/next/app.js") => {
                 return Ok(static_response(NEXT_JS, "text/javascript; charset=utf-8"));
