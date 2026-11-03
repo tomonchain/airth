@@ -1,7 +1,7 @@
 /* The shell: header, icon rail, main panel (DESIGN.md, Components). */
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-body); }
 a { color: var(--accent); }
 a:hover { color: var(--accent-hover); }
 button { font: inherit; }
@@ -16,11 +16,11 @@ button { font: inherit; }
 .anchor { position: relative; }
 .glyph { display: flex; }
 .glyph.dim { color: var(--text-4); }
-.switcher { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: var(--r-button); border: 0; background: transparent; color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
+.switcher { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: var(--r-button); border: 0; background: transparent; color: var(--text); font-size: var(--fs-section); font-weight: 600; cursor: pointer; }
 .switcher:hover { background: var(--raised); }
-.mark { width: 26px; height: 26px; border-radius: var(--r-chip); background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
-.where { font-size: 15px; color: var(--text-3); }
-.primary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.mark { width: 26px; height: 26px; border-radius: var(--r-chip); background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; font-size: var(--fs-secondary); font-weight: 700; }
+.where { font-size: var(--fs-section); color: var(--text-3); }
+.primary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 0; background: var(--text); color: var(--bg); font-size: var(--fs-body); font-weight: 600; text-decoration: none; cursor: pointer; }
 .primary:hover { color: var(--bg); background: var(--text-2); }
 
 .menu { position: absolute; z-index: 10; margin-top: 4px; min-width: 240px; padding: 6px; border-radius: var(--r-tile); background: var(--card); border: 1px solid var(--line); }
@@ -41,34 +41,34 @@ button { font: inherit; }
 .column.hq { padding-top: 40px; }
 .column { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
 .page-head { display: flex; flex-direction: column; gap: 10px; }
-.date { font-size: 13px; color: var(--text-4); }
+.date { font-size: var(--fs-secondary); color: var(--text-4); }
 
-.label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); }
-.headline { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
-.lede { margin: 0; font-size: 16px; color: var(--text-2); line-height: 1.5; }
+.label { font-size: var(--fs-caption); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); }
+.headline { margin: 0; font-size: var(--fs-headline); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
+.lede { margin: 0; font-size: var(--fs-section); color: var(--text-2); line-height: 1.5; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); padding: 20px; }
-.empty { display: flex; flex-direction: column; gap: 8px; padding: 28px; border: 1px dashed var(--line); border-radius: var(--r-card); color: var(--text-3); font-size: 14px; line-height: 1.5; }
-.empty strong { color: var(--text); font-size: 15px; font-weight: 600; }
+.empty { display: flex; flex-direction: column; gap: 8px; padding: 28px; border: 1px dashed var(--line); border-radius: var(--r-card); color: var(--text-3); font-size: var(--fs-body); line-height: 1.5; }
+.empty strong { color: var(--text); font-size: var(--fs-section); font-weight: 600; }
 /* A part not built yet: one panel everywhere, what it will do. */
-.in-dev { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px 28px; border: 1px dashed var(--line); border-radius: var(--r-card); color: var(--text-3); font-size: 14px; line-height: 1.5; }
-.in-dev strong { color: var(--text); font-size: 15px; font-weight: 600; }
+.in-dev { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px 28px; border: 1px dashed var(--line); border-radius: var(--r-card); color: var(--text-3); font-size: var(--fs-body); line-height: 1.5; }
+.in-dev strong { color: var(--text); font-size: var(--fs-section); font-weight: 600; }
 .in-dev p { margin: 0; }
-.in-dev-tag { font-size: 12px; font-weight: 600; color: var(--accent); background: var(--chip); border-radius: 6px; padding: 3px 8px; }
+.in-dev-tag { font-size: var(--fs-caption); font-weight: 600; color: var(--accent); background: var(--chip); border-radius: 6px; padding: 3px 8px; }
 /* A link that does what a button does, styled as the plain one. */
-a.button { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line-strong); color: var(--text); font-size: 14px; font-weight: 500; text-decoration: none; }
+a.button { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: var(--r-button); border: 1px solid var(--line-strong); color: var(--text); font-size: var(--fs-body); font-weight: 500; text-decoration: none; }
 a.button:hover { background: var(--raised); color: var(--text); }
 .head-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .card.classic { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.card.classic p { margin: 0; color: var(--text-3); font-size: 14px; }
+.card.classic p { margin: 0; color: var(--text-3); font-size: var(--fs-body); }
 .column > .in-dev + .in-dev, .column > .card + .in-dev { margin-top: 16px; }
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 4px; border-top: 1px solid var(--line-soft); color: var(--text); text-decoration: none; }
 .row:first-child { border-top: 0; }
 .row:hover { background: var(--raised); }
-.row .name { font-size: 15px; font-weight: 600; }
-.row .sub { font-size: 13px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .name { font-size: var(--fs-section); font-weight: 600; }
+.row .sub { font-size: var(--fs-secondary); color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .grow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mark.big { width: 36px; height: 36px; border-radius: var(--r-button); font-size: 15px; }
+.mark.big { width: 36px; height: 36px; border-radius: var(--r-button); font-size: var(--fs-section); }
 
 @media (max-width: 720px) {
   /* A wrapping column would be as wide as its widest content. */
@@ -79,5 +79,5 @@ a.button:hover { background: var(--raised); color: var(--text); }
   /* In a column, the panel's flex basis is a height: let it grow with its
      page, or a flush page is cut at the bottom. */
   .panel { flex: 1 0 auto; margin: 0 8px 8px; padding: 24px 16px; }
-  .headline { font-size: 26px; }
+  .headline { font-size: var(--fs-headline-small); }
 }

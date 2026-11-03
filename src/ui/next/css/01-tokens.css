@@ -8,6 +8,17 @@
 @font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/next/fonts/jetbrains-mono-500.woff2") format("woff2"); }
 
 :root {
+  /* Type sizes: the classic interface's scale (founder, 3 November 2026). */
+  --fs-xs: 11px;
+  --fs-caption: 11.5px;
+  --fs-small: 12px;
+  --fs-secondary: 12.5px;
+  --fs-body: 13px;
+  --fs-section: 14px;
+  --fs-card: 15px;
+  --fs-value: 18px;
+  --fs-headline-small: 20px;
+  --fs-headline: 22px;
   --bg: #0F1011;
   --panel: #17181A;
   --card: #1D1F22;
