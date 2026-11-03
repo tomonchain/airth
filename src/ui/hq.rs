@@ -97,7 +97,7 @@ impl App {
             "headline": headline(graphs.len(), &pending, runway.as_ref(), approved),
             "first": first(&pending).map(|i| json!({
                 "id": i.id, "kind": i.kind, "title": i.title, "agent": i.agent,
-                "routine": i.routine, "created_at": i.created_at, "flag_reason": i.flag_reason,
+                "routine": i.routine, "created_at": i.created_at, "flag": i.flag, "flag_reason": i.flag_reason,
             })),
             // A business with no routine has nothing Airth measures yet.
             "finance": finance,

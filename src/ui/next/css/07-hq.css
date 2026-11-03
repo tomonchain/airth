@@ -54,7 +54,9 @@
 
 /* A business's home: the one item to handle first, under the title. */
 .hq .first { display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; border-radius: var(--r-card); background: var(--raised); }
-.hq .first-kind { font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--warn); }
+.hq .first-kind { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--warn); }
+.hq .first-kind.bad { color: var(--bad); }
+.hq .first-kind.info, .hq .first-kind.plain { color: var(--text-3); }
 .hq .first-title { font-size: var(--fs-card); font-weight: 600; color: var(--text); text-decoration: none; }
 .hq .first-title:hover { text-decoration: underline; }
 .hq .first-why { font-size: var(--fs-body); color: var(--text-2); }
