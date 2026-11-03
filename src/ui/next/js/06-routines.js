@@ -69,8 +69,11 @@ function graphSection(list, r) {
             onclick: () => { routines.open[next.realm] = x.name; renderPanel(); } },
           h("span", { class: `dot ${x.error ? "bad" : x.runs[0] && !x.runs[0].ok ? "warn" : "ok"}`, "aria-hidden": "true" }),
           h("span", { class: "mono" }, x.name)))),
-      g && h("button", { type: "button", class: "primary", disabled: routines.running[key] ? true : null, onclick: () => dryRun(r) },
-        routines.running[key] ? "Running…" : "Dry run")),
+      g && h("div", { class: "graph-actions" },
+        h("button", { type: "button", class: "plain", "aria-pressed": routines.editing ? "true" : "false",
+          onclick: () => { routines.editing = !routines.editing; renderPanel(); } }, "Edit"),
+        h("button", { type: "button", class: "primary", disabled: routines.running[key] ? true : null, onclick: () => dryRun(r) },
+          routines.running[key] ? "Running…" : "Dry run"))),
     g ? [
       h("p", { class: "graph-sub" },
         g.description ? g.description.replace(/([^.!?])$/, "$1.") : "No description.",
@@ -126,6 +129,7 @@ function routineDetails(r) {
   const report = routines.dry[key];
   return h("aside", { class: "details", "aria-labelledby": "routine-details" },
     h("h2", { id: "routine-details" }, "Routine details"),
+    routines.editing && inDevelopment("routine-edit"),
     routines.running[key] ? h("p", { class: "note" }, "Dry run going: the feeds are read and the model asked. It can take a minute.")
       : report && report.error ? h("p", { class: "note bad" }, report.error)
       : report ? dryReport(report)

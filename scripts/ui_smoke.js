@@ -26,7 +26,7 @@ class FakeNode {
   insertBefore(n) { n.parent = this; this.children.unshift(n); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return this.attrs[k]; }
-  addEventListener() {}
+  addEventListener(e) { (this.events = this.events || []).push(e); }
   set innerHTML(v) { this.children = [new FakeText(String(v).replace(/<[^>]*>/g, " "))]; }
   get textContent() { return this.children.map((c) => c.textContent).join(" "); }
   set textContent(v) { this.children = [new FakeText(String(v))]; }
@@ -331,6 +331,16 @@ function smokeNext() {
     if (nbody.textContent.trim().length < 40) problems.push(`next/${label}: rendered (almost) nothing`);
     // A list handed to the DOM as is shows its items' addresses as text.
     if (nbody.textContent.includes("#/")) problems.push(`next/${label}: an address shows as text`);
+    // No button that does nothing, no link to nowhere: a button acts or
+    // submits its form; a link has an address, or acts.
+    const walk = (n, inForm) => {
+      const acts = (n.events || []).includes("click");
+      const form = inForm || (n.events || []).includes("submit");
+      if (n.tag === "button" && !acts && !(form && n.attrs.type === "submit")) problems.push(`next/${label}: a button does nothing: "${n.textContent.trim()}"`);
+      if (n.tag === "a" && !acts && (!n.attrs.href || n.attrs.href === "#")) problems.push(`next/${label}: a link goes nowhere: "${n.textContent.trim()}"`);
+      n.children.forEach((c) => walk(c, form));
+    };
+    walk(nbody, false);
   };
   // The HQ: a business to watch with each part, one not started.
   vm.runInContext(`hq.data = { headline: "One business to watch.", needs: 2, businesses: [
@@ -352,6 +362,12 @@ function smokeNext() {
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
+  // What is not built yet shows one panel, saying what it will do.
+  for (const [page, realm, title] of [["hire", "acme", "Hire an agent"], ["new-business", null, "Create a business"], ["workshop", null, "Workshop"], ["settings", null, "Mailboxes"]]) {
+    show(page, { route: { page, realm } });
+    if (!nbody.textContent.includes("In development") || !nbody.textContent.includes(title)) problems.push(`next/${page}: no In development panel for ${title}`);
+  }
+  if (!nbody.textContent.includes("Open the classic interface")) problems.push("next/settings: the classic interface is not reachable");
   show("unauthorized", { route: { page: "hq" }, unauthorized: true });
   // The command bar (decision 64): on business pages, who takes the order
   // and why, a pick when none fits, then where the task went.
