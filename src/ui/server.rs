@@ -408,7 +408,9 @@ pub struct Running {
 }
 
 impl Running {
-    /// Stop the runs in progress (they can be resumed) and forget the server.
+    /// Stop the runs in progress (they can be resumed) and forget the server:
+    /// the Mac's desktop app does, when it quits.
+    #[cfg(target_os = "macos")]
     pub fn stop(&self) {
         let lives: Vec<Arc<Live>> = self.registry.lock().unwrap().values().cloned().collect();
         for live in &lives {
