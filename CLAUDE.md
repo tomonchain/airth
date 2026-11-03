@@ -152,9 +152,9 @@ Each business can have developer agents working on its own platforms, using the 
 - UI copy in English, plain, consistent with the glossary.
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
-- Visual reference: `docs/design/DESIGN.md` and `docs/design/mockups/`. Build pages from the tokens and components in `DESIGN.md`, never by copying the mockups' inline styles.
-- **One interface (decision 72).** The new interface, at `/`, built from three page layouts (reading, board, workspace) with one page header. The classic interface stays at `/classic` until each of its features has moved, or left by decision (decision 42); then it is removed.
-- Stack: JavaScript and CSS in `src/ui`, served by Airth, no build step; pages are Preact components written with `htm`, both vendored in `src/ui/vendor/preact/` (decision 72); a graph library only for the routine editor, through the `src/ui/editor` bundle (decision 57).
+- Visual reference: shadcn's components and the agent dashboards named in decision 73; `docs/design/DESIGN.md`'s tokens are the theme's starting point. Design a screen as a whole, leave out what does not serve its main task, and show it to the founder on a copy before it merges.
+- **One interface (decisions 72 and 73).** The interface in `web/`, whose first screen shows the agents at work in each business. The classic interface stays at `/classic` until each of its features has moved, or left by decision (decision 42); then it is removed.
+- Stack (decision 73): `web/`, Vite, React, TypeScript, Tailwind, shadcn (`base-nova`), Lucide, Sonner. `npm run build` writes `web/dist/`, committed and served from the binary, so `cargo build` needs no Node. `src/ui/next` (Preact) stays until `web/` replaces it, then leaves; no new work goes into it.
 
 ## Scope: the beta
 
@@ -186,14 +186,14 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
-If you changed the app's page: `node scripts/ui_smoke.js`.
+If you changed `src/ui`: `node scripts/ui_smoke.js`. If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
 
 Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass. If a check fails for a reason you do not understand, stop and report it.
 
 ## How to work
 
 - **One change per branch.** One feature or one fix. No drive-by refactoring, renaming or reformatting.
-- **Small diffs.** Aim under 400 changed lines of non-test code; tests do not count toward the limit. If a change needs more, propose a split first and wait.
+- **Small diffs.** Aim under 400 changed lines of non-test code; tests do not count toward the limit. If a change needs more, propose a split first and wait. The interface in `web/` is the exception (decision 73): a screen is designed and shipped whole.
 - **Read before you write.** Find how the codebase already does a thing (errors, state files, threads, tests) and do it the same way. Do not introduce a second way.
 - **Tests first for deterministic logic:** state machines, the queue, idempotence, graph validation, permission paths, the access layer.
 - **Model steps are covered by evaluations, not unit tests:** replay a reference set when a prompt or model changes.
