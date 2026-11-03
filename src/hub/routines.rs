@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 /// What a real run of a routine did: its report, and each act that failed,
 /// in one line.
+#[derive(Debug)]
 pub struct Ran {
     pub text: String,
     pub failed: Vec<String>,
@@ -270,6 +271,35 @@ impl Hub {
             (Ok(_), Err(e)) => Err(e.context("the run's reports were not recorded")),
             (Err(e), Err(r)) => Err(e.context(format!("and its reports were not recorded: {r:#}"))),
         }
+    }
+
+    /// A message from the founder with a post link (decision 63): the
+    /// business's routine started by `{"telegram": "x_post"}` runs on that
+    /// post, with the rest of the message as the founder's angle. Its
+    /// report, or why nothing was drafted.
+    pub fn reply_to_post(&self, realm: &Realm, text: &str) -> Result<Ran> {
+        let link = crate::routine::x_post::link_in(text)
+            .context("no x.com or twitter.com post link in the message")?;
+        let name = self
+            .with_routine_checks(realm, crate::routine::load_all)?
+            .into_iter()
+            .find(|(_, g)| {
+                g.as_ref()
+                    .is_ok_and(|g| g.trigger.telegram.as_deref() == Some("x_post"))
+            })
+            .map(|(name, _)| name)
+            .context(
+                "this business has no routine for replies (trigger {\"telegram\": \"x_post\"})",
+            )?;
+        let mut item = crate::pipeline::run::Item::new();
+        item.insert(crate::routine::run::POST_LINK.into(), link.into());
+        item.insert(
+            crate::routine::run::ANGLE.into(),
+            crate::routine::x_post::angle_in(text).into(),
+        );
+        let run = format!("{name}-{}", Utc::now().format("%Y%m%dT%H%M%S"));
+        let start = crate::routine::run::Start::Event(item);
+        self.run_routine(realm, &name, &run, start, None)
     }
 
     /// The founder answers queue item `id` from `channel`. An approval of a

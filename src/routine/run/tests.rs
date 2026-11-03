@@ -962,3 +962,113 @@ fn what_a_run_drops_reaches_the_founder() {
         }
     }
 }
+
+/// Decision 63: the post the founder sent is read through oEmbed into a
+/// feed-like item, the angle goes to the model as the founder's intent, and
+/// a post too thin to answer stops the run before any draft.
+#[test]
+fn a_reply_run_reads_the_post_and_stops_on_a_thin_one() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/reply.md", "Reply."),
+        (
+            "prompts/reply.schema.json",
+            r#"{"type": "object", "required": ["reply"], "properties": {"reply": {"type": "string"}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "writer", "trigger": {"telegram": "x_post"}, "blocks": [
+            {"id": "post", "type": "read", "source": "x_post"},
+            {"id": "reply", "type": "ai", "prompt": "prompts/reply.md"},
+            {"id": "ok", "type": "approval", "show": "answer.reply"}
+        ]}),
+    )
+    .unwrap();
+    for (text, thin) in [
+        (
+            "Staking yields fell to 2.8% this week and withdrawals doubled.",
+            false,
+        ),
+        ("pic.twitter.com/abc", true),
+    ] {
+        let body = json!({"url": "https://x.com/jack/status/20", "author_name": "jack",
+            "html": format!("<blockquote><p>{text}</p>&mdash; jack <a href=\"x\">November 3, 2026</a></blockquote>")})
+        .to_string();
+        let mut asked_url = String::new();
+        let mut fetch = |url: &str| {
+            asked_url = url.to_string();
+            Ok(crate::pipeline::run::Fetched {
+                body: body.clone(),
+                truncated: false,
+            })
+        };
+        let mut seen = Vec::new();
+        let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            seen.push(format!("{req:?}"));
+            Ok(ModelResponse {
+                content: vec![ContentBlock::Text {
+                    text: r#"{"reply": "My guess: it is rates."}"#.into(),
+                }],
+                stop_reason: StopReason::EndTurn,
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            })
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+            fast: None,
+        };
+        let mut store = Store::open(&root.path().join(FILE)).unwrap();
+        let mut event = Item::new();
+        event.insert(
+            POST_LINK.into(),
+            "https://twitter.com/jack/status/20?s=46".into(),
+        );
+        event.insert(ANGLE.into(), "push back on the yield claim".into());
+        let ran = run(
+            "replies",
+            &graph,
+            Dry {
+                root: root.path(),
+                store: &mut store,
+                io: &mut io,
+                integrations: &[],
+            },
+            None,
+            Start::Event(event),
+            Utc::now(),
+        );
+        assert!(
+            asked_url.starts_with("https://publish.x.com/oembed?"),
+            "{asked_url}"
+        );
+        if thin {
+            let e = format!("{:#}", ran.unwrap_err());
+            assert!(
+                e.contains("not drafted: the post is mostly an image or a chart"),
+                "{e}"
+            );
+            assert!(seen.is_empty(), "nothing is drafted");
+        } else {
+            let report = ran.unwrap().to_string();
+            assert!(
+                report.contains("would ask the founder: My guess: it is rates."),
+                "{report}"
+            );
+            assert!(
+                seen[0].contains("founder_angle")
+                    && seen[0].contains("push back on the yield claim")
+            );
+            assert!(seen[0].contains("Staking yields fell to 2.8%"));
+        }
+    }
+}

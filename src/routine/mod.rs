@@ -18,6 +18,7 @@ pub const DIR: &str = "routines";
 
 pub mod run;
 pub mod week;
+pub mod x_post;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +37,8 @@ pub struct Trigger {
     pub schedule: Option<String>,
     pub webhook: Option<String>,
     pub manual: Option<bool>,
+    /// `x_post`: a post link the founder sends the bot (decision 63).
+    pub telegram: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -255,9 +258,13 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
         t.schedule.is_some(),
         t.webhook.is_some(),
         t.manual == Some(true),
+        t.telegram.is_some(),
     ];
     if set.iter().filter(|s| **s).count() != 1 {
-        bail!("the trigger is one of schedule, webhook or manual");
+        bail!("the trigger is one of schedule, webhook, manual or telegram");
+    }
+    if let Some(event) = t.telegram.as_deref().filter(|e| *e != "x_post") {
+        bail!("unknown telegram trigger '{event}' (x_post)");
     }
     if let Some(s) = &t.schedule {
         Schedule::parse(s)?;
@@ -273,7 +280,8 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
         if graph.blocks[..i].iter().any(|o| o.id == b.id) {
             bail!("block id '{}' is used twice", b.id);
         }
-        check_block(cx, b).with_context(|| format!("block '{}'", b.id))?;
+        check_block(cx, b, graph.trigger.telegram.as_deref())
+            .with_context(|| format!("block '{}'", b.id))?;
     }
     // No cycle, and every block reachable from the first.
     let edges: Vec<Vec<usize>> = (0..graph.blocks.len())
@@ -337,7 +345,7 @@ fn positive(what: &str, n: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-fn check_block(cx: &Checks, block: &Block) -> Result<()> {
+fn check_block(cx: &Checks, block: &Block, telegram: Option<&str>) -> Result<()> {
     let declared = |action: &str| {
         cx.actions
             .iter()
@@ -377,8 +385,12 @@ fn check_block(cx: &Checks, block: &Block) -> Result<()> {
                         bail!("'{}' is not a read action", a.id);
                     }
                 }
-                "rss" | "web" | "business" => {}
-                other => bail!("unknown source '{other}' (rss, web, connector, business)"),
+                // The post the founder sent: only a routine they start that way.
+                "x_post" if telegram != Some("x_post") => {
+                    bail!("an x_post read needs the trigger {{\"telegram\": \"x_post\"}}")
+                }
+                "rss" | "web" | "business" | "x_post" => {}
+                other => bail!("unknown source '{other}' (rss, web, connector, business, x_post)"),
             }
             if *max_age_days == Some(0) {
                 bail!("max_age_days is at least 1");

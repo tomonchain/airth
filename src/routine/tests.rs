@@ -318,3 +318,24 @@ fn a_schema_with_a_rule_airth_does_not_check_is_refused() {
         "{e}"
     );
 }
+
+/// Decision 63: a routine the founder starts with a post link reads it
+/// with `x_post`, only from that trigger; the post comes from outside, so
+/// it reaches no act without an approval.
+#[test]
+fn a_reply_routine_reads_the_founders_post_and_waits_for_approval() {
+    let root = business();
+    let replies = |blocks: Value| json!({"agent": "writer", "trigger": {"telegram": "x_post"}, "blocks": blocks});
+    let post = json!({"id": "post", "type": "read", "source": "x_post"});
+    let ok = json!({"id": "ok", "type": "approval", "show": "summary"});
+    let send = json!({"id": "send", "type": "act", "action": "blog.publish"});
+    try_graph(root.path(), replies(json!([post, ok, send]))).unwrap();
+    let err = |g: Value| format!("{:#}", try_graph(root.path(), g).unwrap_err());
+    assert!(err(replies(json!([post, send]))).contains("without an approval"));
+    assert!(err(posts(json!([post, ok]))).contains("needs the trigger"));
+    assert!(
+        err(json!({"agent": "writer", "trigger": {"telegram": "mail"}, "blocks": [post, ok]}))
+            .contains("unknown telegram trigger")
+    );
+    assert!(err(json!({"agent": "writer", "trigger": {"telegram": "x_post", "manual": true}, "blocks": [post, ok]})).contains("one of schedule"));
+}
