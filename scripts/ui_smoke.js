@@ -371,6 +371,9 @@ function smokeNext() {
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
+  // The rail ends with the theme toggle and the founder's profile.
+  const rail = JSON.stringify(nbody.querySelector("#rail"), (k, v) => (k === "parent" ? undefined : v));
+  if (!/Switch to (light|dark) mode/.test(rail) || !rail.includes("Your profile")) problems.push("next/rail: no theme toggle or profile");
   // What is not built yet shows one panel, saying what it will do.
   for (const [page, realm, title] of [["hire", "acme", "Hire an agent"], ["new-business", null, "Create a business"], ["workshop", null, "Workshop"], ["settings", null, "Mailboxes"]]) {
     show(page, { route: { page, realm } });

@@ -54,3 +54,33 @@
   --r-large: 20px;
   --r-pill: 999px;
 }
+
+/* The light theme, from the classic interface's palette (the founder's
+   choice). The theme follows the system unless chosen, and is shared with
+   the classic interface (/theme.js sets data-theme). */
+:root[data-theme="light"] {
+  --bg: #F4F4F5;
+  --panel: #FFFFFF;
+  --card: #FAFAFA;
+  --raised: #EDEDEF;
+  --chip: #F0F0F2;
+  --canvas: #FAFAFB;
+  --line: #E4E4E7;
+  --line-soft: #EFEFF1;
+  --line-strong: #D4D4D8;
+  --text: #09090B;
+  --text-2: #3F3F46;
+  --text-3: #5F5F66;
+  --text-4: #71717A;
+  --text-5: #8B8B93;
+  --icon: #5F5F66;
+  --accent: #3B5BDB;
+  --accent-hover: #2F4AC0;
+  --ok: #15803D;
+  --ok-bg: #E7F6EC;
+  --warn: #B45309;
+  --warn-bg: #FFF6E8;
+  --warn-chip: #FDEBD0;
+  --warn-muted: #8A5A2B;
+  --bad: #DC2626;
+}

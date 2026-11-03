@@ -30,8 +30,15 @@ button { font: inherit; }
 
 .body { display: flex; flex-wrap: wrap; flex: 1 1 auto; align-items: stretch; }
 .rail { flex: 0 0 72px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 16px; }
-.rail a { position: relative; width: 44px; height: 44px; border-radius: var(--r-tile); display: flex; align-items: center; justify-content: center; color: var(--icon); }
-.rail a:hover { background: var(--raised); color: var(--text); }
+/* On a wide screen the rail stays in view as the page scrolls, so its
+   bottom items (Workshop, Settings, theme, profile) never leave the screen;
+   64 px is the header's height. */
+@media (min-width: 721px) {
+  .rail { position: sticky; top: 0; align-self: flex-start; height: calc(100vh - 64px); box-sizing: border-box; }
+}
+.rail a, .rail-button { position: relative; width: 44px; height: 44px; border-radius: var(--r-tile); display: flex; align-items: center; justify-content: center; color: var(--icon); }
+.rail-button { border: 0; padding: 0; background: transparent; cursor: pointer; }
+.rail a:hover, .rail-button:hover { background: var(--raised); color: var(--text); }
 .rail a[aria-current] { background: var(--raised); color: var(--text); }
 .rail .gap { flex: 1 1 auto; }
 .rail .dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 4px; background: var(--warn); }

@@ -73,7 +73,20 @@ function renderRail() {
     h("a", { href: "#/hq", "aria-label": "HQ", title: "HQ", "aria-current": next.route.page === "hq" ? "page" : null, svg: icon("hq") }),
     PAGES.map(link),
     h("div", { class: "gap" }),
-    PINNED.map(link));
+    PINNED.map(link),
+    themeToggle(),
+    // The founder's profile lives in the classic interface until it moves.
+    h("a", { href: "/classic#/owner", "aria-label": "Your profile", title: "Your profile", svg: icon("profile") }));
+}
+
+/** Light or dark, kept in this browser and shared with the classic
+    interface (/theme.js). */
+function themeToggle() {
+  const theme = window.airthTheme;
+  const dark = theme ? theme.current() === "dark" : true;
+  const label = dark ? "Switch to light mode" : "Switch to dark mode";
+  return h("button", { type: "button", class: "rail-button", "aria-label": label, title: label, svg: icon(dark ? "sun" : "moon"),
+    onclick: (e) => { if (theme) theme.set(dark ? "light" : "dark", e); renderRail(); } });
 }
 
 function renderAll() {
