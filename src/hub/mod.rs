@@ -85,12 +85,12 @@ impl Hub {
         }
     }
 
-    #[cfg(test)]
+    /// A Hub whose runs all use `model`: the security scenarios' scripted
+    /// agent (decision 67), and tests.
     pub fn with_model(self, model: Box<dyn Model>) -> Self {
         self.with_connections(Connections::single(Arc::from(model)))
     }
 
-    #[cfg(test)]
     pub fn with_connections(mut self, connections: Connections) -> Self {
         self.connections = Some(connections);
         self

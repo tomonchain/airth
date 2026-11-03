@@ -115,9 +115,8 @@ pub trait Observer: Send {
     fn changed(&mut self, _state: &State) {}
 }
 
-#[cfg(test)]
+/// Watches nothing: the security scenarios' runs (decision 67) and tests.
 pub struct NoObserver;
-#[cfg(test)]
 impl Observer for NoObserver {}
 
 pub const STOPPED_TOOL_RESULT: &str = "Not run: the run was stopped by the user.";
