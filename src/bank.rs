@@ -44,6 +44,40 @@ impl std::fmt::Display for Reauthorize {
 
 impl std::error::Error for Reauthorize {}
 
+/// Revolut refused a request for another reason than the consent: an
+/// ordinary incident, with Revolut's own message.
+#[derive(Debug)]
+pub struct Refused(pub String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Revolut refused the request: {}", self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// Revolut's own words in a refusal, in one line.
+fn said(status: u16, text: &str) -> (Option<String>, String) {
+    let body: Value = serde_json::from_str(text).unwrap_or_default();
+    let error = body["error"].as_str().map(str::to_string);
+    let words = ["error_description", "message", "error"]
+        .iter()
+        .find_map(|k| body[*k].as_str())
+        .map_or_else(|| text.trim().chars().take(200).collect(), str::to_string);
+    (error, format!("HTTP {status}: {words}"))
+}
+
+/// What a refusal means: the consent gone (401, 403, or `invalid_grant`),
+/// or an ordinary refusal.
+fn refusal(status: u16, text: &str) -> anyhow::Error {
+    let (error, words) = said(status, text);
+    match (status, error.as_deref()) {
+        (401 | 403, _) | (_, Some("invalid_grant")) => Reauthorize(words).into(),
+        _ => Refused(words).into(),
+    }
+}
+
 pub fn key_path(skills_dir: &Path) -> PathBuf {
     skills_dir.join("mcp-auth").join("revolut.pk8")
 }
@@ -147,7 +181,7 @@ fn token(api: &str, form: &[(&str, &str)]) -> Result<Value> {
     let text = response.text().unwrap_or_default();
     match status.as_u16() {
         200..=299 => Ok(serde_json::from_str(&text).context("Revolut's token answer is not JSON")?),
-        400 | 401 | 403 => Err(Reauthorize(format!("HTTP {status}")).into()),
+        400..=499 => Err(refusal(status.as_u16(), &text)),
         _ => bail!("Revolut's token endpoint answered HTTP {status}"),
     }
 }
@@ -164,7 +198,24 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
         options.mode(0o600);
     }
     options.open(path)?.write_all(bytes)?;
+    private(path)
+}
+
+/// Readable by the founder only, even when the file was there before:
+/// `OpenOptions::mode` only applies to a file it creates.
+fn private(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
+}
+
+fn keep(skills_dir: &Path, access: &Access) -> Result<()> {
+    let path = access_path(skills_dir);
+    crate::realm::write_private(&path, &serde_json::to_string_pretty(access)?)?;
+    private(&path)
 }
 
 /// Connect the business's Revolut: keep its key, trade the consent's code
@@ -209,11 +260,7 @@ pub fn connect(
             .into(),
     };
     write_private_bytes(&key_path(skills_dir), key)?;
-    crate::realm::write_private(
-        &access_path(skills_dir),
-        &serde_json::to_string_pretty(&access)?,
-    )?;
-    Ok(())
+    keep(skills_dir, &access)
 }
 
 /// A valid access token, refreshed when it has less than a minute left.
@@ -248,10 +295,7 @@ pub fn access_token(skills_dir: &Path, now: DateTime<Utc>) -> Result<(String, St
     if let Some(refresh) = answer["refresh_token"].as_str() {
         access.refresh_token = refresh.into();
     }
-    crate::realm::write_private(
-        &access_path(skills_dir),
-        &serde_json::to_string_pretty(&access)?,
-    )?;
+    keep(skills_dir, &access)?;
     Ok((access.api, access.access_token))
 }
 
@@ -283,7 +327,7 @@ pub fn finance(skills_dir: &Path, now: DateTime<Utc>) -> Result<Finance> {
             .context("Revolut did not answer")?;
         match response.status().as_u16() {
             200..=299 => Ok(response.json()?),
-            401 | 403 => Err(Reauthorize(format!("HTTP {}", response.status())).into()),
+            code @ 400..=499 => Err(refusal(code, &response.text().unwrap_or_default())),
             code => bail!("Revolut answered HTTP {code} to {path}"),
         }
     };
@@ -472,6 +516,65 @@ mod tests {
         .verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &signature)
         .expect("signed by the business's key");
         assert!(assertion(b"not a key", "cid", REDIRECT, Utc::now()).is_err());
+    }
+
+    /// Files already there, readable by others, are made the founder's
+    /// only: the mode is set after writing, not only at creation.
+    #[test]
+    #[cfg(unix)]
+    fn existing_files_are_made_private_on_connect() {
+        use std::os::unix::fs::PermissionsExt;
+        let (key, _) = key();
+        let dir = tempfile::tempdir().unwrap();
+        let skills = dir.path();
+        std::fs::create_dir_all(skills.join("mcp-auth")).unwrap();
+        for file in [key_path(skills), access_path(skills)] {
+            std::fs::write(&file, "old").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let (api, _) = revolut(vec![(
+            200,
+            json!({"access_token": "a1", "expires_in": 2400, "refresh_token": "r1"}),
+        )]);
+        connect(
+            skills,
+            &api,
+            "cid",
+            REDIRECT,
+            &key,
+            &format!("{REDIRECT}?code=oa_1"),
+            Utc::now(),
+        )
+        .unwrap();
+        for file in [key_path(skills), access_path(skills)] {
+            let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "{}", file.display());
+        }
+    }
+
+    /// Re-authorization only on 401, 403 or `invalid_grant`; any other
+    /// refusal carries Revolut's message and is not mistaken for it.
+    #[test]
+    fn only_a_lost_consent_asks_for_re_authorization() {
+        let lost = |status: u16, body: Value| {
+            refusal(status, &body.to_string())
+                .downcast_ref::<Reauthorize>()
+                .is_some()
+        };
+        assert!(lost(401, json!({})));
+        assert!(lost(403, json!({"message": "forbidden"})));
+        assert!(lost(400, json!({"error": "invalid_grant"})));
+        let other = refusal(
+            400,
+            &json!({"error": "invalid_request", "error_description": "client_assertion expired"})
+                .to_string(),
+        );
+        assert!(other.downcast_ref::<Reauthorize>().is_none());
+        assert_eq!(
+            format!("{other}"),
+            "Revolut refused the request: HTTP 400: client_assertion expired"
+        );
+        assert!(refusal(404, "not json").downcast_ref::<Refused>().is_some());
     }
 
     /// Cash in the main currency; this month's money in and out, without

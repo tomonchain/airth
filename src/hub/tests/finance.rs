@@ -110,3 +110,51 @@ fn the_banks_figures_are_read_hourly_and_unknown_once_the_consent_is_gone() {
             .contains("airth bank connect")
     );
 }
+
+/// Another refusal than a lost consent is an ordinary incident, with
+/// Revolut's message; it is not a request to re-authorize.
+#[test]
+fn another_refusal_is_an_ordinary_incident_with_revolut_s_message() {
+    let f = fixture();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let now = Utc::now();
+    let (api, _) = revolut(vec![
+        (
+            200,
+            json!({"access_token": "a1", "expires_in": 2400, "refresh_token": "r1"}),
+        ),
+        (400, json!({"message": "from must be a date"})),
+        (400, json!({"message": "from must be a date"})),
+    ]);
+    let pair = aws_lc_rs::rsa::KeyPair::generate(aws_lc_rs::rsa::KeySize::Rsa2048).unwrap();
+    let key: aws_lc_rs::encoding::Pkcs8V1Der = pair.as_der().unwrap();
+    let redirect = "https://hedgen.xyz/airth/revolut";
+    crate::bank::connect(
+        &f.realm.skills_dir(),
+        &api,
+        "cid",
+        redirect,
+        key.as_ref(),
+        &format!("{redirect}?code=oa_1"),
+        now,
+    )
+    .unwrap();
+    hub.refresh_finance(now).unwrap();
+    hub.refresh_finance(now + Duration::hours(2)).unwrap();
+    let incidents: Vec<_> = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == "incident")
+        .collect();
+    assert_eq!(incidents.len(), 1, "once while open");
+    assert_eq!(incidents[0].title, crate::hub::finance::REFUSED);
+    assert!(
+        incidents[0].args["detail"]
+            .as_str()
+            .unwrap()
+            .contains("HTTP 400: from must be a date")
+    );
+    assert_ne!(shown(&f.realm, now).unwrap()["unknown"], REAUTHORIZE);
+}
