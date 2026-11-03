@@ -54,8 +54,8 @@ Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Po
 
 ### Type
 
-- Inter 400, 500 and 600; JetBrains Mono for code, ids and logs. Bundle the font files with the app: no request to a font CDN at runtime.
-- Sizes, the classic interface's scale (the founder's choice, 3 November 2026), as tokens `--fs-*`: 11 small labels · 11.5 captions and labels · 12 · 12.5 secondary · 13 rows and body · 14 section titles and sentences · 15 card titles · 18 values and business names · 22 page headline (20 under 720 px). Pages use the tokens, never a size of their own.
+- The system's fonts, as in the classic interface (the founder's choice, 3 November 2026): SF Pro on a Mac (`-apple-system`), Segoe UI on Windows; SF Mono (`ui-monospace`) for code, ids and logs. Nothing to bundle, nothing fetched. Body text 14 px, line-height 1.55.
+- Sizes, the classic interface's scale (the founder's choice, 3 November 2026), as tokens `--fs-*`: 11 small labels · 11.5 captions and labels · 12 · 12.5 secondary · 14 rows and body · 14 section titles and sentences · 15 card titles · 18 values and business names · 22 page headline (20 under 720 px). Pages use the tokens, never a size of their own.
 - Section labels: 11.5 px, 600, uppercase, letter-spacing 0.04em, `--text-3`.
 - Headline: 600, letter-spacing −0.015em, line-height 1.2. It is one sentence that says what matters today.
 
