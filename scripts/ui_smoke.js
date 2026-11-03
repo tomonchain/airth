@@ -313,7 +313,7 @@ function smokeNext() {
   for (const id of ["top", "rail", "panel"]) { const n = new NextNode("div"); n.attrs.id = id; nbody.append(n); }
   const ctx = {
     Node: FakeNode, Element: NextNode, Date, console, storage,
-    document: { createElement: (t) => new NextNode(t), createTextNode: (t) => new FakeText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s) },
+    document: { createElement: (t) => new NextNode(t), createTextNode: (t) => new FakeText(t), addEventListener() {}, querySelector: (s) => nbody.querySelector(s), body: nbody, activeElement: null },
     location: { hash: "" }, window: { addEventListener() {} },
     sessionStorage: storage, localStorage: storage,
   };
@@ -374,6 +374,16 @@ function smokeNext() {
   // The rail ends with the theme toggle and the founder's profile.
   const rail = JSON.stringify(nbody.querySelector("#rail"), (k, v) => (k === "parent" ? undefined : v));
   if (!/Switch to (light|dark) mode/.test(rail) || !rail.includes("Your profile")) problems.push("next/rail: no theme toggle or profile");
+  // Search (⌘K): pages, businesses and actions, filtered as you type; Esc
+  // closes it.
+  show("hq, search", { route: { page: "hq" } });
+  vm.runInContext(`openSearch()`, ctx);
+  const found = () => (nbody.querySelector("#search") || { textContent: "" }).textContent;
+  if (!found().includes("Go to") || !found().includes("Switch business") || !found().includes("perso")) problems.push(`next/search: pages or businesses missing: ${found().slice(0, 200)}`);
+  vm.runInContext(`search.query = "calend"; renderSearch();`, ctx);
+  if (!found().includes("Calendar") || found().includes("Settings")) problems.push(`next/search: the query does not filter: ${found().slice(0, 200)}`);
+  vm.runInContext(`closeSearch()`, ctx);
+  if (nbody.querySelector("#search")) problems.push("next/search: it does not close");
   // What is not built yet shows one panel, saying what it will do.
   for (const [page, realm, title] of [["hire", "acme", "Hire an agent"], ["new-business", null, "Create a business"], ["workshop", null, "Workshop"], ["settings", null, "Mailboxes"]]) {
     show(page, { route: { page, realm } });

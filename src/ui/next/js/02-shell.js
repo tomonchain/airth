@@ -70,6 +70,7 @@ function renderRail() {
     return el;
   };
   $("#rail").replaceChildren(
+    h("button", { type: "button", class: "rail-button", "aria-label": "Search (⌘K)", title: "Search (⌘K)", svg: icon("search"), onclick: openSearch }),
     h("a", { href: "#/hq", "aria-label": "HQ", title: "HQ", "aria-current": next.route.page === "hq" ? "page" : null, svg: icon("hq") }),
     PAGES.map(link),
     h("div", { class: "gap" }),
