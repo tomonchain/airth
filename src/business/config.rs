@@ -13,7 +13,11 @@ const PROFILE: &[&str] = &[
     "name", "legal_name", "legal_form", "country", "status", "registration_number",
     "registered_office", "incorporated_on", "fiscal_year_end", "vat_number", "tax_regime",
     "currency", "bank", "domain", "links",
+    // A task's budget (decision 64): optional, with defaults.
+    "task_max_minutes", "task_max_cost_usd",
 ];
+/// Fields Airth has a default for: never listed as left to fill.
+const PROFILE_OPTIONAL: &[&str] = &["task_max_minutes", "task_max_cost_usd"];
 const GOAL: &[&str] = &[
     "goal",
     "measure",
@@ -23,7 +27,12 @@ const GOAL: &[&str] = &[
     "baseline_minutes",
 ];
 const LINE: &[&str] = &["title", "kind", "status"];
-const AGENT: &[&str] = &["title", "department", "reports_to", "lines", "mailbox"];
+#[rustfmt::skip]
+const AGENT: &[&str] = &[
+    "title", "department", "reports_to", "lines", "mailbox",
+    // What its tasks may use (decision 64), and its character (decision 65).
+    "integrations", "skills", "repos", "look", "accessory",
+];
 
 /// The seven departments of `CLAUDE.md`, fixed in Airth.
 #[rustfmt::skip]
@@ -159,7 +168,11 @@ fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
     }
     // Before registration, only who it is and where.
     Ok(match d.text("status").as_deref() {
-        Some("registered") => PROFILE.to_vec(),
+        Some("registered") => PROFILE
+            .iter()
+            .copied()
+            .filter(|k| !PROFILE_OPTIONAL.contains(k))
+            .collect(),
         _ => vec!["name", "country", "status"],
     })
 }
@@ -201,6 +214,32 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
+    /// Decisions 64 and 65's fields load: an agent's scope and look, the
+    /// profile's task budget.
+    #[test]
+    fn task_and_character_fields_load() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\ntask_max_minutes: 10\ntask_max_cost_usd: 0.5\n---\nA business.\n",
+        );
+        write(
+            r,
+            "agents/writer.md",
+            "---\ntitle: Writer\ndepartment: marketing\nintegrations: typefully\nskills: \nrepos: site\nlook: 0a1b2c3d\naccessory: book\n---\nWrite.\n",
+        );
+        let config = load(r).unwrap();
+        assert_eq!(
+            config.agents[0].1.text("integrations").as_deref(),
+            Some("typefully")
+        );
+        assert_eq!(
+            config.profile.text("task_max_minutes").as_deref(),
+            Some("10")
+        );
+    }
     #[test]
     fn a_business_loads_with_what_is_left_to_fill() {
         let root = tempfile::tempdir().unwrap();
