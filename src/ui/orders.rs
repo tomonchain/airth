@@ -52,8 +52,60 @@ impl App {
                 self.spawn(realm, state, Job::Alone);
                 json_response(200, json!({"id": id, "agent": agent}))
             }
+            (Method::Get, ["realms", r, "tasks"]) => {
+                json_response(200, self.tasks(&self.realm(r)?)?)
+            }
             _ => return Ok(None),
         }))
+    }
+
+    /// The founder's tasks (decision 64), grouped: waiting for the founder
+    /// in Needs you, to review (a change to adopt), running, and the last
+    /// ones done.
+    fn tasks(&self, realm: &Realm) -> Result<Value> {
+        let waiting: std::collections::HashMap<String, i64> = Store::of(realm)?
+            .queue(&["pending"])?
+            .into_iter()
+            .filter_map(|i| i.run.map(|r| (r, i.id)))
+            .collect();
+        let (mut groups, mut done) = (
+            json!({"waiting": [], "review": [], "running": []}),
+            Vec::new(),
+        );
+        for run in self
+            .hub
+            .runs(realm)?
+            .into_iter()
+            .filter(|r| r.agent.is_some())
+        {
+            let status = run.display_status();
+            let line = run.report.clone().unwrap_or_else(|| match run.plan_total {
+                0 => String::new(),
+                n => format!("{} of {n} steps done", run.plan_done),
+            });
+            let task = json!({
+                "id": run.id,
+                "order": run.objective,
+                "agent": run.agent,
+                "status": status,
+                "line": line,
+                "at": run.updated_at,
+                "item": waiting.get(&run.id),
+            });
+            let group = match (status, waiting.contains_key(&run.id), run.change) {
+                (_, true, _) => "waiting",
+                ("running", _, _) => "running",
+                ("completed", _, Some(crate::isolation::ChangeStatus::Open)) => "review",
+                _ => {
+                    done.push(task);
+                    continue;
+                }
+            };
+            groups[group].as_array_mut().expect("an array").push(task);
+        }
+        done.truncate(10);
+        groups["done"] = done.into();
+        Ok(groups)
     }
 
     fn agent_names(&self, realm: &Realm) -> Result<Vec<String>> {
@@ -61,5 +113,69 @@ impl App {
             .into_iter()
             .map(|(name, _)| name)
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::business::store::autonomy::NewItem;
+
+    /// Tasks lists the founder's orders only, each in its group: one waiting
+    /// on an item in Needs you, the others done; a chat is not a task.
+    #[test]
+    fn tasks_are_grouped_by_what_they_wait_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(root.join("agents/writer.md"), "Write.").unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let asking = app
+            .hub
+            .start_task(&realm, "writer", "Check today's rates")
+            .unwrap();
+        // Run ids are times to the millisecond: one apart each.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut finished = app
+            .hub
+            .start_task(&realm, "writer", "Outline the week")
+            .unwrap();
+        finished.status = crate::state::Status::Completed;
+        finished.report = Some("\nThe outline is in the run.\nMore.".into());
+        finished.save().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        app.hub.create_run_in(&realm, "Just a chat", None).unwrap();
+        let item = Store::of(&realm)
+            .unwrap()
+            .propose(&NewItem {
+                kind: "approval",
+                title: "writer asks to use network",
+                agent: Some("writer"),
+                routine: None,
+                run: Some(&asking.id),
+                action: None,
+                args: "{}",
+                execute_at: None,
+                source: "{}",
+                model_call: None,
+            })
+            .unwrap();
+        let page = app.tasks(&realm).unwrap();
+        assert_eq!(page["waiting"][0]["order"], "Check today's rates");
+        assert_eq!(page["waiting"][0]["item"], item);
+        assert_eq!(page["done"].as_array().unwrap().len(), 1);
+        assert_eq!(page["done"][0]["line"], "The outline is in the run.");
+        assert_eq!(page["done"][0]["agent"], "writer");
+        let all = page.to_string();
+        assert!(!all.contains("Just a chat"), "a chat is not a task");
     }
 }
