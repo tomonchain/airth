@@ -12,7 +12,7 @@
 .page-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Reading: one column, 880 px at most, aligned with the header. */
-.layout.reading .layout-body { max-width: 880px; }
+.layout.reading .layout-body, .layout.reading > .page-header { max-width: 880px; }
 
 /* Board: the panel's full width. Nothing to add: the body takes it. */
 

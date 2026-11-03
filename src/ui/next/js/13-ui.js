@@ -15,17 +15,18 @@ function PageHeader({ label, title, summary, actions }) {
   </header>`;
 }
 
-/** Reading: one column under the header, 880 px at most. */
-function Reading({ header, children }) {
-  return html`<div class="layout reading" data-layout="reading">
+/** Reading: one column under the header, 880 px at most. `kind` names the
+    page for its own styles, never for a layout of its own. */
+function Reading({ header, kind, children }) {
+  return html`<div class=${`layout reading ${kind || ""}`} data-layout="reading">
     <${PageHeader} ...${header} />
     <div class="layout-body">${children}</div>
   </div>`;
 }
 
 /** Board: the panel's full width under the header. */
-function Board({ header, children }) {
-  return html`<div class="layout board" data-layout="board">
+function Board({ header, kind, children }) {
+  return html`<div class=${`layout board ${kind || ""}`} data-layout="board">
     <${PageHeader} ...${header} />
     <div class="layout-body">${children}</div>
   </div>`;

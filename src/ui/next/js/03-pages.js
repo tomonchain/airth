@@ -19,8 +19,12 @@ function Page() {
   if (page === "new-business") return html`<${DevPage} title="New business" part="new-business" />`;
   if (page === "workshop") return html`<${DevPage} title="Workshop" part="workshop" />`;
   if (page === "settings") return html`<${SettingsPage} />`;
-  const legacy = { hq: hqPage, "needs-you": needsPage, team: teamPage, routines: routinesPage, calendar: calendarPage, tasks: tasksPage }[page];
-  if (legacy && (page === "hq" || realm)) return html`<${Legacy} node=${legacy()} />`;
+  if (page === "hq") return html`<${HqPage} />`;
+  if (page === "team" && realm) return html`<${TeamPage} />`;
+  if (page === "tasks" && realm) return html`<${TasksPage} />`;
+  if (page === "calendar" && realm) return html`<${CalendarPage} />`;
+  const legacy = { "needs-you": needsPage, routines: routinesPage }[page];
+  if (legacy && realm) return html`<${Legacy} node=${legacy()} />`;
   return html`<${DevPage} title="This page" part="page" />`;
 }
 

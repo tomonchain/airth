@@ -1,8 +1,6 @@
 /* Calendar (docs/design/mockups/calendar.html): the week from today, one
    column a day, and the deadlines and late starts beside it. */
 
-/* The week needs the panel's whole width, as in the mockup. */
-.column.calendar { max-width: none; margin: 0; }
 .calendar .cal { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .calendar .week { flex: 999 1 560px; min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); overflow-x: auto; }
 .calendar .day { display: flex; flex-direction: column; gap: 8px; padding: 14px 10px; border-right: 1px solid var(--line); min-width: 112px; }

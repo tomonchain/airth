@@ -19,10 +19,13 @@ const pageHead = (label, title, sub) =>
 const minutes = (s) => (s < 60 ? `${s} s` : `${Math.round(s / 60)} min`);
 const money = (usd, unpriced) => `$${(usd || 0).toFixed(2)}${unpriced ? ` + ${unpriced} unpriced` : ""}`;
 
-function teamPage() {
+/** Team, in the Board layout (decision 72): the agents by department. */
+function TeamPage() {
   const data = loaded(company.team, "team");
-  if (!data) return h("div", { class: "column" }, pageHead(next.realm, "Team"), h("p", { class: "lede" }, "Loading…"));
-  if (data.error) return h("div", { class: "column" }, pageHead(next.realm, "Team"), h("p", { class: "note bad" }, data.error));
+  const hire = html`<a class="button" href=${pageHash("hire")}>Hire an agent</a>`;
+  const header = { label: next.realm, title: "Team", actions: hire };
+  if (!data) return html`<${Board} header=${header}><p class="lede">Loading…</p></${Board}>`;
+  if (data.error) return html`<${Board} header=${header}><p class="note bad">${data.error}</p></${Board}>`;
   const agents = data.agents || [];
   const byDept = new Map();
   for (const a of agents) {
@@ -31,42 +34,38 @@ function teamPage() {
     byDept.get(d).push(a);
   }
   const depts = [...byDept.keys()];
-  const title = !agents.length ? "No agent yet."
-    : depts.length === 1 ? `${agents.length === 1 ? "One agent" : `${agents.length} agents`}, ${agents.length === 1 ? "in" : "all in"} ${DEPARTMENT_NAMES[depts[0]] || "no department yet"}.`
-    : `${agents.length} agents in ${depts.length} departments.`;
-  return h("div", { class: "column wide" },
-    h("div", { class: "head-row" },
-      pageHead(null, title, agents.length > 0 && "Your time and cost over the last 30 days."),
-      h("a", { class: "button", href: pageHash("hire") }, "Hire an agent")),
-    !agents.length && h("div", { class: "empty" }, h("strong", {}, "No agent yet"),
-      h("span", {}, "An agent is a file in agents/ in the business folder: its title, its department and its job.")),
-    depts.map((d) => h("section", { class: "dept" },
-      h("h2", {}, DEPARTMENT_NAMES[d] || "No department yet"),
-      h("div", { class: "cards" }, byDept.get(d).map(agentCard)))));
+  const summary = !agents.length ? "No agent yet."
+    : `${agents.length === 1 ? "One agent" : `${agents.length} agents`} in ${depts.length === 1 ? DEPARTMENT_NAMES[depts[0]] || "no department yet" : `${depts.length} departments`}. Your time and cost over the last 30 days.`;
+  return html`<${Board} header=${{ ...header, summary }}>
+    ${!agents.length && html`<div class="empty"><strong>No agent yet</strong>
+      <span>An agent is a file in agents/ in the business folder: its title, its department and its job.</span></div>`}
+    ${depts.map((d) => html`<section class="dept"><h2>${DEPARTMENT_NAMES[d] || "No department yet"}</h2>
+      <div class="cards">${byDept.get(d).map((a) => html`<${AgentCard} a=${a} />`)}</div></section>`)}
+  </${Board}>`;
 }
 
-function agentCard(a) {
-  return h("article", { class: "card agent-card" },
-    h("div", { class: "agent-top" },
-      h("span", { class: "character", svg: character(a, 72) }),
-      h("div", { class: "agent-id" }, h("h3", {}, a.title || a.name), h("span", {}, a.job || "No job written yet"),
-        h("span", { class: `agent-state ${a.state || "idle"}` }, CH_STATES[a.state] || "Idle"),
-        // The agent's, whatever routine it comes from: beside its state.
-        a.waiting > 0 && h("a", { class: "agent-waiting", href: pageHash("needs-you") }, `${a.waiting} ${a.waiting === 1 ? "item waits" : "items wait"} for you`))),
-    h("div", { class: "chips" },
-      !a.routines.length && h("span", { class: "chip" }, "No routine yet"),
-      a.routines.map((r) => [
-        h("span", { class: "chip mono" }, r.schedule ? `${r.name} · ${r.schedule}` : r.name),
-        r.last && h("span", { class: r.last.ok ? "chip ok" : "chip bad" }, `${r.last.ok ? "Ran" : "Failed"} ${clock(r.last.at)}`),
-      ])),
-    // Decision 65: an agent hired before keeps its look by the founder's gesture.
-    !a.look_saved && h("div", { class: "keep-look" },
-      h("span", {}, "Its look comes from its name for now."),
-      h("button", { type: "button", class: "plain", onclick: () => keepLook(a) }, "Keep this look")),
-    h("div", { class: "figures" },
-      h("div", {}, h("span", {}, "Routines"), h("strong", {}, String(a.routines.length))),
-      h("div", {}, h("span", {}, "Your time"), h("strong", {}, minutes(a.seconds || 0))),
-      h("div", {}, h("span", {}, "Cost"), h("strong", {}, money(a.cost_usd, a.unpriced)))));
+function AgentCard({ a }) {
+  return html`<article class="card agent-card">
+    <div class="agent-top">
+      <span class="character" dangerouslySetInnerHTML=${{ __html: character(a, 72) }}></span>
+      <div class="agent-id"><h3>${a.title || a.name}</h3><span>${a.job || "No job written yet"}</span>
+        <span class=${`agent-state ${a.state || "idle"}`}>${CH_STATES[a.state] || "Idle"}</span>
+        ${a.waiting > 0 && html`<a class="agent-waiting" href=${pageHash("needs-you")}>${a.waiting} ${a.waiting === 1 ? "item waits" : "items wait"} for you</a>`}
+      </div>
+    </div>
+    <div class="chips">
+      ${!a.routines.length && html`<span class="chip">No routine yet</span>`}
+      ${a.routines.map((r) => html`<span class="chip mono">${r.schedule ? `${r.name} · ${r.schedule}` : r.name}</span>
+        ${r.last && html`<span class=${r.last.ok ? "chip ok" : "chip bad"}>${r.last.ok ? "Ran" : "Failed"} ${clock(r.last.at)}</span>`}`)}
+    </div>
+    ${!a.look_saved && html`<div class="keep-look"><span>Its look comes from its name for now.</span>
+      <button type="button" class="plain" onClick=${() => keepLook(a)}>Keep this look</button></div>`}
+    <div class="figures">
+      <div><span>Routines</span><strong>${String(a.routines.length)}</strong></div>
+      <div><span>Your time</span><strong>${minutes(a.seconds || 0)}</strong></div>
+      <div><span>Cost</span><strong>${money(a.cost_usd, a.unpriced)}</strong></div>
+    </div>
+  </article>`;
 }
 
 const IDENTITY = [

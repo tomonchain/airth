@@ -45,7 +45,6 @@ button { font: inherit; }
 
 .panel { flex: 999 1 560px; min-width: 0; margin: 0 12px 12px 0; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--r-card); padding: 32px 36px 48px; }
 /* The HQ's headline sits lower, as in its mockup. */
-.column.hq { padding-top: 40px; }
 .column { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
 .page-head { display: flex; flex-direction: column; gap: 10px; }
 .date { font-size: var(--fs-secondary); color: var(--text-4); }
