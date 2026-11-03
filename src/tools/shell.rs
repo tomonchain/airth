@@ -134,17 +134,9 @@ pub fn run_shell(
 /// its own process group. Streams are left for the caller to set up.
 pub(super) fn sandboxed_command(command: &str, ws: &Workspace, network: bool) -> Command {
     let mut cmd = if ws.sandboxed() && sandbox::available() {
-        let mut c = Command::new(sandbox::program());
-        c.arg("-p")
-            .arg(sandbox::profile(
-                ws.rules(),
-                ws.pinned(),
-                network,
-                std::env::var_os("HOME")
-                    .map(std::path::PathBuf::from)
-                    .as_deref(),
-            ))
-            .arg("sh");
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        let mut c = sandbox::command(ws.rules(), ws.pinned(), network, home.as_deref());
+        c.arg("sh");
         c
     } else {
         Command::new("sh")
