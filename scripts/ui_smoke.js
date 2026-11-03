@@ -361,6 +361,19 @@ function smokeNext() {
   show("order, started", { route: { page: "team", realm: "acme" } });
   if (!nbody.textContent.includes("Started: writer") || !nbody.textContent.includes("See Tasks")) problems.push("next/order: the started task is not said");
   vm.runInContext(`orders.note = null;`, ctx);
+  // Tasks (decision 64): the groups, a waiting task sent to Needs you.
+  vm.runInContext(`tasks.data.acme = {
+    waiting: [{ id: "r1", order: "Check today's rates", agent: "watcher", status: "stopped", line: "", at: "${now}", item: 4 }],
+    review: [{ id: "r2", order: "Update the methodology page", agent: "writer", status: "completed", line: "Opened a change", at: "${now}", item: null }],
+    running: [{ id: "r3", order: "Outline the week", agent: "writer", status: "running", line: "1 of 3 steps done", at: "${now}", item: null }],
+    done: [{ id: "r4", order: "Summarise the RWA news", agent: null, status: "completed", line: "", at: "${now}", item: null }] };`, ctx);
+  show("tasks", { route: { page: "tasks", realm: "acme" } });
+  for (const text of ["Give the order.", "Waiting for you · 1", "Waits for you in Needs you", "To review · 1", "Running · 1", "1 of 3 steps done", "Done · 1", "completed"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/tasks: "${text}" is missing`);
+  }
+  vm.runInContext(`tasks.data.acme = { waiting: [], review: [], running: [], done: [] };`, ctx);
+  show("tasks, none yet", { route: { page: "tasks", realm: "acme" } });
+  if (!nbody.textContent.includes("No task yet")) problems.push("next/tasks: no empty state");
   show("hq, no order box", { route: { page: "hq" } });
   if (nbody.textContent.includes("Give an order")) problems.push("next/order: the HQ has no order box");
   // Needs you, with every kind of item and fields left empty.

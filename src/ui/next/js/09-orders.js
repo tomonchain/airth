@@ -12,7 +12,7 @@ function orderBox() {
     h("input", { id: "order-text", type: "text", autocomplete: "off", value: orders.text,
       placeholder: "Give an order, or start with an agent's name: “writer: …”" }),
     h("button", { type: "submit", class: "primary", disabled: orders.busy ? true : null }, orders.busy ? "Routing…" : "Send"),
-    (orders.route || orders.note) && orderCard());
+    (orders.route || orders.note) && next.route.page !== "tasks" && orderCard());
 }
 
 function orderCard() {
@@ -43,6 +43,7 @@ async function routeOrder(text) {
   }
   orders.busy = false;
   renderTop();
+  if (next.route.page === "tasks") renderPanel();
 }
 
 async function startOrder(agent) {
@@ -50,8 +51,10 @@ async function startOrder(agent) {
   try {
     await api(`realms/${enc(next.realm)}/orders`, { text, agent });
     Object.assign(orders, { text: "", route: null, note: `Started: ${agent} works on “${text}”. It shows in Tasks; what needs you comes to Needs you.` });
+    delete tasks.data[next.realm];
   } catch (e) {
     orders.route = { ...orders.route, error: e.message };
   }
   renderTop();
+  if (next.route.page === "tasks") renderPanel();
 }
