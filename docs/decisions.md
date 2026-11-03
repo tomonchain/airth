@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 66. The legal calendar: deadlines computed from the legal identity, by rules written as data with their source
 
-**Proposed.**
+**Accepted**: the founder said to go on with it.
 
 Decision 43 left the legal calendar's rules to milestone 2: "derived from `country`, `incorporated_on` and `fiscal_year_end`". A missed filing costs a penalty and, for Companies House, can end in the company being struck off. Hedgen's first one is close: Companies House shows its first confirmation statement **due 20 November 2026**.
 

@@ -438,12 +438,18 @@ function smokeNext() {
       { routine: "evening", agent: "watcher", time: "18:00", state: "next" }] },
     { weekday: "Wed", day: "4", today: false, runs: [{ routine: "daily-watch", agent: "watcher", time: "07:00", state: "planned" }] },
     { weekday: "Thu", day: "5", today: false, runs: [] }],
-    late: [{ routine: "daily-posts", due: "Mon 2 Nov, 07:30", late_by: 90 }] };`, ctx);
+    late: [{ routine: "daily-posts", due: "Mon 2 Nov, 07:30", late_by: 90 }],
+    deadlines: { note: "Computed from the business profile.", items: [
+      { title: "Confirmation statement", authority: "Companies House", date: "2026-11-20", due: "Fri 20 Nov 2026", days_left: 17, period_end: "6 Nov 2026", source: "https://www.gov.uk/guidance/confirmation-statement-guidance" },
+      { title: "Annual accounts", authority: "Companies House", date: "2027-08-07", due: "Sat 7 Aug 2027", days_left: 277, period_end: "30 Nov 2026", source: null }] } };`, ctx);
   show("calendar, the week", { route: { page: "calendar", realm: "acme" } });
-  for (const text of ["This week: 5 routine runs.", "Tue · today", "Started late", "Failed", "Next", "Nothing scheduled", "Due Mon 2 Nov, 07:30, started 90 min late"]) {
+  for (const text of ["This week: 5 routine runs.", "Tue · today", "Started late", "Failed", "Next", "Nothing scheduled", "Due Mon 2 Nov, 07:30, started 90 min late", "Deadlines", "Due Fri 20 Nov 2026 · in 17 days", "for the period to 6 Nov 2026", "Source"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/calendar: "${text}" is missing`);
   }
-  vm.runInContext(`calendar.data.acme = { title: "No routine runs this week.", total: 0, days: [], late: [] };`, ctx);
+  // A deadline whose date the profile does not give yet says why.
+  vm.runInContext(`calendar.data.acme = { title: "No routine runs this week.", total: 0, days: [], late: [],
+    deadlines: { note: "Computed from the business profile.", items: [{ title: "Annual accounts", authority: "Companies House", unknown: "Date unknown: incorporation date missing" }] } };`, ctx);
   show("calendar, empty", { route: { page: "calendar", realm: "acme" } });
+  if (!nbody.textContent.includes("Date unknown: incorporation date missing")) problems.push("next/calendar: an unknown deadline does not say why");
   if (!nbody.textContent.includes("every scheduled run started on time")) problems.push("next/calendar: no late start is not said");
 }
