@@ -54,16 +54,17 @@ function businessSection(b) {
         : h("span", { class: "no-activity" }, "No run yet")));
 }
 
-/** The bank's part (decision 54): its figures, why they are unknown, or
-    the empty state with no bank connected. */
+/** Finance (decisions 54 and 68): a bank's figures or those entered by
+    hand, why they are unknown, or the empty state. A figure the source
+    does not give (money in, by hand) is a dash. */
 function finance(f) {
   const month = new Date().toLocaleDateString("en-GB", { month: "long" });
-  const sub = !f ? "No bank account yet" : f.unknown ? `Unknown: ${f.unknown}` : f.source;
+  const sub = !f ? "No figures yet" : f.unknown ? `Unknown: ${f.unknown}` : f.source;
   const cells = [["Cash", "cash"], [`In, ${month}`, "in"], [`Out, ${month}`, "out"], ["Runway", "runway"]];
   return h("div", { class: "finance" },
     h("span", { class: "block-label" }, "Finance", h("span", { class: f && f.unknown ? "block-sub warn" : "block-sub" }, sub)),
     h("div", { class: "finance-row" }, cells.map(([label, key]) =>
       h("div", { class: "finance-cell" },
         h("span", { class: "vital-label" }, label),
-        h("span", { class: f && !f.unknown ? "finance-value known" : "finance-value" }, f && !f.unknown ? f[key] : f ? "Unknown" : "—")))));
+        h("span", { class: f && !f.unknown ? "finance-value known" : "finance-value" }, f && !f.unknown ? f[key] ?? "—" : f ? "Unknown" : "—")))));
 }
