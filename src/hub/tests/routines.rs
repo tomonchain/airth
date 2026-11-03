@@ -224,11 +224,16 @@ fn a_failed_act_is_an_incident_and_demotes_its_agent() {
     let (item, report) = hub
         .answer_item(&f.realm, 1, None, Answer::Approve, "app", 5)
         .unwrap();
+    // Approved, but the send failed: the item says so in one line, with
+    // the service's own words, never as done and never as raw JSON.
+    let report = report.unwrap();
+    assert_eq!(item.status, "failed", "the routine ran; its act failed");
     assert!(
-        report.unwrap().contains("failed"),
-        "the act's 422 is a failure"
+        report.starts_with("typefully.create_draft: HTTP 422")
+            && report.ends_with(": text too long"),
+        "{report}"
     );
-    assert_eq!(item.status, "done", "the routine ran; its act failed");
+    assert!(!report.contains('{') && !report.contains('\n'), "{report}");
     let incidents: Vec<_> = Store::of(&f.realm)
         .unwrap()
         .queue(&["pending"])
@@ -302,7 +307,10 @@ fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
     .unwrap();
     let (hub, _, _) = make_hub(&f.home, vec![]);
     let start = || crate::routine::run::Start::Trigger;
-    let report = hub.run_routine(&f.realm, "watch", "r1", start()).unwrap();
+    let report = hub
+        .run_routine(&f.realm, "watch", "r1", start(), None)
+        .unwrap()
+        .text;
     assert!(
         report.contains("tell: reported in Needs you (item 1)"),
         "{report}"
@@ -321,7 +329,10 @@ fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
         "nothing in the old inbox"
     );
     // Retried: the same items, the same keys, nothing new.
-    let again = hub.run_routine(&f.realm, "watch", "r2", start()).unwrap();
+    let again = hub
+        .run_routine(&f.realm, "watch", "r2", start(), None)
+        .unwrap()
+        .text;
     assert!(
         again.contains("tell: already reported, nothing new"),
         "{again}"
@@ -334,4 +345,216 @@ fn a_runs_reports_are_one_item_in_needs_you_and_never_repeat() {
     assert_eq!(said.as_deref(), Some("seen"));
     assert!(store.queue(&["pending", "approved"]).unwrap().is_empty());
     assert_eq!(store.queue(&["done"]).unwrap()[0].id, 1);
+}
+
+/// A drafts service that answers each request with the next code of
+/// `codes`, and keeps each path it was asked.
+fn answering(codes: Vec<u16>) -> (String, Arc<Mutex<Vec<String>>>) {
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+    let paths = Arc::new(Mutex::new(Vec::new()));
+    let kept = paths.clone();
+    std::thread::spawn(move || {
+        let mut codes = codes.into_iter();
+        for req in server.incoming_requests() {
+            kept.lock().unwrap().push(req.url().to_string());
+            let code = codes.next().unwrap_or(500);
+            let reply =
+                tiny_http::Response::from_string("{\"detail\": \"no\"}").with_status_code(code);
+            req.respond(reply).unwrap();
+        }
+    });
+    (base, paths)
+}
+
+/// A routine whose approved act calls `base` at `path`, with `class`; its
+/// one item approved by the founder, so the act has run once.
+fn approved_and_failed(f: &mut Fixture, base: &str, path: &str, class: &str) -> Hub {
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/post-writer.md"), "Draft.").unwrap();
+    std::fs::write(
+        root.join("routines/posts.json"),
+        json!({"agent": "post-writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "ok", "type": "approval", "show": "title"},
+            {"id": "send", "type": "act", "action": "typefully.create_draft", "fields": {"text": "{{title}}"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    declare(f, base, path, class);
+    f.realm.config.policy.network = Rule::Allow;
+    f.realm.save().unwrap();
+    Store::of(&f.realm)
+        .unwrap()
+        .propose(&crate::business::store::autonomy::NewItem {
+            kind: "approval",
+            title: "A post",
+            agent: Some("post-writer"),
+            routine: Some("posts"),
+            run: Some("r1"),
+            action: None,
+            args: &json!({"title": "A post", "source_id": "https://e.com/1"}).to_string(),
+            execute_at: None,
+            source: r#"{"block": "ok"}"#,
+            model_call: None,
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let (item, _) = hub
+        .answer_item(&f.realm, 1, None, Answer::Approve, "telegram", 5)
+        .unwrap();
+    assert_eq!(item.status, "failed");
+    hub
+}
+
+fn declare(f: &mut Fixture, base: &str, path: &str, class: &str) {
+    f.realm
+        .set_integration(crate::integration::Integration {
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: base.into(),
+            headers: Default::default(),
+            actions: vec![
+                serde_json::from_value(
+                    json!({"name": "create_draft", "method": "POST", "path": path,
+                    "fields": [{"name": "text", "place": "body"}], "class": class}),
+                )
+                .unwrap(),
+            ],
+        })
+        .unwrap();
+}
+
+fn incident(f: &Fixture) -> crate::business::store::queue::Item {
+    Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .find(|i| i.kind == "incident")
+        .unwrap()
+}
+
+/// Decision 62: a refusal that proves nothing was done offers Retry; only
+/// the founder's channels can take it; the action is rebuilt from the
+/// approved item and the declaration as it is now, under the same key,
+/// and done once.
+#[test]
+fn the_founder_retries_a_refused_action_once_with_the_fixed_declaration() {
+    let (base, paths) = answering(vec![403, 201]);
+    let mut f = fixture();
+    let hub = approved_and_failed(&mut f, &base, "/v1/drafts", "reversible");
+    let refused = incident(&f);
+    assert_eq!(refused.args["retry"], "clear");
+    assert_eq!(refused.args["key"], "posts/https://e.com/1/send");
+    // The founder fixes the declaration, then retries.
+    declare(&mut f, &base, "/v2/drafts", "reversible");
+    let e = hub
+        .answer_item(
+            &f.realm,
+            refused.id,
+            None,
+            Answer::Retry { checked: false },
+            "cli",
+            1,
+        )
+        .unwrap_err();
+    assert!(
+        format!("{e:#}").contains("only from the app or Telegram"),
+        "{e:#}"
+    );
+    let (closed, report) = hub
+        .answer_item(
+            &f.realm,
+            refused.id,
+            None,
+            Answer::Retry { checked: false },
+            "telegram",
+            3,
+        )
+        .unwrap();
+    assert_eq!(closed.status, "done");
+    assert_eq!(
+        report.as_deref(),
+        Some("retried: typefully.create_draft done")
+    );
+    assert_eq!(*paths.lock().unwrap(), ["/v1/drafts", "/v2/drafts"]);
+    let journal = Store::of(&f.realm).unwrap().journal().unwrap();
+    assert_eq!(
+        journal,
+        [(
+            "posts/https://e.com/1/send".to_string(),
+            "confirmed".to_string(),
+            true
+        )]
+    );
+    // Done once: asked again, nothing is sent.
+    hub.answer_item(
+        &f.realm,
+        refused.id,
+        None,
+        Answer::Retry { checked: false },
+        "telegram",
+        1,
+    )
+    .unwrap();
+    assert_eq!(paths.lock().unwrap().len(), 2);
+}
+
+/// Decision 62: when the action may have been done (a 502), Retry waits for
+/// the founder to say they checked; what commits is never retried.
+#[test]
+fn an_ambiguous_failure_asks_first_and_what_commits_is_never_retried() {
+    let (base, paths) = answering(vec![502, 201]);
+    let mut f = fixture();
+    let hub = approved_and_failed(&mut f, &base, "/drafts", "reversible");
+    let unsure = incident(&f);
+    assert_eq!(unsure.args["retry"], "ambiguous");
+    let e = hub
+        .answer_item(
+            &f.realm,
+            unsure.id,
+            None,
+            Answer::Retry { checked: false },
+            "app",
+            1,
+        )
+        .unwrap_err();
+    assert!(
+        format!("{e:#}").contains("Check that nothing was created"),
+        "{e:#}"
+    );
+    assert_eq!(paths.lock().unwrap().len(), 1);
+    let (closed, _) = hub
+        .answer_item(
+            &f.realm,
+            unsure.id,
+            None,
+            Answer::Retry { checked: true },
+            "app",
+            1,
+        )
+        .unwrap();
+    assert_eq!(closed.status, "done");
+    assert_eq!(paths.lock().unwrap().len(), 2);
+
+    let (base, paths) = answering(vec![403, 201]);
+    let mut f = fixture();
+    let hub = approved_and_failed(&mut f, &base, "/pay", "commits");
+    let committing = incident(&f);
+    assert!(committing.args["retry"].is_null());
+    let e = hub
+        .answer_item(
+            &f.realm,
+            committing.id,
+            None,
+            Answer::Retry { checked: true },
+            "app",
+            1,
+        )
+        .unwrap_err();
+    assert!(format!("{e:#}").contains("offers no retry"), "{e:#}");
+    assert_eq!(paths.lock().unwrap().len(), 1);
 }

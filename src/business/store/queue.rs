@@ -46,6 +46,12 @@ pub enum Answer {
     Reject(String),
     /// Approve a blocked item as it is (decision 58).
     Override,
+    /// Do again the failed action an incident is about (decision 62);
+    /// `checked`: the founder checked nothing was done, which an ambiguous
+    /// failure needs first.
+    Retry {
+        checked: bool,
+    },
 }
 
 /// The channels the founder answers from, the only ones that may override
@@ -219,7 +225,7 @@ impl Store {
             let item = get(tx, id)?;
             let done = matches!(
                 (&answer, item.status.as_str()),
-                (Answer::Approve | Answer::Override, "approved" | "done")
+                (Answer::Approve | Answer::Override | Answer::Retry { .. }, "approved" | "done")
                     | (Answer::Reject(_), "rejected")
             );
             if done {
@@ -252,6 +258,21 @@ impl Store {
                     let why = item.flag_reason.clone().unwrap_or_default();
                     ("approved", "overridden", why)
                 }
+                Answer::Retry { .. } if !FOUNDER_CHANNELS.contains(&channel) => {
+                    bail!("an action is retried only from the app or Telegram")
+                }
+                Answer::Retry { checked } => match item.args["retry"].as_str() {
+                    Some("clear") => ("approved", "retry", String::new()),
+                    Some("ambiguous") if *checked => (
+                        "approved",
+                        "retry",
+                        "the founder checked nothing was done".to_string(),
+                    ),
+                    Some("ambiguous") => bail!(
+                        "item {id}: the action may have been done. Check that nothing was created, then confirm the retry"
+                    ),
+                    _ => bail!("item {id} offers no retry"),
+                },
                 Answer::Reject(why) => ("rejected", "rejected", why.clone()),
                 Answer::Edit(text) => {
                     let Some(path) = item.source["editable"].as_str() else {

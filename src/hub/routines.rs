@@ -9,6 +9,19 @@ use crate::routine::{Checks, Graph};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// What a real run of a routine did: its report, and each act that failed,
+/// in one line.
+pub struct Ran {
+    pub text: String,
+    pub failed: Vec<String>,
+}
+
+impl std::fmt::Display for Ran {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
 impl Hub {
     /// Call `f` with what the realm's routines are checked against.
     pub fn with_routine_checks<T>(
@@ -66,7 +79,8 @@ impl Hub {
         name: &str,
         run: &str,
         start: crate::routine::run::Start,
-    ) -> Result<String> {
+        retrying: Option<(&str, i64)>,
+    ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
         let workspace = Workspace::new(&root)?
@@ -164,19 +178,25 @@ impl Hub {
                     bail!("{action} is only ever prepared for the founder, who does it");
                 }
                 let mut store = Store::of(realm)?;
-                let begin = store.begin_action(&crate::business::store::autonomy::NewAction {
-                    key,
-                    action,
-                    connector,
-                    agent: Some(&graph.agent),
-                    routine: Some(name),
-                    run: Some(run),
-                    item: None,
-                    level: ceiling,
-                    approved: true,
-                    args: &args.to_string(),
-                    daily_limit: u32::MAX,
-                })?;
+                let begin = match retrying {
+                    // The founder's retry put it back in flight (decision 62).
+                    Some((retried, journal)) if retried == key => {
+                        crate::business::store::autonomy::Begin::Started(journal)
+                    }
+                    _ => store.begin_action(&crate::business::store::autonomy::NewAction {
+                        key,
+                        action,
+                        connector,
+                        agent: Some(&graph.agent),
+                        routine: Some(name),
+                        run: Some(run),
+                        item: None,
+                        level: ceiling,
+                        approved: true,
+                        args: &args.to_string(),
+                        daily_limit: u32::MAX,
+                    })?,
+                };
                 let crate::business::store::autonomy::Begin::Started(journal) = begin else {
                     bail!("not done again: this act was already started under {key}");
                 };
@@ -236,13 +256,16 @@ impl Hub {
                 };
                 let real = crate::routine::run::Real { run, act: &mut act };
                 crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
-                    .map(|r| r.to_string())
+                    .map(|r| (r.to_string(), r.failed))
             },
         );
         // What was gathered is reported even when a later block failed.
         let reported = report(realm, name, &graph.agent, run, reports.take());
         match (outcome, reported) {
-            (Ok(text), Ok(lines)) => Ok(format!("{text}\n{lines}").trim_end().to_string()),
+            (Ok((text, failed)), Ok(lines)) => Ok(Ran {
+                text: format!("{text}\n{lines}").trim_end().to_string(),
+                failed,
+            }),
             (Err(e), Ok(_)) => Err(e),
             (Ok(_), Err(e)) => Err(e.context("the run's reports were not recorded")),
             (Err(e), Err(r)) => Err(e.context(format!("and its reports were not recorded: {r:#}"))),
@@ -262,6 +285,7 @@ impl Hub {
         seconds: u64,
     ) -> Result<(crate::business::store::queue::Item, Option<String>)> {
         let mut store = Store::of(realm)?;
+        let retrying = matches!(answer, crate::business::store::queue::Answer::Retry { .. });
         let item = store.answer(id, revision, answer, channel, seconds)?;
         // The founder cancelled a delayed action: that action comes down a
         // level for its agent (decision 45).
@@ -289,6 +313,18 @@ impl Hub {
         if item.status != "approved" {
             return Ok((item, None));
         }
+        if retrying && item.kind == "incident" {
+            drop(store);
+            let outcome = self.retry_from_incident(realm, &item, channel);
+            let (status, detail) = match &outcome {
+                Ok(what) => ("done", what.clone()),
+                Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+            };
+            let mut store = Store::of(realm)?;
+            store.close_item(id, status, &detail)?;
+            let closed = store.queue(&[status])?.into_iter().find(|i| i.id == id);
+            return Ok((closed.unwrap_or(item), Some(detail)));
+        }
         if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;
             return Ok((item, Some("seen".into())));
@@ -300,6 +336,7 @@ impl Hub {
             return Ok((item, Some("marked done: the founder did it".into())));
         }
         let routine_block = item.source["block"].as_str();
+        let mut failed = Vec::new();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {
             // A routine's item: the routine resumes after its approval.
             (Some(routine), Some(block), _) => {
@@ -314,7 +351,11 @@ impl Hub {
                     .run
                     .clone()
                     .unwrap_or_else(|| format!("{routine}-{id}"));
-                self.run_routine(realm, routine, &run, start)
+                self.run_routine(realm, routine, &run, start, None)
+                    .map(|ran| {
+                        failed = ran.failed;
+                        ran.text
+                    })
             }
             // An action a mission proposed: done as it was proposed, once.
             // One to try again stays approved until its last attempt.
@@ -325,17 +366,101 @@ impl Hub {
             },
             _ => return Ok((item, None)),
         };
+        // Approved, but what it was approved for failed: the item says so,
+        // in one line, never as done (the act's incident has the rest).
         let (status, detail) = match &outcome {
+            Ok(_) if !failed.is_empty() => ("failed", failed.join("; ")),
             Ok(report) => (
                 "done",
                 report.lines().last().unwrap_or_default().to_string(),
             ),
-            Err(e) => ("failed", format!("{e:#}")),
+            Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
         };
         store.close_item(id, status, &detail)?;
-        let report = outcome.unwrap_or_else(|e| format!("failed: {e:#}"));
+        let report = match status {
+            "failed" => detail,
+            _ => outcome.unwrap_or_default(),
+        };
         let closed = store.queue(&[status])?.into_iter().find(|i| i.id == id);
         Ok((closed.unwrap_or(item), Some(report)))
+    }
+
+    /// Do again, once, the failed action incident `incident` is about
+    /// (decision 62): rebuilt from the item the founder approved and the
+    /// action's declaration as it is now, under the same key. Never what
+    /// commits; only a routine's action.
+    fn retry_from_incident(
+        &self,
+        realm: &Realm,
+        incident: &crate::business::store::queue::Item,
+        channel: &str,
+    ) -> Result<String> {
+        let key = incident.args["key"]
+            .as_str()
+            .context("this incident names no action")?;
+        let action = incident
+            .action
+            .as_deref()
+            .context("this incident names no action")?;
+        let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+        let class = crate::actions::all(&realm.config.integrations, &servers)
+            .iter()
+            .find(|d| d.id == action)
+            .map_or(crate::actions::Class::Commits, |d| d.class);
+        if class == crate::actions::Class::Commits {
+            bail!("{action} commits the business: approve it again, or do it yourself");
+        }
+        let routine = incident
+            .routine
+            .as_deref()
+            .context("only a routine's action can be retried from Airth")?;
+        let mut store = Store::of(realm)?;
+        let (run, _) = store
+            .action_state(key)?
+            .with_context(|| format!("no action under {key}"))?;
+        let run = run.with_context(|| format!("{key} belongs to no run"))?;
+        // Its key is <routine>/<source id>/<act block>.
+        let source_id = key
+            .strip_prefix(&format!("{routine}/"))
+            .and_then(|rest| rest.rsplit_once('/'))
+            .map(|(source, _)| source)
+            .with_context(|| format!("{key} is not a routine's key"))?;
+        let approved = store
+            .queue(&["approved", "done", "failed"])?
+            .into_iter()
+            .find(|i| {
+                i.kind == "approval"
+                    && i.routine.as_deref() == Some(routine)
+                    && i.run.as_deref() == Some(run.as_str())
+                    && i.args["source_id"].as_str() == Some(source_id)
+            })
+            .context("the item you approved for this action is gone")?;
+        let Value::Object(fields) = approved.args.clone() else {
+            bail!("item {} does not hold the routine's item", approved.id);
+        };
+        let block = approved.source["block"]
+            .as_str()
+            .context("the approved item names no block")?
+            .to_string();
+        let journal = store.reopen_failed(key, channel)?;
+        drop(store);
+        let start = crate::routine::run::Start::After {
+            block,
+            item: fields,
+        };
+        let ran = self.run_routine(realm, routine, &run, start, Some((key, journal)));
+        // A retry that did not reach the action leaves it failed, never in
+        // flight for good.
+        let mut store = Store::of(realm)?;
+        if let Some((_, status)) = store.action_state(key)?
+            && status == "in_flight"
+        {
+            store.action_failed(key, "the retry did not reach this action", None)?;
+        }
+        match ran?.failed.first() {
+            Some(why) => bail!("retried, failed again: {why}"),
+            None => Ok(format!("retried: {action} done")),
+        }
     }
 
     /// Do the action the founder approved in queue item `item`, exactly as
@@ -501,6 +626,7 @@ impl Hub {
                         routine: Some(&name),
                         action: None,
                         demote: false,
+                        retry: None,
                     };
                     super::incidents::record(&realm, &incident)?;
                 }
@@ -516,9 +642,10 @@ impl Hub {
     pub fn run_scheduled_routine(&self, realm: &Realm, name: &str, due: DateTime<Utc>) {
         let started = Utc::now();
         let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
-        let outcome = self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger);
+        let outcome =
+            self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None);
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
-        let report = outcome.ok();
+        let report = outcome.ok().map(|ran| ran.text);
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
             due: Some(due),
@@ -545,6 +672,7 @@ impl Hub {
                 routine: Some(name),
                 action: None,
                 demote: false,
+                retry: None,
             };
             if let Err(e) = super::incidents::record(realm, &incident) {
                 eprintln!(

@@ -115,6 +115,8 @@ function card(it) {
   // An action a task of the founder's proposed (decision 56): the task
   // stopped there, and waits for nothing else.
   const what = it.task && it.action ? `If approved: ${it.action} is done, once. The task stopped here.`
+    : it.retry === "clear" ? "Nothing was done: Retry does it once, as the action is declared now. Seen closes it."
+    : it.retry === "ambiguous" ? "It may have been done: check before you retry. Seen closes it."
     : it.kind === "incident" || it.kind === "report" ? "Seen closes it."
     : it.kind === "prepared" ? "Airth does nothing: mark it done once you did it."
     : it.routine && !it.action ? `If approved: ${it.routine} goes on.`
@@ -149,6 +151,14 @@ function buttons(it, editing, rejecting) {
   if (rejecting) return [
     b(it.kind === "delayed" ? "Cancel it" : "Reject", "plain bad", () => answer(it, "reject", $(`#why-${it.id}`).value)),
     b("Keep it", "plain", () => { needs.rejecting = null; renderPanel(); })];
+  // Decision 62: an ambiguous failure is retried once the founder checked.
+  if (needs.confirming === it.id) return [
+    b("Nothing was created: retry", "primary", () => answer(it, "retry", "", { checked: true })),
+    b("Back", "plain", () => { needs.confirming = null; renderPanel(); })];
+  if (it.retry === "clear") return [b("Retry", "primary", () => answer(it, "retry")), b("Seen", "plain", () => answer(it, "approve"))];
+  if (it.retry === "ambiguous") return [
+    b("Retry…", "plain", () => { needs.confirming = it.id; renderPanel(); }),
+    b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "incident" || it.kind === "report") return [b("Seen", "primary", () => answer(it, "approve"))];
   if (it.kind === "prepared") return [b("Mark done", "primary", () => answer(it, "approve"))];
   if (it.kind === "delayed") return [b("Cancel it", "plain bad", () => { needs.rejecting = it.id; renderPanel(); })];
@@ -162,16 +172,16 @@ function buttons(it, editing, rejecting) {
 
 const isBlocked = (it) => it.flag === "blocking";
 
-async function answer(it, kind, text) {
+async function answer(it, kind, text, extra) {
   const seconds = Math.round((Date.now() - (needs.shownAt[it.id] || Date.now())) / 1000);
   try {
-    const out = await api(`realms/${enc(next.realm)}/queue/${it.id}`, { answer: kind, text: text || "", revision: it.revision, seconds });
+    const out = await api(`realms/${enc(next.realm)}/queue/${it.id}`, { answer: kind, text: text || "", revision: it.revision, seconds, ...extra });
     const done = kind === "edit" ? "edited; it still waits for your approval" : out.item.status;
     needs.note = `${it.title}: ${out.report || done}`;
   } catch (e) {
     needs.note = `${it.title}: ${e.message}`;
   }
-  needs.editing = needs.rejecting = null;
+  needs.editing = needs.rejecting = needs.confirming = null;
   needs.realm = null;
   loadNeeds();
 }

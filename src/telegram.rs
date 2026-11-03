@@ -219,7 +219,14 @@ fn buttons(realm: &str, item: &Item) -> Value {
     let button = |label: &str, op: &str| json!({"text": label, "callback_data": data(op)});
     match item.kind.as_str() {
         "delayed" => json!([[button("Cancel", "r")]]),
-        "incident" | "report" => json!([[button("Seen", "a")]]),
+        // Decision 62: a failed action offers Retry; an ambiguous one asks
+        // first (op "u"), then retries on "c".
+        "incident" => match item.args["retry"].as_str() {
+            Some("clear") => json!([[button("Retry", "t"), button("Seen", "a")]]),
+            Some("ambiguous") => json!([[button("Retry…", "u"), button("Seen", "a")]]),
+            _ => json!([[button("Seen", "a")]]),
+        },
+        "report" => json!([[button("Seen", "a")]]),
         "prepared" => json!([[button("Done", "a")]]),
         // Blocked by a check: no plain Approve (decision 58).
         _ if item.flag.as_deref() == Some("blocking") => {
@@ -451,9 +458,21 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
             }
             return Ok(());
         }
+        "u" => {
+            let data = format!("c/{key}/{revision}");
+            let body = json!({"chat_id": chat,
+                "text": "It may have been done. Check that nothing was created (in the service itself) before you retry.",
+                "reply_markup": {"inline_keyboard": [[{"text": "Nothing was created: retry", "callback_data": data}]]}});
+            api.call("sendMessage", &body)?;
+            return Ok(());
+        }
         "a" => Answer::Approve,
         "o" => Answer::Override,
-        _ => Answer::Reject("from Telegram".into()),
+        "t" => Answer::Retry { checked: false },
+        "c" => Answer::Retry { checked: true },
+        "r" => Answer::Reject("from Telegram".into()),
+        // An unknown button does nothing, never a rejection.
+        _ => return Ok(()),
     };
     let text = match hub.answer_item(
         &realm,
@@ -463,14 +482,23 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
         "telegram",
         answer_seconds(&sent),
     ) {
-        Ok((item, report)) => {
-            let report = report.map(|r| format!("\n{r}")).unwrap_or_default();
-            format!("{} · {}: {}{report}", realm.name(), item.status, item.title)
-        }
+        Ok((item, report)) => answered(realm.name(), &item, report.as_deref()),
         Err(e) => format!("Not done: {e:#}"),
     };
     send(api, chat, &text, None)?;
     Ok(())
+}
+
+/// What the bot says once an answer is taken: the item's new state and
+/// what came of it. Approved but failed to send is never "done".
+fn answered(realm: &str, item: &Item, report: Option<&str>) -> String {
+    let report = report.map(|r| format!("\n{r}")).unwrap_or_default();
+    let status = match (item.kind.as_str(), item.status.as_str()) {
+        ("incident", "failed") => "retry failed",
+        (_, "failed") => "approved, sending failed",
+        (_, status) => status,
+    };
+    format!("{realm} · {status}: {}{report}", item.title)
 }
 
 /// Ask Telegram for what came, handle it, then send what waits.
