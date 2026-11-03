@@ -199,9 +199,10 @@ pub fn profile(
 /// to the longest, so the most specific one decides. Read is a read-only
 /// bind, read and write a writable one, none an empty folder (or
 /// `/dev/null` over a file), made read-only once the binds inside it are
-/// in place. A rule on a path that does not exist yet is an empty
-/// read-only folder there, unless it allows writing: nothing can be
-/// created where the rule forbids it. Each pinned path is a mount point of
+/// in place. A rule on a path that does not exist yet, under a writable
+/// parent, is an empty read-only folder there, so nothing can be created
+/// where the rule forbids it; under a read-only parent nothing could be
+/// created anyway, and nothing is mounted. Each pinned path is a mount point of
 /// its own, which cannot be renamed or removed. Without network the
 /// command has its own loopback, not the host's.
 fn bwrap_args(
@@ -228,6 +229,18 @@ fn bwrap_args(
         all.push((pin.clone(), access));
     }
     all.sort_by_key(|(p, _)| p.components().count());
+    // The access the most specific rule gives `path`; the system is read.
+    let access = |path: &Path| {
+        all.iter()
+            .filter(|(p, _)| path.starts_with(p))
+            .max_by_key(|(p, _)| p.components().count())
+            .map_or(Access::Read, |(_, a)| *a)
+    };
+    // A path not there yet could be created only under a writable parent.
+    let creatable = |path: &Path| {
+        let parent = path.ancestors().skip(1).find(|a| a.exists());
+        parent.is_some_and(|p| access(p) == Access::ReadWrite)
+    };
     let mut args: Vec<OsString> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
         .iter()
         .chain(["--unshare-pid", "--unshare-ipc", "--unshare-uts"].iter())
@@ -244,6 +257,7 @@ fn bwrap_args(
             (Access::ReadWrite, false, _) => continue,
             (Access::Read, true, _) => ("--ro-bind", path),
             (Access::None, true, false) => ("--ro-bind", Path::new("/dev/null")),
+            (Access::None | Access::Read, false, _) if !creatable(path) => continue,
             (Access::None | Access::Read, ..) => {
                 args.extend(["--tmpfs".into(), path.into()]);
                 closed.push(path.clone());
@@ -396,6 +410,7 @@ mod tests {
             (d.join("r"), Access::ReadWrite),
             (d.join("r/routines"), Access::Read),
             (d.join("r/.git/hooks"), Access::Read),
+            (d.join("repo/.netrc"), Access::None),
         ];
         let args: Vec<String> = bwrap_args(&rules, &[d.join("r/.git")], true, None)
             .iter()
@@ -422,6 +437,10 @@ mod tests {
             .position(|a| *a == d.join("key").to_string_lossy())
             .unwrap();
         assert_eq!(args[key - 1], "/dev/null", "a closed file");
+        // Not there yet, under a read-only parent: nothing to mount, as
+        // nothing can be created there.
+        let later = d.join("repo/.netrc").to_string_lossy().into_owned();
+        assert!(!args.contains(&later), "{args:?}");
         // Not there yet: an empty read-only folder, so it cannot be created.
         at("--tmpfs", &d.join("r/routines"));
         at("--remount-ro", &d.join("r/routines"));
