@@ -46,8 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Ubuntu 24.04 restricts user namespaces through AppArmor; bubblewrap
+      # needs them. The step fails if bwrap cannot start, so the sandbox's
+      # tests never pass by skipping themselves.
       - name: Bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --dev /dev --proc /proc --unshare-pid --unshare-net -- true
 
       - uses: dtolnay/rust-toolchain@stable
         with:
