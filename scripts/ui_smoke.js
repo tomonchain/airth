@@ -417,6 +417,10 @@ function smokeNext() {
   // New business is in the business switcher's menu, not in the header.
   show("hq", { route: { page: "hq" } });
   if (nbody.querySelector("#top").textContent.includes("New business")) problems.push("next/top: New business is still in the header");
+  // A business's home: its own section of the HQ, alone.
+  show("home", { route: { page: "home", realm: "acme" } });
+  for (const text of ["Home", "Dropped this week", "Post writer"]) if (!nbody.textContent.includes(text)) problems.push(`next/home: "${text}" is missing`);
+  if (nbody.textContent.includes("Not started")) problems.push("next/home: another business shows on this one's home");
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
   {
     const links = {};
@@ -434,7 +438,7 @@ function smokeNext() {
     const walk = (n) => { if (n.tag === "a" && n.attrs.title) hrefs[n.attrs.title] = n.attrs.href; n.children.forEach(walk); };
     walk(nbody.querySelector("#rail"));
     const want = { Team: "#/b/acme/team", Tasks: "#/b/acme/tasks", Business: "#/b/acme/business", Settings: "#/settings", "Your profile": "/classic#/owner",
-      Routines: "#/b/acme/routines", Calendar: "#/b/acme/calendar", Workshop: "#/workshop", HQ: "#/hq" };
+      Routines: "#/b/acme/routines", Calendar: "#/b/acme/calendar", Workshop: "#/workshop", Home: "#/b/acme/home" };
     for (const [label, href] of Object.entries(want)) if (hrefs[label] !== href) problems.push(`next/rail: ${label} goes to ${hrefs[label]}, not ${href}`);
   }
   // The rail ends with the theme toggle and the founder's profile.
@@ -452,7 +456,7 @@ function smokeNext() {
   if (nbody.querySelector("#search")) problems.push("next/search: it does not close");
   // Decision 72: a page moved to components is one of the three layouts,
   // with the page header in it.
-  const LAYOUTS = { hq: "reading", business: "reading", tasks: "reading", settings: "reading", workshop: "reading", hire: "reading", "new-business": "reading",
+  const LAYOUTS = { hq: "reading", home: "reading", business: "reading", tasks: "reading", settings: "reading", workshop: "reading", hire: "reading", "new-business": "reading",
     team: "board", calendar: "board", "needs-you": "workspace", routines: "workspace" };
   for (const [page, want] of Object.entries(LAYOUTS)) {
     show(`${page}, layout`, { route: { page, realm: ["settings", "workshop", "new-business", "hq"].includes(page) ? null : "acme" } });

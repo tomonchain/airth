@@ -13,6 +13,7 @@ function Page() {
   }
   const page = next.route.page;
   const realm = next.realm;
+  if (page === "home" && realm) return html`<${HomePage} />`;
   if (page === "business" && realm) return html`<${BusinessPage} />`;
   if (page === "hire" && realm) return html`<${DevPage} title="Hire an agent" part="hire" />`;
   if (page === "new-business") return html`<${DevPage} title="New business" part="new-business" />`;
