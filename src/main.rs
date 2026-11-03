@@ -32,6 +32,8 @@ mod release;
 mod routine;
 mod runtime;
 mod sandbox;
+#[cfg(test)]
+mod scenarios;
 mod scheduler;
 mod service;
 mod state;
