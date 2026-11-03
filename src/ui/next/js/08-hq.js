@@ -33,8 +33,9 @@ function HqPage() {
   </${Reading}>`;
 }
 
-/** A business's home, in the Reading layout: its section of the HQ, alone
-    (the same figures, from the same records). */
+/** A business's home, in the Reading layout: the title is the fact that
+    matters most, then the one item to handle first, then its section of
+    the HQ (the same figures, from the same records). */
 function HomePage() {
   const d = loadHq();
   const header = { label: next.realm, title: "Home" };
@@ -42,11 +43,38 @@ function HomePage() {
   if (d.error) return html`<${Reading} kind="hq" header=${header}><p class="note bad">${d.error}</p></${Reading}>`;
   const b = d.businesses.find((x) => x.name === next.realm);
   if (!b) return html`<${Reading} kind="hq" header=${header}><p class="note">This business is not in the HQ: it may be archived.</p></${Reading}>`;
-  const needs = b.needs > 0 && html`<a class="needs-link" href=${pageHash("needs-you")}>
-    <span class="needs-dot" aria-hidden="true"></span>${b.needs === 1 ? "1 thing needs you" : `${b.needs} things need you`}<span aria-hidden="true"> →</span></a>`;
-  return html`<${Reading} kind="hq" header=${{ ...header, summary: b.health.sentence, actions: needs }}>
+  return html`<${Reading} kind="hq" header=${{ ...header, title: b.headline }}>
+    <${First} it=${b.first} count=${b.needs} />
     <${BusinessSection} b=${b} home=${true} />
   </${Reading}>`;
+}
+
+/** The item in Needs you to handle first, and the way to the rest. */
+function First({ it, count }) {
+  if (!it) return html`<p class="first-none">Nothing waits for you.</p>`;
+  // Needs you opens on the agent whose item it is.
+  const open = () => { needs.agent = it.agent || null; };
+  const rest = count - 1;
+  return html`<section class="first" aria-label="To handle first">
+    <span class="first-kind">${KIND_TAGS[it.kind] || it.kind}${it.created_at && html` · ${ago(it.created_at)}`}</span>
+    <a class="first-title" href=${pageHash("needs-you")} onClick=${open}>${it.title}</a>
+    ${it.flag_reason && html`<span class="first-why">${it.flag_reason}</span>`}
+    <span class="first-row">
+      <a class="primary" href=${pageHash("needs-you")} onClick=${open}>Handle it</a>
+      ${rest > 0 && html`<a class="first-more" href=${pageHash("needs-you")}>${rest === 1 ? "1 more thing needs you" : `${rest} more things need you`}<span aria-hidden="true"> →</span></a>`}
+    </span>
+  </section>`;
+}
+
+/** "2h ago", from an ISO time. */
+function ago(at) {
+  const s = (Date.now() - new Date(at).getTime()) / 1000;
+  if (!(s >= 0)) return "";
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 function BusinessSection({ b, home }) {
@@ -56,7 +84,7 @@ function BusinessSection({ b, home }) {
       ${home ? html`<h2>Health</h2>` : html`<h2><a href=${pageHash("home", b.name)}>${b.name}</a></h2>`}
       <span class="health"><span class="health-dot" aria-hidden="true"></span>${HEALTH[state] || state}</span>
     </div>
-    ${!home && html`<p class="health-why">${b.health.sentence}</p>`}
+    <p class="health-why">${b.health.sentence}</p>
     ${b.vitals.length
       ? html`<div class="vitals">${b.vitals.map((v) => html`<div class=${v.out ? "vital out" : "vital"}>
           <span class="vital-label">${v.label}</span><span class="vital-value">${v.value}</span><span class="vital-note">${v.note}</span></div>`)}</div>`
@@ -66,9 +94,10 @@ function BusinessSection({ b, home }) {
       <span class="block-label">Latest activity<span class="block-sub">Your time this week ${b.time} · model cost ${money(b.cost_usd, 0)}</span></span>
       ${b.activity.length
         ? html`<ol>${b.activity.map((a) => html`<li>
-            <span class="agent-mark" aria-hidden="true" style=${`--agent: ${agentColour(a.agent)}`}></span>
-            <span class="activity-text"><strong>${a.agent_title || a.agent || "Airth"}</strong> · ${a.sentence}</span>
-            <span class="activity-at">${a.at}</span></li>`)}</ol>`
+            <span class="agent-mark" title=${a.agent_title || a.agent || "Airth"} aria-label=${a.agent_title || a.agent || "Airth"} style=${`--agent: ${agentColour(a.agent)}`}></span>
+            <span class="activity-text">${a.sentence}</span>
+            <span class="chip mono">${a.routine}</span>
+            <span class="activity-at">${a.at ? ago(a.at) : ""}</span></li>`)}</ol>`
         : html`<span class="no-activity">No run yet</span>`}
     </div>
   </div>`;

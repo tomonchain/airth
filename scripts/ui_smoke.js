@@ -401,12 +401,13 @@ function smokeNext() {
     { name: "acme", description: "", needs: 2, health: { state: "watch", sentence: "One item is held by the check. Goal pace and runway unknown: no measured goal, no bank connected." },
       vitals: [{ label: "daily-posts", value: "9", note: "Approved this week", out: false }, { label: "Dropped this week", value: "1", note: "too long", out: true }, { label: "Quality", value: "1 flag", note: "a call to buy", out: true }],
       finance: { source: "Revolut Business · read-only · 07:00", cash: "£12,300", in: "£0", out: "£420", runway: "29 months", runway_months: 29.3 },
-      time: "45 min", cost_usd: 0.42, activity: [{ agent: "post-writer", agent_title: "Post writer", sentence: "daily-posts read 58, kept 3, 3 sent to you", at: "07:31" }, { agent: null, agent_title: null, sentence: "weekly-report read 1", at: "Mon" }] },
+      headline: "One item is held by the check.", first: { id: 7, kind: "approval", title: "A post on ETH", agent: "post-writer", routine: "daily-posts", created_at: new Date(Date.now() - 2 * 3600e3).toISOString(), flag_reason: "a call to buy" },
+      time: "45 min", cost_usd: 0.42, activity: [{ agent: "post-writer", agent_title: "Post writer", routine: "daily-posts", sentence: "Read 58 items, kept 3 and sent 3 to you.", at: new Date(Date.now() - 2 * 3600e3).toISOString() }, { agent: null, agent_title: null, routine: "weekly-report", sentence: "Read 1 item.", at: null }] },
     { name: "perso", description: null, needs: 0, health: { state: "not started", sentence: "No routine yet." }, vitals: [], finance: null, time: "0 s", cost_usd: 0, activity: [] },
     { name: "byhand", description: null, needs: 0, health: { state: "healthy", sentence: "Nothing is held." }, vitals: [], finance: { source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months", runway_months: 8 }, time: "0 s", cost_usd: 0, activity: [] },
     { name: "lapsed", description: null, needs: 0, health: { state: "healthy", sentence: "Nothing is held." }, vitals: [], finance: { unknown: "Revolut access needs re-authorizing" }, time: "0 s", cost_usd: 0, activity: [] }] };`, ctx);
   show("hq", { route: { page: "hq" } });
-  for (const text of ["One business to watch.", "2 things need you", "Watch", "Not started", "Dropped this week", "1 flag", "No figures yet", "Entered by hand · as of 2 Nov", "£8,000", "8 months", "£12,300", "29 months", "Revolut Business · read-only · 07:00", "Unknown: Revolut access needs re-authorizing", "Post writer", "daily-posts read 58, kept 3, 3 sent to you", "Airth", "No run yet", "model cost $0.42"]) {
+  for (const text of ["One business to watch.", "2 things need you", "Watch", "Not started", "Dropped this week", "1 flag", "No figures yet", "Entered by hand · as of 2 Nov", "£8,000", "8 months", "£12,300", "29 months", "Revolut Business · read-only · 07:00", "Unknown: Revolut access needs re-authorizing", "Read 58 items, kept 3 and sent 3 to you.", "2h ago", "weekly-report", "No run yet", "model cost $0.42"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/hq: "${text}" is missing`);
   }
   // Decision 68: money in is not entered by hand; it shows as a dash.
@@ -419,7 +420,11 @@ function smokeNext() {
   if (nbody.querySelector("#top").textContent.includes("New business")) problems.push("next/top: New business is still in the header");
   // A business's home: its own section of the HQ, alone.
   show("home", { route: { page: "home", realm: "acme" } });
-  for (const text of ["Home", "Dropped this week", "Post writer"]) if (!nbody.textContent.includes(text)) problems.push(`next/home: "${text}" is missing`);
+  // Its title is the fact that matters most; under it, the item to handle
+  // first and the way to the rest.
+  for (const text of ["One item is held by the check.", "A post on ETH", "Needs you · 2h ago", "a call to buy", "Handle it", "1 more thing needs you", "Dropped this week", "daily-posts"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/home: "${text}" is missing`);
+  }
   if (nbody.textContent.includes("Not started")) problems.push("next/home: another business shows on this one's home");
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
   {
