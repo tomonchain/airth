@@ -9,7 +9,7 @@ use crate::business::store::queue::Item as QueueItem;
 use crate::business::store::routines::BlockRow;
 use crate::business::store::status::RoutinesWeek;
 use crate::routine::{Graph, Kind};
-use chrono::{DateTime, Duration, Local, Utc};
+use chrono::{DateTime, Duration, Utc};
 use std::collections::BTreeMap;
 
 /// Runs shown under Latest activity.
@@ -73,15 +73,13 @@ impl App {
                 .as_ref()
                 .and_then(|r| std::fs::read_to_string(r.join(format!("agents/{agent}.md"))).ok())
                 .and_then(|t| crate::frontmatter::parse(&t).text("title"));
-            let at = blocks
-                .last()
-                .and_then(|b| DateTime::parse_from_rfc3339(&b.started_at).ok())
-                .map(|t| when(t.with_timezone(&Utc), now))
-                .unwrap_or_default();
+            // The page says it as "2h ago", from the founder's clock.
+            let at = blocks.last().map(|b| b.started_at.clone());
             activity.push(json!({
                 "agent": agent,
                 "agent_title": title,
-                "sentence": sentence(&routine, graph, &blocks),
+                "routine": routine,
+                "sentence": sentence(graph, &blocks),
                 "at": at,
             }));
         }
@@ -90,11 +88,17 @@ impl App {
             .as_ref()
             .and_then(|f| f.get("runway_months").cloned());
         let (state, why) = health(graphs.len(), &pending, runway.as_ref());
+        let approved: i64 = week.routines.iter().map(|r| r.approved).sum();
         Ok(json!({
             "name": realm.name(),
             "description": realm.config.description,
             "needs": pending.len(),
             "health": {"state": state, "sentence": why},
+            "headline": headline(graphs.len(), &pending, runway.as_ref(), approved),
+            "first": first(&pending).map(|i| json!({
+                "id": i.id, "kind": i.kind, "title": i.title, "agent": i.agent,
+                "routine": i.routine, "created_at": i.created_at, "flag_reason": i.flag_reason,
+            })),
             // A business with no routine has nothing Airth measures yet.
             "finance": finance,
             "vitals": if graphs.is_empty() { Vec::new() } else { vitals(&graphs, &week, &pending) },
@@ -105,14 +109,65 @@ impl App {
     }
 }
 
-/// When a run happened, as the HQ says it: "07:30" today, else the weekday.
-fn when(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
-    let (at, now) = (at.with_timezone(&Local), now.with_timezone(&Local));
-    if at.date_naive() == now.date_naive() {
-        at.format("%H:%M").to_string()
-    } else {
-        at.format("%a").to_string()
+/// The one fact a business's home leads with, most pressing first: an
+/// incident, a short runway, an item held by the check; else what the
+/// week produced.
+fn headline(
+    routines: usize,
+    pending: &[QueueItem],
+    runway: Option<&Value>,
+    approved: i64,
+) -> String {
+    let incidents: Vec<&QueueItem> = pending.iter().filter(|i| i.kind == "incident").collect();
+    let held = pending
+        .iter()
+        .filter(|i| i.flag.as_deref() == Some("blocking"))
+        .count();
+    let months = runway.and_then(Value::as_f64).map(f64::floor);
+    if routines == 0 {
+        return "No routine runs yet.".into();
     }
+    match (incidents.as_slice(), months, held) {
+        ([one], _, _) => return format!("{}.", capital(&one.title)),
+        (many, _, _) if many.len() > 1 => return format!("{} incidents to look at.", many.len()),
+        (_, Some(m), _) if m < 6.0 => return format!("Runway {m} months."),
+        (_, _, 1) => return "One item is held by the check.".into(),
+        (_, _, n) if n > 1 => return format!("{n} items are held by the check."),
+        _ => {}
+    }
+    let week = match approved {
+        0 => "Nothing approved yet this week".to_string(),
+        n => format!("{n} approved this week"),
+    };
+    match months {
+        Some(m) => format!("{week}, runway {m} months."),
+        None => format!("{week}."),
+    }
+}
+
+/// The item in Needs you to handle first: an incident, then what the
+/// check holds, a legal deadline, an approval, then the rest; the oldest
+/// first within each.
+fn first(pending: &[QueueItem]) -> Option<&QueueItem> {
+    let rank = |i: &QueueItem| match (i.kind.as_str(), i.flag.as_deref()) {
+        ("incident", _) => 0,
+        (_, Some("blocking")) => 1,
+        ("deadline", _) => 2,
+        ("approval", _) => 3,
+        ("prepared", _) => 4,
+        ("delayed", _) => 5,
+        _ => 6,
+    };
+    pending
+        .iter()
+        .min_by(|a, b| (rank(a), &a.created_at).cmp(&(rank(b), &b.created_at)))
+}
+
+fn capital(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
 }
 
 /// Health from the criteria that have data (decision 53): an open blocking
@@ -202,9 +257,10 @@ fn vitals(
     out
 }
 
-/// A run in one sentence, from its record, by code: what it read, kept,
-/// sent to the founder and did, or where it failed.
-fn sentence(routine: &str, graph: Option<&Graph>, blocks: &[BlockRow]) -> String {
+/// A run in one short sentence, from its record, by code: what it read,
+/// kept, sent to the founder and did, or where it failed. The routine's
+/// name is shown beside it, not in it.
+fn sentence(graph: Option<&Graph>, blocks: &[BlockRow]) -> String {
     let kind = |id: &str| {
         graph
             .and_then(|g| g.blocks.iter().find(|b| b.id == id))
@@ -217,33 +273,42 @@ fn sentence(routine: &str, graph: Option<&Graph>, blocks: &[BlockRow]) -> String
             })
             .unwrap_or("")
     };
-    if let Some(failed) = blocks.iter().find(|b| b.outcome == "failed") {
-        return format!("{routine} failed at {}", failed.block);
-    }
+    let failed = blocks.iter().position(|b| b.outcome == "failed");
+    let done = &blocks[..failed.unwrap_or(blocks.len())];
     let mut parts = Vec::new();
-    let read = blocks.iter().find(|b| kind(&b.block) == "read");
+    let read = done.iter().find(|b| kind(&b.block) == "read");
     if let Some(r) = read {
-        parts.push(format!("read {}", r.items_out));
+        parts.push(match r.items_out {
+            1 => "read 1 item".to_string(),
+            n => format!("read {n} items"),
+        });
     }
-    if let Some(a) = blocks.iter().find(|b| kind(&b.block) == "ai")
+    if let Some(a) = done.iter().find(|b| kind(&b.block) == "ai")
         && read.is_none_or(|r| a.items_out < r.items_out)
     {
         parts.push(format!("kept {}", a.items_out));
     }
-    let asked: i64 = blocks
+    let asked: i64 = done
         .iter()
         .filter(|b| kind(&b.block) == "approval")
         .map(|b| b.items_in)
         .sum();
     if asked > 0 {
-        parts.push(format!("{asked} sent to you"));
+        parts.push(format!("sent {asked} to you"));
     }
-    for act in blocks.iter().filter(|b| kind(&b.block) == "act") {
-        parts.push(format!("{}: {} done", act.block, act.items_out));
+    for act in done.iter().filter(|b| kind(&b.block) == "act") {
+        parts.push(format!("acted on {} ({})", act.items_out, act.block));
     }
-    match parts.is_empty() {
-        true => format!("{routine} ran"),
-        false => format!("{routine} {}", parts.join(", ")),
+    let said = match parts.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    };
+    match (failed.map(|i| &blocks[i].block), said.is_empty()) {
+        (Some(at), true) => format!("Failed at {at}."),
+        (Some(at), false) => format!("{}, then failed at {at}.", capital(&said)),
+        (None, true) => "Ran, with nothing to do.".into(),
+        (None, false) => format!("{}.", capital(&said)),
     }
 }
 
@@ -290,6 +355,81 @@ mod tests {
         );
     }
 
+    fn pending(kind: &str, flag: Option<&str>, created_at: &str) -> QueueItem {
+        QueueItem {
+            id: created_at.len() as i64,
+            created_at: created_at.into(),
+            kind: kind.into(),
+            title: format!("{kind} item"),
+            agent: None,
+            routine: None,
+            run: None,
+            action: None,
+            args: json!({}),
+            original_args: json!({}),
+            source: json!({}),
+            model_call: None,
+            execute_at: None,
+            status: "pending".into(),
+            revision: 1,
+            flag: flag.map(Into::into),
+            flag_reason: None,
+            note: None,
+        }
+    }
+
+    /// The home leads with the most pressing fact: an incident, a short
+    /// runway, what the check holds; else what the week produced.
+    #[test]
+    fn the_home_leads_with_the_most_pressing_fact() {
+        let incident = pending("incident", None, "2026-11-03T08:00:00Z");
+        let held = pending("approval", Some("blocking"), "2026-11-03T07:00:00Z");
+        assert_eq!(headline(0, &[], None, 0), "No routine runs yet.");
+        assert_eq!(
+            headline(1, &[held.clone(), incident.clone()], Some(&json!(3.0)), 4),
+            "Incident item."
+        );
+        assert_eq!(
+            headline(1, std::slice::from_ref(&held), Some(&json!(3.5)), 4),
+            "Runway 3 months."
+        );
+        assert_eq!(
+            headline(1, &[held], Some(&json!(29.0)), 4),
+            "One item is held by the check."
+        );
+        assert_eq!(
+            headline(1, &[], Some(&json!(29.4)), 4),
+            "4 approved this week, runway 29 months."
+        );
+        assert_eq!(headline(1, &[], None, 0), "Nothing approved yet this week.");
+    }
+
+    /// Needs you's first item: an incident before what the check holds,
+    /// before a deadline, before an approval; the oldest within a kind.
+    #[test]
+    fn the_first_item_is_the_most_pressing_then_the_oldest() {
+        let late = pending("approval", None, "2026-11-03T09:00:00Z");
+        let early = pending("approval", None, "2026-11-01T09:00:00Z");
+        let deadline = pending("deadline", None, "2026-11-03T10:00:00Z");
+        let held = pending("approval", Some("blocking"), "2026-11-03T11:00:00Z");
+        let incident = pending("incident", None, "2026-11-03T12:00:00Z");
+        let mut items = vec![late, early.clone()];
+        assert_eq!(first(&items).unwrap().created_at, early.created_at);
+        for (item, kind) in [
+            (deadline, "deadline"),
+            (held, "approval"),
+            (incident, "incident"),
+        ] {
+            items.push(item);
+            let f = first(&items).unwrap();
+            assert_eq!(
+                (f.kind.as_str(), f.created_at.as_str()),
+                (kind, items.last().unwrap().created_at.as_str())
+            );
+        }
+        assert!(first(&[]).is_none());
+    }
+
     /// Decision 53: a run's activity sentence is built by code from its
     /// record, never by a model.
     #[test]
@@ -302,15 +442,22 @@ mod tests {
             row("send", "ok", 1, 1),
         ];
         assert_eq!(
-            sentence("daily-posts", Some(&graph), &ran),
-            "daily-posts read 58, kept 3, 3 sent to you, send: 1 done"
+            sentence(Some(&graph), &ran),
+            "Read 58 items, kept 3, sent 3 to you and acted on 1 (send)."
         );
         let failed = [row("news", "ok", 1, 58), row("send", "failed", 1, 0)];
         assert_eq!(
-            sentence("daily-posts", Some(&graph), &failed),
-            "daily-posts failed at send"
+            sentence(Some(&graph), &failed),
+            "Read 58 items, then failed at send."
         );
-        assert_eq!(sentence("gone", None, &[row("x", "ok", 1, 1)]), "gone ran");
+        assert_eq!(
+            sentence(Some(&graph), &[row("news", "failed", 1, 0)]),
+            "Failed at news."
+        );
+        assert_eq!(
+            sentence(None, &[row("x", "ok", 1, 1)]),
+            "Ran, with nothing to do."
+        );
     }
 
     /// The HQ: one section per business; health from the criteria with
@@ -411,8 +558,12 @@ mod tests {
         assert_eq!(section["vitals"][2]["note"], "a call to buy");
         assert_eq!(
             section["activity"][0]["sentence"],
-            "posts read 58, kept 3, 3 sent to you"
+            "Read 58 items, kept 3 and sent 3 to you."
         );
+        assert_eq!(section["activity"][0]["routine"], "posts");
+        assert!(section["activity"][0]["at"].as_str().is_some());
+        assert_eq!(section["headline"], "One item is held by the check.");
+        assert_eq!(section["first"]["title"], "A post");
         assert_eq!(section["activity"][0]["agent_title"], "Post writer");
         let quiet = hq["businesses"]
             .as_array()
