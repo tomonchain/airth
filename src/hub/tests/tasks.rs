@@ -213,3 +213,64 @@ fn an_unwatched_tasks_ask_waits_in_needs_you_then_goes_on() {
         .unwrap();
     assert!(later.grants.is_empty());
 }
+
+/// Decision 64's routing: the only agent takes it with no model call; a
+/// named agent is taken at its word; else the fast model chooses among the
+/// business's agents, its call journaled, and "none" or an answer that
+/// names no agent asks the founder to pick.
+#[test]
+fn an_order_finds_its_agent() {
+    use crate::hub::orders::{Route, named};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(&root, "writer", "title: Writer\n");
+    let (hub, seen, _) = make_hub(&f.home, vec![]);
+    assert_eq!(
+        hub.route_order(&f.realm, "Outline the week").unwrap().agent,
+        "writer"
+    );
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "no model call for the only agent"
+    );
+    agent(&root, "watcher", "title: Watcher\n");
+    let agents = vec!["watcher".to_string(), "writer".to_string()];
+    assert_eq!(
+        named("writer: outline the week", &agents),
+        Some(("writer".to_string(), "outline the week"))
+    );
+    assert_eq!(named("note: buy milk", &agents), None);
+    let (hub, seen, _) = make_hub(
+        &f.home,
+        vec![
+            done(r#"{"agent": "watcher", "why": "It reads the news."}"#),
+            done(r#"{"agent": "none", "why": "Nobody does accounting."}"#),
+            done(r#"{"agent": "intern", "why": "?"}"#),
+        ],
+    );
+    assert_eq!(
+        hub.route_order(&f.realm, "What moved in staking today?")
+            .unwrap(),
+        Route {
+            agent: "watcher".into(),
+            why: "It reads the news.".into()
+        }
+    );
+    let asked = format!("{:?}", seen.lock().unwrap()[0]);
+    assert!(
+        asked.contains("watcher (Watcher)") && asked.contains("What moved in staking today?"),
+        "{asked}"
+    );
+    let none = hub
+        .route_order(&f.realm, "File the VAT return")
+        .unwrap_err();
+    assert!(format!("{none:#}").contains("pick the agent"), "{none:#}");
+    let invalid = hub.route_order(&f.realm, "Something").unwrap_err();
+    assert!(
+        format!("{invalid:#}").contains("did not fit"),
+        "{invalid:#}"
+    );
+    let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
+    assert_eq!(calls.len(), 3, "each routing call is journaled");
+    assert!(calls[2].error.is_some());
+}

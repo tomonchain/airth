@@ -349,6 +349,33 @@ function smokeNext() {
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
   show("unauthorized", { route: { page: "hq" }, unauthorized: true });
+  // The command bar (decision 64): on business pages, who takes the order
+  // and why, a pick when none fits, then where the task went.
+  vm.runInContext(`orders.route = { agent: "writer", why: "It writes the long pieces.", agents: ["watcher", "writer"], order: "Outline the week" };`, ctx);
+  show("order, routed", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("· It writes the long pieces.") || !nbody.textContent.includes("Start")) problems.push("next/order: who takes it and why is missing");
+  vm.runInContext(`orders.route = { error: "no agent's job fits this order: pick the agent", agents: ["writer"], order: "File the VAT" };`, ctx);
+  show("order, none fits", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("pick the agent")) problems.push("next/order: a refused routing is not said");
+  vm.runInContext(`orders.route = null; orders.note = "Started: writer works on it.";`, ctx);
+  show("order, started", { route: { page: "team", realm: "acme" } });
+  if (!nbody.textContent.includes("Started: writer") || !nbody.textContent.includes("See Tasks")) problems.push("next/order: the started task is not said");
+  vm.runInContext(`orders.note = null;`, ctx);
+  // Tasks (decision 64): the groups, a waiting task sent to Needs you.
+  vm.runInContext(`tasks.data.acme = {
+    waiting: [{ id: "r1", order: "Check today's rates", agent: "watcher", status: "stopped", line: "", at: "${now}", item: 4 }],
+    review: [{ id: "r2", order: "Update the methodology page", agent: "writer", status: "completed", line: "Opened a change", at: "${now}", item: null }],
+    running: [{ id: "r3", order: "Outline the week", agent: "writer", status: "running", line: "1 of 3 steps done", at: "${now}", item: null }],
+    done: [{ id: "r4", order: "Summarise the RWA news", agent: null, status: "completed", line: "", at: "${now}", item: null }] };`, ctx);
+  show("tasks", { route: { page: "tasks", realm: "acme" } });
+  for (const text of ["Give the order.", "Waiting for you · 1", "Waits for you in Needs you", "To review · 1", "Running · 1", "1 of 3 steps done", "Done · 1", "completed"]) {
+    if (!nbody.textContent.includes(text)) problems.push(`next/tasks: "${text}" is missing`);
+  }
+  vm.runInContext(`tasks.data.acme = { waiting: [], review: [], running: [], done: [] };`, ctx);
+  show("tasks, none yet", { route: { page: "tasks", realm: "acme" } });
+  if (!nbody.textContent.includes("No task yet")) problems.push("next/tasks: no empty state");
+  show("hq, no order box", { route: { page: "hq" } });
+  if (nbody.textContent.includes("Give an order")) problems.push("next/order: the HQ has no order box");
   // Needs you, with every kind of item and fields left empty.
   vm.runInContext(`Object.assign(needs, { realm: "acme", items: ${JSON.stringify([
     { id: 1, kind: "approval", title: "A post", agent: "post-writer", routine: "daily-posts", run: "r1", action: null, created_at: now, execute_at: null, status: "pending", revision: 1, text: "ETH left.", editable: true, source: { title: null, link: "https://e.com/1" } },
