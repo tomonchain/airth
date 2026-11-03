@@ -185,6 +185,7 @@ fn item_text(realm: &str, item: &Item) -> String {
         "prepared" => "To do yourself",
         "incident" => "Incident",
         "report" => "Report",
+        "deadline" => "Legal deadline",
         "delayed" => "Will be done unless you cancel",
         "approval" if item.action.is_some() => "Asks to act",
         _ => "Needs you",
@@ -227,6 +228,9 @@ fn buttons(realm: &str, item: &Item) -> Value {
             _ => json!([[button("Seen", "a")]]),
         },
         "report" => json!([[button("Seen", "a")]]),
+        // Decision 66: an overdue deadline stays until it is filed.
+        "deadline" if item.args["overdue"] == true => json!([[button("Filed", "a")]]),
+        "deadline" => json!([[button("Filed", "a"), button("Seen", "r")]]),
         "prepared" => json!([[button("Done", "a")]]),
         // Blocked by a check: no plain Approve (decision 58).
         _ if item.flag.as_deref() == Some("blocking") => {

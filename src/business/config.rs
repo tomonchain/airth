@@ -15,9 +15,17 @@ const PROFILE: &[&str] = &[
     "currency", "bank", "domain", "links",
     // A task's budget (decision 64): optional, with defaults.
     "task_max_minutes", "task_max_cost_usd",
+    // The last confirmation statement's date, when filed early, and how
+    // many days ahead deadlines are reminded (decision 66).
+    "confirmation_date", "reminders",
 ];
 /// Fields Airth has a default for: never listed as left to fill.
-const PROFILE_OPTIONAL: &[&str] = &["task_max_minutes", "task_max_cost_usd"];
+const PROFILE_OPTIONAL: &[&str] = &[
+    "task_max_minutes",
+    "task_max_cost_usd",
+    "confirmation_date",
+    "reminders",
+];
 const GOAL: &[&str] = &[
     "goal",
     "measure",
@@ -162,6 +170,12 @@ fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
         bail!("country '{c}' is not an ISO code like GB or FR");
     }
     date(d, "incorporated_on")?;
+    date(d, "confirmation_date")?;
+    for days in d.list("reminders") {
+        if days.parse::<u16>().is_err() {
+            bail!("reminders '{days}' is not a number of days: [30, 7]");
+        }
+    }
     if let Some(v) = d.text("fiscal_year_end") {
         NaiveDate::parse_from_str(&format!("2024-{v}"), "%Y-%m-%d")
             .with_context(|| format!("fiscal_year_end '{v}' is not a month and day like 03-31"))?;
@@ -239,6 +253,37 @@ mod tests {
             config.profile.text("task_max_minutes").as_deref(),
             Some("10")
         );
+    }
+
+    /// Decision 66: the last confirmation date is optional, and a date.
+    #[test]
+    fn the_confirmation_date_is_a_date() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nconfirmation_date: 2026-10-01\n---\n",
+        );
+        assert!(
+            load(r)
+                .unwrap()
+                .missing
+                .iter()
+                .all(|m| !m.contains("confirmation_date"))
+        );
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nconfirmation_date: soon\n---\n",
+        );
+        assert!(format!("{:#}", load(r).unwrap_err()).contains("confirmation_date 'soon'"));
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\nreminders: [30, a week]\n---\n",
+        );
+        assert!(format!("{:#}", load(r).unwrap_err()).contains("reminders 'a week'"));
     }
     #[test]
     fn a_business_loads_with_what_is_left_to_fill() {

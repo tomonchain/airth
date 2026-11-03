@@ -1,5 +1,5 @@
 /* Calendar (docs/design/mockups/calendar.html): the week from today, one
-   column a day, and the late starts beside it. */
+   column a day, and the deadlines and late starts beside it. */
 
 /* The week needs the panel's whole width, as in the mockup. */
 .column.calendar { max-width: none; margin: 0; }
@@ -28,6 +28,11 @@
 .calendar .late-row { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .calendar .late-row .name { font-size: 14px; font-weight: 500; }
 .calendar .late-row .sub { font-size: 13px; color: var(--warn); }
+.calendar .deadlines .late-row .sub { color: var(--text-3); }
+.calendar .deadlines .late-row .sub.warn { color: var(--warn); }
+.calendar .deadlines a.sub { color: var(--accent); }
+.calendar .slot.deadline { box-shadow: 0 0 0 1px var(--warn); }
+.calendar .slot.deadline .time { color: var(--warn); }
 
 @media (max-width: 720px) {
   .calendar .week { grid-template-columns: 1fr; overflow-x: visible; }
