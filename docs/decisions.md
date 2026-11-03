@@ -2,6 +2,32 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 64. The command bar: an order is a task run by one agent, routed by the fast model when not named
+
+**Accepted**, with the founder's three additions: the agent's scope only, every ask of an unwatched task in Needs you, a budget per task.
+
+`CLAUDE.md` puts a command bar on every page: a one-off order, routed to the right agent or the one named, and what follows goes through Tasks and Needs you. Today a run the founder starts has no agent: it is a chat. The bar needs two things the code does not have: which agent a run works as, and how an order finds its agent.
+
+- **An order is a task.** It is a run, as today's missions are, with one new field in its run state: `agent`, the name of the agent it works as. The run's first message gives the agent's job (its file in `agents/`, as a routine's run already does) and then the order. Tasks lists the business's runs that have an `agent` and no routine: the founder's orders.
+- **The agent's scope, never the realm's.** A task runs with the integrations, skills (MCP servers) and repositories its agent's file in `agents/` declares (front-matter fields `integrations`, `skills`, `repos`, comma-separated), never the whole realm's. An agent that declares none has nothing beyond read-only web access (`http_request` GET to public addresses).
+- **Unwatched, never a silent wait.** An order starts as `Job::Alone`: nobody watches it (decision 56). What commits the business stops the run and waits in Needs you and on Telegram, as before. So does **any permission the realm's rules would ask for**: in an unwatched task, an ask becomes a Needs you item (and Telegram), the run stops there, and it resumes once the founder answers.
+- **A budget per task.** A maximum duration and a maximum model cost, with defaults in the business config (`business/profile.md`: `task_max_minutes`, `task_max_cost_usd`). Past either, the task stops, and the founder is told why in Needs you.
+- **Routing.**
+  - **Named:** the founder picks the agent in the bar, or starts the order with its name ("writer: outline the week's article"). That agent takes it, no model involved.
+  - **Not named:** one call to the realm's fast model chooses among the business's agents. The call has a versioned prompt in Airth (`src/prompts/route.md`), a schema whose `agent` is an enum of the agents' names, plus `why`, and a journal entry like any model call. The bar shows the chosen agent and why before the task starts; the founder can change it.
+  - **No agent fits**, the answer is invalid, or the business has none: the order is not started. The bar says so, and the founder picks.
+- **Tasks page, grouped:**
+  - **To review**: the run ended and something of it waits in Needs you;
+  - **Running**;
+  - **Waiting**: stopped on Needs you;
+  - **Done**, the last ones.
+
+  Each task shows its agent and its order.
+
+*Why:* an order should go to the role that owns that work, with that role's job as context. Naming it is free and exact. Routing an unnamed order is a judgment between roles, which a cheap model call does well once it is versioned and checked. Starting unwatched keeps decision 56's rule: nothing commits without the founder's explicit approval. Reusing runs as tasks keeps one way of doing work, as `CLAUDE.md` asks (no new task store).
+
+*Cost:* one field added to the run state (JSON, as today). One Airth-level prompt and its schema to keep. Each unnamed order costs one fast-model call. A business with one agent never needs routing. A task is only as long-lived as its run: there are no recurring tasks, which stay routines.
+
 ## 63. Replies: the founder sends a post's link on Telegram; Airth drafts the reply into Typefully, never onto X
 
 **Accepted**, with the founder's precisions: replies are level 1 like posts; the link may come with one line of angle; a post too thin to answer is said, not drafted.
