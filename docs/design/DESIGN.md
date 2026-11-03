@@ -48,6 +48,8 @@ Define these once as CSS custom properties and use only them.
 | `--bad` | `#FF9A9A` | At risk, failed, reject |
 | Primary button | `#ECEDEE` on `#0F1011` | One per view at most |
 
+**Light theme** (the founder's choice, 3 November 2026, from the classic interface's palette): the same tokens redefined under `:root[data-theme="light"]`: `--bg` `#F4F4F5`, `--panel` `#FFFFFF`, `--card` `#FAFAFA`, `--line` `#E4E4E7`, `--text` `#09090B`, `--text-3` `#5F5F66`, `--accent` `#3B5BDB`, `--ok` `#15803D`, `--warn` `#B45309`, `--bad` `#DC2626`. The theme follows the system until the founder picks one with the rail's toggle; the choice is kept in the browser and shared with the classic interface (`/theme.js`).
+
 Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Post writer `#F39C4A` / `#2A1404` (pen), Writer `#8B6CF6` / `#170D33` (book), Airth `#4FCB8F` / `#08261A` (spark). A new agent gets a colour from this family, never one of the status colours.
 
 ### Type
@@ -65,7 +67,7 @@ Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Po
 
 ## Components
 
-- **Shell:** header (business switcher on the left, primary action on the right), icon rail 72 px wide (HQ, Needs you, Team, Routines, Tasks, Calendar; Workshop and Settings pinned at the bottom), main panel. Needs you shows an amber dot when something waits.
+- **Shell:** header (business switcher on the left, primary action on the right), icon rail 72 px wide (HQ, Needs you, Team, Routines, Tasks, Calendar; Workshop, Settings, the theme toggle and the founder's profile pinned at the bottom, in view as the page scrolls), main panel. Needs you shows an amber dot when something waits.
 - **Status pill:** dot + word (Healthy, Watch, At risk, Not started, On track, Waiting for you). Not started uses a hollow grey dot.
 - **Vital tile:** label 12, value 22/600, sub-line 12. Amber background and text when out of range.
 - **Finance strip:** one bordered row of four cells (Cash, In, Out, Runway) with the source and sync time on the right of its label.

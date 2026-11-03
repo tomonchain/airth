@@ -371,6 +371,9 @@ function smokeNext() {
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
   for (const p of [...N.PAGES, ...N.PINNED]) show(p.id, { route: { page: p.id, realm: "acme" } });
+  // The rail ends with the theme toggle and the founder's profile.
+  const rail = JSON.stringify(nbody.querySelector("#rail"), (k, v) => (k === "parent" ? undefined : v));
+  if (!/Switch to (light|dark) mode/.test(rail) || !rail.includes("Your profile")) problems.push("next/rail: no theme toggle or profile");
   // Search (⌘K): pages, businesses and actions, filtered as you type; Esc
   // closes it.
   show("hq, search", { route: { page: "hq" } });
