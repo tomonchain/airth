@@ -79,8 +79,10 @@ function businessPage() {
   if (!data) return h("div", { class: "column" }, pageHead(next.realm, "Business"), h("p", { class: "lede" }, "Loading…"));
   const p = data.profile || {};
   const g = data.goal || {};
+  // Decision 66: a UK company's year end is its accounting reference date.
+  const words = (k, label) => k === "fiscal_year_end" && p.country === "GB" ? "Accounting reference date" : label;
   const facts = (pairs, src) => h("dl", { class: "facts" }, pairs.map(([k, label]) => [
-    h("dt", {}, label), h("dd", { class: show(src[k]) ? null : "unknown" }, show(src[k]) || "Not filled yet")]));
+    h("dt", {}, words(k, label)), h("dd", { class: show(src[k]) ? null : "unknown" }, show(src[k]) || "Not filled yet")]));
   return h("div", { class: "column" },
     pageHead(next.realm, show(p.name) || next.realm),
     data.error && h("p", { class: "note bad" }, `The config cannot be read: ${data.error}`),
