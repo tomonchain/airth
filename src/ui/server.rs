@@ -394,7 +394,9 @@ pub fn serve(hub: Hub, options: UiOptions) -> Result<()> {
     Ok(())
 }
 
-/// A running app server: requests are served on their own thread.
+/// A running app server: requests are served on their own thread. Only the
+/// Mac's desktop app starts one without blocking.
+#[cfg(target_os = "macos")]
 pub struct Running {
     pub url: String,
     registry: Registry,
@@ -402,6 +404,7 @@ pub struct Running {
     thread: std::thread::JoinHandle<()>,
 }
 
+#[cfg(target_os = "macos")]
 impl Running {
     /// Stop the runs in progress (they can be resumed) and forget the server.
     pub fn stop(&self) {
@@ -420,6 +423,7 @@ impl Running {
 }
 
 /// Start the app server, the scheduler and the updater, without blocking.
+#[cfg(target_os = "macos")]
 pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
     let server = Server::http(("127.0.0.1", options.port))
         .or_else(|_| Server::http(("127.0.0.1", 0)))
