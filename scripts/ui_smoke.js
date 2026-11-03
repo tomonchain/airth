@@ -339,11 +339,15 @@ function smokeNext() {
       finance: { source: "Revolut Business · read-only · 07:00", cash: "£12,300", in: "£0", out: "£420", runway: "29 months", runway_months: 29.3 },
       time: "45 min", cost_usd: 0.42, activity: [{ agent: "post-writer", agent_title: "Post writer", sentence: "daily-posts read 58, kept 3, 3 sent to you", at: "07:31" }, { agent: null, agent_title: null, sentence: "weekly-report read 1", at: "Mon" }] },
     { name: "perso", description: null, needs: 0, health: { state: "not started", sentence: "No routine yet." }, vitals: [], finance: null, time: "0 s", cost_usd: 0, activity: [] },
+    { name: "byhand", description: null, needs: 0, health: { state: "healthy", sentence: "Nothing is held." }, vitals: [], finance: { source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months", runway_months: 8 }, time: "0 s", cost_usd: 0, activity: [] },
     { name: "lapsed", description: null, needs: 0, health: { state: "healthy", sentence: "Nothing is held." }, vitals: [], finance: { unknown: "Revolut access needs re-authorizing" }, time: "0 s", cost_usd: 0, activity: [] }] };`, ctx);
   show("hq", { route: { page: "hq" } });
-  for (const text of ["One business to watch.", "2 things need you", "Watch", "Not started", "Dropped this week", "1 flag", "No bank account yet", "£12,300", "29 months", "Revolut Business · read-only · 07:00", "Unknown: Revolut access needs re-authorizing", "Post writer", "daily-posts read 58, kept 3, 3 sent to you", "Airth", "No run yet", "model cost $0.42"]) {
+  for (const text of ["One business to watch.", "2 things need you", "Watch", "Not started", "Dropped this week", "1 flag", "No figures yet", "Entered by hand · as of 2 Nov", "£8,000", "8 months", "£12,300", "29 months", "Revolut Business · read-only · 07:00", "Unknown: Revolut access needs re-authorizing", "Post writer", "daily-posts read 58, kept 3, 3 sent to you", "Airth", "No run yet", "model cost $0.42"]) {
     if (!nbody.textContent.includes(text)) problems.push(`next/hq: "${text}" is missing`);
   }
+  // Decision 68: money in is not entered by hand; it shows as a dash.
+  const byHand = vm.runInContext(`finance({ source: "Entered by hand · as of 2 Nov", cash: "£8,000", in: null, out: "£1,000", runway: "8 months" }).textContent`, ctx);
+  if (!/In, \S+ — Out/.test(byHand)) problems.push(`next/hq: money in by hand is not a dash: ${byHand}`);
   show("hq, menu open", { route: { page: "hq" }, menuOpen: true });
   vm.runInContext(`hq.data = { headline: "No business yet.", needs: 0, businesses: [] };`, ctx);
   show("hq, no business", { route: { page: "hq" }, realms: [], realm: null });
@@ -396,10 +400,22 @@ function smokeNext() {
     { block: "ok", started_at: "${now}", finished_at: "${now}", outcome: "waiting", items_in: 1, items_out: 0, cost_usd: 0.004, error: null },
     { block: "send", started_at: "${now}", finished_at: "${now}", outcome: "failed", items_in: 1, items_out: 1, cost_usd: null, error: "x" }] } };`, ctx);
   vm.runInContext(`company.team.acme = { agents: [
-    { name: "watcher", title: null, department: "marketing", job: null, routines: [{ name: "daily-watch", schedule: null, last: null }], waiting: 0, cost_usd: 0, unpriced: 0, seconds: 0 },
-    { name: "writer", title: "Writer", department: null, job: "Write.", routines: [{ name: "weekly", schedule: "mon 09:00", last: { at: "${now}", ok: false } }], waiting: 2, cost_usd: 1.5, unpriced: 3, seconds: 900 }] };
+    { name: "watcher", title: null, department: "marketing", job: null, look: "0a1b2c3d", look_saved: true, accessory: "lens", state: "asleep", routines: [{ name: "daily-watch", schedule: null, last: null }], waiting: 0, cost_usd: 0, unpriced: 0, seconds: 0 },
+    { name: "writer", title: "Writer", department: null, job: "Write.", look: "ff00aa11", look_saved: false, accessory: null, state: "needs", routines: [{ name: "weekly", schedule: "mon 09:00", last: { at: "${now}", ok: false } }], waiting: 2, cost_usd: 1.5, unpriced: 3, seconds: 900 }] };
     company.profile.acme = { profile: { name: null, legal_name: "Acme Ltd", links: ["https://a.com"] }, goal: {}, lines: [{ name: "news", fields: { title: null, kind: null, status: null } }], repos: [{ name: "site", url: null }], missing: ["business/profile.md: country"] };`, ctx);
   show("team", { route: { page: "team", realm: "acme" } });
+  // Decision 65: each agent's state in words, "Keep this look" only for
+  // a look not saved yet; the character drawn from seed, department, state.
+  if (!nbody.textContent.includes("Needs you") || !nbody.textContent.includes("Asleep")) problems.push("next/team: an agent's state is not said");
+  if ((nbody.textContent.match(/Keep this look/g) || []).length !== 1) problems.push("next/team: Keep this look is not offered once, to the agent without a saved look");
+  const drawn = vm.runInContext(`character({ look: "0a1b2c3d", department: "marketing", accessory: "pen", state: "needs", title: "Writer" }, 72)`, ctx);
+  for (const part of ['class="ch st-needs"', "var(--dept-marketing)", 'class="bubble"', 'class="acc"', 'aria-label="Writer, needs you"']) {
+    if (!drawn.includes(part)) problems.push(`next/character: ${part} is missing`);
+  }
+  const plain = vm.runInContext(`character({ look: "bad", department: "spaceships", state: "dancing" }, 72)`, ctx);
+  if (!plain.includes("var(--dept-none)") || !plain.includes("st-idle")) problems.push("next/character: an unknown department or state is not drawn plainly");
+  const twice = vm.runInContext(`character({ look: "0a1b2c3d", department: "sales" }) === character({ look: "0a1b2c3d", department: "sales" })`, ctx);
+  if (!twice) problems.push("next/character: the same seed does not draw the same character");
   show("business", { route: { page: "business", realm: "acme" } });
   vm.runInContext(`company.team.acme = { agents: [] }; company.profile.acme = { error: "agents/x.md: unknown field 'foo'", repos: [] };`, ctx);
   show("team, no agent", { route: { page: "team", realm: "acme" } });

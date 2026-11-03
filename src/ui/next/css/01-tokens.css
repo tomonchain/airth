@@ -33,6 +33,17 @@
   --warn-muted: #D9C29A;
   --bad: #FF9A9A;
 
+  /* One hue per department for the agent characters (decision 65): never a
+     status colour. */
+  --dept-leadership: #E07AB8; --dept-leadership-dark: #A34E85;
+  --dept-marketing: #F39C4A; --dept-marketing-dark: #C7742B;
+  --dept-sales: #3FB8C9; --dept-sales-dark: #2A8593;
+  --dept-support: #4C8DFF; --dept-support-dark: #2F63C4;
+  --dept-product: #8B6CF6; --dept-product-dark: #6547C9;
+  --dept-operations: #8A94A6; --dept-operations-dark: #5E6778;
+  --dept-finance: #6C9BD2; --dept-finance-dark: #4A729F;
+  --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
+
   --font: Inter, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 

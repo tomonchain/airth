@@ -46,8 +46,9 @@ function teamPage() {
 function agentCard(a) {
   return h("article", { class: "card agent-card" },
     h("div", { class: "agent-top" },
-      h("span", { class: "avatar s52", "aria-hidden": "true", style: `--agent: ${agentColour(a.name)}` }, initial(a.title || a.name)),
-      h("div", { class: "agent-id" }, h("h3", {}, a.title || a.name), h("span", {}, a.job || "No job written yet"))),
+      h("span", { class: "character", svg: character(a, 72) }),
+      h("div", { class: "agent-id" }, h("h3", {}, a.title || a.name), h("span", {}, a.job || "No job written yet"),
+        h("span", { class: `agent-state ${a.state || "idle"}` }, CH_STATES[a.state] || "Idle"))),
     h("div", { class: "chips" },
       !a.routines.length && h("span", { class: "chip" }, "No routine yet"),
       a.routines.map((r) => [
@@ -55,6 +56,10 @@ function agentCard(a) {
         r.last && h("span", { class: r.last.ok ? "chip ok" : "chip bad" }, `${r.last.ok ? "Ran" : "Failed"} ${clock(r.last.at)}`),
       ]),
       a.waiting > 0 && h("a", { class: "chip warn", href: pageHash("needs-you") }, `${a.waiting} ${a.waiting === 1 ? "waits" : "wait"} for you`)),
+    // Decision 65: an agent hired before keeps its look by the founder's gesture.
+    !a.look_saved && h("div", { class: "keep-look" },
+      h("span", {}, "Its look comes from its name for now."),
+      h("button", { type: "button", class: "plain", onclick: () => keepLook(a) }, "Keep this look")),
     h("div", { class: "figures" },
       h("div", {}, h("span", {}, "Routines"), h("strong", {}, String(a.routines.length))),
       h("div", {}, h("span", {}, "Your time"), h("strong", {}, minutes(a.seconds || 0))),
@@ -96,4 +101,14 @@ function businessPage() {
     (data.missing || []).length > 0 && h("section", { class: "card" }, h("h2", { class: "label" }, "Left to fill"),
       h("ul", { class: "missing" }, data.missing.map((m) => h("li", { class: "mono" }, m)))),
     h("p", { class: "note" }, "The config lives in the business folder; edit it there, or ask an agent through a change you adopt."));
+}
+
+async function keepLook(a) {
+  try {
+    await api(`realms/${enc(next.realm)}/agents/${enc(a.name)}/look`, {});
+    delete company.team[next.realm];
+  } catch (e) {
+    company.team[next.realm] = { error: e.message };
+  }
+  renderPanel();
 }
