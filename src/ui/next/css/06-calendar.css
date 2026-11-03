@@ -8,26 +8,26 @@
 .calendar .day { display: flex; flex-direction: column; gap: 8px; padding: 14px 10px; border-right: 1px solid var(--line); min-width: 112px; }
 .calendar .day:last-child { border-right: 0; }
 .calendar .day-head { display: flex; flex-direction: column; padding: 0 4px 6px; }
-.calendar .weekday { font-size: 12px; color: var(--text-4); }
+.calendar .weekday { font-size: var(--fs-caption); color: var(--text-4); }
 .calendar .today .weekday { color: var(--accent); font-weight: 600; }
-.calendar .date-num { font-size: 22px; font-weight: 600; }
-.calendar .nothing { padding: 0 4px; font-size: 12.5px; color: var(--text-5); }
+.calendar .date-num { font-size: var(--fs-value); font-weight: 600; }
+.calendar .nothing { padding: 0 4px; font-size: var(--fs-small); color: var(--text-5); }
 .calendar .slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-button); background: var(--chip); }
 .calendar .slot.next { box-shadow: 0 0 0 1px var(--accent); }
 .calendar .agent-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 4px; background: var(--agent); }
 .calendar .slot-text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; text-align: left; }
-.calendar .time { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
-.calendar .routine-name { font-size: 13px; overflow-wrap: anywhere; }
-.calendar .run-state { font-size: 11.5px; color: var(--text-4); }
+.calendar .time { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); }
+.calendar .routine-name { font-size: var(--fs-secondary); overflow-wrap: anywhere; }
+.calendar .run-state { font-size: var(--fs-xs); color: var(--text-4); }
 .calendar .done .routine-name { color: var(--text-3); }
 .calendar .late .run-state { color: var(--warn); }
 .calendar .failed .run-state, .calendar .not-run .run-state { color: var(--bad); }
 .calendar .next .run-state { color: var(--accent); }
 .calendar .late-runs { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); }
-.calendar .late-runs h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.calendar .late-runs h2 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
 .calendar .late-row { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.calendar .late-row .name { font-size: 14px; font-weight: 500; }
-.calendar .late-row .sub { font-size: 13px; color: var(--warn); }
+.calendar .late-row .name { font-size: var(--fs-body); font-weight: 500; }
+.calendar .late-row .sub { font-size: var(--fs-secondary); color: var(--warn); }
 .calendar .deadlines .late-row .sub { color: var(--text-3); }
 .calendar .deadlines .late-row .sub.warn { color: var(--warn); }
 .calendar .deadlines a.sub { color: var(--accent); }
