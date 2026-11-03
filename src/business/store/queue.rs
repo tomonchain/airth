@@ -88,7 +88,7 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     })
 }
 
-fn get(tx: &Transaction, id: i64) -> Result<Item> {
+pub(super) fn get(tx: &Transaction, id: i64) -> Result<Item> {
     tx.query_row(
         &format!("SELECT {COLUMNS} FROM queue WHERE id = ?1"),
         params![id],

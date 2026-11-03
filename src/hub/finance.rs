@@ -90,7 +90,7 @@ impl Hub {
 
 /// An incident titled `title`, unless one is open already: once, not once
 /// an hour.
-fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
+pub(super) fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
     let open = Store::of(realm)?
         .queue(&["pending"])?
         .iter()
