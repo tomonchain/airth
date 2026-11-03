@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 72. One interface, the new one, built from three page layouts; the classic one leaves once its features have moved
 
-**Proposed.** Replaces decision 71.
+**Accepted** by the founder ("ok pour tout"), to start now. Replaces decision 71.
 
 The founder, after using decision 71's mix: remove the classic interface, work cleanly on the new one, and stop the layout changing from one page to the next. Today it changes four ways:
 
@@ -66,7 +66,7 @@ So the page title moves or disappears from one page to the next.
 
 The classic interface stays served at `/classic` until its last feature has moved. Then it is removed with its code, in one PR. Until then, a page not moved yet shows "In development" with a link to its classic page.
 
-**When:** after Friday's install; nothing in it before then. One PR per page or feature, screenshots at 1440 and 390, under the freeze's rule (features move, none is added).
+**When:** now, on main; nothing installed before Friday's install. One PR per page or feature, screenshots at 1440 and 390, under the freeze's rule (features move, none is added).
 
 *Why:* one interface is what the founder asked for, and the only way to stop keeping two in step. A fixed set of layouts makes every page predictable: the title and actions are always in the same place, and a new page cannot invent its own. Components make the shared parts real instead of copied. Preact with `htm` gives that without the build step decision 57 keeps out.
 
