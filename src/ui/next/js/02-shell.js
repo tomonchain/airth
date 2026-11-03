@@ -56,7 +56,7 @@ function renderTop() {
     inBusiness && next.route.page !== "tasks" && orderBox(),
     next.route.page === "hq"
       ? h("a", { class: "primary", href: "#/new-business" }, h("span", { class: "glyph", svg: icon("plus", 14, 2.4) }), "New business")
-      : h("a", { class: "where back", href: "/" }, "Current interface"));
+      : null);
 }
 
 function renderRail() {

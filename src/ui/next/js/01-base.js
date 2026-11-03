@@ -33,12 +33,24 @@ for (const name of ["append", "replaceChildren"]) {
   };
 }
 
-// The key the current interface keeps for this tab (or, on the phone, for
-// the device): the new interface uses the same one.
+// The key, from the link Airth gives (`/#token=…`), kept for this tab, and
+// on the phone for the device (decision 37). The classic interface keeps it
+// the same way, so both use one key.
 let token = null;
 try {
   token = sessionStorage.getItem("airth-token") || localStorage.getItem("airth-token");
 } catch {}
+{
+  const m = location.hash.match(/token=([0-9a-f]+)/);
+  if (m) {
+    token = m[1];
+    try {
+      sessionStorage.setItem("airth-token", token);
+      if (location.hostname.endsWith(".ts.net")) localStorage.setItem("airth-token", token);
+    } catch {}
+    history.replaceState(null, "", "#/hq");
+  }
+}
 
 class AuthError extends Error {}
 
