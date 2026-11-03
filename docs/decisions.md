@@ -4,12 +4,12 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 65. Agent characters: drawn by code from a seed saved when the agent is hired
 
-**Proposed.**
+**Accepted**, with the founder's precision: Team offers "Keep this look" for agents hired before.
 
 Team and the hiring step show each agent as a small character (`docs/design/mockups/hire-agent.html`, `docs/design/characters/`). The founder recognises a role at a glance, and its state (working, needs you, incident) shows without reading. The question is what is stored, and what is computed.
 
 - **Stored: one seed, once.** When the founder hires an agent from the app, its file `agents/<name>.md` gets a front-matter field `look` (eight hexadecimal characters). Hiring is the founder's act, so writing it is allowed: decision 44 forbids runs to write the config, not the founder. Airth never changes `look` afterwards. "Another look" draws a new seed before hiring only.
-- **Agents hired before this** (Hedgen's four) have no `look`. Their seed is derived from their name, so their look is stable too. The founder may add `look` by hand to choose another one, never Airth.
+- **Agents hired before this** (Hedgen's four) have no `look`. Their seed is derived from their name, so their look is stable too. Team offers them **Keep this look**, the founder's gesture, which writes that derived seed as their `look`, so a later rename does not change the character. Airth never writes it on its own.
 - **Computed: everything else, by code, in the app's JavaScript, as inline SVG.**
   - **From the seed:** the shape (round, bean, block), the eyes and the small traits.
   - **Colour:** from the agent's department, one hue per department defined once as tokens, never a status colour (amber, red, green).
