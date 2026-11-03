@@ -53,8 +53,8 @@ Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Po
 ### Type
 
 - Inter 400, 500 and 600; JetBrains Mono for code, ids and logs. Bundle the font files with the app: no request to a font CDN at runtime.
-- Sizes: 12 captions and labels · 13 secondary · 14 rows and body · 15 section titles · 16 sentences · 17–18 card titles · 22 values and business names · 32–34 page headline.
-- Section labels: 12 px, 600, uppercase, letter-spacing 0.04em, `--text-3`.
+- Sizes, the classic interface's scale (the founder's choice, 3 November 2026), as tokens `--fs-*`: 11 small labels · 11.5 captions and labels · 12 · 12.5 secondary · 13 rows and body · 14 section titles and sentences · 15 card titles · 18 values and business names · 22 page headline (20 under 720 px). Pages use the tokens, never a size of their own.
+- Section labels: 11.5 px, 600, uppercase, letter-spacing 0.04em, `--text-3`.
 - Headline: 600, letter-spacing −0.015em, line-height 1.2. It is one sentence that says what matters today.
 
 ### Shape and spacing

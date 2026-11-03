@@ -2,21 +2,21 @@
    grouped by what they wait for. */
 
 .tasks .tasks-head { display: flex; flex-direction: column; gap: 10px; }
-.tasks .tasks-head .headline { font-size: 34px; line-height: 1.2; }
+.tasks .tasks-head .headline { font-size: var(--fs-headline); line-height: 1.2; }
 .order.big { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-card); border: 1px solid var(--line); background: var(--card); }
-.order.big textarea { resize: vertical; min-height: 56px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; line-height: 1.5; outline: none; }
+.order.big textarea { resize: vertical; min-height: 56px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-section); line-height: 1.5; outline: none; }
 .order.big .order-row { justify-content: flex-end; }
 .order.big .order-card { position: static; box-shadow: none; }
 .task-groups { display: flex; flex-direction: column; gap: 24px; }
 .task-group { display: flex; flex-direction: column; gap: 6px; }
-.task-group h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--text-3); letter-spacing: 0.02em; }
+.task-group h2 { margin: 0 0 4px; font-size: var(--fs-secondary); font-weight: 600; color: var(--text-3); letter-spacing: 0.02em; }
 .task { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border-radius: var(--r-tile); background: var(--card); color: var(--text); text-decoration: none; }
 .task-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 4px; background: var(--text-5); }
 .task.running .task-dot { background: var(--accent); }
 .task.waiting .task-dot { background: var(--warn); }
 .task.review .task-dot { background: var(--ok); }
-.task-order { flex: 1 1 auto; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-line { flex: 0 1 auto; max-width: 40%; font-size: 13px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-order { flex: 1 1 auto; min-width: 0; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-line { flex: 0 1 auto; max-width: 40%; font-size: var(--fs-secondary); color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task.waiting .task-line { color: var(--warn); }
 .task .agent-mark { flex: 0 0 auto; width: 24px; height: 24px; border-radius: var(--r-chip); background: var(--agent); }
 
