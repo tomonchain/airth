@@ -111,6 +111,23 @@ impl Prices {
 }
 
 impl Prices {
+    /// What a model call cost, by its tokens; None when the model's price is
+    /// unknown.
+    pub fn cost(&self, response: &crate::models::ModelResponse) -> Option<f64> {
+        let p = self.get(&response.model)?;
+        let r = response;
+        let fresh = r
+            .input_tokens
+            .saturating_sub(r.cache_read_tokens + r.cache_write_tokens);
+        Some(
+            (fresh as f64 * p.input
+                + r.cache_read_tokens as f64 * p.cache_read
+                + r.cache_write_tokens as f64 * p.cache_write
+                + r.output_tokens as f64 * p.output)
+                / 1_000_000.0,
+        )
+    }
+
     /// The list prices, with the owner's own from `prices.json`.
     pub fn load(home: &Home) -> Self {
         let path = home.dir().join("prices.json");
