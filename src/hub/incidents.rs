@@ -18,6 +18,10 @@ pub struct Incident<'a> {
     /// Whether `agent` takes `action` down a level: only when the failure
     /// came from what the agent wrote, never from the service.
     pub demote: bool,
+    /// The failed action's key, and whether the founder may retry it
+    /// (decision 62): `clear` when nothing was done, `ambiguous` when it
+    /// may have been. None: no retry, as for what commits.
+    pub retry: Option<(&'a str, &'a str)>,
 }
 
 /// Whether an HTTP call's result says it worked: a 2xx status.
@@ -49,7 +53,12 @@ pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
         routine: incident.routine,
         run: None,
         action: incident.action,
-        args: &json!({ "detail": detail }).to_string(),
+        args: &json!({
+            "detail": detail,
+            "key": incident.retry.map(|r| r.0),
+            "retry": incident.retry.map(|r| r.1),
+        })
+        .to_string(),
         execute_at: None,
         source: r#"{"show": "detail"}"#,
         model_call: None,

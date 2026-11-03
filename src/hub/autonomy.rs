@@ -268,6 +268,7 @@ impl Authority for BusinessAuthority {
                 routine: Some(&self.routine),
                 action: None,
                 demote: false,
+                retry: None,
             };
             if let Err(e) = super::incidents::record(&self.realm, &incident) {
                 eprintln!("{detail}; and the incident could not be recorded: {e:#}");
