@@ -35,6 +35,7 @@ mod delegation;
 mod delivery;
 pub(crate) mod finance;
 pub(crate) mod incidents;
+mod legal;
 mod models;
 mod objectives;
 mod pipelines;

@@ -9,6 +9,7 @@
 
 pub mod autonomy;
 pub mod drafts;
+pub mod legal;
 pub mod pipelines;
 pub mod queue;
 pub mod reports;
@@ -284,6 +285,48 @@ const MIGRATIONS: &[&str] = &[
     // the weekly report.
     "ALTER TABLE queue ADD COLUMN note TEXT;
     ALTER TABLE routine_blocks ADD COLUMN dropped TEXT;",
+    // 18: a legal deadline is an item of the queue (decision 66), once per
+    // obligation, period and reminder; a filing the founder recorded is
+    // evidence. The queue is rebuilt as in 14, ids kept.
+    "CREATE TABLE queue_new (
+        id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('approval', 'prepared', 'delayed', 'incident', 'promotion', 'report', 'deadline')),
+        title TEXT NOT NULL,
+        agent TEXT,
+        routine TEXT,
+        run TEXT,
+        action TEXT,
+        args TEXT NOT NULL DEFAULT '{}',
+        original_args TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT '{}',
+        model_call INTEGER REFERENCES model_calls(id),
+        due_at TEXT,
+        execute_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired', 'done', 'failed')),
+        revision INTEGER NOT NULL DEFAULT 1,
+        flag TEXT CHECK (flag IN ('note', 'blocking', 'lifted', 'overridden')),
+        flag_reason TEXT,
+        note TEXT
+    );
+    INSERT INTO queue_new SELECT id, created_at, kind, title, agent, routine, run, action, args,
+        original_args, source, model_call, due_at, execute_at, status, revision, flag, flag_reason, note FROM queue;
+    DROP TABLE queue;
+    ALTER TABLE queue_new RENAME TO queue;
+    CREATE INDEX queue_by_status ON queue(status, created_at);
+    CREATE UNIQUE INDEX queue_deadline_once ON queue(json_extract(source, '$.key')) WHERE kind = 'deadline';
+    CREATE TABLE legal_filings (
+        id INTEGER PRIMARY KEY,
+        rule TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        filed_at TEXT NOT NULL,
+        item INTEGER REFERENCES queue(id),
+        UNIQUE (rule, period_end)
+    );
+    CREATE TRIGGER legal_filings_no_update BEFORE UPDATE ON legal_filings
+        BEGIN SELECT RAISE(ABORT, 'legal filings are append-only'); END;
+    CREATE TRIGGER legal_filings_no_delete BEFORE DELETE ON legal_filings
+        BEGIN SELECT RAISE(ABORT, 'legal filings are append-only'); END;",
 ];
 
 pub struct Store {
@@ -531,6 +574,79 @@ mod tests {
             one("SELECT COUNT(*) FROM sqlite_master WHERE name = 'queue_by_status'"),
             1
         );
+    }
+
+    /// Decision 66: the queue takes legal deadlines, rebuilt with its
+    /// flags and notes and what refers to it kept; a deadline's reminder is
+    /// once by its key; a filing is evidence.
+    #[test]
+    fn the_queue_takes_deadlines_once_and_filings_are_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        let mut conn = Connection::open(&path).unwrap();
+        let tx = conn.transaction().unwrap();
+        for sql in &MIGRATIONS[..17] {
+            tx.execute_batch(sql).unwrap();
+        }
+        tx.pragma_update(None, "user_version", 17).unwrap();
+        tx.execute_batch(
+            "INSERT INTO queue (id, created_at, kind, title, status, flag, flag_reason, note)
+                 VALUES (5, 't', 'approval', 'Post', 'pending', 'blocking', 'a call to buy', '1 dropped');
+             INSERT INTO queue_log (item, at, action, by) VALUES (5, 't', 'proposed', 'airth');",
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        drop(conn);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(version(&store), MIGRATIONS.len() as i64);
+        let c = &store.conn;
+        let kept: (String, String, String) = c
+            .query_row(
+                "SELECT flag, flag_reason, note FROM queue WHERE id = 5",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            kept,
+            (
+                "blocking".into(),
+                "a call to buy".into(),
+                "1 dropped".into()
+            )
+        );
+        let remind = |key: &str| {
+            c.execute(
+                "INSERT INTO queue (created_at, kind, title, source, status) VALUES ('t', 'deadline', 'Due', ?1, 'pending')",
+                [format!(r#"{{"key": "{key}"}}"#)],
+            )
+        };
+        remind("confirmation-statement/2026-11-06/30").unwrap();
+        remind("confirmation-statement/2026-11-06/7").unwrap();
+        assert!(
+            remind("confirmation-statement/2026-11-06/30").is_err(),
+            "once by key"
+        );
+        assert!(
+            store
+                .deadline_proposed("confirmation-statement/2026-11-06/7")
+                .unwrap()
+        );
+        assert!(
+            !store
+                .deadline_proposed("annual-accounts/2026-11-30/30")
+                .unwrap()
+        );
+        c.execute(
+            "INSERT INTO legal_filings (rule, period_end, filed_at) VALUES ('annual-accounts', '2026-11-30', 't')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            c.execute("UPDATE legal_filings SET filed_at = 'u'", [])
+                .is_err()
+        );
+        assert!(c.execute("DELETE FROM legal_filings", []).is_err());
     }
 
     /// A migration that would leave a reference to nothing changes
