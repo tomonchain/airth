@@ -120,7 +120,7 @@ export default function App() {
           {agent ? (
             <>
               <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />
-              {details && <Details agent={agent} />}
+              {details && <Details realm={realm} agent={agent} onSaved={data.refresh} />}
             </>
           ) : (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>

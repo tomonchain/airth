@@ -338,12 +338,24 @@ impl App {
             }
             (Method::Put, ["realms", r, "agents", name]) => {
                 let body = read_json(request)?;
-                let realm = self.realm(r)?;
-                crate::business::set_job(
-                    &realm.root()?,
-                    name,
-                    body["job"].as_str().unwrap_or_default(),
-                )?;
+                let root = self.realm(r)?.root()?;
+                // The job always; its title and department when sent, all
+                // checked before any is written.
+                let job = body["job"].as_str().unwrap_or_default();
+                if job.trim().is_empty() {
+                    bail!("an agent needs a job");
+                }
+                for key in ["title", "department"] {
+                    if let Some(value) = body[key].as_str() {
+                        crate::business::check_agent_field(key, value)?;
+                    }
+                }
+                crate::business::set_job(&root, name, job)?;
+                for key in ["title", "department"] {
+                    if let Some(value) = body[key].as_str() {
+                        crate::business::set_agent_field(&root, name, key, value)?;
+                    }
+                }
                 ok()
             }
             (Method::Delete, ["realms", r, "agents", name]) => {

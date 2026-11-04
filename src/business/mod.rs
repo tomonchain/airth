@@ -259,6 +259,51 @@ pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
     write_body(&root.join(AGENTS).join(format!("{name}.md")), text)
 }
 
+/// Whether `value` may be the agent field `key`: a title or a department,
+/// one line. Checked before anything is written.
+pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
+    let value = value.trim();
+    match key {
+        "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
+        "title" => {}
+        "department" if config::DEPARTMENTS.contains(&value) => {}
+        "department" => anyhow::bail!(
+            "department '{value}' is not one of {}",
+            config::DEPARTMENTS.join(", ")
+        ),
+        _ => anyhow::bail!("{key} cannot be set here"),
+    }
+    if value.contains(['\n', '\r']) {
+        anyhow::bail!("{key} is one line");
+    }
+    Ok(())
+}
+
+/// Set one field of the agent `name`'s front matter (its title or its
+/// department), keeping the others and its job.
+pub fn set_agent_field(root: &Path, name: &str, key: &str, value: &str) -> Result<()> {
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    check_agent_field(key, value)?;
+    let value = value.trim();
+    let path = root.join(AGENTS).join(format!("{name}.md"));
+    let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
+    let (front, body) = split(&text);
+    let line = format!("{key}: {value}");
+    let mut lines: Vec<String> = front
+        .lines()
+        .filter(|l| *l != "---")
+        .map(str::to_string)
+        .collect();
+    match lines
+        .iter_mut()
+        .find(|l| l.split(':').next().map(str::trim) == Some(key))
+    {
+        Some(l) => *l = line,
+        None => lines.push(line),
+    }
+    crate::realm::write_atomic(&path, &format!("---\n{}\n---\n{body}", lines.join("\n")))
+}
+
 /// An agent's look (decision 65): the seed in its file's `look`, else
 /// one derived from its name, so it is stable either way; and whether it
 /// is saved.
@@ -536,6 +581,24 @@ mod tests {
         );
         assert!(set_job(root.path(), "writer", "  ").is_err());
         assert!(set_job(root.path(), "../x", "job").is_err());
+        // Its title and department change one line each; the rest stays.
+        set_agent_field(root.path(), "writer", "title", "Blog writer").unwrap();
+        set_agent_field(root.path(), "writer", "department", "product").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(agents.join("writer.md")).unwrap(),
+            "---\ntitle: Blog writer\ndepartment: product\n---\nWrite two articles a week.\n"
+        );
+        set_agent_field(root.path(), "analyst", "title", "Analyst").unwrap();
+        assert!(
+            std::fs::read_to_string(agents.join("analyst.md"))
+                .unwrap()
+                .starts_with("---\ntitle: Analyst\n---\n")
+        );
+        assert!(set_agent_field(root.path(), "writer", "department", "legal").is_err());
+        assert!(set_agent_field(root.path(), "writer", "title", " ").is_err());
+        assert!(set_agent_field(root.path(), "writer", "title", "a\nb").is_err());
+        assert!(set_agent_field(root.path(), "writer", "look", "00000000").is_err());
+        assert!(set_agent_field(root.path(), "nobody", "title", "X").is_err());
         remove_job(root.path(), "analyst").unwrap();
         assert!(remove_job(root.path(), "analyst").is_err());
         assert_eq!(bots(root.path()).unwrap().len(), 1);

@@ -115,6 +115,8 @@ impl App {
                 "title": doc.text("title"),
                 "department": doc.text("department"),
                 "job": job(&doc.body),
+                // The whole job, as written, to edit it.
+                "body": doc.body.trim(),
                 "routines": routines,
                 "waiting": waits,
                 "cost_usd": cost,

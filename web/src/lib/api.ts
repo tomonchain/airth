@@ -14,9 +14,9 @@ function token(): string {
   return sessionStorage.getItem(KEY) ?? ""
 }
 
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(path: string, body?: unknown, method?: "PUT" | "DELETE"): Promise<T> {
   const r = await fetch(`/api/${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: { "X-Airth-Token": token(), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -36,6 +36,7 @@ export type Agent = {
   title: string
   department: string | null
   job: string | null
+  body: string
   accessory: "pen" | "lens" | "book" | null
   look: string | null
   state: AgentState
@@ -128,3 +129,5 @@ export type Company = {
   repos: { name: string; url: string | null }[]
   missing: string[]
 }
+
+export const DEPARTMENTS = ["leadership", "marketing", "sales", "support", "product", "operations", "finance"] as const
