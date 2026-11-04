@@ -57,6 +57,7 @@ export type Business = {
   activity: Activity[]
   health: { state: string; sentence: string }
   vitals: { label: string; value: string; note: string; out: boolean }[]
+  finance: Finance
 }
 
 export type Item = {
@@ -97,3 +98,33 @@ export type ThreadRun = { routine: string; run: string; sentence: string; at: st
 export type Thread = { runs: ThreadRun[]; items: Item[] }
 export type Task = { id: string; order?: string; line?: string; status?: string; agent?: string | null; updated_at?: string; at?: string }
 export type Tasks = Record<"running" | "waiting" | "review" | "done", Task[]>
+
+export type Finance = { source?: string; cash?: string; in?: string; out?: string; runway?: string; runway_months?: number | null; unknown?: string } | null
+
+export type Deadline = { authority: string; title: string; date: string; due: string; days_left: number; filed: boolean; period_end: string; source: string }
+
+export type Calendar = {
+  title: string
+  total: number
+  late: { routine: string; agent: string; at?: string }[]
+  days: { day: string; weekday: string; today: boolean; runs: { agent: string; routine: string; state: string; time: string }[]; deadlines: Deadline[] }[]
+  deadlines: { items: Deadline[]; note: string }
+}
+
+export type Routine = {
+  name: string
+  agent_title: string | null
+  cost_usd: number
+  unpriced: number
+  next_at: string | null
+  runs: { at: string; ok: boolean; error: string | null }[]
+  graph: { agent: string; trigger: { schedule: string | null; manual: unknown; telegram: string | null; webhook: unknown }; blocks: { id: string; type: string }[] }
+}
+
+export type Company = {
+  profile: Record<string, string | null>
+  goal: Record<string, string | null>
+  lines: { name: string }[]
+  repos: { name: string; url: string | null }[]
+  missing: string[]
+}

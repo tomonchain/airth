@@ -1,9 +1,9 @@
-import { Bot, House, Building2, CalendarClock, ChartLine, CircleHelp, Ellipsis, Inbox, ListChecks, Moon, Settings, Sun, Workflow, type LucideIcon } from "lucide-react"
+import { Bot, Building2, CalendarClock, House, Inbox, ListChecks, Moon, Settings, Sun, Wallet, Workflow, type LucideIcon } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
-export type Page = "home" | "agents" | "needs"
+export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "finance" | "company"
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
@@ -40,11 +40,13 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
       <RailButton icon={House} label="Home" active={page === "home"} onClick={() => onPage("home")} />
       <RailButton icon={Bot} label="Agents" active={page === "agents"} onClick={() => onPage("agents")} />
       <RailButton icon={Inbox} label="Needs you" active={page === "needs"} badge={needs} onClick={() => onPage("needs")} />
-      <RailButton icon={Workflow} label="Routines" soon />
-      <RailButton icon={ListChecks} label="Tasks" soon />
-      <RailButton icon={CalendarClock} label="Calendar" soon />
-      <RailButton icon={ChartLine} label="Usage" soon />
-      <RailButton icon={Ellipsis} label="More" soon />
+      <span className="my-1.5 h-px w-6 bg-border" />
+      <RailButton icon={Workflow} label="Routines" active={page === "routines"} onClick={() => onPage("routines")} />
+      <RailButton icon={ListChecks} label="Tasks" active={page === "tasks"} onClick={() => onPage("tasks")} />
+      <RailButton icon={CalendarClock} label="Calendar" active={page === "calendar"} onClick={() => onPage("calendar")} />
+      <span className="my-1.5 h-px w-6 bg-border" />
+      <RailButton icon={Wallet} label="Finance" active={page === "finance"} onClick={() => onPage("finance")} />
+      <RailButton icon={Building2} label="Company" active={page === "company"} onClick={() => onPage("company")} />
       <div className="mt-auto flex flex-col items-center gap-1.5">
         <Tooltip>
           <TooltipTrigger render={<span className="mb-1 grid size-10 place-items-center" />}>
@@ -54,9 +56,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
           </TooltipTrigger>
           <TooltipContent side="right">{live ? "An agent is working" : "No agent is working"}</TooltipContent>
         </Tooltip>
-        <RailButton icon={Building2} label="Business" soon />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
-        <RailButton icon={CircleHelp} label="Help" href="https://github.com/tomonchain/airth" />
         <RailButton icon={Settings} label="Settings" soon />
       </div>
     </nav>

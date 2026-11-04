@@ -6,7 +6,12 @@ import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Business, type Item, type Realm } from "@/lib/api"
 import { Conversation } from "@/screens/conversation"
+import { Calendar } from "@/screens/calendar"
+import { Company } from "@/screens/company"
+import { Finance } from "@/screens/finance"
 import { Home } from "@/screens/home"
+import { Routines } from "@/screens/routines"
+import { Tasks } from "@/screens/tasks"
 import { Inbox } from "@/screens/inbox"
 
 function route(): string | null {
@@ -100,7 +105,12 @@ export default function App() {
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
-          ) : (
+          ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} onAgent={open} />
+          : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
+          : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
+          : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null} />
+          : (
           <>
           <AgentList agents={agents} items={items} last={last} selected={page === "agents" ? current : null} onOpen={open} />
           {page === "needs" ? (
