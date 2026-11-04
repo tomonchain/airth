@@ -17,7 +17,7 @@ function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
     <>
       <Icon className="size-[19px]" strokeWidth={1.8} />
       {!!badge && (
-        <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-black">{badge}</span>
+        <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white ring-2 ring-background">{badge}</span>
       )}
     </>
   )

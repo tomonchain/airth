@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Search } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Pin, PinOff, Search } from "lucide-react"
 import { Character } from "@/components/character"
 import type { Agent, Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
@@ -9,16 +9,25 @@ export type Last = { text: string; at: string | null }
 
 /** The agents as conversations: the one with something for the founder
     first, then the latest to have worked. */
-export function AgentList({ agents, items, last, selected, onOpen }: {
-  agents: Agent[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void
+export function AgentList({ realm, agents, items, last, selected, onOpen }: {
+  realm: string; agents: Agent[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void
 }) {
   const [q, setQ] = useState("")
+  // Pinned agents stay on top; kept in this browser, per business.
+  const key = `airth-pins:${realm}`
+  const [pins, setPins] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(key) ?? "[]") } catch { return [] } })
+  useEffect(() => { try { setPins(JSON.parse(localStorage.getItem(key) ?? "[]")) } catch { setPins([]) } }, [key])
+  const togglePin = (name: string) => setPins((p) => {
+    const next = p.includes(name) ? p.filter((n) => n !== name) : [...p, name]
+    try { localStorage.setItem(key, JSON.stringify(next)) } catch { /* private window */ }
+    return next
+  })
   const waiting = (a: Agent) => items.filter((i) => i.agent === a.name).length
   const shown = agents
     .filter((a) => !q || `${a.title} ${a.department} ${a.job}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => Number(waiting(b) > 0) - Number(waiting(a) > 0) || (last[b.name]?.at ?? "").localeCompare(last[a.name]?.at ?? ""))
+    .sort((a, b) => Number(pins.includes(b.name)) - Number(pins.includes(a.name)) || Number(waiting(b) > 0) - Number(waiting(a) > 0) || (last[b.name]?.at ?? "").localeCompare(last[a.name]?.at ?? ""))
   return (
-    <div className="flex w-[340px] shrink-0 flex-col border-r">
+    <div className="flex w-[280px] shrink-0 flex-col border-r">
       <div className="p-3">
         <label className="flex h-9 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
           <Search className="size-4" />
@@ -30,25 +39,29 @@ export function AgentList({ agents, items, last, selected, onOpen }: {
           const n = waiting(a)
           const l = last[a.name]
           return (
-            <li key={a.name}>
+            <li key={a.name} className="group/row relative">
               <button
                 onClick={() => onOpen(a.name)}
                 className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-accent/70", selected === a.name && "bg-accent")}
               >
-                <Character agent={a} size={40} still={selected !== a.name && a.state !== "working"} />
+                <Character agent={a} size={36} still={selected !== a.name && a.state !== "working"} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-[13.5px] font-medium">{a.title}</span>
-                    {a.department && <span className="shrink-0 rounded-md border px-1.5 text-[11px] text-muted-foreground capitalize">{a.department}</span>}
+                    {pins.includes(a.name) && <Pin className="size-3 shrink-0 text-muted-foreground" />}
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">{stamp(l?.at)}</span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2">
                     <span className={cn("truncate text-sm text-muted-foreground", a.state === "working" && "text-emerald-500")}>
                       {a.state === "working" ? "Working…" : l?.text ?? "No messages yet"}
                     </span>
-                    {n > 0 && <span className="ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-amber-400 px-1.5 text-[11px] font-semibold text-black">{n}</span>}
+                    {n > 0 && <span className="ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">{n}</span>}
                   </div>
                 </div>
+              </button>
+              <button onClick={() => togglePin(a.name)} aria-label={pins.includes(a.name) ? `Unpin ${a.title}` : `Pin ${a.title}`} title={pins.includes(a.name) ? "Unpin" : "Pin to the top"}
+                className="absolute top-2 right-2 hidden size-6 place-items-center rounded-md bg-background/80 text-muted-foreground group-hover/row:grid hover:text-foreground">
+                {pins.includes(a.name) ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
               </button>
             </li>
           )

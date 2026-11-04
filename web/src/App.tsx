@@ -120,7 +120,7 @@ export default function App() {
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
           ) : (
           <>
-          <AgentList agents={agents} items={items} last={last} selected={current} onOpen={open} />
+          <AgentList realm={realm} agents={agents} items={items} last={last} selected={current} onOpen={open} />
           {agent ? (
             <>
               <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />

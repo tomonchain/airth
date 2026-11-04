@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { Check, ChevronRight, CircleAlert, ShieldQuestion, Square, Wrench, X } from "lucide-react"
 import { toast } from "sonner"
-import { LoaderGrid } from "@/components/beautifui/loader"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Character } from "@/components/character"
+import { Rich } from "@/components/rich"
+import { Typing } from "@/components/typing"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
@@ -141,7 +142,7 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
             const l = stepLine(s)
             return (
               <li key={i} className="flex items-start gap-2 text-xs">
-                {s.error ? <X className="mt-0.5 size-3 shrink-0 text-red-500" /> : s.done ? <Check className="mt-0.5 size-3 shrink-0 text-emerald-500" /> : <LoaderGrid className="mt-0.5 scale-75" />}
+                {s.error ? <X className="mt-0.5 size-3 shrink-0 text-red-500" /> : s.done ? <Check className="mt-0.5 size-3 shrink-0 text-emerald-500" /> : <span className="mt-1 size-2 shrink-0 animate-pulse rounded-full bg-sky-500" />}
                 <span className="min-w-0"><span className="text-foreground/80">{l.verb}</span>{l.arg && <span className="ml-1.5 font-mono break-all text-muted-foreground">{l.arg.length > 140 ? `${l.arg.slice(0, 140)}…` : l.arg}</span>}</span>
               </li>
             )
@@ -239,8 +240,8 @@ export function TaskThread({ realm, id, agent, items, fresh, onChange }: {
           <div key={i} className={cn(isNew && "fade-up")}>
             <Bubble side="left" agent={agent} last={last}>
               {p.kind === "steps" ? <Steps steps={p.steps} live={live} /> : (
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap">
-                  {isNew ? <StreamText text={p.text} /> : p.text}
+                <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
+                  <AgentText text={p.text} stream={isNew} />
                 </div>
               )}
             </Bubble>
@@ -263,11 +264,11 @@ export function TaskThread({ realm, id, agent, items, fresh, onChange }: {
       )}
       {live && !view.pending && working && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
-          <div className="inline-flex items-center gap-2.5 rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] fade-up">
-            <LoaderGrid />
-            <Shimmer>{agent.title} is working</Shimmer>
+          <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 fade-up">
+            <Typing />
+            <span className="text-xs text-muted-foreground">{doing(ps)}</span>
             <Elapsed from={working} />
-            <button onClick={stop} className="ml-1 grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
+            <button onClick={stop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
           </div>
         </Bubble>
       )}
@@ -284,4 +285,26 @@ export function TaskThread({ realm, id, agent, items, fresh, onChange }: {
       )}
     </div>
   )
+}
+
+/** What the agent is at, in a few words: its step in progress, else thinking. */
+function doing(ps: Part[]) {
+  const last = ps[ps.length - 1]
+  if (last?.kind === "steps") {
+    const step = last.steps.find((x) => !x.done)
+    if (step) {
+      const l = stepLine(step)
+      return l.arg ? `${l.verb} ${l.arg.length > 40 ? `${l.arg.slice(0, 40)}…` : l.arg}` : l.verb
+    }
+  }
+  return "Thinking"
+}
+
+/** An agent's words: streamed as they arrive, then shown with links, lists,
+    bold and italic. */
+function AgentText({ text, stream }: { text: string; stream: boolean }) {
+  const [done, setDone] = useState(!stream)
+  if (done) return <Rich text={text} />
+  const plain = text.replace(/\*\*|__|`/g, "").replace(/^\s*#{1,6}\s+/gm, "")
+  return <span className="whitespace-pre-wrap"><StreamText text={plain} caret={false} onDone={() => setDone(true)} /></span>
 }

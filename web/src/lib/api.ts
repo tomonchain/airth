@@ -37,6 +37,8 @@ export type Agent = {
   department: string | null
   job: string | null
   body: string
+  integrations: string[]
+  skills: string[]
   accessory: "pen" | "lens" | "book" | null
   look: string | null
   state: AgentState

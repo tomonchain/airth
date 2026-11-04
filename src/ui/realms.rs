@@ -345,15 +345,26 @@ impl App {
                 if job.trim().is_empty() {
                     bail!("an agent needs a job");
                 }
-                for key in ["title", "department"] {
-                    if let Some(value) = body[key].as_str() {
-                        crate::business::check_agent_field(key, value)?;
+                // Lists come as arrays of names, written comma-separated.
+                let field = |key: &str| match &body[key] {
+                    Value::Array(a) => Some(
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    v => v.as_str().map(str::to_string),
+                };
+                const FIELDS: [&str; 4] = ["title", "department", "integrations", "skills"];
+                for key in FIELDS {
+                    if let Some(value) = field(key) {
+                        crate::business::check_agent_field(key, &value)?;
                     }
                 }
                 crate::business::set_job(&root, name, job)?;
-                for key in ["title", "department"] {
-                    if let Some(value) = body[key].as_str() {
-                        crate::business::set_agent_field(&root, name, key, value)?;
+                for key in FIELDS {
+                    if let Some(value) = field(key) {
+                        crate::business::set_agent_field(&root, name, key, &value)?;
                     }
                 }
                 ok()

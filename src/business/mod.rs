@@ -259,13 +259,21 @@ pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
     write_body(&root.join(AGENTS).join(format!("{name}.md")), text)
 }
 
-/// Whether `value` may be the agent field `key`: a title or a department,
-/// one line. Checked before anything is written.
+/// Whether `value` may be the agent field `key`: a title, a department, or
+/// a list of integrations or skills; one line. Checked before anything is
+/// written.
 pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
     let value = value.trim();
     match key {
         "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
         "title" => {}
+        // What its tasks may use (decision 64): names, comma-separated.
+        "integrations" | "skills" => {
+            for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+                crate::realm::validate_name(name)
+                    .with_context(|| format!("'{name}' is not a name in {key}"))?;
+            }
+        }
         "department" if config::DEPARTMENTS.contains(&value) => {}
         "department" => anyhow::bail!(
             "department '{value}' is not one of {}",
@@ -279,8 +287,8 @@ pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-/// Set one field of the agent `name`'s front matter (its title or its
-/// department), keeping the others and its job.
+/// Set one field of the agent `name`'s front matter (its title, its
+/// department, or what its tasks may use), keeping the others and its job.
 pub fn set_agent_field(root: &Path, name: &str, key: &str, value: &str) -> Result<()> {
     crate::realm::validate_name(name).context("invalid agent name")?;
     check_agent_field(key, value)?;
@@ -553,6 +561,10 @@ mod tests {
         assert!(job(root.path(), "../writer").is_err());
     }
 
+    fn scope_of(root: &Path, name: &str) -> Scope {
+        scope(root, name).unwrap()
+    }
+
     #[test]
     fn the_owner_hires_edits_and_lets_agents_go() {
         let root = tempfile::tempdir().unwrap();
@@ -599,6 +611,15 @@ mod tests {
         assert!(set_agent_field(root.path(), "writer", "title", "a\nb").is_err());
         assert!(set_agent_field(root.path(), "writer", "look", "00000000").is_err());
         assert!(set_agent_field(root.path(), "nobody", "title", "X").is_err());
+        // What its tasks may use: names, checked one by one.
+        set_agent_field(root.path(), "writer", "skills", "vercel, pdf").unwrap();
+        set_agent_field(root.path(), "writer", "integrations", "typefully").unwrap();
+        let scope = scope(root.path(), "writer").unwrap();
+        assert_eq!(scope.skills, ["vercel", "pdf"]);
+        assert_eq!(scope.integrations, ["typefully"]);
+        set_agent_field(root.path(), "writer", "skills", "").unwrap();
+        assert!(scope_of(root.path(), "writer").skills.is_empty());
+        assert!(set_agent_field(root.path(), "writer", "skills", "../x").is_err());
         remove_job(root.path(), "analyst").unwrap();
         assert!(remove_job(root.path(), "analyst").is_err());
         assert_eq!(bots(root.path()).unwrap().len(), 1);

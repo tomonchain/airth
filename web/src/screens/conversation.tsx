@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
-import { LoaderGrid, useElapsed } from "@/components/beautifui/loader"
-import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Character } from "@/components/character"
+import { Typing } from "@/components/typing"
 import { NeedCard } from "@/components/need-card"
 import { OrderBox } from "@/components/order-box"
 import { RunTimeline } from "@/components/run-timeline"
@@ -142,17 +141,14 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   )
 }
 
-/** The agent at work: Beautiful UI's pixel loader, a shimmering line and
-    the time it has been at it. */
+/** A routine of the agent's at work, as someone typing. */
 function Working({ agent }: { agent: Agent }) {
-  const elapsed = useElapsed()
   return (
     <div className="mb-5 flex items-end gap-2.5 fade-up">
-      <span className="mb-1 w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
-      <div className="inline-flex items-center gap-2.5 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 text-[13.5px]">
-        <LoaderGrid />
-        <Shimmer>{agent.title} is working</Shimmer>
-        <span className="font-mono text-xs text-muted-foreground tabular-nums">{elapsed}</span>
+      <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+      <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
+        <Typing />
+        <span className="text-xs text-muted-foreground">Running {agent.routines.find((r) => r.schedule)?.name ?? "a routine"}</span>
       </div>
     </div>
   )

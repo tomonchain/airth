@@ -74,7 +74,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
     addEventListener("keydown", on)
     return () => removeEventListener("keydown", on)
   })
-  const hint = (k: string) => (page ? <Kbd className="ml-1 opacity-70">{k}</Kbd> : null)
+  const hint = (k: string) => (page ? <Kbd className="ml-1 h-4 min-w-4 bg-current/10 px-1 text-[10px] font-normal text-current opacity-50 shadow-none">{k}</Kbd> : null)
 
   const main =
     it.retry === "clear" ? <Button size="sm" disabled={busy} onClick={() => answer("retry")}><RotateCcw /> Retry</Button>

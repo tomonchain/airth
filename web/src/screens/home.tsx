@@ -154,7 +154,7 @@ function AgentRow({ agent, activity, onOpen }: { agent: Agent; activity?: Activi
         <div className="flex shrink-0 items-center gap-2">
           {next?.schedule && <span className="hidden font-mono text-[11px] text-muted-foreground md:inline">{next.schedule}</span>}
           {agent.waiting > 0 && (
-            <span className="rounded-full bg-amber-400 px-1.5 text-[11px] font-semibold text-black">{agent.waiting}</span>
+            <span className="rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">{agent.waiting}</span>
           )}
           <ChevronRight className="size-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
         </div>

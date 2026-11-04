@@ -117,6 +117,9 @@ impl App {
                 "job": job(&doc.body),
                 // The whole job, as written, to edit it.
                 "body": doc.body.trim(),
+                // What its tasks may use (decision 64).
+                "integrations": doc.text("integrations").map(|t| split_names(&t)).unwrap_or_default(),
+                "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
                 "routines": routines,
                 "waiting": waits,
                 "cost_usd": cost,
@@ -171,6 +174,14 @@ fn job(body: &str) -> Option<&str> {
     body.lines()
         .map(str::trim)
         .find(|l| !l.is_empty() && !l.starts_with('#'))
+}
+
+/// A front-matter list written comma-separated (decision 64).
+fn split_names(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 #[cfg(test)]

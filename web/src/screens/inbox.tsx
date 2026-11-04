@@ -65,11 +65,11 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
   // comes from the bottom; to the one before, the other way round.
   const last = useRef<{ item: Item; at: number } | null>(null)
   const [leaving, setLeaving] = useState<{ item: Item; dir: "down" | "up" } | null>(null)
-  const [dir, setDir] = useState<"down" | "up">("down")
+  const [dir, setDir] = useState<"down" | "up" | null>(null)
   useEffect(() => {
     const prev = last.current
     last.current = open ? { item: open, at } : null
-    if (!prev || !open || prev.item.id === open.id) return
+    if (!prev || !open || prev.item.id === open.id) { if (!prev) setDir(null); return }
     const still = sorted.findIndex((i) => i.id === prev.item.id)
     const d = still === -1 || at > still ? "down" : "up"
     setDir(d)
@@ -162,8 +162,8 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
             )}
             <div
               key={`open-${open.id}`}
-              className={cn("absolute inset-0 overflow-y-auto bg-surface duration-300 ease-in-out animate-in",
-                dir === "down" ? "slide-in-from-bottom-full" : "slide-in-from-top-full")}
+              className={cn("absolute inset-0 overflow-y-auto bg-surface",
+                dir && "duration-300 ease-in-out animate-in", dir === "down" && "slide-in-from-bottom-full", dir === "up" && "slide-in-from-top-full")}
             >
               <div className="mx-auto max-w-2xl px-8 py-7">
                 <Header it={open} agent={agent(open.agent)} onAgent={onAgent} />

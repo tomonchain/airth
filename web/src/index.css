@@ -172,10 +172,10 @@
 @media (prefers-reduced-motion: reduce) { .ch * { animation: none !important; } }
 
 /* Beautiful UI (beautifului.dev, by Turbo, MIT): the keyframes and the
-   StreamText caret and tail its atoms use, with Airth's colours. */
+   StreamText caret and tail its Shimmer and StreamText atoms use, with
+   Airth's colours. */
 @keyframes shimmer-text { from { background-position: 150% center; } to { background-position: -50% center; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pixel-on { 0%, 100% { opacity: 0.15; } 18%, 42% { opacity: 1; } 62% { opacity: 0.15; } }
 @keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .stream-tail {
   filter: blur(1.6px);
@@ -193,3 +193,17 @@
   .stream-caret, .fade-up { animation: none; }
   .stream-tail { filter: none; -webkit-mask-image: none; mask-image: none; }
 }
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+/* Scrollbars that blend in: thin, no track, a faint thumb of the text's
+   colour. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 14%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 14%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in oklch, var(--foreground) 24%, transparent); }
+::-webkit-scrollbar-corner { background: transparent; }

@@ -3,6 +3,7 @@ import { Pencil } from "lucide-react"
 import { Character } from "@/components/character"
 import { EditAgent } from "@/components/edit-agent"
 import { Button } from "@/components/ui/button"
+import { LOGOS } from "@/lib/logos"
 import type { Agent } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -29,6 +30,22 @@ export function Details({ realm, agent, onSaved }: { realm: string; agent: Agent
         <div className="rounded-xl bg-muted px-3 py-2.5"><dt className="text-xs text-muted-foreground">This week</dt><dd className="mt-0.5 font-semibold tabular-nums">{usd(agent.cost_usd) || "$0"}</dd></div>
         <div className="rounded-xl bg-muted px-3 py-2.5"><dt className="text-xs text-muted-foreground">For you</dt><dd className="mt-0.5 font-semibold tabular-nums">{agent.waiting}</dd></div>
       </dl>
+      <h3 className="mt-6 mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Can use</h3>
+      {(agent.integrations?.length ?? 0) + (agent.skills?.length ?? 0) ? (
+        <div className="flex flex-wrap gap-1.5">
+          {[...(agent.integrations ?? []), ...(agent.skills ?? [])].map((n) => {
+            const mark = LOGOS[n]
+            return (
+              <span key={n} className="inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs">
+                {mark && <svg viewBox="0 0 24 24" className="size-3" style={{ color: mark[0] ?? "currentColor" }}><path fill="currentColor" d={mark[1]} /></svg>}
+                {n}
+              </span>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Only the public web. <button onClick={() => setEditing(true)} className="underline underline-offset-2 hover:text-foreground">Give it connectors or skills</button></p>
+      )}
       <h3 className="mt-6 mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Routines</h3>
       {agent.routines.length ? (
         <ul className="space-y-1">
