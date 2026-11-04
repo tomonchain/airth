@@ -1,7 +1,8 @@
 //! Records which commit and repository the binary is built from, so a running
 //! Airth can tell when its source has a newer version (see src/update.rs), and
 //! joins the app's scripts and styles into the one app.js and app.css it serves,
-//! and the new interface's into next.js and next.css, and embeds the library.
+//! and the new interface's into next.js and next.css, and embeds the library
+//! and the interface built in web/dist.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -68,8 +69,50 @@ fn library() {
     std::fs::write(out, code).unwrap();
 }
 
+/// Every file of `web/dist`, the interface built by `npm run build` in web/
+/// (decision 73), as `(path, bytes)` pairs in `OUT_DIR/web.rs`. The build is
+/// committed, so `cargo build` needs no Node.
+fn web() {
+    fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap_or_else(|e| {
+            panic!(
+                "cannot read {}: {e} (run `npm run build` in web/)",
+                dir.display()
+            )
+        }) {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    println!("cargo:rerun-if-changed=web/dist");
+    let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("web/dist");
+    let mut files = Vec::new();
+    walk(&root, &mut files);
+    files.sort();
+    let mut code = String::from("pub static FILES: &[(&str, &[u8])] = &[\n");
+    for file in files {
+        let rel = file
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        code.push_str(&format!(
+            "    ({rel:?}, include_bytes!({:?})),\n",
+            file.display().to_string()
+        ));
+    }
+    code.push_str("];\n");
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("web.rs");
+    std::fs::write(out, code).unwrap();
+}
+
 fn main() {
     library();
+    web();
     bundle("src/ui/js", "js", "app.js");
     bundle("src/ui/css", "css", "app.css");
     // The new interface, next to the current one (decision 57).

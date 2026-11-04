@@ -82,6 +82,10 @@ const NEXT_VENDOR_JS: &str = concat!(
     "\n",
 );
 const FAVICON: &str = include_str!("favicon.svg");
+/// The interface in web/ (decision 73), embedded by build.rs from web/dist.
+mod web {
+    include!(concat!(env!("OUT_DIR"), "/web.rs"));
+}
 /// The new interface, served at /next next to the current one (decision 57).
 const NEXT_HTML: &str = include_str!("next/index.html");
 const NEXT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.js"));
@@ -161,8 +165,21 @@ impl App {
             (Method::Get, "/favicon.svg") => {
                 return Ok(static_response(FAVICON, "image/svg+xml"));
             }
-            (Method::Get, "/" | "/index.html" | "/next" | "/next/") => {
+            (Method::Get, "/next" | "/next/") => {
                 return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
+            }
+            (Method::Get, p) if web_file(p).is_some() => {
+                let (body, kind) = web_file(p).unwrap();
+                let response = static_bytes(body, kind);
+                // Built files carry a hash in their name: a new build is a new name.
+                return Ok(if p.starts_with("/assets/") {
+                    response.with_header(
+                        Header::from_bytes("Cache-Control", "public, max-age=31536000, immutable")
+                            .unwrap(),
+                    )
+                } else {
+                    response.with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
+                });
             }
             (Method::Get, "/next/vendor.js") => {
                 return Ok(static_response(
@@ -339,6 +356,27 @@ impl App {
     }
 }
 
+/// A file of the interface built in web/dist, by its path in the address,
+/// with its type. Only the built files answer: a path is looked up, never
+/// joined to a folder.
+fn web_file(path: &str) -> Option<(&'static [u8], &'static str)> {
+    let rel = match path {
+        "/" | "/index.html" => "index.html",
+        p => p.strip_prefix('/')?,
+    };
+    let (_, body) = web::FILES.iter().find(|(p, _)| *p == rel)?;
+    let kind = match rel.rsplit('.').next()? {
+        "html" => "text/html; charset=utf-8",
+        "js" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "woff2" => "font/woff2",
+        "png" => "image/png",
+        _ => return None,
+    };
+    Some((body, kind))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,6 +449,28 @@ mod tests {
         assert_eq!(entries[0].activity, time::ANSWER);
         assert_eq!(entries[0].seconds, 5);
         assert_eq!(entries[0].note, "write_file in run run1");
+    }
+
+    #[test]
+    fn the_interface_built_in_web_is_served_and_nothing_else() {
+        let (page, kind) = web_file("/").unwrap();
+        assert!(String::from_utf8_lossy(page).contains("id=\"root\""));
+        assert_eq!(kind, "text/html; charset=utf-8");
+        let script = web::FILES
+            .iter()
+            .find(|(p, _)| p.starts_with("assets/") && p.ends_with(".js"))
+            .unwrap();
+        let (_, kind) = web_file(&format!("/{}", script.0)).unwrap();
+        assert_eq!(kind, "text/javascript; charset=utf-8");
+        for path in [
+            "/assets/nothing.js",
+            "/../Cargo.toml",
+            "/assets/../index.html",
+            "/api/realms",
+            "",
+        ] {
+            assert!(web_file(path).is_none(), "{path}");
+        }
     }
 
     /// Agents lists each bot with the routines that name it; a bot a

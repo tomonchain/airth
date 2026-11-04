@@ -113,7 +113,11 @@ pub(super) fn json_response(status: u16, value: Value) -> HttpResponse {
 }
 
 pub(super) fn static_response(body: &str, kind: &str) -> HttpResponse {
-    Response::from_string(body)
+    static_bytes(body.as_bytes(), kind)
+}
+
+pub(super) fn static_bytes(body: &[u8], kind: &str) -> HttpResponse {
+    Response::from_data(body)
         .with_header(content_type(kind))
         .with_header(Header::from_bytes("X-Frame-Options", "DENY").unwrap())
         .with_header(
