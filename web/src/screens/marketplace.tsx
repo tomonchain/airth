@@ -184,7 +184,7 @@ function Skills({ realm, q }: { realm: string; q: string }) {
 }
 
 function Connectors({ realm, q }: { realm: string; q: string }) {
-  const servers = usePoll<Server[]>(() => api(`realms/${enc(realm)}/mcp`), 3000, [realm])
+  const servers = usePoll<Server[]>(() => api(`realms/${enc(realm)}/mcp`), 15000, [realm])
   const [registry, setRegistry] = useState<Listed[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [method, setMethod] = useState<Method | null>(null)

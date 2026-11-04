@@ -15,11 +15,15 @@ function token(): string {
 }
 
 export async function api<T>(path: string, body?: unknown, method?: "PUT" | "DELETE"): Promise<T> {
+  const verb = method ?? (body === undefined ? "GET" : "POST")
+  // A request that never answers would hold its page's refresh for good: a
+  // read gives up after 20 s, a change (which may call a service) after 60.
   const r = await fetch(`/api/${path}`, {
-    method: method ?? (body === undefined ? "GET" : "POST"),
+    method: verb,
     headers: { "X-Airth-Token": token(), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+    signal: AbortSignal.timeout(verb === "GET" ? 20000 : 60000),
+  }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
   return data as T

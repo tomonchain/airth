@@ -40,6 +40,8 @@ export function useRun(realm: string, id: string, active: boolean) {
     let live = true
     let timer: ReturnType<typeof setTimeout>
     const load = async () => {
+      // A hidden tab asks nothing; it looks again once shown.
+      if (document.visibilityState !== "visible") { timer = setTimeout(load, 1500); return }
       try {
         const v = await api<RunView>(`realms/${enc(realm)}/runs/${enc(id)}?since=${version.current}`)
         if (!live) return

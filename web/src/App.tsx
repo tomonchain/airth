@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { AgentList, type Last } from "@/components/agent-list"
 import { Details } from "@/components/details"
 import { Rail, type Page } from "@/components/rail"
@@ -6,15 +6,18 @@ import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Business, type Item, type Realm } from "@/lib/api"
 import { Conversation } from "@/screens/conversation"
-import { Calendar } from "@/screens/calendar"
-import { Company } from "@/screens/company"
-import { Finance } from "@/screens/finance"
 import { Home } from "@/screens/home"
-import { Marketplace } from "@/screens/marketplace"
-import { Routines } from "@/screens/routines"
-import { Settings } from "@/screens/settings"
-import { Tasks } from "@/screens/tasks"
 import { Inbox } from "@/screens/inbox"
+
+// The pages opened now and then load when first opened, so the first
+// screen comes up sooner.
+const Calendar = lazy(() => import("@/screens/calendar").then((m) => ({ default: m.Calendar })))
+const Company = lazy(() => import("@/screens/company").then((m) => ({ default: m.Company })))
+const Finance = lazy(() => import("@/screens/finance").then((m) => ({ default: m.Finance })))
+const Marketplace = lazy(() => import("@/screens/marketplace").then((m) => ({ default: m.Marketplace })))
+const Routines = lazy(() => import("@/screens/routines").then((m) => ({ default: m.Routines })))
+const Settings = lazy(() => import("@/screens/settings").then((m) => ({ default: m.Settings })))
+const Tasks = lazy(() => import("@/screens/tasks").then((m) => ({ default: m.Tasks })))
 
 function route(): string | null {
   const m = location.hash.match(/^#\/b\/([^/?&]+)/)
@@ -104,6 +107,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
         <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">
+          <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
@@ -133,6 +137,7 @@ export default function App() {
           )}
           </>
           )}
+          </Suspense>
         </main>
       </div>
     </div>
