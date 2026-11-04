@@ -49,7 +49,14 @@ impl App {
                 self.hub.model_for(&realm).context("no model available")?;
                 let state = self.hub.start_task(&realm, agent, order)?;
                 let id = state.id.clone();
-                self.spawn(realm, state, Job::Alone);
+                // Written in the agent's chat, the founder is there to answer
+                // its questions as they come (decision 75); from the command
+                // bar, it runs unwatched (decision 64).
+                let job = match body["watched"].as_bool() {
+                    Some(true) => Job::Drive,
+                    _ => Job::Alone,
+                };
+                self.spawn(realm, state, job);
                 json_response(200, json!({"id": id, "agent": agent}))
             }
             (Method::Get, ["realms", r, "tasks"]) => {

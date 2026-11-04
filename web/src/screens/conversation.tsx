@@ -8,6 +8,7 @@ import { Character } from "@/components/character"
 import { NeedCard } from "@/components/need-card"
 import { OrderBox } from "@/components/order-box"
 import { RunTimeline } from "@/components/run-timeline"
+import { startOf, TaskThread } from "@/components/task-thread"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
 import { stamp } from "@/lib/time"
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils"
 type Entry =
   | { kind: "run"; at: string; run: ThreadRun }
   | { kind: "item"; at: string; item: Item }
-  | { kind: "order"; at: string; text: string; status?: string }
+  | { kind: "task"; at: string; id: string }
 
 // What the founder's answer reads like, on the right.
 const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string; reply: (it: Item) => string }> = {
@@ -32,27 +33,35 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 export function Conversation({ realm, agent, onDone }: { realm: string; agent: Agent; onDone: () => void }) {
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/tasks`), 8000, [realm])
-  const [sent, setSent] = useState<{ text: string; at: string }[]>([])
-  useEffect(() => setSent([]), [agent.name])
+  // Tasks started here and not yet listed by the server.
+  const [started, setStarted] = useState<string[]>([])
+  useEffect(() => setStarted([]), [agent.name])
+  const taskIds = useMemo(() => {
+    const ids = new Set<string>(started)
+    for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name) ids.add(t.id)
+    return [...ids].sort()
+  }, [tasks.data, started, agent.name])
+  const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
+  const latest = taskIds[taskIds.length - 1]
+  const [mine] = useState(() => new Set<string>())
 
   const entries = useMemo(() => {
     const e: Entry[] = []
     for (const r of thread.data?.runs ?? []) if (r.at) e.push({ kind: "run", at: r.at, run: r })
-    for (const i of thread.data?.items ?? []) e.push({ kind: "item", at: i.created_at, item: i })
-    for (const group of Object.values(tasks.data ?? {}))
-      for (const t of group ?? []) if (t.agent === agent.name && t.order) e.push({ kind: "order", at: t.updated_at ?? t.at ?? "", text: t.order, status: t.status })
-    for (const s of sent) if (!e.some((x) => x.kind === "order" && x.text === s.text)) e.push({ kind: "order", at: s.at, text: s.text, status: "starting" })
+    // A task's questions show in its own chat, not as items.
+    for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine)) e.push({ kind: "item", at: i.created_at, item: i })
+    for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
     // What waits for the founder comes last, as unread messages do.
     const waits = (x: Entry) => (x.kind === "item" && x.item.status === "pending" ? 1 : 0)
     return e.sort((a, b) => waits(a) - waits(b) || a.at.localeCompare(b.at))
-  }, [thread.data, tasks.data, sent, agent.name])
+  }, [thread.data, taskIds])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
   const units = useMemo(() => {
-    const u: { side: "left" | "right"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
+    const u: { side: "left" | "right" | "task"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
     for (const x of entries) {
-      if (x.kind === "order") u.push({ side: "right", key: `o${x.text}`, node: () => <Mine text={x.text} at={x.at} note={x.status} /> })
+      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
       else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
       else {
         const it = x.item
@@ -65,7 +74,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
     }
     return u
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, realm])
+  }, [entries, realm, agent])
   const firstNew = units.findIndex((x) => x.isNew)
   // What was there when the thread opened shows at once; what arrives while
   // the founder watches comes in, the agent's words written as they stream.
@@ -73,7 +82,8 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   useEffect(() => { known.current = null }, [agent.name])
   if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
-  const busy = agent.state === "working" || entries.some((x) => x.kind === "order" && x.status === "starting")
+  // A routine at work (a task at work shows in its own chat).
+  const busy = agent.state === "working" && !running
   const end = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
   useEffect(() => setStuck(false), [agent.name])
@@ -104,7 +114,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
                       <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
                     </div>
                   )}
-                  {x.side === "left" ? (
+                  {x.side === "task" ? x.node(lastOfGroup) : x.side === "left" ? (
                     <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
                       <span className="mb-6 w-8 shrink-0">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
                       <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
@@ -121,8 +131,12 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
         </div>
       </div>
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
-        <OrderBox realm={realm} agent={agent.name} title={agent.title}
-          onSent={(text) => { setSent((s) => [...s, { text, at: new Date().toISOString() }]); setTimeout(() => end.current?.scrollIntoView({ block: "end" }), 50); tasks.refresh() }} />
+        <OrderBox realm={realm} agent={agent.name} title={agent.title} task={latest} working={running}
+          onSent={(id) => {
+            if (id) { mine.add(id); setStarted((s) => (s.includes(id) ? s : [...s, id])) }
+            setTimeout(() => end.current?.scrollIntoView({ block: "end", behavior: "smooth" }), 300)
+            tasks.refresh()
+          }} />
       </div>
     </div>
   )

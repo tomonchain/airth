@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 75. A task written in an agent's chat is watched by the founder
+
+**Accepted.** The founder, 4 November 2026, after talking to an agent in the new interface: "it's not going smooth to talk to an agent". Each message started a separate task; the first command the agent wanted to run stopped it (decision 64: an order runs unwatched, its questions go to Needs you); its replies never showed.
+
+- An order sent from an agent's chat (`POST realms/{r}/orders` with `watched: true`) is driven as a run the founder watches (decision 56): while the chat looks at it, a permission the agent needs is asked there, live, and answered there. The chat looks at a live run every second or two; once the founder leaves, it is unwatched again and its questions go to Needs you, as before.
+- The founder's next message in the chat continues that task (`runs/{id}/messages`), as a conversation does; a new task is started on purpose.
+- A task stopped on a question shows it in the chat; allowing it there closes the Needs you item and goes on at once, with the same message the service would send.
+- The command bar's orders stay unwatched (decision 64).
+
+*Why:* a chat is the founder present. Asking them where they are is what decision 56 already does for a run's page; the queue is for when they are not there.
+
+*Cost:* none on the rules: who approves is unchanged and every permission is still asked (decision 2). The chat polls a live run often, as the run's page did.
+
 ## 74. The Marketplace: Anthropic's skills, the official connectors and the MCP Registry, and Airth's library of teams
 
 **Accepted.** The founder, 4 November 2026: a Marketplace page to add skills, agents and connectors from an external library; then "une équipe de N agents dédiés aux basiques de la gestion d'une société e-commerce… on installe l'équipe et c'est prêt à démarrer"; then "go" on the order below.
