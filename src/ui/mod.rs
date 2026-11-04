@@ -47,6 +47,7 @@ mod general;
 mod graphs;
 mod hq;
 mod http;
+mod library;
 mod live;
 mod orders;
 mod queue;
@@ -275,6 +276,7 @@ impl App {
             Self::calendar_routes,
             Self::hq_routes,
             Self::order_routes,
+            Self::library_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {

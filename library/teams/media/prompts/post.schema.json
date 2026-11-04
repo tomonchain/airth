@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "required": ["draft", "angle"],
+  "properties": {
+    "draft": { "type": "string", "maxLength": 280 },
+    "angle": { "type": "string" }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "description": "Monday report: how the business ran last week, in figures",
+  "agent": "chief-of-staff",
+  "trigger": {
+    "schedule": "mon 08:00"
+  },
+  "blocks": [
+    {
+      "id": "week",
+      "type": "read",
+      "source": "business",
+      "records": "week"
+    },
+    {
+      "id": "report",
+      "type": "act",
+      "action": "airth.report",
+      "fields": {
+        "title": "Week {{week}}",
+        "text": "{{summary}}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "required": ["flag", "reason"],
+  "properties": {
+    "flag": { "type": "string", "enum": ["none", "note", "blocking"] },
+    "reason": { "type": "string" }
+  }
+}

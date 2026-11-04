@@ -47,7 +47,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | Goal | The business's objective and milestones | a field of the business config | to build |
 | Needs you | Everything waiting for the founder: approvals, code reviews, decisions, incidents | approval queue, inbox, pending permissions | queue to build |
 | Autonomy level | What an agent may do alone, per action class | — | to build |
-| Business template | Preset departments, roles and routines to create a business | — | to build, extracted from Hedgen |
+| Team | Preset agents, routines and prompts, with the skills and connectors they need, installed from the Marketplace | `library/teams/` (decision 74) | Media and E-commerce |
 | Mailbox | An address on the business's domain, assigned to a role | mail connector | to build |
 
 An agent is not a process that runs continuously. It is a stable identity, written in the business folder, to which routines, missions, a mailbox and statistics are attached. What executes is still a routine or a mission.
@@ -172,7 +172,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.
 9. **VPS.** Linux sandbox, security scenarios green on Linux, deployment, access through a tunnel only.
 
-**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
+**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media and e-commerce (decision 74), automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
 
 **Current milestone: 3.** Milestone 1 is closed: its decisions are 42 to 49. Exception, decided by the founder: milestone 2's code is done, but its gate (Hedgen Ltd fully described in config) stays open until the founder fills the config; milestone 3 goes ahead in parallel because it does not depend on that config technically. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 

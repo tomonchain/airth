@@ -2,17 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 74. The Marketplace's sources: Anthropic's skills, the official connectors and the MCP Registry, and an Airth library of agents
+## 74. The Marketplace: Anthropic's skills, the official connectors and the MCP Registry, and Airth's library of teams
 
-**Proposed.** The founder, 4 November 2026: a Marketplace page to add skills, agents and connectors from an external library, "à voir laquelle".
+**Accepted.** The founder, 4 November 2026: a Marketplace page to add skills, agents and connectors from an external library; then "une équipe de N agents dédiés aux basiques de la gestion d'une société e-commerce… on installe l'équipe et c'est prêt à démarrer"; then "go" on the order below.
 
 - **Skills:** Anthropic's catalog (`github.com/anthropics/skills`), as decision 18 installs it: text files only, read by agents as data through `use_skill`. skills.sh (Vercel, over a million skills) is not added: nothing there is reviewed, and a Snyk scan found a security issue in 37% of the skills it checked. Adding it later needs its own decision.
-- **Connectors:** the thirteen official remote MCP servers checked with Airth's sign-in, then the official MCP Registry, marked "not checked by Airth" (decision 20). Unchanged.
-- **Agents:** no shared library of business roles exists; the directories found hold sub-agents for developers. The proposal: an Airth library, a public repository of agents written in Airth's format (`agents/<name>.md`: title, department, job), each reviewed before it is listed. Adding one shows its whole job first, then writes the file; the founder edits it after. Its routines come with milestone 8's templates, not before.
+- **Connectors:** the thirteen official remote MCP servers checked with Airth's sign-in, shown with their Simple Icons marks, then the official MCP Registry, marked "not checked by Airth" (decision 20). Unchanged.
+- **Teams, in Airth's library.** No shared library of business roles exists; the directories found hold sub-agents for developers. Airth ships its own, in `library/teams/<id>/`, embedded in the binary by build.rs: reviewed in a pull request, versioned with Airth, nothing downloaded.
+  - A team is `team.md` (title, description, the catalog skills and the connectors it needs, the setup steps) and its `agents/`, `routines/` and `prompts/` in the business folder's format.
+  - Installing copies those files into the business folder and starts its skills' install. It writes nothing when any of its files is already there: a team never overwrites the founder's work. Connectors are the founder's to connect, each with its own sign-in; keys never travel with a team.
+  - A routine that needs the founder's setup first (its sources, its voice) ships with a manual trigger; the setup steps say when to give it a schedule. Everything keeps its autonomy level: new actions start at level 1.
+  - Nothing in the library names a real business; where a team needs the business's own words, its files say so in square brackets.
+- **The first teams:** Media, extracted from what Hedgen runs, made generic; then E-commerce (support, operations, marketing, finance, chief of staff), which also prepares Numirama (milestone 8). E-commerce comes into the beta with this decision; its support and operations routines wait for agent mail (milestone 7) and a shop connector.
+- **Single agents** in the library come later, from the teams' agents.
 
-*Why:* every source the Marketplace adds is text or a server the business's agents will trust. A curated source per kind keeps that trust earned; an agent's job is what the agent obeys, so it never comes unread from a source nobody reviews.
+*Why:* every source the Marketplace adds is text or a server the business's agents will trust. A curated source per kind keeps that trust earned; an agent's job is what it obeys, so it never comes from a source nobody reviews. A team installed whole is what makes a new business start in minutes, which the beta's Numirama goal needs.
 
-*Cost:* the agent library must be written and kept; few agents at first. Skills beyond Anthropic's catalog wait for a reviewed source.
+*Cost:* the library is written and kept by us; a team is only as good as its prompts, and its prompts need the business's own words before they run. Teams update with Airth's releases, not on their own.
 
 ## 73. The interface is a React app built with shadcn, and its first screen shows the agents at work
 

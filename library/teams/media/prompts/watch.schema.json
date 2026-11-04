@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["relevant", "score", "pillar", "why", "story"],
+  "properties": {
+    "relevant": { "type": "boolean" },
+    "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "pillar": { "type": "string" },
+    "why": { "type": "string" },
+    "story": { "type": "string" }
+  }
+}

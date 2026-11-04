@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, type LucideIcon } from "lucide-react"
+import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, Users, Workflow, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
+import { Character } from "@/components/character"
 import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc } from "@/lib/api"
+import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
 
-type Tab = "skills" | "connectors" | "agents"
+type Tab = "teams" | "skills" | "connectors" | "agents"
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "teams", label: "Teams", icon: Users },
   { id: "skills", label: "Skills", icon: Sparkles },
   { id: "connectors", label: "Connectors", icon: Plug },
   { id: "agents", label: "Agents", icon: Bot },
@@ -40,10 +43,23 @@ type Server = { name: string; url?: string; signed_in: boolean; error: string | 
 type Listed = { name: string; title: string; description: string | null; url: string; website: string | null }
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
-function Logo({ name, size = 40 }: { name: string; size?: number }) {
+
+/** A company's mark when Airth has it (Simple Icons, embedded), else its
+    initial on a colour of its own. */
+function Logo({ name, id, size = 40 }: { name: string; id?: string; size?: number }) {
+  const mark = id ? LOGOS[id] : undefined
+  if (mark) {
+    return (
+      <span className="grid shrink-0 place-items-center rounded-xl border bg-white shadow-xs dark:bg-white" style={{ width: size, height: size }}>
+        <svg viewBox="0 0 24 24" style={{ width: size * 0.55, height: size * 0.55, color: mark[0] ?? "#111" }} aria-hidden="true">
+          <path fill="currentColor" d={mark[1]} />
+        </svg>
+      </span>
+    )
+  }
   const h = hue(name)
   return (
-    <span className="grid shrink-0 place-items-center rounded-xl text-white font-semibold" style={{ width: size, height: size, fontSize: size * 0.42, background: `linear-gradient(145deg, oklch(0.68 0.14 ${h}), oklch(0.5 0.14 ${h}))` }}>
+    <span className="grid shrink-0 place-items-center rounded-xl font-semibold text-white" style={{ width: size, height: size, fontSize: size * 0.42, background: `linear-gradient(145deg, oklch(0.68 0.14 ${h}), oklch(0.5 0.14 ${h}))` }}>
       {name.replace(/^[^a-z0-9]+/i, "")[0]?.toUpperCase() ?? "?"}
     </span>
   )
@@ -53,7 +69,7 @@ function Logo({ name, size = 40 }: { name: string; size?: number }) {
     outside. Skills from Anthropic's catalog (decision 18), connectors from
     the official servers and the MCP Registry (decision 20). */
 export function Marketplace({ realm }: { realm: string }) {
-  const [tab, setTab] = useState<Tab>("skills")
+  const [tab, setTab] = useState<Tab>("teams")
   const [q, setQ] = useState("")
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -61,7 +77,7 @@ export function Marketplace({ realm }: { realm: string }) {
         <div className="mx-auto flex max-w-5xl items-end gap-4">
           <div className="flex-1">
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight"><Store className="size-6 text-muted-foreground" /> Marketplace</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Skills, connectors and agents to add to {realm}'s team.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Teams, skills, connectors and agents to add to {realm}.</p>
           </div>
           <label className="mb-1 flex h-9 w-72 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
             <Search className="size-4" />
@@ -80,7 +96,7 @@ export function Marketplace({ realm }: { realm: string }) {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div key={tab} className="mx-auto max-w-5xl px-8 py-6 duration-200 animate-in fade-in slide-in-from-bottom-1">
-          {tab === "skills" ? <Skills realm={realm} q={q} /> : tab === "connectors" ? <Connectors realm={realm} q={q} /> : <Agents />}
+          {tab === "teams" ? <Teams realm={realm} q={q} onConnectors={() => setTab("connectors")} /> : tab === "skills" ? <Skills realm={realm} q={q} /> : tab === "connectors" ? <Connectors realm={realm} q={q} /> : <Agents />}
         </div>
       </div>
     </div>
@@ -91,11 +107,11 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
 }
 
-function Card({ name, title, description, meta, action, onOpen }: { name: string; title: string; description: string; meta?: React.ReactNode; action: React.ReactNode; onOpen?: () => void }) {
+function Card({ name, logo, title, description, meta, action, onOpen }: { name: string; logo?: string; title: string; description: string; meta?: React.ReactNode; action: React.ReactNode; onOpen?: () => void }) {
   return (
     <div className="group flex flex-col rounded-xl border bg-bubble/40 p-4 transition-colors hover:border-foreground/20">
       <button onClick={onOpen} className="flex items-start gap-3 text-left" disabled={!onOpen}>
-        <Logo name={name} />
+        <Logo name={name} id={logo} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{title}</span>
           {meta && <span className="block truncate text-xs text-muted-foreground">{meta}</span>}
@@ -204,7 +220,7 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <p className="mb-4 text-xs text-muted-foreground">Published by each company, checked with Airth's sign-in. Connecting opens their sign-in page; the key stays with Airth and never reaches a model.</p>
       <Grid>
         {featured.map((c) => (
-          <Card key={c.id} name={c.name} title={c.name} meta={c.category} description={c.description}
+          <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.category} description={c.description}
             action={status(c.url) ?? <Button size="sm" variant="outline" disabled={busy === c.id} onClick={() => connect(c.id, c.url, c.description)}>{busy === c.id ? "Opening…" : "Connect"}</Button>} />
         ))}
       </Grid>
@@ -227,5 +243,151 @@ function Agents() {
     <Empty icon={Bot} title="No agent library yet">
       There is no shared library of business roles to trust yet. The proposal: an Airth library of agents written for businesses, each one reviewed before it is listed. It needs your answer first.
     </Empty>
+  )
+}
+
+type TeamAgent = { name: string; title: string; department: string | null; accessory: string | null; mission: string | null }
+type Team = {
+  id: string; title: string; description: string; installed: boolean
+  agents: TeamAgent[]; routines: { name: string; agent: string; description: string; schedule: string | null }[]
+  skills: string[]; connectors: string[]; setup: string[]
+}
+
+const connectorName = (id: string) => FEATURED.find((c) => c.id === id)?.name ?? id
+
+/** Teams from Airth's library (decision 74): agents, their routines and
+    prompts, the skills and connectors they need, installed together. */
+function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnectors: () => void }) {
+  const { data, refresh } = usePoll<{ teams: Team[] }>(() => api(`realms/${enc(realm)}/library`), 600000, [realm])
+  const [open, setOpen] = useState<Team | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<Team | null>(null)
+  const shown = (data?.teams ?? []).filter((t) => !q || `${t.title} ${t.description}`.toLowerCase().includes(q.toLowerCase()))
+
+  async function install(t: Team) {
+    setBusy(true)
+    try {
+      const out = await api<{ written: string[]; team: Team }>(`realms/${enc(realm)}/library/${enc(t.id)}/install`, {})
+      toast.success(`${t.title} team installed: ${out.written.length} files.`)
+      setDone(out.team)
+      refresh()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  const face = (a: TeamAgent) => ({ department: a.department, accessory: a.accessory, state: "idle" as const, title: a.title, look: null })
+
+  return (
+    <>
+      <p className="mb-4 text-xs text-muted-foreground">From Airth's library: each team is reviewed before it ships with Airth. Installing one adds its agents, routines and prompts to the business folder, never over a file that is there.</p>
+      {!data ? <Loading /> : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {shown.map((t) => (
+            <button key={t.id} onClick={() => { setDone(null); setOpen(t) }} className="group flex flex-col rounded-2xl border bg-bubble/40 p-5 text-left transition-colors hover:border-foreground/20">
+              <div className="flex items-center gap-1.5">
+                {t.agents.map((a, i) => (
+                  <span key={a.name} className="rounded-full ring-2 ring-surface" style={{ marginLeft: i ? -10 : 0, zIndex: t.agents.length - i }}>
+                    <Character agent={face(a)} size={38} still />
+                  </span>
+                ))}
+                {t.installed && <span className="ml-auto"><Done>Installed</Done></span>}
+              </div>
+              <h3 className="mt-4 text-base font-semibold">{t.title}</h3>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{t.description}</p>
+              <div className="mt-4 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                <span className="rounded-md bg-muted px-1.5 py-0.5">{t.agents.length} agent{t.agents.length === 1 ? "" : "s"}</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5">{t.routines.length} routine{t.routines.length === 1 ? "" : "s"}</span>
+                {t.skills.length > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5">{t.skills.length} skills</span>}
+                {t.connectors.map((c) => <span key={c} className="rounded-md bg-muted px-1.5 py-0.5">{connectorName(c)}</span>)}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        {open && (
+          <DialogContent className="flex max-h-[88svh] flex-col gap-0 p-0 sm:max-w-2xl">
+            <DialogHeader className="border-b p-5">
+              <DialogTitle className="text-lg">{done ? `${open.title} team installed` : `${open.title} team`}</DialogTitle>
+              <DialogDescription>{done ? "What to do next, so each agent can start." : open.description}</DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
+              {done ? (
+                <>
+                  <ol className="space-y-2">
+                    {done.setup.map((step, i) => (
+                      <li key={i} className="flex gap-3 rounded-xl border bg-bubble/40 px-3.5 py-3 text-sm">
+                        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold tabular-nums">{i + 1}</span>
+                        <span className="leading-relaxed">{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  {done.connectors.length > 0 && (
+                    <Button variant="outline" onClick={() => { setOpen(null); onConnectors() }}><Plug /> Connect {done.connectors.map(connectorName).join(" and ")}</Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <section>
+                    <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Agents</h4>
+                    <div className="space-y-2">
+                      {open.agents.map((a) => (
+                        <div key={a.name} className="flex gap-3 rounded-xl border bg-bubble/40 p-3">
+                          <Character agent={face(a)} size={34} still />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">{a.title} <span className="text-xs font-normal text-muted-foreground capitalize">· {a.department}</span></div>
+                            <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{a.mission}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                  <section>
+                    <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Routines</h4>
+                    <div className="space-y-1">
+                      {open.routines.map((r) => (
+                        <div key={r.name} className="flex items-center gap-2.5 text-sm">
+                          <Workflow className="size-3.5 text-muted-foreground" />
+                          <span className="font-mono text-[12.5px]">{r.name}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{r.description}</span>
+                          <span className="text-xs text-muted-foreground">{r.schedule ?? "after setup"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                  {(open.skills.length > 0 || open.connectors.length > 0) && (
+                    <section className="grid grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Skills</h4>
+                        <p className="text-sm">{open.skills.length ? open.skills.join(", ") : "None"}</p>
+                      </div>
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Connectors, yours to connect</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {open.connectors.length ? open.connectors.map((c) => (
+                            <span key={c} className="inline-flex items-center gap-1.5 text-sm"><Logo name={connectorName(c)} id={c} size={22} /> {connectorName(c)}</span>
+                          )) : <span className="text-sm">None</span>}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+                  <section>
+                    <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">After installing</h4>
+                    <ul className="list-disc space-y-1 pl-5 text-[13px] leading-relaxed text-muted-foreground">{open.setup.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                  </section>
+                </>
+              )}
+            </div>
+            <DialogFooter className="m-0 rounded-b-xl border-t bg-muted/30 p-4">
+              {done ? <Button onClick={() => setOpen(null)}>Done</Button> : (
+                <>
+                  <Button variant="ghost" onClick={() => setOpen(null)}>Cancel</Button>
+                  <Button disabled={busy || open.installed} onClick={() => install(open)}>{open.installed ? "Installed" : busy ? "Installing…" : `Install the ${open.title} team`}</Button>
+                </>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
   )
 }

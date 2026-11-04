@@ -18,6 +18,7 @@ mod images;
 mod integration;
 mod isolation;
 mod legal;
+mod library;
 mod memory;
 mod models;
 mod notify;
