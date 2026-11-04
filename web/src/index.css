@@ -170,3 +170,26 @@
 @keyframes ch-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
 .ch.still * { animation: none !important; }
 @media (prefers-reduced-motion: reduce) { .ch * { animation: none !important; } }
+
+/* Beautiful UI (beautifului.dev, by Turbo, MIT): the keyframes and the
+   StreamText caret and tail its atoms use, with Airth's colours. */
+@keyframes shimmer-text { from { background-position: 150% center; } to { background-position: -50% center; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pixel-on { 0%, 100% { opacity: 0.15; } 18%, 42% { opacity: 1; } 62% { opacity: 0.15; } }
+@keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.stream-tail {
+  filter: blur(1.6px);
+  -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+  mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+}
+.stream-caret {
+  display: inline-block; width: 2px; height: 1.05em; margin-left: 1.5px; translate: 0 -0.5px;
+  border-radius: 1px; background: var(--foreground); vertical-align: text-bottom;
+  animation: caret-blink 1s step-end infinite;
+}
+.stream-caret.is-streaming { animation: none; }
+.fade-up { animation: fade-up 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .stream-caret, .fade-up { animation: none; }
+  .stream-tail { filter: none; -webkit-mask-image: none; mask-image: none; }
+}

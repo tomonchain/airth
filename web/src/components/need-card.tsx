@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Pencil, RotateCcw, Send, ShieldAlert, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
+import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
@@ -26,7 +27,7 @@ export function kindOf(it: Item) {
 /** One thing an agent sent up, with the answers it allows. The server says
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
-export function NeedCard({ realm, it, onDone, page, still }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean }) {
+export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean }) {
   const [mode, setMode] = useState<"edit" | "reject" | "confirm" | null>(null)
   const [text, setText] = useState(it.text ?? "")
   const [why, setWhy] = useState("")
@@ -116,7 +117,7 @@ export function NeedCard({ realm, it, onDone, page, still }: { realm: string; it
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
             <p className="mt-2 text-right text-xs tabular-nums text-muted-foreground">{it.text.length} characters</p>
           </div>
-        ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
+        ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : page && it.text && it.text !== it.title ? (
         <pre className="mt-4 max-h-96 overflow-auto rounded-xl border bg-bubble/60 px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
       ) : it.note ? (

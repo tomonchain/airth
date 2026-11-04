@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
+import { LoaderGrid, useElapsed } from "@/components/beautifui/loader"
+import { Shimmer } from "@/components/beautifui/shimmer"
+import { StreamText } from "@/components/beautifui/stream-text"
 import { Character } from "@/components/character"
 import { NeedCard } from "@/components/need-card"
 import { OrderBox } from "@/components/order-box"
@@ -48,12 +51,12 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   // right. An answered item is the agent's message, then the founder's answer.
   const units = useMemo(() => {
     const u: { side: "left" | "right"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
-    for (const [i, x] of entries.entries()) {
-      if (x.kind === "order") u.push({ side: "right", key: `o${i}`, node: () => <Mine text={x.text} at={x.at} note={x.status} /> })
-      else if (x.kind === "run") u.push({ side: "left", key: `r${i}`, node: () => <RunMessage run={x.run} /> })
+    for (const x of entries) {
+      if (x.kind === "order") u.push({ side: "right", key: `o${x.text}`, node: () => <Mine text={x.text} at={x.at} note={x.status} /> })
+      else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
       else {
         const it = x.item
-        u.push({ side: "left", key: `i${it.id}`, isNew: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} /> })
+        u.push({ side: "left", key: `i${it.id}`, isNew: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> })
         if (it.status !== "pending") {
           const a = ANSWERED[it.status] ?? ANSWERED.done
           u.push({ side: "right", key: `a${it.id}`, node: () => <Mine text={a.reply(it)} at={it.created_at} /> })
@@ -64,6 +67,13 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, realm])
   const firstNew = units.findIndex((x) => x.isNew)
+  // What was there when the thread opened shows at once; what arrives while
+  // the founder watches comes in, the agent's words written as they stream.
+  const known = useRef<Set<string> | null>(null)
+  useEffect(() => { known.current = null }, [agent.name])
+  if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
+  function fresh(key: string) { return !!known.current && !known.current.has(key) }
+  const busy = agent.state === "working" || entries.some((x) => x.kind === "order" && x.status === "starting")
   const end = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
   useEffect(() => setStuck(false), [agent.name])
@@ -95,23 +105,40 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
                     </div>
                   )}
                   {x.side === "left" ? (
-                    <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5")}>
+                    <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
                       <span className="mb-6 w-8 shrink-0">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
                       <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
                     </div>
                   ) : (
-                    <div className={lastOfGroup ? "mb-5" : "mb-1.5"}>{x.node(lastOfGroup)}</div>
+                    <div className={cn(lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>{x.node(lastOfGroup)}</div>
                   )}
                 </div>
               )
             })
           )}
+          {thread.data && busy && <Working agent={agent} />}
           <div ref={end} />
         </div>
       </div>
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <OrderBox realm={realm} agent={agent.name} title={agent.title}
           onSent={(text) => { setSent((s) => [...s, { text, at: new Date().toISOString() }]); setTimeout(() => end.current?.scrollIntoView({ block: "end" }), 50); tasks.refresh() }} />
+      </div>
+    </div>
+  )
+}
+
+/** The agent at work: Beautiful UI's pixel loader, a shimmering line and
+    the time it has been at it. */
+function Working({ agent }: { agent: Agent }) {
+  const elapsed = useElapsed()
+  return (
+    <div className="mb-5 flex items-end gap-2.5 fade-up">
+      <span className="mb-1 w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+      <div className="inline-flex items-center gap-2.5 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 text-[13.5px]">
+        <LoaderGrid />
+        <Shimmer>{agent.title} is working</Shimmer>
+        <span className="font-mono text-xs text-muted-foreground tabular-nums">{elapsed}</span>
       </div>
     </div>
   )
@@ -153,7 +180,7 @@ function Mine({ text, at, note }: { text: string; at: string; note?: string }) {
   )
 }
 
-function RunMessage({ run }: { run: ThreadRun }) {
+function RunMessage({ run, stream }: { run: ThreadRun; stream?: boolean }) {
   const [open, setOpen] = useState(false)
   const failed = run.blocks.some((b) => b.outcome === "failed")
   return (
@@ -163,7 +190,7 @@ function RunMessage({ run }: { run: ThreadRun }) {
           <Workflow className="size-3.5" /> <span className="font-mono">{run.routine}</span>
           {failed && <span className="rounded bg-red-500/15 px-1.5 py-px text-[11px] font-medium text-red-500">failed</span>}
         </div>
-        <p className="text-[13.5px] leading-relaxed">{run.sentence}</p>
+        <p className="text-[13.5px] leading-relaxed">{stream ? <StreamText text={run.sentence} /> : run.sentence}</p>
         <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /> {open ? "Hide the run" : `See the run, ${run.blocks.length} steps`}
         </button>
@@ -174,11 +201,11 @@ function RunMessage({ run }: { run: ThreadRun }) {
   )
 }
 
-function ItemMessage({ realm, item, onDone }: { realm: string; item: Item; onDone: () => void }) {
+function ItemMessage({ realm, item, onDone, stream }: { realm: string; item: Item; onDone: () => void; stream?: boolean }) {
   if (item.status === "pending") {
     return (
       <div className="max-w-[85%]">
-        <NeedCard realm={realm} it={item} onDone={onDone} />
+        <NeedCard realm={realm} it={item} onDone={onDone} stream={stream} />
         <Meta at={item.created_at} copy={item.text ?? item.title} />
       </div>
     )
@@ -186,7 +213,7 @@ function ItemMessage({ realm, item, onDone }: { realm: string; item: Item; onDon
   return (
     <div>
       <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
-        <p className="line-clamp-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.kind === "approval" && item.text ? item.text : item.title}</p>
+        <p className="line-clamp-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={item.kind === "approval" && item.text ? item.text : item.title} /> : item.kind === "approval" && item.text ? item.text : item.title}</p>
       </div>
       <Meta at={item.created_at} copy={item.text ?? item.title} />
     </div>
