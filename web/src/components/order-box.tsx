@@ -7,8 +7,9 @@ import { api, enc } from "@/lib/api"
 /** Writing to an agent. A message continues the agent's latest task, as a
     chat does; a new task is started on purpose. Sent from here, the founder
     watches it, so its questions come back here (decision 75). */
-export function OrderBox({ realm, agent, title, task, working, onSent }: {
-  realm: string; agent: string; title: string; task?: string; working: boolean; onSent: (taskId: string | null) => void
+export function OrderBox({ realm, agent, title, task, working, onSending, onSent, onFailed }: {
+  realm: string; agent: string; title: string; task?: string; working: boolean
+  onSending: (text: string, task: string | null) => void; onSent: (taskId: string | null) => void; onFailed: () => void
 }) {
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
@@ -20,6 +21,10 @@ export function OrderBox({ realm, agent, title, task, working, onSent }: {
     const t = text.trim()
     if (!t || working) return
     setBusy(true)
+    // The message goes into the thread now, as a chat does; the server's
+    // copy replaces it when it comes back.
+    setText("")
+    onSending(t, continuing ? task! : null)
     try {
       if (continuing) {
         await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
@@ -29,8 +34,9 @@ export function OrderBox({ realm, agent, title, task, working, onSent }: {
         onSent(out.id)
         setFresh(false)
       }
-      setText("")
     } catch (e) {
+      setText(t)
+      onFailed()
       toast.error((e as Error).message)
     } finally {
       setBusy(false)

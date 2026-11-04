@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
@@ -43,6 +43,10 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
   const latest = taskIds[taskIds.length - 1]
   const [mine] = useState(() => new Set<string>())
+  // What the founder just sent, until its task shows it.
+  const [outbox, setOutbox] = useState<{ text: string; task: string | null; at: string } | null>(null)
+  useEffect(() => setOutbox(null), [agent.name])
+  const echoed = useCallback(() => setOutbox(null), [])
 
   const entries = useMemo(() => {
     const e: Entry[] = []
@@ -60,7 +64,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   const units = useMemo(() => {
     const u: { side: "left" | "right" | "task"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
     for (const x of entries) {
-      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
+      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echo={outbox?.task === x.id ? outbox.text : undefined} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
       else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
       else {
         const it = x.item
@@ -83,22 +87,30 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
   const busy = agent.state === "working" && !running
-  const end = useRef<HTMLDivElement>(null)
-  const [stuck, setStuck] = useState(false)
-  useEffect(() => setStuck(false), [agent.name])
+  // Like a chat: the thread opens at its newest message and stays there as
+  // messages and tasks load in, unless the founder scrolled up to read.
+  const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  const toBottom = (smooth = false) => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: smooth ? "smooth" : "auto" })
+  useEffect(() => { pinned.current = true; toBottom() }, [agent.name])
   useEffect(() => {
-    if (!thread.data || stuck) return
-    const target = document.getElementById("first-new") ?? end.current
-    target?.scrollIntoView({ block: target === end.current ? "end" : "start" })
-    setStuck(true)
-  }, [thread.data, stuck])
+    if (!content.current) return
+    const o = new ResizeObserver(() => pinned.current && toBottom())
+    o.observe(content.current)
+    return () => o.disconnect()
+  }, [])
+  function scrolled() {
+    const el = scroller.current
+    if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   function refresh() { thread.refresh(); onDone() }
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 pt-6 pb-4">
+      <div ref={scroller} onScroll={scrolled} className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={content} className="mx-auto max-w-3xl px-6 pt-6 pb-4">
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (
@@ -125,17 +137,31 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
               )
             })
           )}
-          {thread.data && busy && <Working agent={agent} />}
-          <div ref={end} />
+          {outbox && (
+            <>
+              <div className="mb-5 fade-up"><Mine text={outbox.text} at={outbox.at} /></div>
+              <div className="mb-5 flex items-end gap-2.5 fade-up">
+                <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+                <div className="inline-flex items-center rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"><Typing /></div>
+              </div>
+            </>
+          )}
+          {thread.data && busy && !outbox && <Working agent={agent} />}
         </div>
       </div>
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <OrderBox realm={realm} agent={agent.name} title={agent.title} task={latest} working={running}
+          onSending={(text, task) => {
+            if (task) mine.add(task)
+            setOutbox({ text, task, at: new Date().toISOString() })
+            pinned.current = true
+            requestAnimationFrame(() => toBottom(true))
+          }}
           onSent={(id) => {
-            if (id) { mine.add(id); setStarted((s) => (s.includes(id) ? s : [...s, id])) }
-            setTimeout(() => end.current?.scrollIntoView({ block: "end", behavior: "smooth" }), 300)
+            if (id) { mine.add(id); setStarted((s) => (s.includes(id) ? s : [...s, id])); setOutbox((o) => o && { ...o, task: id }) }
             tasks.refresh()
-          }} />
+          }}
+          onFailed={() => setOutbox(null)} />
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronRight, CircleAlert, ShieldQuestion, Square, Wrench, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
@@ -173,14 +173,20 @@ function Bubble({ side, children, last, agent, time }: { side: "left" | "right";
 /** One task with an agent, as a chat: the founder's messages on the right,
     the agent's words on the left, its steps folded in between, and its
     question to the founder when it has one. */
-export function TaskThread({ realm, id, agent, items, fresh, onChange }: {
-  realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; onChange: () => void
+export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onChange }: {
+  realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echo?: string; onEcho?: () => void; onChange: () => void
 }) {
-  const { view, refresh } = useRun(realm, id, fresh)
+  const { view, refresh } = useRun(realm, id, fresh || !!echo)
   const [busy, setBusy] = useState(false)
   const shown = useRef<number | null>(null)
+  const ps = useMemo(() => (view ? parts(view) : []), [view])
+  // The message the founder just sent, shown by the conversation until the
+  // run has it.
+  useEffect(() => {
+    const said = ps.filter((p) => p.kind === "founder").at(-1)
+    if (echo && said?.kind === "founder" && said.text === echo.trim()) onEcho?.()
+  }, [ps, echo, onEcho])
   if (!view) return null
-  const ps = parts(view)
   if (shown.current === null) shown.current = fresh ? 1 : ps.length
   const live = view.live
   const status = view.state.status
