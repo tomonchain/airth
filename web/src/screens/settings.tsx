@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Bot, Check, Cpu, ExternalLink, FolderGit2, Info, Monitor, Moon, Plug, Shield, Smartphone, Sun, User, X, type LucideIcon } from "lucide-react"
+import { Bot, Check, Cpu, ExternalLink, FolderGit2, Info, KeyRound, Monitor, Moon, Plug, Shield, Smartphone, Sun, User, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Loading, Panel } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -12,11 +12,13 @@ import { useTheme } from "@/hooks/use-theme"
 import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
+import { Keys } from "@/screens/settings-keys"
 
-type Section = "account" | "models" | "connections" | "permissions" | "repositories" | "phone" | "about"
+type Section = "account" | "models" | "keys" | "connections" | "permissions" | "repositories" | "phone" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "models", label: "Models", icon: Cpu },
+  { id: "keys", label: "Keys", icon: KeyRound },
   { id: "connections", label: "Connections", icon: Plug },
   { id: "permissions", label: "Permissions", icon: Shield },
   { id: "repositories", label: "Repositories", icon: FolderGit2 },
@@ -39,8 +41,7 @@ type Mcp = { name: string; description: string; enabled: boolean; signed_in: boo
 type Owner = { name: string; about: string; avatar: string | null; preferences: string[]; updated_at?: string }
 
 /** Settings: the founder's account and the business's models, connections,
-    permissions, repositories and phone. What holds a secret is set in the
-    classic interface until it moves. */
+    keys, permissions, repositories and phone. */
 export function Settings({ realm }: { realm: string }) {
   const [section, setSection] = useState<Section>("account")
   return (
@@ -57,7 +58,8 @@ export function Settings({ realm }: { realm: string }) {
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div key={section} className="mx-auto max-w-2xl px-8 py-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
           {section === "account" ? <Account />
-            : section === "models" ? <Models realm={realm} />
+            : section === "models" ? <Models realm={realm} onKeys={() => setSection("keys")} />
+            : section === "keys" ? <Keys realm={realm} />
             : section === "connections" ? <Connections realm={realm} />
             : section === "permissions" ? <Permissions realm={realm} />
             : section === "repositories" ? <Repositories realm={realm} />
@@ -142,7 +144,7 @@ const TIERS = [
   { id: "fallback", label: "Fallback", hint: "Used when the main one fails." },
 ] as const
 
-function Models({ realm }: { realm: string }) {
+function Models({ realm, onKeys }: { realm: string; onKeys: () => void }) {
   const detail = usePoll<Detail>(() => api(`realms/${enc(realm)}`), 600000, [realm])
   const options = usePoll<Providers>(() => api(`realms/${enc(realm)}/models`), 600000, [realm])
   async function set(tier: string, provider: string, model: string) {
@@ -182,7 +184,7 @@ function Models({ realm }: { realm: string }) {
               </Row>
             ))}
           </Panel>
-          <p className="mt-2"><Classic what="Add a key" /></p>
+          <p className="mt-2"><Button size="sm" variant="outline" onClick={onKeys}><KeyRound /> Add a model key</Button></p>
         </>
       )}
     </>
@@ -190,7 +192,6 @@ function Models({ realm }: { realm: string }) {
 }
 
 function Connections({ realm }: { realm: string }) {
-  const detail = usePoll<Detail>(() => api(`realms/${enc(realm)}`), 600000, [realm])
   const conn = usePoll<{ connectors: Connector[] }>(() => api(`realms/${enc(realm)}/connectors`), 600000, [realm])
   const mcp = usePoll<Mcp[]>(() => api(`realms/${enc(realm)}/mcp`), 600000, [realm])
   const [checking, setChecking] = useState<string | null>(null)
@@ -208,18 +209,7 @@ function Connections({ realm }: { realm: string }) {
   return (
     <>
       <Head title="Connections">What the agents can reach. Each key stays with its connection and never reaches a model.</Head>
-      <h3 className="mb-2.5 text-sm font-semibold">Integrations</h3>
-      {!detail.data ? <Loading /> : (
-        <Panel className="divide-y">
-          {detail.data.integrations.map((i) => (
-            <Row key={i.name} label={i.description || i.name} hint={<span className="font-mono">{i.base_url}</span>}>
-              {i.missing_secrets.length ? <span className="text-xs text-amber-500">Needs {i.missing_secrets.join(", ")}</span>
-                : <span className="inline-flex items-center gap-1 text-xs text-emerald-500"><Check className="size-3.5" /> Ready</span>}
-            </Row>
-          ))}
-        </Panel>
-      )}
-      <h3 className="mt-8 mb-2.5 text-sm font-semibold">MCP servers</h3>
+      <h3 className="mb-2.5 text-sm font-semibold">MCP servers</h3>
       {!mcp.data ? <Loading /> : (
         <Panel className="divide-y">
           {mcp.data.map((m) => (
