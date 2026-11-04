@@ -10,6 +10,7 @@ import { Calendar } from "@/screens/calendar"
 import { Company } from "@/screens/company"
 import { Finance } from "@/screens/finance"
 import { Home } from "@/screens/home"
+import { Marketplace } from "@/screens/marketplace"
 import { Routines } from "@/screens/routines"
 import { Settings } from "@/screens/settings"
 import { Tasks } from "@/screens/tasks"
@@ -111,6 +112,7 @@ export default function App() {
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
           : page === "settings" ? <Settings realm={realm} />
+          : page === "marketplace" ? <Marketplace realm={realm} />
           : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null} />
           : (
           <>

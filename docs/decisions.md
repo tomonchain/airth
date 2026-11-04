@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 74. The Marketplace's sources: Anthropic's skills, the official connectors and the MCP Registry, and an Airth library of agents
+
+**Proposed.** The founder, 4 November 2026: a Marketplace page to add skills, agents and connectors from an external library, "à voir laquelle".
+
+- **Skills:** Anthropic's catalog (`github.com/anthropics/skills`), as decision 18 installs it: text files only, read by agents as data through `use_skill`. skills.sh (Vercel, over a million skills) is not added: nothing there is reviewed, and a Snyk scan found a security issue in 37% of the skills it checked. Adding it later needs its own decision.
+- **Connectors:** the thirteen official remote MCP servers checked with Airth's sign-in, then the official MCP Registry, marked "not checked by Airth" (decision 20). Unchanged.
+- **Agents:** no shared library of business roles exists; the directories found hold sub-agents for developers. The proposal: an Airth library, a public repository of agents written in Airth's format (`agents/<name>.md`: title, department, job), each reviewed before it is listed. Adding one shows its whole job first, then writes the file; the founder edits it after. Its routines come with milestone 8's templates, not before.
+
+*Why:* every source the Marketplace adds is text or a server the business's agents will trust. A curated source per kind keeps that trust earned; an agent's job is what the agent obeys, so it never comes unread from a source nobody reviews.
+
+*Cost:* the agent library must be written and kept; few agents at first. Skills beyond Anthropic's catalog wait for a reviewed source.
+
 ## 73. The interface is a React app built with shadcn, and its first screen shows the agents at work
 
 **Accepted.** Replaces decision 57's stack and decision 72's part 2 (Preact with `htm`). Decision 72's parts 1 and 3 change as written below.
