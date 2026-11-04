@@ -17,7 +17,7 @@ export function Details({ realm, agent, onSaved }: { realm: string; agent: Agent
   return (
     <aside className="relative w-80 shrink-0 overflow-y-auto border-l px-5 py-6">
       <Button variant="outline" size="sm" className="absolute top-4 right-4" onClick={() => setEditing(true)}><Pencil /> Edit</Button>
-      {editing && <EditAgent key={agent.name} realm={realm} agent={agent} open={editing} onOpenChange={setEditing} onSaved={onSaved} />}
+      <EditAgent key={agent.name} realm={realm} agent={agent} open={editing} onOpenChange={setEditing} onSaved={onSaved} />
       <div className="flex flex-col items-center text-center">
         <Character agent={agent} size={84} />
         <h2 className="mt-4 text-lg font-semibold">{agent.title}</h2>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, MessageSquare, Search } from "lucide-react"
 import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
@@ -60,6 +60,24 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
   }, [sorted, after])
 
   const agent = (name: string | null) => agents.find((a) => a.name === name)
+
+  // Moving to the next item, the open one leaves by the top and the next
+  // comes from the bottom; to the one before, the other way round.
+  const last = useRef<{ item: Item; at: number } | null>(null)
+  const [leaving, setLeaving] = useState<{ item: Item; dir: "down" | "up" } | null>(null)
+  const [dir, setDir] = useState<"down" | "up">("down")
+  useEffect(() => {
+    const prev = last.current
+    last.current = open ? { item: open, at } : null
+    if (!prev || !open || prev.item.id === open.id) return
+    const still = sorted.findIndex((i) => i.id === prev.item.id)
+    const d = still === -1 || at > still ? "down" : "up"
+    setDir(d)
+    setLeaving({ item: prev.item, dir: d })
+    const t = setTimeout(() => setLeaving(null), 320)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open?.id])
 
   return (
     <>
@@ -129,13 +147,31 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
               <Kbd>J</Kbd><Kbd>K</Kbd> to move
             </span>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-2xl px-8 py-7">
-              <Header it={open} agent={agent(open.agent)} onAgent={onAgent} />
-              <NeedCard
-                key={`${open.id}-${open.revision}`} realm={realm} it={open} page
-                onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}
-              />
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {leaving && (
+              <div
+                key={`leave-${leaving.item.id}`}
+                className={cn("pointer-events-none absolute inset-0 overflow-hidden bg-surface duration-300 ease-in-out animate-out fill-mode-forwards",
+                  leaving.dir === "down" ? "slide-out-to-top-full" : "slide-out-to-bottom-full")}
+              >
+                <div className="mx-auto max-w-2xl px-8 py-7">
+                  <Header it={leaving.item} agent={agent(leaving.item.agent)} onAgent={onAgent} />
+                  <NeedCard realm={realm} it={leaving.item} page onDone={() => {}} still />
+                </div>
+              </div>
+            )}
+            <div
+              key={`open-${open.id}`}
+              className={cn("absolute inset-0 overflow-y-auto bg-surface duration-300 ease-in-out animate-in",
+                dir === "down" ? "slide-in-from-bottom-full" : "slide-in-from-top-full")}
+            >
+              <div className="mx-auto max-w-2xl px-8 py-7">
+                <Header it={open} agent={agent(open.agent)} onAgent={onAgent} />
+                <NeedCard
+                  key={`${open.id}-${open.revision}`} realm={realm} it={open} page
+                  onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}
+                />
+              </div>
             </div>
           </div>
         </div>

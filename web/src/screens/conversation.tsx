@@ -15,11 +15,12 @@ type Entry =
   | { kind: "item"; at: string; item: Item }
   | { kind: "order"; at: string; text: string; status?: string }
 
-const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string }> = {
-  approved: { label: "Approved", icon: Check, cls: "text-emerald-500" },
-  done: { label: "Done", icon: Check, cls: "text-emerald-500" },
-  rejected: { label: "Rejected", icon: X, cls: "text-muted-foreground" },
-  failed: { label: "Failed", icon: X, cls: "text-red-500" },
+// What the founder's answer reads like, on the right.
+const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string; reply: (it: Item) => string }> = {
+  approved: { label: "Approved", icon: Check, cls: "text-emerald-500", reply: () => "Approved." },
+  done: { label: "Done", icon: Check, cls: "text-emerald-500", reply: (it) => (it.kind === "approval" ? "Approved. Done." : it.kind === "prepared" ? "Done on my side." : "Seen.") },
+  rejected: { label: "Rejected", icon: X, cls: "text-muted-foreground", reply: (it) => (it.kind === "delayed" ? "Cancel it." : "Rejected.") },
+  failed: { label: "Failed", icon: X, cls: "text-red-500", reply: () => "Approved, but it failed." },
 }
 
 /** One agent's work as a conversation: its runs, what it sent up, the
@@ -38,10 +39,31 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
     for (const group of Object.values(tasks.data ?? {}))
       for (const t of group ?? []) if (t.agent === agent.name && t.order) e.push({ kind: "order", at: t.updated_at ?? t.at ?? "", text: t.order, status: t.status })
     for (const s of sent) if (!e.some((x) => x.kind === "order" && x.text === s.text)) e.push({ kind: "order", at: s.at, text: s.text, status: "starting" })
-    return e.sort((a, b) => a.at.localeCompare(b.at))
+    // What waits for the founder comes last, as unread messages do.
+    const waits = (x: Entry) => (x.kind === "item" && x.item.status === "pending" ? 1 : 0)
+    return e.sort((a, b) => waits(a) - waits(b) || a.at.localeCompare(b.at))
   }, [thread.data, tasks.data, sent, agent.name])
 
-  const firstNew = entries.findIndex((x) => x.kind === "item" && x.item.status === "pending")
+  // Each entry as chat bubbles: the agent on the left, the founder on the
+  // right. An answered item is the agent's message, then the founder's answer.
+  const units = useMemo(() => {
+    const u: { side: "left" | "right"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
+    for (const [i, x] of entries.entries()) {
+      if (x.kind === "order") u.push({ side: "right", key: `o${i}`, node: () => <Mine text={x.text} at={x.at} note={x.status} /> })
+      else if (x.kind === "run") u.push({ side: "left", key: `r${i}`, node: () => <RunMessage run={x.run} /> })
+      else {
+        const it = x.item
+        u.push({ side: "left", key: `i${it.id}`, isNew: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} /> })
+        if (it.status !== "pending") {
+          const a = ANSWERED[it.status] ?? ANSWERED.done
+          u.push({ side: "right", key: `a${it.id}`, node: () => <Mine text={a.reply(it)} at={it.created_at} /> })
+        }
+      }
+    }
+    return u
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, realm])
+  const firstNew = units.findIndex((x) => x.isNew)
   const end = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
   useEffect(() => setStuck(false), [agent.name])
@@ -52,7 +74,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
     setStuck(true)
   }, [thread.data, stuck])
 
-  const refresh = () => { thread.refresh(); onDone() }
+  function refresh() { thread.refresh(); onDone() }
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -60,21 +82,29 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
         <div className="mx-auto max-w-3xl px-6 pt-6 pb-4">
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : entries.length === 0 ? (
+          ) : units.length === 0 ? (
             <Empty agent={agent} />
           ) : (
-            entries.map((x, i) => (
-              <div key={i}>
-                {i === firstNew && (
-                  <div id="first-new" className="my-6 flex scroll-mt-6 items-center gap-3 text-[11px] font-semibold tracking-[0.14em] text-sky-500 uppercase">
-                    <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
-                  </div>
-                )}
-                {x.kind === "order" ? <Order text={x.text} at={x.at} status={x.status} />
-                  : x.kind === "run" ? <RunMessage run={x.run} />
-                  : <ItemMessage realm={realm} item={x.item} onDone={refresh} />}
-              </div>
-            ))
+            units.map((x, i) => {
+              const lastOfGroup = units[i + 1]?.side !== x.side || i + 1 === firstNew
+              return (
+                <div key={x.key}>
+                  {i === firstNew && (
+                    <div id="first-new" className="my-6 flex scroll-mt-6 items-center gap-3 text-[11px] font-semibold tracking-[0.14em] text-sky-500 uppercase">
+                      <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
+                    </div>
+                  )}
+                  {x.side === "left" ? (
+                    <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5")}>
+                      <span className="mb-6 w-8 shrink-0">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
+                      <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
+                    </div>
+                  ) : (
+                    <div className={lastOfGroup ? "mb-5" : "mb-1.5"}>{x.node(lastOfGroup)}</div>
+                  )}
+                </div>
+              )
+            })
           )}
           <div ref={end} />
         </div>
@@ -100,7 +130,7 @@ function Empty({ agent }: { agent: Agent }) {
 
 function Meta({ at, copy, children }: { at: string; copy?: string; children?: React.ReactNode }) {
   return (
-    <div className="mt-1.5 mb-5 flex items-center gap-1 pl-1 text-xs text-muted-foreground">
+    <div className="mt-1 flex items-center gap-1 pl-1 text-[11px] text-muted-foreground">
       {copy && (
         <button className="grid size-6 place-items-center rounded-md hover:bg-accent hover:text-foreground" aria-label="Copy"
           onClick={() => { navigator.clipboard.writeText(copy); toast.success("Copied") }}>
@@ -113,11 +143,12 @@ function Meta({ at, copy, children }: { at: string; copy?: string; children?: Re
   )
 }
 
-function Order({ text, at, status }: { text: string; at: string; status?: string }) {
+/** The founder's message, on the right, in their colour. */
+function Mine({ text, at, note }: { text: string; at: string; note?: string }) {
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-primary-foreground">{text}</div>
-      <div className="mt-1.5 mb-5 pr-1 text-xs text-muted-foreground">{stamp(at)}{status ? ` · ${status}` : ""}</div>
+      <div className="max-w-[75%] rounded-2xl rounded-br-md bg-me px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground shadow-sm">{text}</div>
+      <div className="mt-1 pr-1 text-[11px] text-muted-foreground">{stamp(at)}{note ? ` · ${note}` : ""}</div>
     </div>
   )
 }
@@ -152,15 +183,12 @@ function ItemMessage({ realm, item, onDone }: { realm: string; item: Item; onDon
       </div>
     )
   }
-  const a = ANSWERED[item.status] ?? ANSWERED.done
   return (
     <div>
-      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3 opacity-80">
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
         <p className="line-clamp-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.kind === "approval" && item.text ? item.text : item.title}</p>
       </div>
-      <Meta at={item.created_at} copy={item.text ?? item.title}>
-        <span className={cn("inline-flex items-center gap-1", a.cls)}><a.icon className="size-3.5" /> {a.label}</span>
-      </Meta>
+      <Meta at={item.created_at} copy={item.text ?? item.title} />
     </div>
   )
 }

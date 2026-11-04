@@ -108,7 +108,7 @@ export type Calendar = {
   title: string
   total: number
   late: { routine: string; agent: string; at?: string }[]
-  days: { day: string; weekday: string; today: boolean; runs: { agent: string; routine: string; state: string; time: string }[]; deadlines: Deadline[] }[]
+  days: { date: string; day: string; weekday: string; today: boolean; runs: { agent: string; routine: string; state: string; time: string }[]; deadlines: string[] }[]
   deadlines: { items: Deadline[]; note: string }
 }
 

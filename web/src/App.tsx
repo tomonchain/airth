@@ -11,6 +11,7 @@ import { Company } from "@/screens/company"
 import { Finance } from "@/screens/finance"
 import { Home } from "@/screens/home"
 import { Routines } from "@/screens/routines"
+import { Settings } from "@/screens/settings"
 import { Tasks } from "@/screens/tasks"
 import { Inbox } from "@/screens/inbox"
 
@@ -109,6 +110,7 @@ export default function App() {
           : page === "tasks" ? <Tasks realm={realm} agents={agents} onAgent={open} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
+          : page === "settings" ? <Settings realm={realm} />
           : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null} />
           : (
           <>

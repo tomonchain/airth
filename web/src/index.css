@@ -41,6 +41,8 @@
     --color-background: var(--background);
     --color-surface: var(--surface);
     --color-bubble: var(--bubble);
+    --color-me: var(--me);
+    --color-me-foreground: var(--me-foreground);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -85,12 +87,16 @@
     --sidebar-ring: oklch(0.708 0 0);
     --surface: oklch(1 0 0);
     --bubble: oklch(0.967 0.001 286);
+    --me: #2f6bff;
+    --me-foreground: #ffffff;
 }
 
 .dark {
     --background: #0e0e0f;
     --surface: #161617;
     --bubble: #1f1f21;
+    --me: #3a6df0;
+    --me-foreground: #ffffff;
     --foreground: #ececed;
     --card: #1f1f21;
     --card-foreground: #ececed;

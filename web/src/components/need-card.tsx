@@ -26,7 +26,7 @@ export function kindOf(it: Item) {
 /** One thing an agent sent up, with the answers it allows. The server says
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
-export function NeedCard({ realm, it, onDone, page }: { realm: string; it: Item; onDone: () => void; page?: boolean }) {
+export function NeedCard({ realm, it, onDone, page, still }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean }) {
   const [mode, setMode] = useState<"edit" | "reject" | "confirm" | null>(null)
   const [text, setText] = useState(it.text ?? "")
   const [why, setWhy] = useState("")
@@ -57,7 +57,7 @@ export function NeedCard({ realm, it, onDone, page }: { realm: string; it: Item;
     it.retry || blocked || it.kind === "delayed" ? null
     : "approve"
   useEffect(() => {
-    if (!page) return
+    if (!page || still) return
     const on = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || busy) return
       if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? "")) {

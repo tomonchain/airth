@@ -3,7 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
-export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "finance" | "company"
+export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "finance" | "company" | "settings"
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
@@ -57,7 +57,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
           <TooltipContent side="right">{live ? "An agent is working" : "No agent is working"}</TooltipContent>
         </Tooltip>
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
-        <RailButton icon={Settings} label="Settings" soon />
+        <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
       </div>
     </nav>
   )
