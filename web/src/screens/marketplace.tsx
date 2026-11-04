@@ -34,7 +34,10 @@ const FEATURED = [
   ["cloudflare", "Cloudflare", "https://mcp.cloudflare.com/mcp", "Workers, DNS and your account.", "Development"],
   ["square", "Square", "https://mcp.squareup.com/mcp", "Orders, payments and catalog.", "Sales"],
   ["supabase", "Supabase", "https://mcp.supabase.com/mcp", "Databases, tables and SQL.", "Development"],
-].map(([id, name, url, description, category]) => ({ id, name, url, description, category }))
+  // Official too, not yet tried end to end with Airth's sign-in.
+  ["todoist", "Todoist", "https://ai.todoist.net/mcp", "Tasks, projects and due dates.", "Productivity", "new"],
+  ["posthog", "PostHog", "https://mcp.posthog.com/mcp", "Product analytics: events, insights, feature flags.", "Analytics", "new"],
+].map(([id, name, url, description, category, tried]) => ({ id, name, url, description, category, untried: tried === "new" }))
 
 type Skill = { name: string; title: string; description: string; files: number; skipped: number }
 type Catalog = { source: string; fetched_at: string | null; error: string | null; refreshing: boolean; skills: Skill[] }
@@ -220,10 +223,11 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <p className="mb-4 text-xs text-muted-foreground">Published by each company, checked with Airth's sign-in. Connecting opens their sign-in page; the key stays with Airth and never reaches a model.</p>
       <Grid>
         {featured.map((c) => (
-          <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.category} description={c.description}
+          <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
             action={status(c.url) ?? <Button size="sm" variant="outline" disabled={busy === c.id} onClick={() => connect(c.id, c.url, c.description)}>{busy === c.id ? "Opening…" : "Connect"}</Button>} />
         ))}
       </Grid>
+      <WithKey realm={realm} q={q} skip={new Set(FEATURED.map((c) => c.id))} />
       <h2 className="mt-9 mb-1 flex items-center gap-2 text-sm font-semibold">From the MCP Registry {searching && <Loader className="size-3.5 animate-spin text-muted-foreground" />}</h2>
       <p className="mb-4 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"><ShieldAlert className="size-3.5" /> Not checked by Airth. Connect only what the company itself publishes: look at the address.</p>
       {!registry ? <Loading /> : !listed.length ? <Empty icon={Plug} title="Nothing found">Try another word.</Empty> : (
@@ -384,6 +388,68 @@ function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnect
                   <Button disabled={busy || open.installed} onClick={() => install(open)}>{open.installed ? "Installed" : busy ? "Installing…" : `Install the ${open.title} team`}</Button>
                 </>
               )}
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
+  )
+}
+
+type Preset = { connected: boolean; connector: { id: string; name: string; description: string; category: string; docs?: string; token_url?: string; token_help?: string } }
+
+/** Services connected with an API key the founder creates on their side
+    (decision 19): the key goes to the business's secrets, never to a model. */
+function WithKey({ realm, q, skip }: { realm: string; q: string; skip: Set<string> }) {
+  const { data, refresh } = usePoll<{ connectors: Preset[] }>(() => api(`realms/${enc(realm)}/connectors`), 600000, [realm])
+  const [open, setOpen] = useState<Preset | null>(null)
+  const [key, setKey] = useState("")
+  const [busy, setBusy] = useState(false)
+  const list = (data?.connectors ?? []).filter((c) => !skip.has(c.connector.id) || c.connected)
+    .filter((c) => !q || `${c.connector.name} ${c.connector.description} ${c.connector.category}`.toLowerCase().includes(q.toLowerCase()))
+  async function connect() {
+    if (!open) return
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/connectors/${enc(open.connector.id)}`, { token: key.trim() })
+      toast.success(`${open.connector.name} connected.`)
+      setOpen(null); setKey(""); refresh()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  async function disconnect(c: Preset) {
+    try { await api(`realms/${enc(realm)}/connectors/${enc(c.connector.id)}`, undefined, "DELETE"); toast.success(`${c.connector.name} disconnected.`); refresh() }
+    catch (e) { toast.error((e as Error).message) }
+  }
+  if (!data || !list.length) return null
+  return (
+    <>
+      <h2 className="mt-9 mb-1 text-sm font-semibold">With an API key</h2>
+      <p className="mb-4 text-xs text-muted-foreground">For services without a sign-in page: create a key on their side and paste it here. It is kept in this business's secrets and never reaches a model.</p>
+      <Grid>
+        {list.map((c) => (
+          <Card key={c.connector.id} name={c.connector.name} logo={c.connector.id} title={c.connector.name} meta={c.connector.category} description={c.connector.description}
+            action={c.connected
+              ? <><Done>Connected</Done><Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => disconnect(c)}>Disconnect</Button></>
+              : <Button size="sm" variant="outline" onClick={() => { setKey(""); setOpen(c) }}>Add a key</Button>} />
+        ))}
+      </Grid>
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        {open && (
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3"><Logo name={open.connector.name} id={open.connector.id} /><div><DialogTitle>Connect {open.connector.name}</DialogTitle><DialogDescription>{open.connector.description}</DialogDescription></div></div>
+            </DialogHeader>
+            {open.connector.token_help && <p className="text-sm leading-relaxed">{open.connector.token_help}</p>}
+            {open.connector.token_url && (
+              <a href={open.connector.token_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-sky-500 hover:underline">Create a key on {open.connector.name} <ExternalLink className="size-3.5" /></a>
+            )}
+            <input type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste the key"
+              onKeyDown={(e) => e.key === "Enter" && key.trim() && connect()}
+              className="h-9 w-full rounded-lg border bg-transparent px-3 font-mono text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30" />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setOpen(null)}>Cancel</Button>
+              <Button disabled={busy || !key.trim()} onClick={connect}>{busy ? "Checking…" : "Connect"}</Button>
             </DialogFooter>
           </DialogContent>
         )}
