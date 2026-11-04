@@ -112,16 +112,20 @@ export default function App() {
           : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null} />
           : (
           <>
-          <AgentList agents={agents} items={items} last={last} selected={page === "agents" ? current : null} onOpen={open} />
           {page === "needs" ? (
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
-          ) : agent ? (
+          ) : (
+          <>
+          <AgentList agents={agents} items={items} last={last} selected={current} onOpen={open} />
+          {agent ? (
             <>
               <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />
               {details && <Details agent={agent} />}
             </>
           ) : (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
+          )}
+          </>
           )}
           </>
           )}

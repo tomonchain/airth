@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Pencil, RotateCcw, Send, ShieldAlert, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Kbd } from "@/components/ui/kbd"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
 import { ago } from "@/lib/time"
@@ -23,8 +24,9 @@ export function kindOf(it: Item) {
 }
 
 /** One thing an agent sent up, with the answers it allows. The server says
-    what an answer does; this only asks. */
-export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDone: () => void }) {
+    what an answer does; this only asks. As a card in a thread, or as the
+    page of Needs you, where A, E and R answer from the keyboard. */
+export function NeedCard({ realm, it, onDone, page }: { realm: string; it: Item; onDone: () => void; page?: boolean }) {
   const [mode, setMode] = useState<"edit" | "reject" | "confirm" | null>(null)
   const [text, setText] = useState(it.text ?? "")
   const [why, setWhy] = useState("")
@@ -49,27 +51,51 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
     }
   }
 
+  // The main answer A gives, when one is safe without a second look: never
+  // an override, a cancellation or a retry the founder must check first.
+  const key =
+    it.retry || blocked || it.kind === "delayed" ? null
+    : "approve"
+  useEffect(() => {
+    if (!page) return
+    const on = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || busy) return
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? "")) {
+        if (e.key === "Escape") setMode(null)
+        return
+      }
+      const k = e.key.toLowerCase()
+      if (k === "a" && key && !mode) { e.preventDefault(); answer(key) }
+      else if (k === "e" && it.editable && !mode) { e.preventDefault(); setMode("edit") }
+      else if (k === "r" && (it.kind === "approval" || it.kind === "delayed") && !mode) { e.preventDefault(); setMode("reject") }
+      else if (k === "escape") setMode(null)
+    }
+    addEventListener("keydown", on)
+    return () => removeEventListener("keydown", on)
+  })
+  const hint = (k: string) => (page ? <Kbd className="ml-1 opacity-70">{k}</Kbd> : null)
+
   const main =
     it.retry === "clear" ? <Button size="sm" disabled={busy} onClick={() => answer("retry")}><RotateCcw /> Retry</Button>
     : it.retry === "ambiguous" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setMode("confirm")}><RotateCcw /> Retry…</Button>
-    : it.kind === "incident" || it.kind === "report" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>
-    : it.kind === "prepared" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Mark done</Button>
-    : it.kind === "deadline" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Filed</Button>
-    : it.kind === "delayed" ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => setMode("reject")}><X /> Cancel it</Button>
+    : it.kind === "incident" || it.kind === "report" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen{hint("A")}</Button>
+    : it.kind === "prepared" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Mark done{hint("A")}</Button>
+    : it.kind === "deadline" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Filed{hint("A")}</Button>
+    : it.kind === "delayed" ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => setMode("reject")}><X /> Cancel it{hint("R")}</Button>
     : blocked ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => answer("override")}><ShieldAlert /> Override</Button>
-    : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve</Button>
+    : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve{hint("A")}</Button>
 
   return (
-    <article className="rounded-2xl rounded-bl-md border border-amber-400/25 bg-bubble px-4 py-3.5">
-      <header className="mb-2 flex items-center gap-2 text-xs">
+    <article className={page ? "" : "rounded-2xl rounded-bl-md border border-amber-400/25 bg-bubble px-4 py-3.5"}>
+      {!page && <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
         </span>
         {it.routine && <span className="font-mono text-muted-foreground">{it.routine}</span>}
         <span className="ml-auto text-muted-foreground">{ago(it.created_at)}</span>
-      </header>
+      </header>}
 
-      {!(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
+      {!page && !(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
 
       {it.flag_reason && (
         <div className={cn("mt-2.5 flex gap-2 rounded-lg px-2.5 py-2 text-xs leading-relaxed",
@@ -81,16 +107,23 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
 
       {mode === "edit" ? (
         <div className="mt-3">
-          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="text-sm" autoFocus />
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={page ? 9 : 6} className="text-sm leading-relaxed" autoFocus />
           <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>
         </div>
       ) : it.text && it.kind === "approval" ? (
-        <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
+        page ? (
+          <div className="mt-4 rounded-xl border bg-bubble/60 px-4 py-3.5">
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
+            <p className="mt-2 text-right text-xs tabular-nums text-muted-foreground">{it.text.length} characters</p>
+          </div>
+        ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
+      ) : page && it.text && it.text !== it.title ? (
+        <pre className="mt-4 max-h-96 overflow-auto rounded-xl border bg-bubble/60 px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
       ) : null}
 
-      {it.source?.link && (
+      {!page && it.source?.link && (
         <a href={it.source.link} target="_blank" rel="noreferrer" className="mt-2 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ExternalLink className="size-3 shrink-0" /> <span className="truncate">{it.source.title ?? it.source.link}</span>
         </a>
@@ -104,7 +137,9 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
         <p className="mt-3 text-xs text-muted-foreground">Check on the platform that nothing was created, then retry.</p>
       )}
 
-      <footer className="mt-3 flex flex-wrap items-center gap-2">
+      {page && it.note && it.kind === "approval" && <p className="mt-3 text-xs text-muted-foreground">{it.note}</p>}
+
+      <footer className={cn("mt-3 flex flex-wrap items-center gap-2", page && "mt-5 border-t pt-4")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
@@ -124,8 +159,8 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
           <>
             {main}
             {it.retry === "ambiguous" && <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>}
-            {it.editable && <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil /> Edit</Button>}
-            {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject</Button>}
+            {it.editable && <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
+            {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
           </>
         )}
