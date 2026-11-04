@@ -12,7 +12,7 @@ export function Details({ agent }: { agent: Agent }) {
   return (
     <aside className="w-80 shrink-0 overflow-y-auto border-l px-5 py-6">
       <div className="flex flex-col items-center text-center">
-        <Character agent={agent} size={104} />
+        <Character agent={agent} size={84} />
         <h2 className="mt-4 text-lg font-semibold">{agent.title}</h2>
         <p className="text-sm text-muted-foreground capitalize">{agent.department}</p>
         <span className="mt-2 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">{STATE[agent.state]}</span>

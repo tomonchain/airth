@@ -1,9 +1,9 @@
-import { Bot, Building2, CalendarClock, ChartLine, CircleHelp, Ellipsis, Inbox, ListChecks, Moon, Settings, Sun, Workflow, type LucideIcon } from "lucide-react"
+import { Bot, House, Building2, CalendarClock, ChartLine, CircleHelp, Ellipsis, Inbox, ListChecks, Moon, Settings, Sun, Workflow, type LucideIcon } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
-export type Page = "agents" | "needs"
+export type Page = "home" | "agents" | "needs"
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
@@ -37,6 +37,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
   const { theme, setTheme } = useTheme()
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 pt-1 pb-3">
+      <RailButton icon={House} label="Home" active={page === "home"} onClick={() => onPage("home")} />
       <RailButton icon={Bot} label="Agents" active={page === "agents"} onClick={() => onPage("agents")} />
       <RailButton icon={Inbox} label="Needs you" active={page === "needs"} badge={needs} onClick={() => onPage("needs")} />
       <RailButton icon={Workflow} label="Routines" soon />

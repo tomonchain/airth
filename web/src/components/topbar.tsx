@@ -15,7 +15,7 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
     <header className="flex h-12 shrink-0 items-center gap-2 pr-3">
       <div className="flex w-[404px] shrink-0 items-center pl-4">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<button className="flex items-center gap-2 rounded-lg px-2 py-1 text-[15px] font-semibold hover:bg-accent" />}>
+          <DropdownMenuTrigger render={<button className="flex items-center gap-2 rounded-lg px-2 py-1 text-[13.5px] font-semibold hover:bg-accent" />}>
             <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
             <span className="capitalize">{realm}</span>
             <ChevronsUpDown className="size-3.5 text-muted-foreground" />

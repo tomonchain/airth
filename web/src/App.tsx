@@ -6,6 +6,7 @@ import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Business, type Item, type Realm } from "@/lib/api"
 import { Conversation } from "@/screens/conversation"
+import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
 
 function route(): string | null {
@@ -40,7 +41,7 @@ export default function App() {
     [realm],
   )
 
-  const [page, setPage] = useState<Page>("agents")
+  const [page, setPage] = useState<Page>("home")
   const [current, setCurrent] = useState<string | null>(null)
   const [tabs, setTabs] = useState<string[]>([])
   const [details, setDetails] = useState(true)
@@ -49,11 +50,11 @@ export default function App() {
 
   useEffect(() => { setCurrent(null); setTabs([]) }, [realm])
   useEffect(() => {
-    if (current || !agents.length) return
+    if (page !== "agents" || current || !agents.length) return
     const first = agents.find((a) => a.waiting > 0) ?? agents[0]
     open(first.name)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents.length, current])
+  }, [agents.length, current, page])
 
   function open(name: string) {
     setPage("agents")
@@ -96,6 +97,11 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
         <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">
+          {page === "home" ? (
+            <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
+              at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
+          ) : (
+          <>
           <AgentList agents={agents} items={items} last={last} selected={page === "agents" ? current : null} onOpen={open} />
           {page === "needs" ? (
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
@@ -106,6 +112,8 @@ export default function App() {
             </>
           ) : (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
+          )}
+          </>
           )}
         </main>
       </div>

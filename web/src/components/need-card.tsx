@@ -69,7 +69,7 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
         <span className="ml-auto text-muted-foreground">{ago(it.created_at)}</span>
       </header>
 
-      {!(it.kind === "approval" && it.text) && <h3 className="text-[15px] leading-snug font-medium">{it.title}</h3>}
+      {!(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
 
       {it.flag_reason && (
         <div className={cn("mt-2.5 flex gap-2 rounded-lg px-2.5 py-2 text-xs leading-relaxed",
@@ -85,7 +85,7 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
           <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>
         </div>
       ) : it.text && it.kind === "approval" ? (
-        <p className="mt-1 text-[15px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
+        <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
       ) : null}

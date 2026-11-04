@@ -35,10 +35,10 @@ export function AgentList({ agents, items, last, selected, onOpen }: {
                 onClick={() => onOpen(a.name)}
                 className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-accent/70", selected === a.name && "bg-accent")}
               >
-                <Character agent={a} size={50} still={selected !== a.name && a.state !== "working"} />
+                <Character agent={a} size={40} still={selected !== a.name && a.state !== "working"} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-[15px] font-medium">{a.title}</span>
+                    <span className="truncate text-[13.5px] font-medium">{a.title}</span>
                     {a.department && <span className="shrink-0 rounded-md border px-1.5 text-[11px] text-muted-foreground capitalize">{a.department}</span>}
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">{stamp(l?.at)}</span>
                   </div>

@@ -116,7 +116,7 @@ function Meta({ at, copy, children }: { at: string; copy?: string; children?: Re
 function Order({ text, at, status }: { text: string; at: string; status?: string }) {
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-primary-foreground">{text}</div>
+      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-primary-foreground">{text}</div>
       <div className="mt-1.5 mb-5 pr-1 text-xs text-muted-foreground">{stamp(at)}{status ? ` · ${status}` : ""}</div>
     </div>
   )
@@ -132,7 +132,7 @@ function RunMessage({ run }: { run: ThreadRun }) {
           <Workflow className="size-3.5" /> <span className="font-mono">{run.routine}</span>
           {failed && <span className="rounded bg-red-500/15 px-1.5 py-px text-[11px] font-medium text-red-500">failed</span>}
         </div>
-        <p className="text-[15px] leading-relaxed">{run.sentence}</p>
+        <p className="text-[13.5px] leading-relaxed">{run.sentence}</p>
         <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /> {open ? "Hide the run" : `See the run, ${run.blocks.length} steps`}
         </button>
@@ -156,7 +156,7 @@ function ItemMessage({ realm, item, onDone }: { realm: string; item: Item; onDon
   return (
     <div>
       <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3 opacity-80">
-        <p className="line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap">{item.kind === "approval" && item.text ? item.text : item.title}</p>
+        <p className="line-clamp-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.kind === "approval" && item.text ? item.text : item.title}</p>
       </div>
       <Meta at={item.created_at} copy={item.text ?? item.title}>
         <span className={cn("inline-flex items-center gap-1", a.cls)}><a.icon className="size-3.5" /> {a.label}</span>

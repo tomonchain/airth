@@ -35,7 +35,7 @@ export function OrderBox({ realm, agent, title, onSent }: { realm: string; agent
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
         rows={1}
         placeholder={`Write to ${title}`}
-        className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-muted-foreground"
+        className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground"
       />
       <Button type="submit" size="icon" className="rounded-full" disabled={busy || !text.trim()} aria-label="Send"><ArrowUp /></Button>
     </form>
