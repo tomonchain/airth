@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, Users, Workflow, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
+import { ConnectDialog, type Method } from "@/components/connect-dialog"
 import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -186,7 +187,7 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
   const servers = usePoll<Server[]>(() => api(`realms/${enc(realm)}/mcp`), 3000, [realm])
   const [registry, setRegistry] = useState<Listed[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [method, setMethod] = useState<Method | null>(null)
   useEffect(() => {
     let live = true
     setSearching(true)
@@ -200,20 +201,11 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
   const featuredHosts = new Set(FEATURED.map((c) => host(c.url)))
   const listed = (registry ?? []).filter((r) => !featuredHosts.has(host(r.url)))
 
-  async function connect(name: string, url: string, description: string) {
-    setBusy(name)
-    try {
-      const out = await api<{ sign_in?: string }>(`realms/${enc(realm)}/connect`, { name, url, description })
-      toast.success(out.sign_in ? "Sign in in the page that just opened." : "Connected.")
-      servers.refresh()
-    } catch (e) { toast.error((e as Error).message) }
-    finally { setBusy(null) }
-  }
-  const status = (url: string) => {
+  const status = (url: string, m: Method) => {
     const s = byHost.get(host(url))
     if (!s) return null
     if (s.signed_in && !s.error) return <Done>Connected</Done>
-    return <span className="text-xs text-amber-500">{s.error ? "Error" : "Waiting for sign-in"}</span>
+    return <Button size="sm" variant="ghost" className={s.error ? "text-red-500" : "text-amber-500"} onClick={() => setMethod(m)}>{s.error ? "Error: retry" : "Finish signing in"}</Button>
   }
   const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "connector"
 
@@ -224,7 +216,10 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <Grid>
         {featured.map((c) => (
           <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
-            action={status(c.url) ?? <Button size="sm" variant="outline" disabled={busy === c.id} onClick={() => connect(c.id, c.url, c.description)}>{busy === c.id ? "Opening…" : "Connect"}</Button>} />
+            action={(() => {
+              const m: Method = { kind: "sign-in", name: c.id, title: c.name, url: c.url, description: c.description, logo: c.id, checked: true, tried: !c.untried }
+              return status(c.url, m) ?? <Button size="sm" variant="outline" onClick={() => setMethod(m)}>Connect</Button>
+            })()} />
         ))}
       </Grid>
       <WithKey realm={realm} q={q} skip={new Set(FEATURED.map((c) => c.id))} />
@@ -234,10 +229,14 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
         <Grid>
           {listed.slice(0, 30).map((r) => (
             <Card key={r.name} name={r.title} title={r.title} meta={host(r.url)} description={r.description ?? ""}
-              action={status(r.url) ?? <Button size="sm" variant="outline" disabled={busy === slug(r.title)} onClick={() => connect(slug(r.title), r.url, r.description ?? "")}>Connect</Button>} />
+              action={(() => {
+                const m: Method = { kind: "sign-in", name: slug(r.title), title: r.title, url: r.url, description: r.description ?? "", checked: false, tried: false }
+                return status(r.url, m) ?? <Button size="sm" variant="outline" onClick={() => setMethod(m)}>Connect</Button>
+              })()} />
           ))}
         </Grid>
       )}
+      <ConnectDialog realm={realm} method={method} onClose={() => setMethod(null)} onConnected={servers.refresh} />
     </>
   )
 }
@@ -402,21 +401,9 @@ type Preset = { connected: boolean; connector: { id: string; name: string; descr
     (decision 19): the key goes to the business's secrets, never to a model. */
 function WithKey({ realm, q, skip }: { realm: string; q: string; skip: Set<string> }) {
   const { data, refresh } = usePoll<{ connectors: Preset[] }>(() => api(`realms/${enc(realm)}/connectors`), 600000, [realm])
-  const [open, setOpen] = useState<Preset | null>(null)
-  const [key, setKey] = useState("")
-  const [busy, setBusy] = useState(false)
+  const [method, setMethod] = useState<Method | null>(null)
   const list = (data?.connectors ?? []).filter((c) => !skip.has(c.connector.id) || c.connected)
     .filter((c) => !q || `${c.connector.name} ${c.connector.description} ${c.connector.category}`.toLowerCase().includes(q.toLowerCase()))
-  async function connect() {
-    if (!open) return
-    setBusy(true)
-    try {
-      await api(`realms/${enc(realm)}/connectors/${enc(open.connector.id)}`, { token: key.trim() })
-      toast.success(`${open.connector.name} connected.`)
-      setOpen(null); setKey(""); refresh()
-    } catch (e) { toast.error((e as Error).message) }
-    finally { setBusy(false) }
-  }
   async function disconnect(c: Preset) {
     try { await api(`realms/${enc(realm)}/connectors/${enc(c.connector.id)}`, undefined, "DELETE"); toast.success(`${c.connector.name} disconnected.`); refresh() }
     catch (e) { toast.error((e as Error).message) }
@@ -431,29 +418,10 @@ function WithKey({ realm, q, skip }: { realm: string; q: string; skip: Set<strin
           <Card key={c.connector.id} name={c.connector.name} logo={c.connector.id} title={c.connector.name} meta={c.connector.category} description={c.connector.description}
             action={c.connected
               ? <><Done>Connected</Done><Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => disconnect(c)}>Disconnect</Button></>
-              : <Button size="sm" variant="outline" onClick={() => { setKey(""); setOpen(c) }}>Add a key</Button>} />
+              : <Button size="sm" variant="outline" onClick={() => setMethod({ kind: "key", id: c.connector.id, title: c.connector.name, description: c.connector.description, help: c.connector.token_help, keyUrl: c.connector.token_url })}>Add a key</Button>} />
         ))}
       </Grid>
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        {open && (
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <div className="flex items-center gap-3"><Logo name={open.connector.name} id={open.connector.id} /><div><DialogTitle>Connect {open.connector.name}</DialogTitle><DialogDescription>{open.connector.description}</DialogDescription></div></div>
-            </DialogHeader>
-            {open.connector.token_help && <p className="text-sm leading-relaxed">{open.connector.token_help}</p>}
-            {open.connector.token_url && (
-              <a href={open.connector.token_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-sky-500 hover:underline">Create a key on {open.connector.name} <ExternalLink className="size-3.5" /></a>
-            )}
-            <input type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste the key"
-              onKeyDown={(e) => e.key === "Enter" && key.trim() && connect()}
-              className="h-9 w-full rounded-lg border bg-transparent px-3 font-mono text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30" />
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setOpen(null)}>Cancel</Button>
-              <Button disabled={busy || !key.trim()} onClick={connect}>{busy ? "Checking…" : "Connect"}</Button>
-            </DialogFooter>
-          </DialogContent>
-        )}
-      </Dialog>
+      <ConnectDialog realm={realm} method={method} onClose={() => setMethod(null)} onConnected={refresh} />
     </>
   )
 }

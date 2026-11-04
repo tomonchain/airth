@@ -199,6 +199,12 @@
   30% { transform: translateY(-3px); opacity: 1; }
 }
 
+/* The dots between Airth and a service while the link is made. */
+@keyframes link {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.25); }
+}
+
 /* Scrollbars that blend in: thin, no track, a faint thumb of the text's
    colour. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 14%, transparent) transparent; }
