@@ -60,7 +60,7 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
     : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve</Button>
 
   return (
-    <article className="rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-foreground/15">
+    <article className="rounded-2xl rounded-bl-md border border-amber-400/25 bg-bubble px-4 py-3.5">
       <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
@@ -85,7 +85,7 @@ export function NeedCard({ realm, it, onDone }: { realm: string; it: Item; onDon
           <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>
         </div>
       ) : it.text && it.kind === "approval" ? (
-        <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
+        <p className="mt-1 text-[15px] leading-relaxed whitespace-pre-wrap">{it.text}</p>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
       ) : null}

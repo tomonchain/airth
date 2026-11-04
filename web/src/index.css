@@ -39,6 +39,8 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-surface: var(--surface);
+    --color-bubble: var(--bubble);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -49,7 +51,7 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    --background: #ececee;
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
@@ -81,40 +83,44 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    --surface: oklch(1 0 0);
+    --bubble: oklch(0.967 0.001 286);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --background: #0e0e0f;
+    --surface: #161617;
+    --bubble: #1f1f21;
+    --foreground: #ececed;
+    --card: #1f1f21;
+    --card-foreground: #ececed;
+    --popover: #1c1c1e;
+    --popover-foreground: #ececed;
+    --primary: #f4f4f5;
+    --primary-foreground: #18181b;
+    --secondary: #26262a;
+    --secondary-foreground: #ececed;
+    --muted: #222224;
+    --muted-foreground: #9a9aa1;
+    --accent: #252528;
+    --accent-foreground: #ececed;
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: rgb(255 255 255 / 7%);
+    --input: rgb(255 255 255 / 10%);
+    --ring: #6b8cff;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar: #161617;
+    --sidebar-foreground: #ececed;
+    --sidebar-primary: #6b8cff;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #232325;
+    --sidebar-accent-foreground: #ececed;
+    --sidebar-border: rgb(255 255 255 / 7%);
+    --sidebar-ring: #6b8cff;
 }
 
 @layer base {
@@ -135,3 +141,36 @@
   from { transform: translateX(-100%); }
   to { transform: translateX(300%); }
 }
+
+/* Department hues for the characters (decision 65), never a status colour. */
+:root {
+  --dept-leadership: #E07AB8; --dept-leadership-dark: #A34E85;
+  --dept-marketing: #F39C4A; --dept-marketing-dark: #C7742B;
+  --dept-sales: #3FB8C9; --dept-sales-dark: #2A8593;
+  --dept-support: #4C8DFF; --dept-support-dark: #2F63C4;
+  --dept-product: #8B6CF6; --dept-product-dark: #6547C9;
+  --dept-operations: #8A94A6; --dept-operations-dark: #5E6778;
+  --dept-finance: #6C9BD2; --dept-finance-dark: #4A729F;
+  --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
+}
+
+/* The characters' life, from src/ui/next/css/10-characters.css. */
+.ch .body, .ch .eyes, .ch .pupils, .ch .acc, .ch .wave { transform-box: fill-box; transform-origin: center bottom; }
+.ch .eyes { transform-origin: center; animation: ch-blink 5s infinite; }
+.ch .body { animation: ch-breathe 3.6s ease-in-out infinite; }
+.st-working .body { animation: ch-bob 1.2s ease-in-out infinite; }
+.st-working .pupils.look { animation: ch-look 2.4s ease-in-out infinite; transform-box: view-box; transform-origin: 0 0; }
+.ch .acc.scribble { animation: ch-scribble 0.35s ease-in-out infinite alternate; transform-origin: center top; }
+.ch .acc.scan { animation: ch-scan 2.4s ease-in-out infinite; }
+.ch .acc.flip { animation: ch-flip 1.2s ease-in-out infinite; }
+.ch .wave { animation: ch-wave 0.9s ease-in-out infinite alternate; }
+@keyframes ch-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.025, 0.975); } }
+@keyframes ch-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes ch-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes ch-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
+@keyframes ch-scribble { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+@keyframes ch-scan { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); } }
+@keyframes ch-flip { 0%, 100% { transform: translateY(0) scaleX(1); } 50% { transform: translateY(-2px) scaleX(0.92); } }
+@keyframes ch-wave { from { transform: rotate(-14deg); } to { transform: rotate(16deg); } }
+.ch.still * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .ch * { animation: none !important; } }

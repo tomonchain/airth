@@ -17,3 +17,13 @@ export function took(from: string, to: string | null): string {
 }
 
 export const usd = (n: number | null | undefined) => (n ? `$${n < 0.01 ? n.toFixed(3) : n.toFixed(2)}` : "")
+
+/** A list's time: the clock today, the day before that. */
+export function stamp(iso: string | null | undefined, now = new Date()): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+  const y = new Date(now); y.setDate(now.getDate() - 1)
+  if (d.toDateString() === y.toDateString()) return "Yesterday"
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+}

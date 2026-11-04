@@ -37,6 +37,7 @@ export type Agent = {
   department: string | null
   job: string | null
   accessory: "pen" | "lens" | "book" | null
+  look: string | null
   state: AgentState
   waiting: number
   cost_usd: number
@@ -60,6 +61,7 @@ export type Business = {
 
 export type Item = {
   id: number
+  status: "pending" | "approved" | "rejected" | "done" | "failed"
   kind: "approval" | "incident" | "report" | "prepared" | "delayed" | "deadline"
   agent: string | null
   routine: string | null
@@ -90,3 +92,8 @@ export type Block = {
 }
 
 export type Run = { run: string; routine: string; blocks: Block[] }
+
+export type ThreadRun = { routine: string; run: string; sentence: string; at: string | null; blocks: Block[] }
+export type Thread = { runs: ThreadRun[]; items: Item[] }
+export type Task = { id: string; order?: string; line?: string; status?: string; agent?: string | null; updated_at?: string; at?: string }
+export type Tasks = Record<"running" | "waiting" | "review" | "done", Task[]>

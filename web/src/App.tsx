@@ -1,36 +1,114 @@
-import { useEffect, useState } from "react"
-import { AppSidebar } from "@/components/app-sidebar"
+import { useEffect, useMemo, useState } from "react"
+import { AgentList, type Last } from "@/components/agent-list"
+import { Details } from "@/components/details"
+import { Rail, type Page } from "@/components/rail"
+import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
-import { api, type Realm } from "@/lib/api"
-import { Floor } from "@/screens/floor"
+import { api, enc, type Agent, type Business, type Item, type Realm } from "@/lib/api"
+import { Conversation } from "@/screens/conversation"
+import { Inbox } from "@/screens/inbox"
 
 function route(): string | null {
   const m = location.hash.match(/^#\/b\/([^/?&]+)/)
   return m ? decodeURIComponent(m[1]) : null
 }
 
+type Data = { agents: Agent[]; items: Item[]; business: Business | null }
+
 export default function App() {
-  const [realm, setRealm] = useState<string | null>(route)
+  const [hash, setHash] = useState(route)
   useEffect(() => {
-    const on = () => setRealm(route())
+    const on = () => setHash(route())
     addEventListener("hashchange", on)
     return () => removeEventListener("hashchange", on)
   }, [])
-  const { data: realms, error } = usePoll(() => api<Realm[]>("realms"), 15000, [])
-  const { data: hq } = usePoll(() => api<{ businesses: { name: string; needs: number }[] }>("hq"), 15000, [])
-  const current = realm ?? realms?.find((r) => r.default)?.name ?? realms?.[0]?.name ?? null
-  const needs = Object.fromEntries((hq?.businesses ?? []).map((b) => [b.name, b.needs]))
+  const realms = usePoll(() => api<Realm[]>("realms"), 15000, [])
+  const realm = hash ?? realms.data?.find((r) => r.default)?.name ?? realms.data?.[0]?.name ?? null
+
+  const data = usePoll<Data>(
+    realm
+      ? async () => {
+          const [team, queue, hq] = await Promise.all([
+            api<{ agents: Agent[] }>(`realms/${enc(realm)}/team`),
+            api<{ items: Item[] }>(`realms/${enc(realm)}/queue`),
+            api<{ businesses: Business[] }>("hq"),
+          ])
+          return { agents: team.agents, items: queue.items, business: hq.businesses.find((b) => b.name === realm) ?? null }
+        }
+      : null,
+    4000,
+    [realm],
+  )
+
+  const [page, setPage] = useState<Page>("agents")
+  const [current, setCurrent] = useState<string | null>(null)
+  const [tabs, setTabs] = useState<string[]>([])
+  const [details, setDetails] = useState(true)
+  const agents = data.data?.agents ?? []
+  const items = data.data?.items ?? []
+
+  useEffect(() => { setCurrent(null); setTabs([]) }, [realm])
+  useEffect(() => {
+    if (current || !agents.length) return
+    const first = agents.find((a) => a.waiting > 0) ?? agents[0]
+    open(first.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents.length, current])
+
+  function open(name: string) {
+    setPage("agents")
+    setCurrent(name)
+    setTabs((t) => (t.includes(name) ? t : [...t, name]))
+  }
+  function close(name: string) {
+    setTabs((t) => {
+      const next = t.filter((x) => x !== name)
+      if (current === name) setCurrent(next.at(-1) ?? null)
+      return next
+    })
+  }
+
+  // Each agent's latest line, for the list: a pending item first, else its
+  // latest run's sentence.
+  const last = useMemo(() => {
+    const out: Record<string, Last> = {}
+    for (const x of data.data?.business?.activity ?? []) if (!out[x.agent]) out[x.agent] = { text: x.sentence, at: x.at }
+    for (const it of [...items].sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+      if (!it.agent) continue
+      const l = out[it.agent]
+      if (!l || (l.at ?? "") < it.created_at) out[it.agent] = { text: it.text?.split("\n")[0] ?? it.title, at: it.created_at }
+    }
+    return out
+  }, [data.data, items])
+
+  const agent = agents.find((a) => a.name === current) ?? null
+
+  if (!realm) {
+    return <div className="grid h-svh place-items-center text-sm text-muted-foreground">{realms.error ? `Airth is not answering: ${realms.error}` : "Loading…"}</div>
+  }
 
   return (
-    <div className="flex h-svh overflow-hidden">
-      <AppSidebar realms={realms ?? []} current={current} needs={needs} />
-      {current ? (
-        <Floor realm={current} />
-      ) : (
-        <main className="grid flex-1 place-items-center text-sm text-muted-foreground">
-          {error ? `Airth is not answering: ${error}` : "Loading…"}
+    <div className="flex h-svh flex-col overflow-hidden bg-background">
+      <TopBar
+        realms={realms.data ?? []} realm={realm} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
+        onTab={open} onClose={close} onNew={() => setPage("agents")} details={details} onDetails={() => setDetails(!details)}
+      />
+      <div className="flex min-h-0 flex-1">
+        <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
+        <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">
+          <AgentList agents={agents} items={items} last={last} selected={page === "agents" ? current : null} onOpen={open} />
+          {page === "needs" ? (
+            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
+          ) : agent ? (
+            <>
+              <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />
+              {details && <Details agent={agent} />}
+            </>
+          ) : (
+            <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
+          )}
         </main>
-      )}
+      </div>
     </div>
   )
 }
