@@ -4,7 +4,9 @@ import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import type { Agent, Item } from "@/lib/api"
+import { toast } from "sonner"
+import { usePoll } from "@/hooks/use-poll"
+import { api, enc, type Agent, type Item } from "@/lib/api"
 import { ago, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -93,6 +95,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
           </label>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
+          <Drafts realm={realm} />
           {SECTIONS.map((s) => {
             const list = sorted.filter((i) => s.ranks.includes(rank(i)))
             if (!list.length) return null
@@ -171,6 +174,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                   key={`${open.id}-${open.revision}`} realm={realm} it={open} page
                   onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}
                 />
+                {open.routine && open.run && <Origin key={open.id} realm={realm} it={open} />}
               </div>
             </div>
           </div>
@@ -203,5 +207,89 @@ function Header({ it, agent, onAgent, onTask }: { it: Item; agent?: Agent; onAge
         </span>
       </div>
     </header>
+  )
+}
+
+type Step = { block: string; outcome: string; items_in: number; items_out: number; started_at: string; finished_at: string | null; cost_usd: number | null }
+
+/** Where an item comes from (the next interface's panel): the routine's run
+    that sent it up, step by step, and what that run cost. */
+function Origin({ realm, it }: { realm: string; it: Item }) {
+  const [blocks, setBlocks] = useState<Step[] | null>(null)
+  useEffect(() => {
+    api<{ blocks: Step[] }>(`realms/${enc(realm)}/queue/${it.id}/run`).then((r) => setBlocks(r.blocks), () => setBlocks([]))
+  }, [realm, it.id])
+  const secs = (b: Step) => (b.finished_at ? Math.max(0, Math.round((Date.parse(b.finished_at) - Date.parse(b.started_at)) / 1000)) : 0)
+  return (
+    <section className="mt-8 rounded-xl border bg-bubble/40 p-4">
+      <h3 className="text-xs font-medium text-muted-foreground">Where it comes from</h3>
+      {!blocks ? <p className="mt-2 text-xs text-muted-foreground">Loading…</p> : !blocks.length ? (
+        <p className="mt-2 text-xs text-muted-foreground">No step was recorded for this run.</p>
+      ) : (
+        <>
+          <p className="mt-1 text-xs"><span className="font-mono">{it.routine}</span> · started {stamp(blocks[0].started_at)}</p>
+          <ol className="mt-2.5 space-y-1">
+            {blocks.map((b, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs">
+                <span className={cn("size-1.5 rounded-full", b.outcome === "failed" ? "bg-red-500" : b.outcome === "waiting" ? "bg-amber-500" : "bg-emerald-500")} />
+                <span className="w-24 truncate font-mono">{b.block}</span>
+                <span className="text-muted-foreground">{b.outcome === "waiting" ? `${b.items_in} for you` : b.outcome === "failed" ? "failed" : `${b.items_in} → ${b.items_out} · ${secs(b)} s`}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2.5 text-xs text-muted-foreground">Run cost <span className="font-medium text-foreground">{((c) => (c && c < 0.01 ? "<$0.01" : `$${c.toFixed(2)}`))(blocks.reduce((a, b) => a + (b.cost_usd ?? 0), 0))}</span></p>
+        </>
+      )}
+    </section>
+  )
+}
+
+type Draft = { id: number; pipeline: string; kind: string; text: string; source: { link?: string; title?: string } | null; revision: number; created_at: string }
+
+/** Drafts from the fixed sequences of business/pipelines/ (the classic
+    Steering page's): approve, edit or reject each. */
+function Drafts({ realm }: { realm: string }) {
+  const { data, refresh } = usePoll<{ drafts: Draft[] }>(() => api(`realms/${enc(realm)}/drafts?status=pending`), 15000, [realm])
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null)
+  const shown = useRef(new Map<number, number>())
+  if (!data?.drafts.length) return null
+  async function decide(d: Draft, body: object) {
+    const since = shown.current.get(d.id) ?? Date.now()
+    try { await api(`realms/${enc(realm)}/drafts/${d.id}`, { ...body, revision: d.revision, seconds: Math.round((Date.now() - since) / 1000) }); setEditing(null); refresh() }
+    catch (e) { toast.error((e as Error).message) }
+  }
+  return (
+    <section className="mt-2">
+      <h2 className="flex items-center justify-between px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Drafts <span className="tabular-nums">{data.drafts.length}</span></h2>
+      <div className="space-y-2 px-1">
+        {data.drafts.map((d) => {
+          if (!shown.current.has(d.id)) shown.current.set(d.id, Date.now())
+          const link = /^https?:\/\//i.test(d.source?.link ?? "") ? d.source!.link! : null
+          return (
+            <div key={d.id} className="rounded-xl border bg-bubble/40 p-3">
+              <div className="text-[11px] text-muted-foreground">{d.kind} · {d.pipeline} · {stamp(d.created_at)}</div>
+              {editing?.id === d.id
+                ? <textarea value={editing.text} onChange={(e) => setEditing({ id: d.id, text: e.target.value })} rows={5} className="mt-1.5 w-full rounded-md border bg-surface p-2 text-[12.5px] outline-none" />
+                : <p className="mt-1 text-[12.5px] leading-snug whitespace-pre-wrap">{d.text}</p>}
+              {link && <a href={link} target="_blank" rel="noreferrer" className="mt-1 block truncate text-[11px] text-sky-500 hover:underline">{d.source?.title || link}</a>}
+              <div className="mt-2 flex gap-1.5">
+                {editing?.id === d.id ? (
+                  <>
+                    <Button size="xs" onClick={() => decide(d, { action: "edit", text: editing.text })}>Save</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="xs" onClick={() => decide(d, { action: "approve" })}>Approve</Button>
+                    <Button size="xs" variant="outline" onClick={() => setEditing({ id: d.id, text: d.text })}>Edit</Button>
+                    <Button size="xs" variant="ghost" onClick={() => decide(d, { action: "reject", reason: "" })}>Reject</Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
