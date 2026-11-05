@@ -18,11 +18,12 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
   const [busy, setBusy] = useState(false)
   const [fresh, setFresh] = useState(false)
   useEffect(() => setFresh(false), [agent])
-  const continuing = !!task && !fresh
+  // At work, a message goes to what it is doing: it reads it at its next step.
+  const continuing = !!task && (!fresh || working)
 
   async function send() {
     const t = text.trim()
-    if (!t || working) return
+    if (!t) return
     setBusy(true)
     // The message goes into the thread now, as a chat does; the server's
     // copy replaces it when it comes back.
@@ -52,7 +53,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
   return (
     <div>
       <div className="mb-1.5 flex h-6 items-center gap-2 px-1 text-xs text-muted-foreground">
-        {working ? <span>{title} is working. You can write when it is done, or stop it.</span>
+        {working ? <span>{title} is working. It reads what you write at its next step.</span>
           : continuing ? (
             <>
               <span>Continues the current task</span>
@@ -80,7 +81,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
           className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground field-sizing-content"
         />
         <MicButton value={text} onChange={setText} className="mb-0.5" />
-        <Button type="submit" size="icon" className="rounded-full" disabled={busy || working || !text.trim()} aria-label="Send"><ArrowUp /></Button>
+        <Button type="submit" size="icon" className="rounded-full" disabled={busy || !text.trim()} aria-label="Send"><ArrowUp /></Button>
       </form>
     </div>
   )

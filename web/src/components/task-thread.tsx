@@ -332,7 +332,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
           <span>
             {askedItem && askedItem.status !== "rejected" ? `It paused to ask you; you allowed it in Needs you.`
               : askedItem ? "It paused to ask you; you said no, so it stopped."
-              : view.state.report?.startsWith("stopped by") || !view.state.report ? "You stopped it." : `Stopped: ${view.state.report}`}
+              : /^stopped by/i.test(view.state.report ?? "") || !view.state.report ? "You stopped it." : `Stopped: ${view.state.report}`}
           </span>
           {!(askedItem && askedItem.status === "rejected") && <Button size="xs" variant="outline" disabled={busy} onClick={goOn}>Go on</Button>}
         </div>

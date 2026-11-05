@@ -51,7 +51,7 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
   const closed = closedBy === "adopted" || closedBy === "discarded" ? closedBy : null
   const [mine] = useState(() => new Set<string>())
   // What the founder just sent, until its task shows it.
-  const [outbox, setOutbox] = useState<{ text: string; task: string | null; at: string } | null>(null)
+  const [outbox, setOutbox] = useState<{ text: string; task: string | null; at: string; queued?: boolean } | null>(null)
   useEffect(() => setOutbox(null), [agent.name])
   const echoed = useCallback(() => setOutbox(null), [])
 
@@ -144,7 +144,9 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
               )
             })
           )}
-          {outbox && (
+          {outbox && outbox.queued ? (
+            <div className="mb-5 fade-up"><Mine text={outbox.text} at={outbox.at} note="it reads this at its next step" /></div>
+          ) : outbox && (
             <>
               <div className="mb-5 fade-up"><Mine text={outbox.text} at={outbox.at} /></div>
               <div className="mb-5 flex items-end gap-2.5 fade-up">
@@ -160,7 +162,7 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
         <OrderBox realm={realm} agent={agent.name} title={agent.title} task={closed ? undefined : latest} closed={closed} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)
-            setOutbox({ text, task, at: new Date().toISOString() })
+            setOutbox({ text, task, at: new Date().toISOString(), queued: running })
             pinned.current = true
             requestAnimationFrame(() => toBottom(true))
           }}

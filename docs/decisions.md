@@ -10,6 +10,9 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 - The agent loop streams every working call and passes the text to its observer (`Observer::writing`). A run driven by the app keeps it in memory beside its snapshot, and drops it once the answer is in the run's state. Nothing is written to disk.
 - `GET realms/{r}/runs/{id}/live?version=&draft=` waits (up to 8 s, under the gap after which the founder counts as gone, decision 56) until the run's state or the words being written change, and says which. The page asks again at once, so the founder reads the answer as it is written and sees each step as it happens. A run driven by another process is still looked at every 1.5 s.
 
+- The founder may write while the agent works. The message waits in memory, beside the run's snapshot, and the agent reads it at its next turn, even if it thought it was done (`Observer::said`). A message written as the run ends drives it again, as a follow-up would. Nothing is kept for a run that is only running its checks, or one the founder stopped.
+- Stop ends a model call while it is being written: the stream is given up at its next line (providers send events or keep-alive lines every few seconds, even while the model thinks), what it wrote is dropped, and it is not sent again.
+
 *Why:* waiting a minute in front of "Thinking" was the main reason the chat felt slow; the providers stream natively, and `reqwest`'s blocking response reads as a stream, so no new crate is needed.
 
 *Cost:* one thread per open chat waiting on its run (the server already gives each request its own); a page polls nothing while it waits. The model call path gained a second way to read an answer, tested against recorded event streams for both families of providers.

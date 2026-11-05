@@ -34,6 +34,7 @@ pub(crate) fn stream(
     provider: &str,
     request: impl Fn() -> reqwest::blocking::RequestBuilder,
     on_text: &mut dyn FnMut(&str),
+    stopped: &dyn Fn() -> bool,
     read: impl Fn(&mut dyn std::io::BufRead, &mut dyn FnMut(&str)) -> anyhow::Result<Value>,
 ) -> anyhow::Result<Value> {
     use anyhow::Context;
@@ -58,8 +59,15 @@ pub(crate) fn stream(
             let text = resp.text().unwrap_or_default();
             anyhow::bail!("{provider} API error {status}: {text}");
         }
-        match read(&mut std::io::BufReader::new(resp), on_text) {
+        // Each line read is a moment to give up: providers send events, or
+        // keep-alive lines, every few seconds even while the model thinks.
+        let mut lines = Stoppable {
+            inner: std::io::BufReader::new(resp),
+            stopped,
+        };
+        match read(&mut lines, on_text) {
             Ok(answer) => return Ok(answer),
+            Err(e) if stopped() => return Err(e).context("stopped"),
             Err(_) if attempt < MAX_RETRIES => {
                 on_text("");
                 attempt += 1;
@@ -67,6 +75,31 @@ pub(crate) fn stream(
             }
             Err(e) => return Err(e).context("reading the model's answer failed"),
         }
+    }
+}
+
+/// A stream that ends, as broken off, once `stopped` says so.
+struct Stoppable<'a, R> {
+    inner: R,
+    stopped: &'a dyn Fn() -> bool,
+}
+
+impl<R: std::io::Read> std::io::Read for Stoppable<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<R: std::io::BufRead> std::io::BufRead for Stoppable<'_, R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if (self.stopped)() {
+            return Err(std::io::Error::other("stopped"));
+        }
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.inner.consume(amount);
     }
 }
 
@@ -210,12 +243,13 @@ pub trait Model: Send + Sync {
 
     /// Like `complete`, telling `on_text` the answer's text so far as it is
     /// written, so the founder reads it as it comes. Started again from
-    /// nothing when the request is sent again. A provider that cannot stream
-    /// answers all at once.
+    /// nothing when the request is sent again. Gives up as soon as `stopped`
+    /// says so. A provider that cannot stream answers all at once.
     fn stream(
         &self,
         request: &ModelRequest,
         _on_text: &mut dyn FnMut(&str),
+        _stopped: &dyn Fn() -> bool,
     ) -> Result<ModelResponse> {
         self.complete(request)
     }

@@ -11,6 +11,10 @@ pub(super) struct Live {
     pub(super) version: AtomicU64,
     pub(super) watch: Watch,
     pub(super) draft: Draft,
+    /// What the founder wrote while the agent worked, until it reads it. None
+    /// once nothing will read it: a job that is not the agent's, or a run
+    /// whose thread is ending.
+    pub(super) said: Mutex<Option<Vec<String>>>,
 }
 
 /// What the model is writing in the run, while it writes it: gone once its
@@ -103,6 +107,30 @@ impl Observer for UiObserver {
 
     fn writing(&mut self, text: &str) {
         self.0.draft.set(text);
+    }
+
+    fn said(&mut self) -> Vec<String> {
+        self.0
+            .said
+            .lock()
+            .unwrap()
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+}
+
+impl Live {
+    /// Keeps what the founder wrote for the agent's next turn; false when
+    /// nothing will read it.
+    pub(super) fn tell(&self, text: &str) -> bool {
+        match self.said.lock().unwrap().as_mut() {
+            Some(said) if !self.cancel.is_cancelled() => {
+                said.push(text.to_string());
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -232,6 +260,9 @@ impl Runner {
             version: AtomicU64::new(1),
             watch: Watch::for_job(&job),
             draft: Draft::default(),
+            said: Mutex::new(
+                matches!(job, Job::Drive | Job::Alone | Job::Unattended { .. }).then(Vec::new),
+            ),
         });
         self.registry
             .lock()
@@ -244,7 +275,7 @@ impl Runner {
         std::thread::spawn(move || {
             let mut state = state;
             let mut observer = UiObserver(live.clone());
-            let away = match &job {
+            let mut away = match &job {
                 Job::Unattended {
                     objective,
                     wait_minutes,
@@ -258,12 +289,13 @@ impl Runner {
                 _ => None,
             };
             match job {
-                Job::Drive | Job::Alone | Job::Unattended { .. } => {
+                Job::Drive | Job::Alone | Job::Unattended { .. } => loop {
                     let hooks = RunHooks {
                         approver: Box::new(UiApprover {
                             live: live.clone(),
                             next_id: 0,
-                            away,
+                            // Who writes to a run is there to answer it.
+                            away: away.take(),
                         }),
                         observer: &mut observer,
                         cancel: live.cancel.clone(),
@@ -276,7 +308,26 @@ impl Runner {
                         state.report = Some(format!("{e:#}"));
                         let _ = state.save();
                     }
-                }
+                    // Written as the run ended: it goes on with it, as a
+                    // follow-up would. Past this, what is written starts
+                    // the run again the usual way.
+                    let mut said = live.said.lock().unwrap();
+                    let left = said.take().unwrap_or_default();
+                    if left.is_empty()
+                        || live.cancel.is_cancelled()
+                        || state.status == Status::Failed
+                    {
+                        break;
+                    }
+                    *said = Some(Vec::new());
+                    drop(said);
+                    for text in &left {
+                        crate::hub::append_user_text(&mut state.messages, text);
+                    }
+                    state.status = Status::Running;
+                    state.report = None;
+                    let _ = state.save();
+                },
                 Job::Check => match hub.check(&realm, &state.id, &mut observer, &live.cancel) {
                     Ok(checked) => state = checked,
                     Err(e) => eprintln!("checks of run {} failed to start: {e:#}", state.id),
@@ -358,6 +409,7 @@ mod tests {
             version: AtomicU64::new(1),
             watch,
             draft: Draft::default(),
+            said: Mutex::new(None),
         })
     }
 
@@ -386,6 +438,22 @@ mod tests {
             panic!("not approved");
         };
         assert!(why.contains("left"), "{why}");
+    }
+
+    /// What the founder writes to a run at work waits for the agent's next
+    /// turn, once; nothing is kept for a run nothing will read it in, or one
+    /// they stopped.
+    #[test]
+    fn what_the_founder_writes_to_a_run_at_work_waits_for_its_next_turn() {
+        let at_work = live(Watch::from_now());
+        *at_work.said.lock().unwrap() = Some(Vec::new());
+        assert!(at_work.tell("Add a title too."));
+        let mut observer = UiObserver(at_work.clone());
+        assert_eq!(observer.said(), ["Add a title too."]);
+        assert!(observer.said().is_empty());
+        at_work.cancel.cancel();
+        assert!(!at_work.tell("And a summary."));
+        assert!(!live(Watch::from_now()).tell("Checking? Not read."));
     }
 
     #[test]

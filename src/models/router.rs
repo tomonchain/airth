@@ -257,11 +257,15 @@ impl Model for Routed {
         &self,
         request: &ModelRequest,
         on_text: &mut dyn FnMut(&str),
+        stopped: &dyn Fn() -> bool,
     ) -> Result<ModelResponse> {
         self.each(request, &mut |model, request| {
+            if stopped() {
+                anyhow::bail!("stopped");
+            }
             // What a connection that failed had written is not the answer.
             on_text("");
-            model.stream(request, on_text)
+            model.stream(request, on_text, stopped)
         })
     }
 

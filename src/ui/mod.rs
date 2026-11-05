@@ -389,6 +389,7 @@ mod tests {
             version: AtomicU64::new(1),
             watch: Watch::default(),
             draft: Draft::default(),
+            said: Mutex::new(None),
         });
         app.registry.lock().unwrap().insert(key("r", "run1"), live);
         app.answer("r", "run1", &json!({"approval_id": 1, "approve": true}))
@@ -426,6 +427,7 @@ mod tests {
             version: AtomicU64::new(1),
             watch: Watch::default(),
             draft: Draft::default(),
+            said: Mutex::new(None),
         });
         app.registry
             .lock()
@@ -623,6 +625,7 @@ mod tests {
                 version: AtomicU64::new(1),
                 watch: Watch::default(),
                 draft: Draft::default(),
+                said: Mutex::new(None),
             })
         };
         app.registry

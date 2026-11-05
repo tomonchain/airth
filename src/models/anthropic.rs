@@ -192,10 +192,17 @@ impl Model for Anthropic {
         &self,
         request: &ModelRequest,
         on_text: &mut dyn FnMut(&str),
+        stopped: &dyn Fn() -> bool,
     ) -> Result<ModelResponse> {
         let mut body = self.body(request);
         body["stream"] = json!(true);
-        let resp = super::stream("Anthropic", || self.request(&body), on_text, read_stream)?;
+        let resp = super::stream(
+            "Anthropic",
+            || self.request(&body),
+            on_text,
+            stopped,
+            read_stream,
+        )?;
         decode_response(&resp)
     }
 

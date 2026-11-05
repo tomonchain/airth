@@ -71,6 +71,14 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let choice = self.model_choice(&realm, &body)?;
+                // At work: the agent reads it at its next turn.
+                let message = body["message"].as_str().unwrap_or_default().trim();
+                if let Some(live) = self.live(r, id)
+                    && !message.is_empty()
+                    && live.tell(message)
+                {
+                    return Ok(Some(json_response(200, json!({"queued": true}))));
+                }
                 self.ensure_idle(r, id)?;
                 let mut state =
                     self.hub

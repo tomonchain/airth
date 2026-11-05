@@ -558,7 +558,7 @@ fn latest_ask(state: &State) -> Option<String> {
 
 /// Add a user message, merging into the last message if it is already a user
 /// turn (e.g. tool results from a run that hit its iteration limit).
-fn append_user_text(messages: &mut Vec<Message>, text: &str) {
+pub(crate) fn append_user_text(messages: &mut Vec<Message>, text: &str) {
     match messages.last_mut() {
         Some(last) if last.role == Role::User => last.content.push(ContentBlock::Text {
             text: text.to_string(),

@@ -232,6 +232,7 @@ impl Model for OpenAiCompatible {
         &self,
         request: &ModelRequest,
         on_text: &mut dyn FnMut(&str),
+        stopped: &dyn Fn() -> bool,
     ) -> Result<ModelResponse> {
         let mut body = self.body(request);
         body["stream"] = json!(true);
@@ -240,7 +241,13 @@ impl Model for OpenAiCompatible {
         if self.provider != "mistral" {
             body["stream_options"] = json!({"include_usage": true});
         }
-        let resp = super::stream(self.provider, || self.request(&body), on_text, read_stream)?;
+        let resp = super::stream(
+            self.provider,
+            || self.request(&body),
+            on_text,
+            stopped,
+            read_stream,
+        )?;
         decode_response(&resp)
     }
 }
@@ -569,6 +576,7 @@ mod tests {
             .stream(
                 &ModelRequest::new("s", &[Message::user_text("hi")], &[]),
                 &mut |t| heard.push(t.to_string()),
+                &|| false,
             )
             .unwrap();
         server.join().unwrap();
@@ -587,6 +595,48 @@ mod tests {
             ),
             (12, 7, 4)
         );
+    }
+
+    /// Stopped while it writes, the answer is dropped at once and never
+    /// asked again.
+    #[test]
+    fn a_stopped_stream_ends_at_once_and_is_not_asked_again() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let mut s = listener.incoming().next().unwrap().unwrap();
+            read_request(&mut s);
+            s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n")
+                .unwrap();
+            // Words, then keep-alive lines while the model thinks on.
+            let word = r#"data: {"choices":[{"index":0,"delta":{"content":"Thinking"}}]}"#;
+            s.write_all(format!("{word}\n\n").as_bytes()).unwrap();
+            for _ in 0..50 {
+                if s.write_all(b": keep-alive\n\n").is_err() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            listener.set_nonblocking(true).unwrap();
+            listener.accept().is_ok()
+        });
+        let url = format!("http://127.0.0.1:{port}/v1");
+        let model = OpenAiCompatible::from_settings(
+            "ollama",
+            &settings(&[("AIRTH_MODEL", "m"), ("OPENAI_BASE_URL", &url)]),
+        )
+        .unwrap();
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let started = std::time::Instant::now();
+        let result = model.stream(
+            &ModelRequest::new("s", &[Message::user_text("hi")], &[]),
+            &mut |_| stop.store(true, std::sync::atomic::Ordering::SeqCst),
+            &|| stop.load(std::sync::atomic::Ordering::SeqCst),
+        );
+        assert!(result.is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!server.join().unwrap(), "asked again");
     }
 
     #[test]

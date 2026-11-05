@@ -113,6 +113,10 @@ pub trait Observer: Send {
     fn tool_finished(&mut self, _event: &Event) {}
     /// The model's answer so far, as it writes it (empty: starting again).
     fn writing(&mut self, _text: &str) {}
+    /// What the founder wrote while the run worked: read at its next turn.
+    fn said(&mut self) -> Vec<String> {
+        Vec::new()
+    }
     /// The state changed and was saved.
     fn changed(&mut self, _state: &State) {}
 }
@@ -337,18 +341,28 @@ impl<'a> Agent<'a> {
             };
             let sent_at = std::time::Instant::now();
             let observer = &mut *self.observer;
-            let response = match self
-                .model
-                .stream(&request, &mut |text| observer.writing(text))
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    state.status = Status::Failed;
-                    state.report = Some(format!("model error: {e:#}"));
-                    self.checkpoint(state)?;
-                    return Err(e);
-                }
-            };
+            let cancel = &self.cancel;
+            let response =
+                match self
+                    .model
+                    .stream(&request, &mut |text| observer.writing(text), &|| {
+                        cancel.is_cancelled()
+                    }) {
+                    Ok(r) => r,
+                    // Stopped while the model wrote: what it wrote is dropped.
+                    Err(_) if self.cancel.is_cancelled() => {
+                        self.observer.writing("");
+                        state.status = Status::Stopped;
+                        state.report = Some("Stopped by the user.".into());
+                        break;
+                    }
+                    Err(e) => {
+                        state.status = Status::Failed;
+                        state.report = Some(format!("model error: {e:#}"));
+                        self.checkpoint(state)?;
+                        return Err(e);
+                    }
+                };
             self.observer.response(state.iterations, &response);
             record_usage(state, &response, Purpose::Work);
             let size = response.input_tokens + response.output_tokens;
@@ -438,6 +452,18 @@ impl<'a> Agent<'a> {
             if let Some(why) = self.runtime.stopped() {
                 state.status = Status::Stopped;
                 state.report = Some(why.to_string());
+            }
+            // What the founder wrote meanwhile is read now, even once the
+            // agent thought it was done.
+            if matches!(state.status, Status::Running | Status::Completed) {
+                let said = self.observer.said();
+                if !said.is_empty() {
+                    for text in &said {
+                        crate::hub::append_user_text(&mut state.messages, text);
+                    }
+                    state.status = Status::Running;
+                    state.report = None;
+                }
             }
             self.checkpoint(state)?;
             if state.status == Status::Running
@@ -764,7 +790,12 @@ mod tests {
         fn complete(&self, _: &ModelRequest) -> Result<ModelResponse> {
             unreachable!("a run streams its model's answers")
         }
-        fn stream(&self, _: &ModelRequest, on_text: &mut dyn FnMut(&str)) -> Result<ModelResponse> {
+        fn stream(
+            &self,
+            _: &ModelRequest,
+            on_text: &mut dyn FnMut(&str),
+            _: &dyn Fn() -> bool,
+        ) -> Result<ModelResponse> {
             on_text("Do");
             on_text("Done.");
             Ok(resp(
@@ -806,6 +837,95 @@ mod tests {
         agent.run(&mut state).unwrap();
         assert_eq!(state.report.as_deref(), Some("Done."));
         assert_eq!(heard.0, ["Do", "Done."]);
+    }
+
+    /// Says what the founder wrote, once.
+    struct Founder(Vec<String>);
+    impl Observer for Founder {
+        fn said(&mut self) -> Vec<String> {
+            std::mem::take(&mut self.0)
+        }
+    }
+
+    fn quiet_runtime(dir: &std::path::Path) -> Runtime {
+        Runtime::new(
+            default_tools(),
+            PermissionGate::new(Policy::default(), Box::new(Approve)),
+            Workspace::new(dir).unwrap(),
+            CancelToken::default(),
+        )
+    }
+
+    /// What the founder wrote while the agent worked is read at its next
+    /// turn, even when the agent thought it was done.
+    #[test]
+    fn what_the_founder_writes_meanwhile_is_read_next() {
+        let dir = tempfile::tempdir().unwrap();
+        let done = |text: &str| {
+            resp(
+                vec![ContentBlock::Text { text: text.into() }],
+                StopReason::EndTurn,
+            )
+        };
+        let model = Scripted {
+            responses: RefCell::new(vec![done("Done."), done("Done, with a title.")]),
+            seen: RefCell::new(vec![]),
+        };
+        let mut founder = Founder(vec!["Add a title too.".into()]);
+        let mut agent = Agent::new(
+            &model,
+            quiet_runtime(dir.path()),
+            AgentConfig::new(10),
+            &mut founder,
+            CancelToken::default(),
+        );
+        let mut state = State::new("write notes", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.report.as_deref(), Some("Done, with a title."));
+        assert_eq!(*model.seen.lock().unwrap(), vec![1, 3]);
+        assert_eq!(state.messages[2], Message::user_text("Add a title too."));
+    }
+
+    /// Stops the run while it writes, as the founder pressing Stop.
+    struct StoppedWhileWriting(CancelToken);
+    impl Model for StoppedWhileWriting {
+        fn name(&self) -> String {
+            "stopped".into()
+        }
+        fn complete(&self, _: &ModelRequest) -> Result<ModelResponse> {
+            unreachable!()
+        }
+        fn stream(
+            &self,
+            _: &ModelRequest,
+            on_text: &mut dyn FnMut(&str),
+            stopped: &dyn Fn() -> bool,
+        ) -> Result<ModelResponse> {
+            on_text("Half an ans");
+            self.0.cancel();
+            assert!(stopped());
+            anyhow::bail!("stopped")
+        }
+    }
+
+    #[test]
+    fn stopped_while_the_model_writes_the_run_stops_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = CancelToken::default();
+        let mut heard = Heard::default();
+        let model = StoppedWhileWriting(cancel.clone());
+        let mut agent = Agent::new(
+            &model,
+            quiet_runtime(dir.path()),
+            AgentConfig::new(10),
+            &mut heard,
+            cancel,
+        );
+        let mut state = State::new("finish", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.status, Status::Stopped);
+        assert_eq!(state.report.as_deref(), Some("Stopped by the user."));
+        assert_eq!(heard.0, ["Half an ans", ""]);
     }
 
     /// Counts keep-warm calls.
