@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Pin, PinOff, Plus, Search } from "lucide-react"
+import { Pin, PinOff, Plus, Search, TriangleAlert } from "lucide-react"
 import { Character } from "@/components/character"
 import { HireAgent } from "@/components/hire-agent"
 import { DEPARTMENTS, type Agent, type Item } from "@/lib/api"
@@ -16,8 +16,8 @@ const DEPARTMENT_NAMES: Record<string, string> = {
 
 /** The agents as conversations: the one with something for the founder
     first, then the latest to have worked. */
-export function AgentList({ realm, agents, items, last, selected, onOpen, onHired }: {
-  realm: string; agents: Agent[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void; onHired: (name: string) => void
+export function AgentList({ realm, agents, broken, items, last, selected, onOpen, onHired }: {
+  realm: string; agents: Agent[]; broken: string[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void; onHired: (name: string) => void
 }) {
   const [q, setQ] = useState("")
   const [hiring, setHiring] = useState(false)
@@ -88,6 +88,13 @@ export function AgentList({ realm, agents, items, last, selected, onOpen, onHire
           </section>
         ))}
         {!groups.length && <p className="px-3 py-4 text-sm text-muted-foreground">{q ? "No agent matches." : "No agent yet."}</p>}
+        {/* A file Airth cannot read (an agent may write them): said, not hidden, so the rest of the team stays. */}
+        {broken.map((b) => (
+          <p key={b} className="mx-1 mt-2 flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" />
+            <span><span className="font-medium">Not shown:</span> {b}. Fix the file in Documents.</span>
+          </p>
+        ))}
       </div>
       <div className="border-t p-2">
         <button onClick={() => setHiring(true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground">

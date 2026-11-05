@@ -127,7 +127,7 @@ impl App {
                 "seconds": seconds.iter().find(|(a, _)| a.as_deref() == Some(name)).map_or(0, |(_, s)| *s),
             }));
         }
-        Ok(json!({"agents": agents}))
+        Ok(json!({"agents": agents, "broken": config.broken}))
     }
 
     /// The business's config as it stands, with what is left to fill.
@@ -147,6 +147,7 @@ impl App {
             "lines": config.lines.iter().map(|(n, d)| json!({"name": n, "fields": fields(d)})).collect::<Vec<_>>(),
             "repos": repos,
             "missing": config.missing,
+            "broken": config.broken,
         }))
     }
 }

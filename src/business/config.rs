@@ -58,6 +58,9 @@ pub struct Config {
     pub agents: Vec<(String, Doc)>,
     /// What is left to fill, as `file: field`.
     pub missing: Vec<String>,
+    /// Agent files set aside, each with why: one wrong file (an agent may
+    /// write them) must not hide the rest of the team.
+    pub broken: Vec<String>,
 }
 
 pub fn load(root: &Path) -> Result<Config> {
@@ -66,23 +69,40 @@ pub fn load(root: &Path) -> Result<Config> {
     let m = &mut c.missing;
     let profile = read(root, "business/profile.md", PROFILE, m, check_profile)?;
     let goal = read(root, "business/goal.md", GOAL, m, check_goal)?;
-    let lines = folder(root, "business/lines", LINE, m, check_line)?;
-    let agents = folder(root, "agents", AGENT, m, check_agent)?;
-    (c.profile, c.goal, c.lines, c.agents) = (profile, goal, lines, agents);
-    for (name, agent) in &c.agents {
+    let lines = folder(root, "business/lines", LINE, m, check_line, None)?;
+    let b = &mut c.broken;
+    let agents = folder(root, "agents", AGENT, m, check_agent, Some(b))?;
+    (c.profile, c.goal, c.lines) = (profile, goal, lines);
+    // A boss set aside is still an agent: only the wrong file is.
+    let mut names: Vec<String> = agents.iter().map(|(n, _)| n.clone()).collect();
+    names.extend(c.broken.iter().filter_map(|b| {
+        b.strip_prefix("agents/")?
+            .split_once(".md:")
+            .map(|(n, _)| n.to_string())
+    }));
+    let named = |n: &str| names.iter().any(|a| a == n);
+    let mut broken = Vec::new();
+    for (name, agent) in agents {
         let file = format!("agents/{name}.md");
-        if let Some(boss) = agent.text("reports_to")
-            && boss != "founder"
-            && !c.agents.iter().any(|(n, _)| *n == boss)
-        {
-            bail!("{file}: reports_to '{boss}' is neither founder nor an agent");
-        }
-        for line in agent.list("lines") {
-            if !c.lines.iter().any(|(n, _)| *n == line) {
-                bail!("{file}: line '{line}' has no file in business/lines/");
-            }
+        let boss = agent.text("reports_to");
+        let line = agent
+            .list("lines")
+            .into_iter()
+            .find(|l| !c.lines.iter().any(|(n, _)| n == l));
+        if let Some(boss) = boss.filter(|b| *b != "founder" && !named(b)) {
+            broken.push(format!(
+                "{file}: reports_to '{boss}' is neither founder nor an agent"
+            ));
+        } else if let Some(line) = line {
+            broken.push(format!(
+                "{file}: line '{line}' has no file in business/lines/"
+            ));
+        } else {
+            c.agents.push((name, agent));
         }
     }
+    c.broken.extend(broken);
+    c.broken.sort();
     Ok(c)
 }
 
@@ -111,13 +131,15 @@ fn read(
     Ok(doc)
 }
 
-/// Every `<name>.md` of the folder `shown`, by name.
+/// Every `<name>.md` of the folder `shown`, by name. With `set_aside`, a
+/// wrong file is listed there, with why, instead of refusing them all.
 fn folder(
     root: &Path,
     shown: &str,
     keys: &[&str],
     missing: &mut Vec<String>,
     check: impl Fn(&Doc) -> Result<Vec<&'static str>>,
+    mut set_aside: Option<&mut Vec<String>>,
 ) -> Result<Vec<(String, Doc)>> {
     let mut out = Vec::new();
     let entries = match std::fs::read_dir(root.join(shown)) {
@@ -134,13 +156,21 @@ fn folder(
             continue;
         };
         let file = format!("{shown}/{name}.md");
-        if !name
+        let doc = if !name
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
         {
-            bail!("{file}: a name is lowercase letters, digits, dashes");
+            Err(anyhow::anyhow!(
+                "{file}: a name is lowercase letters, digits, dashes"
+            ))
+        } else {
+            read(root, &file, keys, missing, &check)
+        };
+        match (doc, set_aside.as_deref_mut()) {
+            (Ok(doc), _) => out.push((name.to_string(), doc)),
+            (Err(e), Some(aside)) => aside.push(format!("{e:#}")),
+            (Err(e), None) => return Err(e),
         }
-        out.push((name.to_string(), read(root, &file, keys, missing, &check)?));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -499,9 +529,50 @@ mod tests {
         for (path, text, why) in cases {
             let root = tempfile::tempdir().unwrap();
             write(root.path(), path, text);
-            let err = format!("{:#}", load(root.path()).unwrap_err());
+            // A wrong agent is set aside; any other wrong file refuses all.
+            let err = match load(root.path()) {
+                Ok(c) if path.starts_with("agents/") => {
+                    assert!(c.agents.is_empty(), "{path}");
+                    c.broken.join("\n")
+                }
+                Ok(_) => panic!("{path}: loaded"),
+                Err(e) => format!("{e:#}"),
+            };
             assert!(err.contains(why), "{path}: {err}");
             assert!(err.contains(path), "{path}: {err}");
         }
+    }
+
+    /// An agent writing a wrong file leaves the rest of the team shown,
+    /// including those who report to the agent set aside.
+    #[test]
+    fn a_wrong_agent_file_is_set_aside_and_the_team_stays() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(
+            r,
+            "agents/chief.md",
+            "---\ntitle: Chief\ndepartment: leadership\n---\n",
+        );
+        write(
+            r,
+            "agents/dev.md",
+            "---\ntitle: Dev\ndepartment: development\n---\n",
+        );
+        write(
+            r,
+            "agents/intern.md",
+            "---\ntitle: Intern\ndepartment: product\nreports_to: dev\n---\n",
+        );
+        let c = load(r).unwrap();
+        let names: Vec<_> = c.agents.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["chief", "intern"]);
+        assert_eq!(c.broken.len(), 1);
+        assert!(c.broken[0].starts_with("agents/dev.md: "), "{:?}", c.broken);
+        assert!(
+            c.broken[0].contains("department 'development'"),
+            "{:?}",
+            c.broken
+        );
     }
 }
