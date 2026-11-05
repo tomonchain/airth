@@ -88,3 +88,15 @@ export function SideSearch({ value, onChange }: { value: string; onChange: (v: s
     </div>
   )
 }
+
+/** A choice of a few, side by side: a period, a unit. */
+export function Seg<T extends string | number>({ label, value, options, onPick }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg border p-0.5">
+      {options.map(([v, l]) => (
+        <button key={String(v)} role="radio" aria-checked={value === v} onClick={() => onPick(v)}
+          className={cn("rounded-md px-2.5 py-1 text-xs transition-colors", value === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+      ))}
+    </div>
+  )
+}

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Figure, Loading, Page, Panel, Section } from "@/components/page"
+import { Figure, Loading, Page, Panel, Section, Seg } from "@/components/page"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -59,17 +59,6 @@ function merge(items: Share[], keyOf: (s: Share) => string): Share[] {
     out.set(k, m)
   }
   return [...out.values()]
-}
-
-function Seg<T extends string | number>({ label, value, options, onPick }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-lg border p-0.5">
-      {options.map(([v, l]) => (
-        <button key={String(v)} role="radio" aria-checked={value === v} onClick={() => onPick(v)}
-          className={cn("rounded-md px-2.5 py-1 text-xs transition-colors", value === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
-      ))}
-    </div>
-  )
 }
 
 /** What running the business costs (the classic Usage page): what its tasks

@@ -1,6 +1,7 @@
+import { useState } from "react"
 import { ExternalLink, Landmark } from "lucide-react"
 import { Character } from "@/components/character"
-import { Empty, Figure, Loading, Page, Panel, Section } from "@/components/page"
+import { Empty, Figure, Loading, Page, Panel, Section, Seg } from "@/components/page"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Business, type Calendar, type Company, type Routine } from "@/lib/api"
 import { usd } from "@/lib/time"
@@ -35,6 +36,8 @@ export function Finance({ realm, business, agents }: { realm: string; business: 
           </Empty>
         )}
       </Section>
+
+      <Spending realm={realm} />
 
       <Section title="What the agents cost" note="This week">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -93,6 +96,81 @@ export function Finance({ realm, business, agents }: { realm: string; business: 
       </Section>
     </Page>
   )
+}
+
+type Spend = { currency: string | null; days: { date: string; agents: number; bank: number | null }[] }
+type Bucket = { label: string; title: string; from: string; agents: number; bank: number | null }
+
+/** What the business spent, day by day or week by week: out of the bank
+    when it is connected (in its currency), and what the agents' model calls
+    cost (in dollars). Two currencies are never added up. */
+function Spending({ realm }: { realm: string }) {
+  const [days, setDays] = useState(30)
+  const [by, setBy] = useState<"day" | "week">("day")
+  const [what, setWhat] = useState<"bank" | "agents">("bank")
+  const { data } = usePoll<Spend>(() => api(`realms/${enc(realm)}/spend?days=${days}`), 300000, [realm, days])
+  const bank = !!data?.currency
+  const shown = bank ? what : "agents"
+  const buckets = data ? group(data.days, by) : []
+  const value = (b: Bucket) => (shown === "bank" ? b.bank ?? 0 : b.agents)
+  const total = buckets.reduce((s, b) => s + value(b), 0)
+  const money = (n: number) => (shown === "bank" ? amount(n, data?.currency ?? "") : usd(n) || "$0")
+  return (
+    <Section title="Spending" note={data ? `${money(total)} in ${days} days · ${money(total / Math.max(buckets.length, 1))} a ${by} on average` : undefined}>
+      <div className="mb-2.5 flex flex-wrap items-center gap-2">
+        {bank && <Seg label="What" value={what} options={[["bank", `Out of the bank (${data!.currency})`], ["agents", "Agents ($)"]]} onPick={setWhat} />}
+        <Seg label="By" value={by} options={[["day", "Daily"], ["week", "Weekly"]]} onPick={setBy} />
+        <Seg label="Period" value={days} options={[[30, "30 days"], [90, "90 days"]]} onPick={setDays} />
+      </div>
+      {!data ? <Loading /> : (
+        <Panel className="px-4 pt-4 pb-2">
+          <Bars buckets={buckets} value={value} money={money} color={shown === "bank" ? "bg-rose-500/80" : "bg-sky-500"} />
+        </Panel>
+      )}
+      {data && !bank && <p className="mt-2 text-xs text-muted-foreground">What the agents cost. Connect the bank read-only to see what goes out of it each day.</p>}
+    </Section>
+  )
+}
+
+/** Days, or Monday-to-Sunday weeks, oldest first. */
+function group(days: Spend["days"], by: "day" | "week"): Bucket[] {
+  const label = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+  if (by === "day") return days.map((d) => ({ label: label(d.date), title: label(d.date), from: d.date, agents: d.agents, bank: d.bank }))
+  const weeks: Bucket[] = []
+  for (const d of days) {
+    const date = new Date(`${d.date}T12:00:00`)
+    const monday = new Date(date)
+    monday.setDate(date.getDate() - ((date.getDay() + 6) % 7))
+    const key = monday.toISOString().slice(0, 10)
+    const last = weeks[weeks.length - 1]
+    if (last?.from === key) {
+      last.agents += d.agents
+      if (d.bank !== null) last.bank = (last.bank ?? 0) + d.bank
+    } else weeks.push({ label: label(key), title: `Week of ${label(key)}`, from: key, agents: d.agents, bank: d.bank })
+  }
+  return weeks
+}
+
+function Bars({ buckets, value, money, color }: { buckets: Bucket[]; value: (b: Bucket) => number; money: (n: number) => string; color: string }) {
+  const max = Math.max(Number.MIN_VALUE, ...buckets.map(value))
+  const every = Math.ceil(buckets.length / 7)
+  // The last one is named too, unless the one before it is too close.
+  const named = (i: number) => i % every === 0 || (i === buckets.length - 1 && i % every >= every / 2)
+  return (
+    <div className="flex h-44 items-end gap-[3px]">
+      {buckets.map((b, i) => (
+        <div key={b.from} className="group flex h-full min-w-0 flex-1 flex-col justify-end" title={`${b.title}\n${money(value(b))}`}>
+          <div className={cn("w-full rounded-t-sm group-hover:opacity-80", color)} style={{ height: `${(100 * value(b)) / max}%`, minHeight: value(b) ? 2 : 0 }} />
+          <div className="mt-1 h-4 text-center text-[10px] whitespace-nowrap text-muted-foreground">{named(i) ? b.label : ""}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** An amount in the bank's currency, as the HQ shows it. */
+function amount(n: number, currency: string) {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(n)
 }
 
 function approvedCost(b: Business | null) {

@@ -13,10 +13,18 @@ impl App {
         _request: &mut Request,
         method: &Method,
         segments: &[&str],
-        _query: &str,
+        query: &str,
     ) -> Result<Option<HttpResponse>> {
         Ok(Some(match (method, segments) {
             (Method::Get, ["realms", r, "team"]) => json_response(200, self.team(&self.realm(r)?)?),
+            (Method::Get, ["realms", r, "spend"]) => {
+                let days = param(query, "days").parse().unwrap_or(30);
+                let realm = self.realm(r)?;
+                json_response(
+                    200,
+                    crate::hub::finance::spend(&self.hub, &realm, days, chrono::Utc::now())?,
+                )
+            }
             // "Keep this look" (decision 65): the founder's gesture.
             (Method::Post, ["realms", r, "agents", name, "look"]) => {
                 let seed = crate::business::keep_look(&self.realm(r)?.root()?, name)?;
