@@ -17,7 +17,7 @@ const STATE: Record<Agent["state"], string> = {
 export function Details({ realm, agent, departments, onSaved, onGone }: { realm: string; agent: Agent; departments: Department[]; onSaved: () => void; onGone: () => void }) {
   const [editing, setEditing] = useState(false)
   return (
-    <aside className="relative w-80 shrink-0 overflow-y-auto border-l px-5 py-6">
+    <aside className="relative w-(--side) shrink-0 overflow-y-auto border-l px-5 py-6">
       <Button variant="outline" size="sm" className="absolute top-4 right-4" onClick={() => setEditing(true)}><Pencil /> Edit</Button>
       <EditAgent key={agent.name} realm={realm} agent={agent} departments={departments} open={editing} onOpenChange={setEditing} onSaved={onSaved} onGone={onGone} />
       <div className="flex flex-col items-center text-center">

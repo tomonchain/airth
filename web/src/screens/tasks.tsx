@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
+import { SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { MicButton } from "@/components/mic"
@@ -56,11 +57,8 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
 
   return (
     <div className="flex min-w-0 flex-1">
-      <aside className="flex w-[340px] shrink-0 flex-col border-r">
-        <div className="px-4 pt-4 pb-2">
-          <h1 className="text-lg font-semibold">Tasks</h1>
-          <p className="text-xs text-muted-foreground">Yours, and those the routines started.</p>
-        </div>
+      <aside className="flex w-(--side) shrink-0 flex-col border-r">
+        <SideHead title="Tasks" />
         <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
         <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
           {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
@@ -286,7 +284,7 @@ function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
           </div>
         </div>
       </div>
-      <aside className="w-72 shrink-0 overflow-y-auto border-l p-4 text-sm">
+      <aside className="w-(--side) shrink-0 overflow-y-auto border-l p-4 text-sm">
         <h3 className="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase">Plan{plan.length > 0 && <span className="font-normal normal-case">{closed}/{plan.length}</span>}</h3>
         {plan.length ? (
           <>

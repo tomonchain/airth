@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { Pin, PinOff, Plus, Search, TriangleAlert } from "lucide-react"
+import { Pin, PinOff, Plus, TriangleAlert } from "lucide-react"
+import { SideHead, SideSearch } from "@/components/page"
 import { Character } from "@/components/character"
 import { HireAgent } from "@/components/hire-agent"
 import { type Agent, type Department, type Item } from "@/lib/api"
@@ -37,13 +38,9 @@ export function AgentList({ realm, agents, departments, broken, items, last, sel
     { label: "No department", list: shown.filter((a) => !pins.includes(a.name) && !keys.includes(a.department ?? "")) },
   ].filter((g) => g.list.length)
   return (
-    <div className="flex w-[280px] shrink-0 flex-col border-r">
-      <div className="p-3">
-        <label className="flex h-9 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
-          <Search className="size-4" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
-        </label>
-      </div>
+    <div className="flex w-(--side) shrink-0 flex-col border-r">
+      <SideHead title="Agents" note={agents.length} />
+      <SideSearch value={q} onChange={setQ} />
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {groups.map((g) => (
           <section key={g.label} className="mb-1">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, Users, Workflow, RotateCw, type LucideIcon } from "lucide-react"
+import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Users, Workflow, RotateCw, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { ConnectDialog, type Method } from "@/components/connect-dialog"
@@ -77,18 +77,19 @@ export function Marketplace({ realm }: { realm: string }) {
   const [q, setQ] = useState("")
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="border-b px-8 pt-7 pb-0">
-        <div className="mx-auto flex max-w-5xl items-end gap-4">
+      {/* The same column as the content below, as on the other pages. */}
+      <header className="border-b pt-9 pb-0">
+        <div className="mx-auto flex max-w-5xl items-end gap-4 px-8">
           <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight"><Store className="size-6 text-muted-foreground" /> Marketplace</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Teams, skills, connectors and agents to add to {realm}.</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>
+            <p className="mt-1.5 text-base text-foreground/80">Teams, skills, connectors and agents to add to <span className="capitalize">{realm}</span>.</p>
           </div>
           <label className="mb-1 flex h-9 w-72 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
             <Search className="size-4" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${tab}`} className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
           </label>
         </div>
-        <nav className="mx-auto mt-5 flex max-w-5xl gap-1">
+        <nav className="mx-auto mt-5 flex max-w-5xl gap-1 px-5">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={cn("relative flex items-center gap-1.5 px-3 pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground", tab === t.id && "text-foreground")}>

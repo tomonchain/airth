@@ -151,6 +151,8 @@
 
 /* Department hues for the characters (decision 65), never a status colour. */
 :root {
+  /* Every side column, left list or right panel: one width. */
+  --side: 300px;
   --dept-leadership: #E07AB8; --dept-leadership-dark: #A34E85;
   --dept-marketing: #F39C4A; --dept-marketing-dark: #C7742B;
   --dept-sales: #3FB8C9; --dept-sales-dark: #2A8593;

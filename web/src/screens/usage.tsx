@@ -90,7 +90,7 @@ export function Usage({ realm }: { realm: string }) {
   const part = (t: Tokens, k: (typeof KINDS)[number]) => (cost ? t.cost[k.key] : k.tokens(t))
 
   return (
-    <Page wide title="Usage" lede={`What running ${one ? realm : "your businesses"} costs: what its tasks and routines exchanged with the model. Estimates from public list prices; input read from the cache costs a tenth of fresh input.`}>
+    <Page wide title="Usage" lede={`What running ${one ? realm.charAt(0).toUpperCase() + realm.slice(1) : "your businesses"} costs: what its tasks and routines exchanged with the model. Estimates from public list prices; input read from the cache costs a tenth of fresh input.`}>
       <div className="-mt-3 flex flex-wrap items-center gap-2">
         {priced && <Seg label="Show" value={show} options={[["cost", "Cost"], ["tokens", "Tokens"]]} onPick={setShow} />}
         <Seg label="Period" value={days} options={[[7, "7 days"], [30, "30 days"], [90, "90 days"]]} onPick={setDays} />

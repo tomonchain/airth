@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare, Search } from "lucide-react"
+import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare } from "lucide-react"
+import { SideHead, SideSearch } from "@/components/page"
 import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -83,17 +84,9 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
 
   return (
     <>
-      <div className="flex w-[340px] shrink-0 flex-col border-r">
-        <div className="flex items-baseline justify-between px-4 pt-4 pb-1">
-          <h1 className="text-base font-semibold">Needs you</h1>
-          <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
-        </div>
-        <div className="px-3 py-2">
-          <label className="flex h-9 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
-            <Search className="size-4" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
-          </label>
-        </div>
+      <div className="flex w-(--side) shrink-0 flex-col border-r">
+        <SideHead title="Needs you" note={items.length} />
+        <SideSearch value={q} onChange={setQ} />
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           <Drafts realm={realm} />
           {SECTIONS.map((s) => {

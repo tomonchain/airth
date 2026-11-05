@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { AppWindow, ChevronRight, Eye, File, FileImage, FilePlus, FileText, Folder, FolderOpen, FolderPlus, Pencil, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
+import { SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { selection } from "@/lib/editor-selection"
 import { Rich } from "@/components/rich"
@@ -227,15 +228,14 @@ export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text
   const root = dirs[""]
   return (
     <div className="flex min-w-0 flex-1">
-      <aside className="flex w-64 shrink-0 flex-col border-r">
-        <div className="flex items-center gap-0.5 px-3 pt-3 pb-2">
-          <h2 className="flex-1 text-sm font-semibold">Documents</h2>
+      <aside className="flex w-(--side) shrink-0 flex-col border-r">
+        <SideHead title="Documents">
           <Button size="icon-sm" variant="ghost" title="Go to a file (⌘P)" aria-label="Go to a file" onClick={() => setQuick(true)}><Search /></Button>
           <Button size="icon-sm" variant="ghost" title="New file" aria-label="New file" onClick={() => setMaking("file")}><FilePlus /></Button>
           <Button size="icon-sm" variant="ghost" title="New folder" aria-label="New folder" onClick={() => setMaking("folder")}><FolderPlus /></Button>
           <Button size="icon-sm" variant="ghost" title="Add files" aria-label="Add files" onClick={() => upload.current?.click()}><Upload /></Button>
           <input ref={upload} type="file" multiple hidden onChange={(e) => { if (e.target.files) add(e.target.files, folder); e.target.value = "" }} />
-        </div>
+        </SideHead>
         {making && <NewName kind={making} where={folder || realm} onDone={make} />}
         <div className="flex-1 overflow-y-auto px-1.5 pb-3 text-[13px]">
           <button onClick={() => openFolder("")} className={cn("flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 font-medium hover:bg-accent/60", !active && folder === "" && "bg-accent")}>

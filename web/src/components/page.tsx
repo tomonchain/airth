@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Search } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -62,4 +63,28 @@ export function Empty({ icon: Icon, title, children }: { icon: React.ComponentTy
 
 export function Loading() {
   return <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
+}
+
+/** The head of a side column: the same title, height and spacing on every
+    page, with a count or buttons on the right. */
+export function SideHead({ title, note, children }: { title: string; note?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex h-12 shrink-0 items-center gap-0.5 pr-2 pl-4">
+      <h1 className="flex-1 truncate text-[15px] font-semibold">{title}</h1>
+      {note !== undefined && <span className="pr-2 text-xs text-muted-foreground tabular-nums">{note}</span>}
+      {children}
+    </div>
+  )
+}
+
+/** A side column's search box, under its head. */
+export function SideSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="px-3 pb-2">
+      <label className="flex h-9 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
+        <Search className="size-4" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Search" className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
+      </label>
+    </div>
+  )
 }

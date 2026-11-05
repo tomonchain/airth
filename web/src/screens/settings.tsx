@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
-import { Loading, Panel } from "@/components/page"
+import { Loading, Panel, SideHead } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -55,14 +55,16 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
   useEffect(() => { if (start) setSection(start.section) }, [start])
   return (
     <>
-      <nav className="w-56 shrink-0 border-r p-3">
-        <h1 className="px-2 pt-1 pb-3 text-base font-semibold">Settings</h1>
+      <nav className="w-(--side) shrink-0 border-r pb-3">
+        <SideHead title="Settings" />
+        <div className="px-3">
         {SECTIONS.map((s) => (
           <button key={s.id} onClick={() => setSection(s.id)}
             className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground", section === s.id && "bg-accent text-foreground")}>
             <s.icon className="size-4" /> {s.label}
           </button>
         ))}
+        </div>
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div key={section} className="mx-auto max-w-2xl px-8 py-8 duration-200 animate-in fade-in slide-in-from-bottom-1">

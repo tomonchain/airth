@@ -17,7 +17,7 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
   return (
     <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none">
       {/* In the Mac app the window's traffic lights sit here. */}
-      <div className={cn("flex w-[404px] shrink-0 items-center", mac ? "pl-[78px]" : "pl-4")}>
+      <div className={cn("flex w-[calc(var(--side)+56px)] shrink-0 items-center", mac ? "pl-[78px]" : "pl-4")}>
         <DropdownMenu>
           {/* In the app, as small as the window's buttons and on their line: their centre is 19 pt from the top, the bar's 24. */}
           <DropdownMenuTrigger render={<button className={cn("flex items-center rounded-lg font-semibold hover:bg-accent", mac ? "relative -top-[5px] h-6 gap-1.5 px-1.5 text-[12.5px]" : "gap-2 px-2 py-1 text-[13.5px]")} />}>
