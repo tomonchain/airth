@@ -17,14 +17,15 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
   return (
     <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none">
       {/* In the Mac app the window's traffic lights sit here. */}
-      <div className={cn("flex w-[404px] shrink-0 items-center", mac ? "pl-20" : "pl-4")}>
+      <div className={cn("flex w-[404px] shrink-0 items-center", mac ? "pl-[78px]" : "pl-4")}>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<button className="flex items-center gap-2 rounded-lg px-2 py-1 text-[13.5px] font-semibold hover:bg-accent" />}>
-            <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
+          {/* In the app, as small as the window's buttons beside it. */}
+          <DropdownMenuTrigger render={<button className={cn("flex items-center rounded-lg font-semibold hover:bg-accent", mac ? "mt-[5px] h-6 gap-1.5 px-1.5 text-[12.5px]" : "gap-2 px-2 py-1 text-[13.5px]")} />}>
+            <span className={cn("rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner", mac ? "size-3.5" : "size-5")} />
             <span className="capitalize">{realm}</span>
             {/* Another business waits for the founder: said here, wherever they are. */}
             {others > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white" title={`${others} waiting in your other businesses`}>{others}</span>}
-            <ChevronsUpDown className="size-3.5 text-muted-foreground" />
+            <ChevronsUpDown className={cn("text-muted-foreground", mac ? "size-3" : "size-3.5")} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
             {/* A label only holds inside a group: without one, opening the menu threw. */}
