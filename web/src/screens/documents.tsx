@@ -46,7 +46,7 @@ const Icon = ({ name, dir, open, className }: { name: string; dir?: boolean; ope
 /** The business's documents (the classic interface's): its folder as a tree,
     files open as tabs, text edited and saved in place (⌘S), Markdown, images
     and PDFs shown, files added by dropping them, ⌘P to go to a file. */
-export function Documents({ realm, onAsk }: { realm: string; onAsk: (text: string) => void }) {
+export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text: string) => void; start?: { path: string; at: number } | null }) {
   const base_ = `realms/${enc(realm)}/files`
   const [dirs, setDirs] = useState<Record<string, Listing>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]))
@@ -66,6 +66,17 @@ export function Documents({ realm, onAsk }: { realm: string; onAsk: (text: strin
     } catch (e) { toast.error((e as Error).message) }
   }, [base_])
   useEffect(() => { setDirs({}); setTabs([]); setActive(null); setFolder(""); setExpanded(new Set([""])); load("") }, [realm, load])
+  // Opened from another page on a file (Company's "Fill in"): that file,
+  // its folder unfolded.
+  useEffect(() => {
+    if (!start) return
+    const dir = parent(start.path)
+    setExpanded((x) => new Set([...x, ...dir.split("/").map((_, i, a) => a.slice(0, i + 1).join("/")), ""]))
+    for (const d of ["", ...dir.split("/").map((_, i, a) => a.slice(0, i + 1).join("/"))]) if (d || !dirs[""]) load(d)
+    open(start.path)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start])
+
   // What the agents write appears without a reload.
   useEffect(() => {
     const t = setInterval(() => { if (document.visibilityState === "visible") for (const p of expanded) load(p) }, 15000)

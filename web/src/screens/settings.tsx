@@ -18,7 +18,7 @@ import { McpServers } from "@/screens/settings-mcp"
 import { Business, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
 
-type Section = "account" | "business" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
+export type Section = "account" | "business" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "business", label: "Business", icon: Building2 },
@@ -49,8 +49,9 @@ type Owner = { name: string; about: string; avatar: string | null; preferences: 
 
 /** Settings: the founder's account and the business's models, connections,
     keys, permissions, repositories and phone. */
-export function Settings({ realm }: { realm: string }) {
-  const [section, setSection] = useState<Section>("account")
+export function Settings({ realm, start }: { realm: string; start?: { section: Section; at: number } | null }) {
+  const [section, setSection] = useState<Section>(start?.section ?? "account")
+  useEffect(() => { if (start) setSection(start.section) }, [start])
   return (
     <>
       <nav className="w-56 shrink-0 border-r p-3">

@@ -8,6 +8,7 @@ import { api, enc, type Agent, type Business, type Item, type Realm, type Task, 
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
+import type { Section as SettingsSection } from "@/screens/settings"
 import { NewBusiness } from "@/components/new-business"
 import { Palette } from "@/components/palette"
 
@@ -38,6 +39,9 @@ export default function App() {
   const [founding, setFounding] = useState(false)
   const [task, setTask] = useState<string | null>(null)
   const [palette, setPalette] = useState(false)
+  // Pages opened on something from another page: a file, a settings section.
+  const [doc, setDoc] = useState<{ path: string; at: number } | null>(null)
+  const [setting, setSetting] = useState<{ section: SettingsSection; at: number } | null>(null)
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
@@ -168,13 +172,14 @@ export default function App() {
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
-          : page === "documents" ? <Documents realm={realm} onAsk={ask} />
+          : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
-          : page === "settings" ? <Settings realm={realm} />
+          : page === "settings" ? <Settings realm={realm} start={setting} />
           : page === "marketplace" ? <Marketplace realm={realm} />
-          : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null} />
+          : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null}
+              onFile={(path) => { setDoc({ path, at: Date.now() }); setPage("documents") }} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
           : (
           <>
           {page === "needs" ? (
