@@ -4,7 +4,7 @@ import { Details } from "@/components/details"
 import { Rail, type Page } from "@/components/rail"
 import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Business, type Item, type Realm } from "@/lib/api"
+import { api, enc, type Agent, type Business, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
@@ -30,7 +30,7 @@ function route(): string | null {
   return m ? decodeURIComponent(m[1]) : null
 }
 
-type Data = { agents: Agent[]; items: Item[]; business: Business | null }
+type Data = { agents: Agent[]; items: Item[]; business: Business | null; tasks: Tasks | null }
 
 export default function App() {
   const [hash, setHash] = useState(route)
@@ -68,12 +68,13 @@ export default function App() {
   const data = usePoll<Data>(
     realm
       ? async () => {
-          const [team, queue, hq] = await Promise.all([
+          const [team, queue, hq, tasks] = await Promise.all([
             api<{ agents: Agent[] }>(`realms/${enc(realm)}/team`),
             api<{ items: Item[] }>(`realms/${enc(realm)}/queue`),
             api<{ businesses: Business[] }>("hq"),
+            api<Tasks>(`realms/${enc(realm)}/tasks`).catch(() => null),
           ])
-          return { agents: team.agents, items: queue.items, business: hq.businesses.find((b) => b.name === realm) ?? null }
+          return { agents: team.agents, items: queue.items, business: hq.businesses.find((b) => b.name === realm) ?? null, tasks }
         }
       : null,
     4000,
@@ -108,16 +109,27 @@ export default function App() {
     })
   }
 
-  // Each agent's latest line, for the list: a pending item first, else its
-  // latest run's sentence.
+  // Each agent's latest line, for the list: whichever is newest of its
+  // routines' last sentence, its conversation's last task, and what it sent
+  // to Needs you.
   const last = useMemo(() => {
     const out: Record<string, Last> = {}
-    for (const x of data.data?.business?.activity ?? []) if (!out[x.agent]) out[x.agent] = { text: x.sentence, at: x.at }
-    for (const it of [...items].sort((a, b) => b.created_at.localeCompare(a.created_at))) {
-      if (!it.agent) continue
-      const l = out[it.agent]
-      if (!l || (l.at ?? "") < it.created_at) out[it.agent] = { text: it.text?.split("\n")[0] ?? it.title, at: it.created_at }
+    const take = (agent: string, text: string, at: string | null | undefined) => {
+      const l = out[agent]
+      if (!l || (l.at ?? "") < (at ?? "")) out[agent] = { text, at: at ?? null }
     }
+    for (const x of data.data?.business?.activity ?? []) take(x.agent, x.sentence, x.at)
+    // The conversation ends with the task started last (its id is its start),
+    // whatever touched the others since.
+    const latest: Record<string, Task> = {}
+    for (const t of Object.values(data.data?.tasks ?? {}).flat()) {
+      if (t.agent && (!latest[t.agent] || latest[t.agent].id < t.id)) latest[t.agent] = t
+    }
+    for (const [agent, t] of Object.entries(latest)) {
+      const line = (t.line || t.order || "").replace(/[*_`#>]/g, "").split("\n").find((x) => x.trim()) ?? ""
+      if (line) take(agent, line.trim(), t.at ?? t.updated_at)
+    }
+    for (const it of items) if (it.agent) take(it.agent, it.text?.split("\n")[0] ?? it.title, it.created_at)
     return out
   }, [data.data, items])
 
