@@ -1,15 +1,15 @@
-import { ChevronsUpDown, PanelRight, Plus, X } from "lucide-react"
+import { ChevronsUpDown, PanelRight, Plus, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { Agent, Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 /** The window's top: the business, the open conversations as tabs, the
     details toggle. In the Mac app it is the title bar. */
-export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, onNew, details, onDetails }: {
+export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, onNew, onNewBusiness, details, onDetails }: {
   realms: Realm[]; realm: string; tabs: string[]; current: string | null; agents: Agent[]
-  onTab: (name: string) => void; onClose: (name: string) => void; onNew: () => void; details: boolean; onDetails: () => void
+  onTab: (name: string) => void; onClose: (name: string) => void; onNew: () => void; onNewBusiness: () => void; details: boolean; onDetails: () => void
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 pr-3">
@@ -21,12 +21,18 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
             <ChevronsUpDown className="size-3.5 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
+            {/* A label only holds inside a group: without one, opening the menu threw. */}
+            <DropdownMenuGroup>
             <DropdownMenuLabel>Businesses</DropdownMenuLabel>
             {realms.filter((r) => !r.archived).map((r) => (
               <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)} className="capitalize">
                 {r.name}
               </DropdownMenuItem>
             ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

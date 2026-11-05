@@ -8,6 +8,7 @@ import { api, enc, type Agent, type Business, type Item, type Realm } from "@/li
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
+import { NewBusiness } from "@/components/new-business"
 
 // The pages opened now and then load when first opened, so the first
 // screen comes up sooner.
@@ -18,6 +19,7 @@ const Marketplace = lazy(() => import("@/screens/marketplace").then((m) => ({ de
 const Routines = lazy(() => import("@/screens/routines").then((m) => ({ default: m.Routines })))
 const Settings = lazy(() => import("@/screens/settings").then((m) => ({ default: m.Settings })))
 const Tasks = lazy(() => import("@/screens/tasks").then((m) => ({ default: m.Tasks })))
+const Welcome = lazy(() => import("@/screens/welcome").then((m) => ({ default: m.Welcome })))
 
 function route(): string | null {
   const m = location.hash.match(/^#\/b\/([^/?&]+)/)
@@ -28,8 +30,10 @@ type Data = { agents: Agent[]; items: Item[]; business: Business | null }
 
 export default function App() {
   const [hash, setHash] = useState(route)
+  const [welcome, setWelcome] = useState(() => location.hash === "#/welcome")
+  const [founding, setFounding] = useState(false)
   useEffect(() => {
-    const on = () => setHash(route())
+    const on = () => { setHash(route()); setWelcome(location.hash === "#/welcome") }
     addEventListener("hashchange", on)
     return () => removeEventListener("hashchange", on)
   }, [])
@@ -94,6 +98,16 @@ export default function App() {
 
   const agent = agents.find((a) => a.name === current) ?? null
 
+  // The first launch, with no business yet, starts with the welcome guide.
+  const none = !!realms.data && !realms.data.some((r) => !r.archived)
+  if (welcome || none) {
+    return (
+      <Suspense fallback={null}>
+        <Welcome realms={realms.data ?? []} onDone={(r) => { realms.refresh(); location.hash = r ? `#/b/${encodeURIComponent(r)}` : "" }} />
+      </Suspense>
+    )
+  }
+
   if (!realm) {
     return <div className="grid h-svh place-items-center text-sm text-muted-foreground">{realms.error ? `Airth is not answering: ${realms.error}` : "Loading…"}</div>
   }
@@ -102,8 +116,9 @@ export default function App() {
     <div className="flex h-svh flex-col overflow-hidden bg-background">
       <TopBar
         realms={realms.data ?? []} realm={realm} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-        onTab={open} onClose={close} onNew={() => setPage("agents")} details={details} onDetails={() => setDetails(!details)}
+        onTab={open} onClose={close} onNew={() => setPage("agents")} onNewBusiness={() => setFounding(true)} details={details} onDetails={() => setDetails(!details)}
       />
+      <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
         <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
         <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">

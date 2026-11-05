@@ -444,7 +444,7 @@ function TaskForm({ realm, d, start, onClose, onSaved }: { realm: string; d: Tas
           <div className="space-y-1.5">
             <Label>Agent</Label>
             <Select value={f.bot} onValueChange={(v) => setF({ ...f, bot: String(v ?? NOBODY) })}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue>{(v: string) => (v === NOBODY ? "The general assistant" : v)}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectItem value={NOBODY}>The general assistant</SelectItem>
                 {d.agents.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}

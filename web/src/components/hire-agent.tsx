@@ -10,11 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { api, DEPARTMENTS, enc, type Agent } from "@/lib/api"
 
-type Template = { name: string; title: string; department: string; desc: string; job: string }
+export type Template = { name: string; title: string; department: string; desc: string; job: string }
 
 /** Jobs to start from, by business function (the classic interface's). The
     founder edits them before hiring. */
-const TEMPLATES: Template[] = [
+export const TEMPLATES: Template[] = [
   { name: "writer", title: "Writer", department: "marketing", desc: "Articles, posts and threads in the business's voice.", job:
 `Write the business's articles and posts, in its voice (see the profile).
 
@@ -66,7 +66,7 @@ In your report: the leads, why each one, and the drafts.` },
 const OWN: Template = { name: "", title: "", department: "", desc: "Write its job from scratch.", job: "" }
 
 // What a template's agent looks like before it exists.
-const face = (t: Template): Agent => ({ name: t.name || "new", title: t.title || "New agent", department: t.department || null, state: "asleep" } as Agent)
+export const face = (t: Template): Agent => ({ name: t.name || "new", title: t.title || "New agent", department: t.department || null, state: "asleep" } as Agent)
 
 /** Hire an agent (decision 36): start from a job, change it, and it joins
     the team as a file in agents/. It works once a routine or a task names it. */
