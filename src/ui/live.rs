@@ -10,6 +10,26 @@ pub(super) struct Live {
     pub(super) cancel: CancelToken,
     pub(super) version: AtomicU64,
     pub(super) watch: Watch,
+    pub(super) draft: Draft,
+}
+
+/// What the model is writing in the run, while it writes it: gone once its
+/// answer is in the snapshot.
+#[derive(Default)]
+pub(super) struct Draft {
+    pub(super) text: Mutex<String>,
+    /// Counts each change, for a page waiting for the next one.
+    pub(super) seq: AtomicU64,
+}
+
+impl Draft {
+    fn set(&self, text: &str) {
+        let mut t = self.text.lock().unwrap();
+        if *t != text {
+            text.clone_into(&mut t);
+            self.seq.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 }
 
 /// Longer than this between two looks at a run, and the founder has left
@@ -72,12 +92,17 @@ pub(super) fn key(realm: &str, id: &str) -> String {
     format!("{realm}/{id}")
 }
 
-pub(super) struct UiObserver(Arc<Live>);
+pub(super) struct UiObserver(pub(super) Arc<Live>);
 
 impl Observer for UiObserver {
     fn changed(&mut self, state: &State) {
         *self.0.snapshot.lock().unwrap() = state.clone();
         self.0.bump();
+        self.0.draft.set("");
+    }
+
+    fn writing(&mut self, text: &str) {
+        self.0.draft.set(text);
     }
 }
 
@@ -206,6 +231,7 @@ impl Runner {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch: Watch::for_job(&job),
+            draft: Draft::default(),
         });
         self.registry
             .lock()
@@ -331,6 +357,7 @@ mod tests {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch,
+            draft: Draft::default(),
         })
     }
 

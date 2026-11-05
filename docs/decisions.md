@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 78. A model's answer is streamed to the chat as it is written
+
+**Accepted.** The founder, 5 November 2026: "go à fond" on a smoother chat with the agents. An answer showed only once the model had written all of it (10 to 60 s), then was typed out by an animation; the page looked for changes every 1.5 s.
+
+- `Model::stream` asks the provider for server-sent events and hands the answer's text so far to a callback; the answer is then put back together exactly as the whole one would have come, and journaled, priced and checked as before. Anthropic and the OpenAI-compatible providers stream; any other model answers at once (the trait's default). A request that fails on the way, or an answer that breaks off, is sent again whole, as before; the callback hears it start again from nothing.
+- The agent loop streams every working call and passes the text to its observer (`Observer::writing`). A run driven by the app keeps it in memory beside its snapshot, and drops it once the answer is in the run's state. Nothing is written to disk.
+- `GET realms/{r}/runs/{id}/live?version=&draft=` waits (up to 8 s, under the gap after which the founder counts as gone, decision 56) until the run's state or the words being written change, and says which. The page asks again at once, so the founder reads the answer as it is written and sees each step as it happens. A run driven by another process is still looked at every 1.5 s.
+
+*Why:* waiting a minute in front of "Thinking" was the main reason the chat felt slow; the providers stream natively, and `reqwest`'s blocking response reads as a stream, so no new crate is needed.
+
+*Cost:* one thread per open chat waiting on its run (the server already gives each request its own); a page polls nothing while it waits. The model call path gained a second way to read an answer, tested against recorded event streams for both families of providers.
+
 ## 77. A repository is picked from the ones the business's GitHub token reaches
 
 **Accepted.** The founder, 5 November 2026: "meilleure expérience si on sélectionne le repo plutôt que l'URL".

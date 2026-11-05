@@ -111,6 +111,8 @@ pub trait Observer: Send {
     fn response(&mut self, _iteration: u32, _response: &ModelResponse) {}
     fn tool_started(&mut self, _name: &str, _input: &Value) {}
     fn tool_finished(&mut self, _event: &Event) {}
+    /// The model's answer so far, as it writes it (empty: starting again).
+    fn writing(&mut self, _text: &str) {}
     /// The state changed and was saved.
     fn changed(&mut self, _state: &State) {}
 }
@@ -334,7 +336,11 @@ impl<'a> Agent<'a> {
                 ..ModelRequest::new(SYSTEM_PROMPT, &messages, &tools)
             };
             let sent_at = std::time::Instant::now();
-            let response = match self.model.complete(&request) {
+            let observer = &mut *self.observer;
+            let response = match self
+                .model
+                .stream(&request, &mut |text| observer.writing(text))
+            {
                 Ok(r) => r,
                 Err(e) => {
                     state.status = Status::Failed;
@@ -747,6 +753,59 @@ mod tests {
         assert_eq!(*model.seen.lock().unwrap(), vec![1, 3, 5]);
         assert_eq!(state.events.len(), 2);
         assert_eq!(state.events[1].result, "hi");
+    }
+
+    /// Writes its answer in two pieces.
+    struct Streaming;
+    impl Model for Streaming {
+        fn name(&self) -> String {
+            "streaming".into()
+        }
+        fn complete(&self, _: &ModelRequest) -> Result<ModelResponse> {
+            unreachable!("a run streams its model's answers")
+        }
+        fn stream(&self, _: &ModelRequest, on_text: &mut dyn FnMut(&str)) -> Result<ModelResponse> {
+            on_text("Do");
+            on_text("Done.");
+            Ok(resp(
+                vec![ContentBlock::Text {
+                    text: "Done.".into(),
+                }],
+                StopReason::EndTurn,
+            ))
+        }
+    }
+
+    /// What the run's observer hears.
+    #[derive(Default)]
+    struct Heard(Vec<String>);
+    impl Observer for Heard {
+        fn writing(&mut self, text: &str) {
+            self.0.push(text.into());
+        }
+    }
+
+    #[test]
+    fn the_observer_hears_the_answer_as_it_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Runtime::new(
+            default_tools(),
+            PermissionGate::new(Policy::default(), Box::new(Approve)),
+            Workspace::new(dir.path()).unwrap(),
+            CancelToken::default(),
+        );
+        let mut heard = Heard::default();
+        let mut agent = Agent::new(
+            &Streaming,
+            runtime,
+            AgentConfig::new(10),
+            &mut heard,
+            CancelToken::default(),
+        );
+        let mut state = State::new("finish", None);
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.report.as_deref(), Some("Done."));
+        assert_eq!(heard.0, ["Do", "Done."]);
     }
 
     /// Counts keep-warm calls.

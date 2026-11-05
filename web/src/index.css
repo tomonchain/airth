@@ -188,6 +188,12 @@
   animation: caret-blink 1s step-end infinite;
 }
 .stream-caret.is-streaming { animation: none; }
+/* Words the model is writing now: the caret at the end of its last line. */
+.writing > :last-child::after, .writing > :last-child > li:last-child::after {
+  content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px;
+  border-radius: 1px; background: var(--foreground); vertical-align: text-bottom;
+}
+.writing > ul:last-child::after, .writing > ol:last-child::after { content: none; }
 .fade-up { animation: fade-up 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   .stream-caret, .fade-up { animation: none; }

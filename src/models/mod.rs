@@ -27,6 +27,74 @@ pub(crate) fn backoff(attempt: u32) -> Duration {
     Duration::from_secs(2u64.pow(attempt))
 }
 
+/// Sends a streamed request and returns what `read` makes of its events,
+/// sent again as a whole request is when it fails on the way or the answer
+/// breaks off; `on_text` hears the new attempt start from nothing.
+pub(crate) fn stream(
+    provider: &str,
+    request: impl Fn() -> reqwest::blocking::RequestBuilder,
+    on_text: &mut dyn FnMut(&str),
+    read: impl Fn(&mut dyn std::io::BufRead, &mut dyn FnMut(&str)) -> anyhow::Result<Value>,
+) -> anyhow::Result<Value> {
+    use anyhow::Context;
+    let mut attempt = 0;
+    loop {
+        let result = request().send();
+        let retryable = match &result {
+            Ok(resp) => {
+                let s = resp.status().as_u16();
+                s == 408 || s == 409 || s == 429 || s >= 500
+            }
+            Err(e) => worth_retrying(e),
+        };
+        if retryable && attempt < MAX_RETRIES {
+            attempt += 1;
+            std::thread::sleep(backoff(attempt));
+            continue;
+        }
+        let resp = result.with_context(|| format!("request to {provider} failed"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().unwrap_or_default();
+            anyhow::bail!("{provider} API error {status}: {text}");
+        }
+        match read(&mut std::io::BufReader::new(resp), on_text) {
+            Ok(answer) => return Ok(answer),
+            Err(_) if attempt < MAX_RETRIES => {
+                on_text("");
+                attempt += 1;
+                std::thread::sleep(backoff(attempt));
+            }
+            Err(e) => return Err(e).context("reading the model's answer failed"),
+        }
+    }
+}
+
+/// Tries of a streamed request after the first, as the providers' own.
+const MAX_RETRIES: u32 = 3;
+
+/// Hands each server-sent event's data to `on` until it says the answer is
+/// whole; false when the stream ended first.
+pub(crate) fn events(
+    r: &mut dyn std::io::BufRead,
+    mut on: impl FnMut(&str) -> anyhow::Result<bool>,
+) -> anyhow::Result<bool> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if r.read_line(&mut line)? == 0 {
+            return Ok(false);
+        }
+        // Event names, ids and keep-alive comments carry nothing needed:
+        // every event's data says its own type.
+        if let Some(data) = line.trim_end().strip_prefix("data:")
+            && on(data.trim_start())?
+        {
+            return Ok(true);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -139,6 +207,18 @@ pub struct ModelResponse {
 pub trait Model: Send + Sync {
     fn name(&self) -> String;
     fn complete(&self, request: &ModelRequest) -> Result<ModelResponse>;
+
+    /// Like `complete`, telling `on_text` the answer's text so far as it is
+    /// written, so the founder reads it as it comes. Started again from
+    /// nothing when the request is sent again. A provider that cannot stream
+    /// answers all at once.
+    fn stream(
+        &self,
+        request: &ModelRequest,
+        _on_text: &mut dyn FnMut(&str),
+    ) -> Result<ModelResponse> {
+        self.complete(request)
+    }
 
     /// Keep the provider's prompt cache of `request` (a request already sent)
     /// alive without generating anything, so the next request after a long

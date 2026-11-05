@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// How long a page waits for a run to change before it asks again: under
+/// the gap after which the founder counts as gone, as a closed page keeps
+/// looking until its last wait ends.
+const NEXT_CHANGE_WAIT: Duration = Duration::from_secs(8);
+
 impl App {
     /// The chats and objectives routes; None when the request is not one of them.
     pub(super) fn runs_routes(
@@ -33,6 +38,9 @@ impl App {
             }
             (Method::Get, ["realms", r, "runs", id]) => {
                 json_response(200, self.run(&self.realm(r)?, id, query)?)
+            }
+            (Method::Get, ["realms", r, "runs", id, "live"]) => {
+                json_response(200, self.next_change(&self.realm(r)?, id, query))
             }
             (Method::Patch, ["realms", r, "runs", id]) => {
                 let body = read_json(request)?;
@@ -198,6 +206,36 @@ impl App {
             })
             .collect();
         Ok(json!(runs))
+    }
+
+    /// Waits for a run driven here to change from what the page has: its
+    /// state (`version`) or the words the model is writing (`draft`). The
+    /// page asks again at once, so the founder reads the answer as it comes.
+    pub(super) fn next_change(&self, realm: &Realm, id: &str, query: &str) -> Value {
+        let number = |name: &str| {
+            query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+                .and_then(|v| v.parse::<u64>().ok())
+        };
+        let Some(live) = self.live(realm.name(), id) else {
+            return json!({"here": false});
+        };
+        let started = std::time::Instant::now();
+        loop {
+            // Waiting counts as looking: the founder is on the run's page.
+            live.watch.seen();
+            let version = live.version.load(Ordering::SeqCst);
+            let seq = live.draft.seq.load(Ordering::SeqCst);
+            if number("version") != Some(version)
+                || number("draft") != Some(seq)
+                || started.elapsed() >= NEXT_CHANGE_WAIT
+            {
+                let draft = live.draft.text.lock().unwrap().clone();
+                return json!({"here": true, "version": version, "draft_seq": seq, "draft": draft});
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
     }
 
     fn run(&self, realm: &Realm, id: &str, query: &str) -> Result<Value> {

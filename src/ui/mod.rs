@@ -388,6 +388,7 @@ mod tests {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch: Watch::default(),
+            draft: Draft::default(),
         });
         app.registry.lock().unwrap().insert(key("r", "run1"), live);
         app.answer("r", "run1", &json!({"approval_id": 1, "approve": true}))
@@ -399,6 +400,60 @@ mod tests {
         assert_eq!(entries[0].activity, time::ANSWER);
         assert_eq!(entries[0].seconds, 5);
         assert_eq!(entries[0].note, "write_file in run run1");
+    }
+
+    /// The page waiting on a run hears the model's words as it writes them,
+    /// and its answer once it is in the run; it waits only while nothing
+    /// changed, and is told when the run is not driven here.
+    #[test]
+    fn a_page_hears_the_words_as_the_model_writes_them() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        assert_eq!(app.next_change(&realm, "run1", "")["here"], false);
+        let live = Arc::new(Live {
+            snapshot: Mutex::new(State::new("x", None)),
+            pending: Mutex::new(None),
+            cancel: CancelToken::default(),
+            version: AtomicU64::new(1),
+            watch: Watch::default(),
+            draft: Draft::default(),
+        });
+        app.registry
+            .lock()
+            .unwrap()
+            .insert(key("r", "run1"), live.clone());
+        let mut observer = UiObserver(live.clone());
+        observer.writing("Hel");
+        observer.writing("Hello.");
+        let now = app.next_change(&realm, "run1", "version=1&draft=1");
+        assert_eq!(now["draft"], "Hello.");
+        assert_eq!(now["draft_seq"], 2);
+        // Nothing new: it waits, and hears the next words at once.
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            observer.writing("Hello. Done");
+            observer
+        });
+        let started = std::time::Instant::now();
+        let next = app.next_change(&realm, "run1", "version=1&draft=2");
+        assert_eq!(next["draft"], "Hello. Done");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        // The answer is in the run: the words being written are gone.
+        writer.join().unwrap().changed(&State::new("x", None));
+        let done = app.next_change(&realm, "run1", "version=1&draft=3");
+        assert_eq!(
+            (done["version"].as_u64(), done["draft"].as_str()),
+            (Some(2), Some(""))
+        );
     }
 
     #[test]
@@ -567,6 +622,7 @@ mod tests {
                 cancel: CancelToken::default(),
                 version: AtomicU64::new(1),
                 watch: Watch::default(),
+                draft: Draft::default(),
             })
         };
         app.registry

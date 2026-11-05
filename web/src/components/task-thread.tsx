@@ -19,6 +19,7 @@ type Block =
 type Message = { role: "user" | "assistant"; content: Block[] }
 export type RunView = {
   live: boolean
+  elsewhere?: boolean
   version: number
   unchanged?: boolean
   state: { id: string; objective: string; status: "running" | "completed" | "stopped" | "failed"; report: string | null; resume: string | null; messages: Message[]; updated_at: string; change?: Change | null }
@@ -35,31 +36,50 @@ export function startOf(id: string) {
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] ?? ""}Z` : ""
 }
 
-/** A run's view, looked at every second and a half while it is live: that
-    is also what keeps it watched, so its questions come here (decision 75). */
+/** A run's view. While it is driven here, the page waits on the server for
+    its next change, and hears the model's words as it writes them; that
+    waiting also keeps it watched, so its questions come here (decision 75).
+    A run driven elsewhere is looked at every second and a half. */
 export function useRun(realm: string, id: string, active: boolean) {
   const [view, setView] = useState<RunView | null>(null)
+  const [draft, setDraft] = useState("")
   const version = useRef(0)
   const [tick, setTick] = useState(0)
   useEffect(() => {
-    let live = true
+    let on = true
     let timer: ReturnType<typeof setTimeout>
+    let seq = -1
+    const base = `realms/${enc(realm)}/runs/${enc(id)}`
     const load = async () => {
       // A hidden tab asks nothing; it looks again once shown.
       if (document.visibilityState !== "visible") { timer = setTimeout(load, 1500); return }
       try {
-        const v = await api<RunView>(`realms/${enc(realm)}/runs/${enc(id)}?since=${version.current}`)
-        if (!live) return
-        if (!v.unchanged) { version.current = v.version; setView(v) }
-        timer = setTimeout(load, v.live || active ? 1500 : 20000)
+        const v = await api<RunView>(`${base}?since=${version.current}`)
+        if (!on) return
+        if (!v.unchanged) { version.current = v.version; setView(v); setDraft("") }
+        if (v.live && !v.elsewhere) follow()
+        else timer = setTimeout(load, v.live || active ? 1500 : 20000)
       } catch {
-        if (live) timer = setTimeout(load, 5000)
+        if (on) timer = setTimeout(load, 5000)
+      }
+    }
+    const follow = async () => {
+      if (document.visibilityState !== "visible") { timer = setTimeout(load, 1500); return }
+      try {
+        const n = await api<{ here: boolean; version: number; draft_seq: number; draft: string }>(`${base}/live?version=${version.current}&draft=${seq}`)
+        if (!on) return
+        if (!n.here || n.version !== version.current) { load(); return }
+        seq = n.draft_seq
+        setDraft(n.draft)
+        follow()
+      } catch {
+        if (on) timer = setTimeout(load, 1500)
       }
     }
     load()
-    return () => { live = false; clearTimeout(timer) }
+    return () => { on = false; clearTimeout(timer) }
   }, [realm, id, active, tick])
-  return { view, refresh: () => { version.current = 0; setTick((t) => t + 1) } }
+  return { view, draft, refresh: () => { version.current = 0; setTick((t) => t + 1) } }
 }
 
 // When the agent began working on what it is doing now: kept per task, so
@@ -183,7 +203,11 @@ function Bubble({ side, children, last, agent, time }: { side: "left" | "right";
 export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onChange }: {
   realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echo?: string; onEcho?: () => void; onChange: () => void
 }) {
-  const { view, refresh } = useRun(realm, id, fresh || !!echo)
+  const { view, draft, refresh } = useRun(realm, id, fresh || !!echo)
+  // Words the founder already read as they were written are not written
+  // out again once they are in the run.
+  const read = useRef("")
+  if (draft) read.current = draft
   const [busy, setBusy] = useState(false)
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
@@ -254,7 +278,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
             <Bubble side="left" agent={agent} last={last}>
               {p.kind === "steps" ? <Steps steps={p.steps} live={live} /> : (
                 <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
-                  <AgentText text={p.text} stream={isNew} />
+                  <AgentText text={p.text} stream={isNew && !read.current.includes(p.text)} />
                 </div>
               )}
             </Bubble>
@@ -275,7 +299,19 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
           </div>
         </Bubble>
       )}
-      {live && !view.pending && working && (
+      {live && !view.pending && draft && (
+        <Bubble side="left" agent={{ ...agent, state: "working" }} last>
+          <div className="writing max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
+            {/* A list item or a line just begun shows once it has words. */}
+            <Rich text={draft.replace(/\n\s*(?:[-*•]|\d+[.)])?\s*$/, "").trimEnd()} />
+          </div>
+          <div className="mt-1 flex items-center gap-2 pl-1">
+            {working && <Elapsed from={working} />}
+            <button onClick={stop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
+          </div>
+        </Bubble>
+      )}
+      {live && !view.pending && !draft && working && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
           <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 fade-up">
             <Typing />
