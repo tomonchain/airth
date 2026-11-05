@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Item } from "@/lib/api"
+import { api, enc, type Agent, type Item, type Tasks as TasksData } from "@/lib/api"
 import { ago, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -35,12 +35,14 @@ const ORDER = ["Waiting for you", "Running", "To review", "Done"]
 /** Every task of the business (the classic interface's Tasks): yours and
     those its routines started. Ask the team for something; follow, rename,
     archive or delete a task; read its plan and details. */
-export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill }: {
+export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks }: {
   realm: string; agents: Agent[]; items: Item[]; open: string | null; onOpen: (id: string | null) => void; onAgent: (name: string) => void
+  tasks: TasksData | null; onTasks: () => void
   prefill?: { text: string; at: number } | null
 }) {
   const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 5000, [realm])
-  const tasks = usePoll<{ waiting: { id: string; agent: string }[]; running: { id: string; agent: string }[]; review: { id: string; agent: string }[]; done: { id: string; agent: string }[] }>(() => api(`realms/${enc(realm)}/tasks`), 8000, [realm])
+  // The app's list, refreshed every few seconds: not asked again here.
+  const tasks = { data: shared, refresh: onTasks }
   const [archived, setArchived] = useState(false)
   const agentOf = useMemo(() => {
     const m = new Map<string, string>()
@@ -123,7 +125,8 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
   const [repo, setRepo] = useState("")
   const [busy, setBusy] = useState(false)
   const detail = usePoll<{ repos: { name: string; main: boolean }[] }>(() => api(`realms/${enc(realm)}`), 600000, [realm])
-  const models = usePoll<{ providers: { id: string; name: string; configured: boolean; models: string[] }[] }>(() => api(`realms/${enc(realm)}/models`), 600000, [realm])
+  // The model list (slow: the providers are asked) only when Airth itself works.
+  const models = usePoll<{ providers: { id: string; name: string; configured: boolean; models: string[] }[] }>(who === NOBODY ? () => api(`realms/${enc(realm)}/models`) : null, 600000, [realm, who === NOBODY])
   const repos = detail.data?.repos ?? []
 
   async function send() {

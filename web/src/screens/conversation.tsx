@@ -30,10 +30,11 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 /** One agent's work as a conversation: its runs, what it sent up, the
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
-export function Conversation({ realm, agent, onDone }: { realm: string; agent: Agent; onDone: () => void }) {
+export function Conversation({ realm, agent, tasks: list, onDone }: { realm: string; agent: Agent; tasks: Tasks | null; onDone: () => void }) {
   const { prefs } = usePrefs()
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
-  const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/tasks`), 8000, [realm])
+  // The app's list, refreshed every few seconds: not asked again here.
+  const tasks = { data: list, refresh: onDone }
   // Tasks started here and not yet listed by the server.
   const [started, setStarted] = useState<string[]>([])
   useEffect(() => setStarted([]), [agent.name])

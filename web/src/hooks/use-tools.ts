@@ -7,13 +7,15 @@ import { api, enc } from "@/lib/api"
     other two. */
 export type Tools = { integrations: string[]; servers: { name: string; description: string }[]; skills: string[] }
 
-export function useTools(realm: string) {
-  return usePoll<Tools>(async () => {
+/** Loaded only while `on` (the dialog open): three requests for a list the
+    founder sees now and then. */
+export function useTools(realm: string, on = true) {
+  return usePoll<Tools>(on ? async () => {
     const [detail, mcp, catalog] = await Promise.all([
       api<{ integrations: { name: string }[] }>(`realms/${enc(realm)}`),
       api<{ name: string; description: string }[]>(`realms/${enc(realm)}/mcp`),
       api<{ installed: string[] }>(`realms/${enc(realm)}/catalog`),
     ])
     return { integrations: detail.integrations.map((i) => i.name), servers: mcp.map((m) => ({ name: m.name, description: m.description })), skills: catalog.installed }
-  }, 600000, [realm])
+  } : null, 600000, [realm, on])
 }

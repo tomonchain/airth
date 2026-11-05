@@ -9,6 +9,7 @@ import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
 import type { Section as SettingsSection } from "@/screens/settings"
+import { PageBoundary } from "@/components/error-boundary"
 import { NewBusiness } from "@/components/new-business"
 import { Palette } from "@/components/palette"
 
@@ -31,7 +32,7 @@ function route(): string | null {
   return m ? decodeURIComponent(m[1]) : null
 }
 
-type Data = { agents: Agent[]; items: Item[]; business: Business | null; tasks: Tasks | null }
+type Data = { agents: Agent[]; items: Item[]; tasks: Tasks | null }
 
 export default function App() {
   const [hash, setHash] = useState(route)
@@ -72,18 +73,21 @@ export default function App() {
   const data = usePoll<Data>(
     realm
       ? async () => {
-          const [team, queue, hq, tasks] = await Promise.all([
+          const [team, queue, tasks] = await Promise.all([
             api<{ agents: Agent[] }>(`realms/${enc(realm)}/team`),
             api<{ items: Item[] }>(`realms/${enc(realm)}/queue`),
-            api<{ businesses: Business[] }>("hq"),
             api<Tasks>(`realms/${enc(realm)}/tasks`).catch(() => null),
           ])
-          return { agents: team.agents, items: queue.items, business: hq.businesses.find((b) => b.name === realm) ?? null, tasks }
+          return { agents: team.agents, items: queue.items, tasks }
         }
       : null,
     4000,
     [realm],
   )
+  // The business's summary (Home, the last lines) is computed over every
+  // business: asked less often than what the agents are doing.
+  const hq = usePoll<{ businesses: Business[] }>(realm ? () => api("hq") : null, 15000, [realm])
+  const business = hq.data?.businesses.find((b) => b.name === realm) ?? null
 
   const [page, setPage] = useState<Page>("home")
   const [current, setCurrent] = useState<string | null>(null)
@@ -122,7 +126,7 @@ export default function App() {
       const l = out[agent]
       if (!l || (l.at ?? "") < (at ?? "")) out[agent] = { text, at: at ?? null }
     }
-    for (const x of data.data?.business?.activity ?? []) take(x.agent, x.sentence, x.at)
+    for (const x of business?.activity ?? []) take(x.agent, x.sentence, x.at)
     // The conversation ends with the task started last (its id is its start),
     // whatever touched the others since.
     const latest: Record<string, Task> = {}
@@ -135,7 +139,7 @@ export default function App() {
     }
     for (const it of items) if (it.agent) take(it.agent, it.text?.split("\n")[0] ?? it.title, it.created_at)
     return out
-  }, [data.data, items])
+  }, [data.data, business, items])
 
   const agent = agents.find((a) => a.name === current) ?? null
 
@@ -165,20 +169,21 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
         <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">
+          <PageBoundary page={page}>
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
-            <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
+            <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={business}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
-          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
-          : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
+          : page === "finance" ? <Finance realm={realm} business={business} agents={agents} />
           : page === "settings" ? <Settings realm={realm} start={setting} />
           : page === "marketplace" ? <Marketplace realm={realm} />
-          : page === "company" ? <Company realm={realm} description={data.data?.business?.description ?? null}
+          : page === "company" ? <Company realm={realm} description={business?.description ?? null}
               onFile={(path) => { setDoc({ path, at: Date.now() }); setPage("documents") }} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
           : (
           <>
@@ -189,7 +194,7 @@ export default function App() {
           <AgentList realm={realm} agents={agents} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
           {agent ? (
             <>
-              <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />
+              <Conversation key={agent.name} realm={realm} agent={agent} tasks={data.data?.tasks ?? null} onDone={data.refresh} />
               {details && <Details realm={realm} agent={agent} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
             </>
           ) : (
@@ -200,6 +205,7 @@ export default function App() {
           </>
           )}
           </Suspense>
+          </PageBoundary>
         </main>
       </div>
     </div>

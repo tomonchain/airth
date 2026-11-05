@@ -22,7 +22,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
   const [job, setJob] = useState(agent.body || agent.job || "")
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const tools = useTools(realm)
+  const tools = useTools(realm, open)
   const [integrations, setIntegrations] = useState<string[]>(agent.integrations ?? [])
   const [skills, setSkills] = useState<string[]>(agent.skills ?? [])
   useEffect(() => {
