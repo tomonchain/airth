@@ -467,7 +467,7 @@ impl Hub {
             realm: Some(realm.name().to_string()),
             realm_description: realm.config.description.clone(),
             owner,
-            business: crate::business::briefing(&realm.root()?)?,
+            business: crate::business::briefing(&realm.root()?, &realm.config.departments)?,
             memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
             isolated: state.change.is_some(),
             pull_requests: state.change.is_some()

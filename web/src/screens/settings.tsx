@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Bot, Brain, Building2, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
+import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Loading, Panel } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -15,13 +15,14 @@ import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { McpServers } from "@/screens/settings-mcp"
-import { Business, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
+import { Business, Departments, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
 
-export type Section = "account" | "business" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
+export type Section = "account" | "business" | "departments" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "business", label: "Business", icon: Building2 },
+  { id: "departments", label: "Departments", icon: Network },
   { id: "models", label: "Models", icon: Cpu },
   { id: "keys", label: "Keys", icon: KeyRound },
   { id: "connections", label: "Connections", icon: Plug },
@@ -67,6 +68,7 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
         <div key={section} className="mx-auto max-w-2xl px-8 py-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
           {section === "account" ? <Account />
             : section === "business" ? <Business realm={realm} onChanged={() => {}} />
+            : section === "departments" ? <Departments realm={realm} />
             : section === "memory" ? <Memory realm={realm} />
             : section === "models" ? <Models realm={realm} onKeys={() => setSection("keys")} />
             : section === "keys" ? <Keys realm={realm} />

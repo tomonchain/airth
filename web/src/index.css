@@ -155,9 +155,11 @@
   --dept-marketing: #F39C4A; --dept-marketing-dark: #C7742B;
   --dept-sales: #3FB8C9; --dept-sales-dark: #2A8593;
   --dept-support: #4C8DFF; --dept-support-dark: #2F63C4;
-  --dept-product: #8B6CF6; --dept-product-dark: #6547C9;
+  --dept-tech: #8B6CF6; --dept-tech-dark: #6547C9;
   --dept-operations: #8A94A6; --dept-operations-dark: #5E6778;
   --dept-finance: #6C9BD2; --dept-finance-dark: #4A729F;
+  --dept-legal: #C9A43F; --dept-legal-dark: #957828;
+  --dept-data: #4FB286; --dept-data-dark: #36825F;
   --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
 }
 

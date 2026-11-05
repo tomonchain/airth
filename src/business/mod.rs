@@ -262,7 +262,7 @@ pub fn set_job(root: &Path, name: &str, text: &str) -> Result<()> {
 /// Whether `value` may be the agent field `key`: a title, a department, or
 /// a list of integrations or skills; one line. Checked before anything is
 /// written.
-pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
+pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
     let value = value.trim();
     match key {
         "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
@@ -274,7 +274,9 @@ pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;
             }
         }
-        "department" => config::department(value)?,
+        "department" => {
+            config::department(value, own)?;
+        }
         _ => anyhow::bail!("{key} cannot be set here"),
     }
     if value.contains(['\n', '\r']) {
@@ -285,10 +287,20 @@ pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
 
 /// Set one field of the agent `name`'s front matter (its title, its
 /// department, or what its tasks may use), keeping the others and its job.
-pub fn set_agent_field(root: &Path, name: &str, key: &str, value: &str) -> Result<()> {
+pub fn set_agent_field(
+    root: &Path,
+    name: &str,
+    key: &str,
+    value: &str,
+    own: &[String],
+) -> Result<()> {
     crate::realm::validate_name(name).context("invalid agent name")?;
-    check_agent_field(key, value)?;
-    let value = value.trim();
+    check_agent_field(key, value, own)?;
+    // A department is written as its key.
+    let department = (key == "department")
+        .then(|| config::department(value, own))
+        .transpose()?;
+    let value = department.as_deref().unwrap_or(value.trim());
     let path = root.join(AGENTS).join(format!("{name}.md"));
     let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
     let (front, body) = split(&text);
@@ -373,7 +385,7 @@ fn capped(text: &str, file: &str) -> String {
 
 /// What a run of the realm is told about its business, or None when the
 /// realm runs none (no profile, no strategy and no archive).
-pub fn briefing(root: &Path) -> Result<Option<String>> {
+pub fn briefing(root: &Path, departments: &[String]) -> Result<Option<String>> {
     let dir = dir(root);
     let profile = read_optional(&dir, PROFILE)?;
     let strategy = Some(strategy(root)?).filter(|s| !s.is_empty());
@@ -399,6 +411,14 @@ pub fn briefing(root: &Path) -> Result<Option<String>> {
     }
     out.push_str(&format!(
         "The {DIR}/ folder is the owner's: you can read it, not change it."
+    ));
+    // An agent hiring another names its department: the list, so it need
+    // not guess (decision 79).
+    let mut keys: Vec<&str> = config::DEPARTMENTS.iter().map(|(k, _)| *k).collect();
+    keys.extend(departments.iter().map(String::as_str));
+    out.push_str(&format!(
+        "\nAn agent file ({AGENTS}/<name>.md) names its department, one of: {}. Only the owner adds others, in Settings.",
+        keys.join(", ")
     ));
     Ok(Some(out))
 }
@@ -431,10 +451,14 @@ mod tests {
     #[test]
     fn a_realm_without_a_business_has_no_briefing() {
         let root = tempfile::tempdir().unwrap();
-        assert_eq!(briefing(root.path()).unwrap(), None);
+        assert_eq!(briefing(root.path(), &[]).unwrap(), None);
         std::fs::create_dir_all(dir(root.path())).unwrap();
         std::fs::write(dir(root.path()).join(PROFILE), "  \n").unwrap();
-        assert_eq!(briefing(root.path()).unwrap(), None, "an empty profile");
+        assert_eq!(
+            briefing(root.path(), &[]).unwrap(),
+            None,
+            "an empty profile"
+        );
     }
 
     #[test]
@@ -445,7 +469,7 @@ mod tests {
         std::fs::write(business.join(PROFILE), "Hedgen: on-chain research on X.\n").unwrap();
         std::fs::write(business.join("archive/2025/a.md"), "post").unwrap();
         std::fs::write(business.join("archive/b.md"), "post").unwrap();
-        let b = briefing(root.path()).unwrap().unwrap();
+        let b = briefing(root.path(), &[]).unwrap().unwrap();
         assert!(b.starts_with("Hedgen: on-chain research on X."), "{b}");
         assert!(b.contains("business/archive/: 2 files"), "{b}");
         assert!(b.contains("not change it"), "{b}");
@@ -455,7 +479,7 @@ mod tests {
             "---\ngoal: TODO\n---\nGrow the newsletter first.",
         )
         .unwrap();
-        let b = briefing(root.path()).unwrap().unwrap();
+        let b = briefing(root.path(), &[]).unwrap().unwrap();
         assert!(
             b.contains("The owner's strategy, which all work for the business follows:\nGrow the newsletter first."),
             "{b}"
@@ -469,7 +493,7 @@ mod tests {
         set_strategy(root.path(), "  Four articles a month.\n\n").unwrap();
         assert_eq!(strategy(root.path()).unwrap(), "Four articles a month.");
         assert!(
-            briefing(root.path())
+            briefing(root.path(), &[])
                 .unwrap()
                 .unwrap()
                 .contains("Four articles a month.")
@@ -512,10 +536,10 @@ mod tests {
     #[test]
     fn the_owner_writes_the_profile() {
         let root = tempfile::tempdir().unwrap();
-        assert_eq!(briefing(root.path()).unwrap(), None);
+        assert_eq!(briefing(root.path(), &[]).unwrap(), None);
         set_profile(root.path(), " A finance research media on X. ").unwrap();
         assert!(
-            briefing(root.path())
+            briefing(root.path(), &[])
                 .unwrap()
                 .unwrap()
                 .starts_with("A finance research media on X.")
@@ -529,7 +553,7 @@ mod tests {
         // Written before decision 43: moved to goal.md when first read.
         std::fs::write(dir(root.path()).join("strategy.md"), "Sell more.").unwrap();
         assert!(
-            briefing(root.path())
+            briefing(root.path(), &[])
                 .unwrap()
                 .unwrap()
                 .contains("Sell more.")
@@ -590,34 +614,37 @@ mod tests {
         assert!(set_job(root.path(), "writer", "  ").is_err());
         assert!(set_job(root.path(), "../x", "job").is_err());
         // Its title and department change one line each; the rest stays.
-        set_agent_field(root.path(), "writer", "title", "Blog writer").unwrap();
-        set_agent_field(root.path(), "writer", "department", "product").unwrap();
+        set_agent_field(root.path(), "writer", "title", "Blog writer", &[]).unwrap();
+        // A department in other words is written as its key (decision 79).
+        set_agent_field(root.path(), "writer", "department", "Development", &[]).unwrap();
         assert_eq!(
             std::fs::read_to_string(agents.join("writer.md")).unwrap(),
-            "---\ntitle: Blog writer\ndepartment: product\n---\nWrite two articles a week.\n"
+            "---\ntitle: Blog writer\ndepartment: tech\n---\nWrite two articles a week.\n"
         );
-        set_agent_field(root.path(), "analyst", "title", "Analyst").unwrap();
+        set_agent_field(root.path(), "analyst", "title", "Analyst", &[]).unwrap();
         assert!(
             std::fs::read_to_string(agents.join("analyst.md"))
                 .unwrap()
                 .starts_with("---\ntitle: Analyst\n---\n")
         );
         // A department beyond the seven is added by naming it (decision 79).
-        set_agent_field(root.path(), "writer", "department", "legal").unwrap();
-        assert!(set_agent_field(root.path(), "writer", "department", " ").is_err());
-        assert!(set_agent_field(root.path(), "writer", "title", " ").is_err());
-        assert!(set_agent_field(root.path(), "writer", "title", "a\nb").is_err());
-        assert!(set_agent_field(root.path(), "writer", "look", "00000000").is_err());
-        assert!(set_agent_field(root.path(), "nobody", "title", "X").is_err());
+        assert!(set_agent_field(root.path(), "writer", "department", "astrology", &[]).is_err());
+        let own = ["astrology".to_string()];
+        set_agent_field(root.path(), "writer", "department", "Astrology", &own).unwrap();
+        assert!(set_agent_field(root.path(), "writer", "department", " ", &own).is_err());
+        assert!(set_agent_field(root.path(), "writer", "title", " ", &[]).is_err());
+        assert!(set_agent_field(root.path(), "writer", "title", "a\nb", &[]).is_err());
+        assert!(set_agent_field(root.path(), "writer", "look", "00000000", &[]).is_err());
+        assert!(set_agent_field(root.path(), "nobody", "title", "X", &[]).is_err());
         // What its tasks may use: names, checked one by one.
-        set_agent_field(root.path(), "writer", "skills", "vercel, pdf").unwrap();
-        set_agent_field(root.path(), "writer", "integrations", "typefully").unwrap();
+        set_agent_field(root.path(), "writer", "skills", "vercel, pdf", &[]).unwrap();
+        set_agent_field(root.path(), "writer", "integrations", "typefully", &[]).unwrap();
         let scope = scope(root.path(), "writer").unwrap();
         assert_eq!(scope.skills, ["vercel", "pdf"]);
         assert_eq!(scope.integrations, ["typefully"]);
-        set_agent_field(root.path(), "writer", "skills", "").unwrap();
+        set_agent_field(root.path(), "writer", "skills", "", &[]).unwrap();
         assert!(scope_of(root.path(), "writer").skills.is_empty());
-        assert!(set_agent_field(root.path(), "writer", "skills", "../x").is_err());
+        assert!(set_agent_field(root.path(), "writer", "skills", "../x", &[]).is_err());
         remove_job(root.path(), "analyst").unwrap();
         assert!(remove_job(root.path(), "analyst").is_err());
         assert_eq!(bots(root.path()).unwrap().len(), 1);
@@ -665,7 +692,7 @@ mod tests {
         std::fs::create_dir_all(dir(root.path())).unwrap();
         let long = "é".repeat(MAX_PROFILE_CHARS + 10);
         std::fs::write(dir(root.path()).join(PROFILE), &long).unwrap();
-        let b = briefing(root.path()).unwrap().unwrap();
+        let b = briefing(root.path(), &[]).unwrap().unwrap();
         assert!(b.contains("[cut here: read business/profile.md for the rest]"));
         assert_eq!(b.chars().filter(|c| *c == 'é').count(), MAX_PROFILE_CHARS);
     }

@@ -151,16 +151,18 @@ export type Company = {
   missing: string[]
 }
 
-export const DEPARTMENTS = ["leadership", "marketing", "sales", "support", "product", "operations", "finance"] as const
+/** A department of the business: the nine, then the founder's own
+    (decision 79), in the order the server gives them. */
+export type Department = { key: string; name: string; own: boolean }
 
-// The glossary's departments, as the founder reads them; any other is the
-// business's own, named as written (decision 79).
-const DEPARTMENT_NAMES: Record<string, string> = {
-  leadership: "Leadership", marketing: "Marketing", sales: "Sales", support: "Support",
-  product: "Product & tech", operations: "Operations", finance: "Finance & admin",
+// The nine's names, as the server gives them, for pages that show one
+// department without the list; a founder's own reads as its key.
+const NINE: Record<string, string> = {
+  leadership: "Leadership", marketing: "Marketing", sales: "Sales", support: "Support", tech: "Product & tech",
+  operations: "Operations", finance: "Finance & admin", legal: "Legal & compliance", data: "Data & research",
 }
-export const departmentKey = (d: string | null | undefined) => (d ?? "").trim().toLowerCase()
 export function departmentName(d: string | null | undefined) {
-  const key = departmentKey(d)
-  return DEPARTMENT_NAMES[key] ?? (key ? d!.trim().charAt(0).toUpperCase() + d!.trim().slice(1) : "No department")
+  if (!d) return "No department"
+  const spaced = d.replace(/-/g, " ")
+  return NINE[d] ?? spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, raw } from "@/lib/api"
+import { api, enc, raw, type Department } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -16,7 +16,7 @@ import { Remove } from "@/screens/settings-keys"
 type Repo = { name: string; path: string; url: string | null; github: string | null; branch: string | null; main: boolean; delivery: string; checks: string[] }
 type Detail = {
   name: string; description: string; root: string; own_root: boolean; image: string | null; default: boolean; archived: boolean; share_owner_profile: boolean
-  policy: Record<string, string>; repos: Repo[]; github_token: boolean
+  policy: Record<string, string>; repos: Repo[]; github_token: boolean; departments: Department[]
   memory: { id: string; text: string; source: string; created_at: string }[]
 }
 
@@ -128,6 +128,40 @@ export function Business({ realm, onChanged }: { realm: string; onChanged: () =>
                 : <Remove label={realm} onRemove={() => change({ archived: true }, "Archived.")} />}
             </Row>
           </Panel>
+        </>
+      )}
+    </>
+  )
+}
+
+/** The business's departments: the nine every business has, and the ones
+    the founder adds (decision 79). Only here: an agent cannot add one. */
+export function Departments({ realm }: { realm: string }) {
+  const { data: d, refresh } = useDetail(realm)
+  const [name, setName] = useState("")
+  const own = (d?.departments ?? []).filter((x) => x.own).map((x) => x.key)
+  const save = async (list: string[], done: string) => { if (await patch(realm, { departments: list }, done)) { setName(""); refresh() } }
+  return (
+    <>
+      <Head title="Departments">How the team is grouped. Agents choose among these; only you add one.</Head>
+      {!d ? <Loading /> : (
+        <>
+          <Panel className="divide-y">
+            {d.departments.map((x) => (
+              <div key={x.key} className="flex items-center gap-3 px-4 py-2.5">
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: x.own ? "var(--dept-none)" : `var(--dept-${x.key})` }} />
+                <span className="flex-1 text-sm">{x.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">{x.key}</span>
+                {x.own ? <Remove label={x.name} onRemove={() => save(own.filter((k) => k !== x.key), `${x.name} removed.`)} />
+                  : <span className="text-xs whitespace-nowrap text-muted-foreground">Built in</span>}
+              </div>
+            ))}
+          </Panel>
+          <div className="mt-2.5 flex gap-2">
+            <Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && name.trim() && save([...own, name.trim()], "Department added.")} placeholder="A new department, like Events" />
+            <Button variant="outline" disabled={!name.trim()} onClick={() => save([...own, name.trim()], "Department added.")}><Plus /> Add</Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">A department with agents in it cannot be removed: move them first.</p>
         </>
       )}
     </>

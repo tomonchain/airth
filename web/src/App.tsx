@@ -4,7 +4,7 @@ import { Details } from "@/components/details"
 import { Rail, type Page } from "@/components/rail"
 import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Business, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
+import { api, enc, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
@@ -43,7 +43,7 @@ function opened(): { page: Page; agent: string | null } {
   return { page, agent: page === "agents" && m?.[2] ? decodeURIComponent(m[2]) : null }
 }
 
-type Data = { agents: Agent[]; broken: string[]; items: Item[]; tasks: Tasks | null }
+type Data = { agents: Agent[]; departments: Department[]; broken: string[]; items: Item[]; tasks: Tasks | null }
 
 export default function App() {
   const [hash, setHash] = useState(route)
@@ -93,11 +93,11 @@ export default function App() {
     realm
       ? async () => {
           const [team, queue, tasks] = await Promise.all([
-            api<{ agents: Agent[]; broken?: string[]; error?: string }>(`realms/${enc(realm)}/team`),
+            api<{ agents: Agent[]; departments?: Department[]; broken?: string[]; error?: string }>(`realms/${enc(realm)}/team`),
             api<{ items: Item[] }>(`realms/${enc(realm)}/queue`),
             api<Tasks>(`realms/${enc(realm)}/tasks`).catch(() => null),
           ])
-          return { agents: team.agents, broken: team.error ? [team.error] : team.broken ?? [], items: queue.items, tasks }
+          return { agents: team.agents, departments: team.departments ?? [], broken: team.error ? [team.error] : team.broken ?? [], items: queue.items, tasks }
         }
       : null,
     4000,
@@ -223,11 +223,11 @@ export default function App() {
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} />
           ) : (
           <>
-          <AgentList realm={realm} agents={agents} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
+          <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
           {agent ? (
             <>
               <Conversation key={agent.name} realm={realm} agent={agent} tasks={data.data?.tasks ?? null} onDone={data.refresh} />
-              {details && <Details realm={realm} agent={agent} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
+              {details && <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
             </>
           ) : (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>

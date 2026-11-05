@@ -5,7 +5,7 @@ import { Character } from "@/components/character"
 import { EditAgent } from "@/components/edit-agent"
 import { Button } from "@/components/ui/button"
 import { LOGOS } from "@/lib/logos"
-import { api, departmentName, enc, type Agent } from "@/lib/api"
+import { api, departmentName, enc, type Agent, type Department } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -14,12 +14,12 @@ const STATE: Record<Agent["state"], string> = {
 }
 
 /** The agent's card: who it is, what it costs, its routines. */
-export function Details({ realm, agent, onSaved, onGone }: { realm: string; agent: Agent; onSaved: () => void; onGone: () => void }) {
+export function Details({ realm, agent, departments, onSaved, onGone }: { realm: string; agent: Agent; departments: Department[]; onSaved: () => void; onGone: () => void }) {
   const [editing, setEditing] = useState(false)
   return (
     <aside className="relative w-80 shrink-0 overflow-y-auto border-l px-5 py-6">
       <Button variant="outline" size="sm" className="absolute top-4 right-4" onClick={() => setEditing(true)}><Pencil /> Edit</Button>
-      <EditAgent key={agent.name} realm={realm} agent={agent} open={editing} onOpenChange={setEditing} onSaved={onSaved} onGone={onGone} />
+      <EditAgent key={agent.name} realm={realm} agent={agent} departments={departments} open={editing} onOpenChange={setEditing} onSaved={onSaved} onGone={onGone} />
       <div className="flex flex-col items-center text-center">
         <Character agent={agent} size={84} />
         <h2 className="mt-4 text-lg font-semibold">{agent.title}</h2>

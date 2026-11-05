@@ -338,7 +338,8 @@ impl App {
             }
             (Method::Put, ["realms", r, "agents", name]) => {
                 let body = read_json(request)?;
-                let root = self.realm(r)?.root()?;
+                let realm = self.realm(r)?;
+                let (root, own) = (realm.root()?, realm.config.departments.clone());
                 // The job always; its title and department when sent, all
                 // checked before any is written.
                 let job = body["job"].as_str().unwrap_or_default();
@@ -358,13 +359,13 @@ impl App {
                 const FIELDS: [&str; 4] = ["title", "department", "integrations", "skills"];
                 for key in FIELDS {
                     if let Some(value) = field(key) {
-                        crate::business::check_agent_field(key, &value)?;
+                        crate::business::check_agent_field(key, &value, &own)?;
                     }
                 }
                 crate::business::set_job(&root, name, job)?;
                 for key in FIELDS {
                     if let Some(value) = field(key) {
-                        crate::business::set_agent_field(&root, name, key, &value)?;
+                        crate::business::set_agent_field(&root, name, key, &value, &own)?;
                     }
                 }
                 ok()
@@ -964,6 +965,7 @@ impl App {
             "github_token": realm.secret(crate::github::TOKEN).is_some(),
             "policy": c.policy,
             "checks": c.checks,
+            "departments": super::company::departments(realm),
             "share_owner_profile": c.share_owner_profile,
             "archived": c.archived,
             "default": self.hub.home().default_realm().as_deref() == Some(realm.name()),
@@ -1013,8 +1015,9 @@ impl App {
         Ok(realm)
     }
 
-    fn update_realm(&self, name: &str, body: &Value) -> Result<Realm> {
+    pub(super) fn update_realm(&self, name: &str, body: &Value) -> Result<Realm> {
         let mut realm = self.realm(name)?;
+        let root = realm.root().ok();
         let c = &mut realm.config;
         if let Some(d) = body["description"].as_str() {
             c.description = d.trim().to_string();
@@ -1035,6 +1038,30 @@ impl App {
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
+        }
+        // The founder's own departments (decision 79): one in use by an
+        // agent stays, so no agent is set aside by it.
+        if let Some(list) = body["departments"].as_array() {
+            let mut own = Vec::new();
+            for d in list.iter().filter_map(Value::as_str) {
+                let d = crate::business::config::new_department(d)?;
+                if !own.contains(&d) {
+                    own.push(d);
+                }
+            }
+            if let Some(root) = &root
+                && let Ok(config) = crate::business::config::load(root, &c.departments)
+            {
+                for (name, doc) in &config.agents {
+                    if let Some(d) = doc.text("department")
+                        && c.departments.contains(&d)
+                        && !own.contains(&d)
+                    {
+                        bail!("{name} is in {d}: move it to another department first");
+                    }
+                }
+            }
+            c.departments = own;
         }
         if let Some(share) = body["share_owner_profile"].as_bool() {
             c.share_owner_profile = share;

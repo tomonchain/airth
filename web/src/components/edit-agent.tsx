@@ -8,14 +8,14 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useTools } from "@/hooks/use-tools"
-import { api, enc, type Agent } from "@/lib/api"
+import { api, enc, type Agent, type Department } from "@/lib/api"
 import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
 
 /** Edit an agent: its title, its department and its job, written in its
     file in the business folder. Only the founder does; runs cannot. */
-export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }: {
-  realm: string; agent: Agent; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void; onGone: () => void
+export function EditAgent({ realm, agent, departments, open, onOpenChange, onSaved, onGone }: {
+  realm: string; agent: Agent; departments: Department[]; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void; onGone: () => void
 }) {
   const [title, setTitle] = useState(agent.title)
   const [department, setDepartment] = useState(agent.department ?? "")
@@ -38,7 +38,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
   async function save() {
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department: department.trim(), job, integrations, skills }, "PUT")
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department, job, integrations, skills }, "PUT")
       toast.success(`${title} is saved.`)
       onSaved()
       onOpenChange(false)
@@ -86,7 +86,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="agent-department">Department</Label>
-              <DepartmentField id="agent-department" value={department} onChange={setDepartment} />
+              <DepartmentField id="agent-department" value={department} departments={departments} onChange={setDepartment} />
             </div>
           </div>
           <div className="space-y-2">
@@ -115,7 +115,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
             </span>
           ) : <Button variant="ghost" className="mr-auto text-muted-foreground hover:text-red-500" onClick={() => setLeaving(true)}>Let go</Button>}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy || !changed || !title.trim() || !job.trim() || !department.trim()} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
+          <Button disabled={busy || !changed || !title.trim() || !job.trim() || !department} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

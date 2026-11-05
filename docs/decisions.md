@@ -2,18 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 79. A business adds its own departments by naming them
+## 79. Nine departments, the founder adds others in Settings
 
-**Accepted.** The founder, 5 November 2026, after the Chief of Staff hired a Developer in a department called `development`: "if I ask an agent to create an agent in a department that is not in the list, it should add it, not warn me". The seven departments of `CLAUDE.md` were the only ones an agent file could name; any other refused the file.
+**Accepted.** The founder, 5 November 2026. The Chief of Staff hired a Developer in a department it called `development`; the seven departments of `CLAUDE.md` were the only ones allowed, and "Product & tech" was written `product`, which it could not guess. The founder wants a list that stays generic and is right, agents choosing within it, and the founder alone adding to it.
 
-- An agent's `department` is any short name (one line, at most 40 characters). The seven stay the defaults: offered first in the hire and edit forms, shown first and in their order in the agent list, with their names and colours.
-- Any other department is the business's own: the agent list shows it after the seven, under the name as written, and its agents get a colour computed from the name. The forms offer the business's departments next to the seven; typing a new name adds it.
-- There is no list of departments to keep: a department exists while an agent is in it.
-- Teams shipped in the Marketplace keep to the seven.
+- Nine departments every business has, in this order: `leadership` (Leadership), `marketing` (Marketing), `sales` (Sales), `support` (Support), `tech` (Product & tech), `operations` (Operations), `finance` (Finance & admin), `legal` (Legal & compliance, new: deadlines, contracts, terms) and `data` (Data & research, new: watch, market analysis, statistics). Left out: people (the staff are agents), design (Marketing or Product & tech), purchasing (Operations).
+- Other words for them are read as them: `development`, `engineering`, `product` → `tech`; `research`, `analytics` → `data`; `customer service` → `support`; and a few more (`config.rs`). A file keeps what it says; the app reads the department, and a department set from the app is written as its key.
+- The founder adds a department in Settings → Departments: a new name, not one of the nine nor another word for one. They are kept in the realm's settings (`realm.json`, in Airth's home), out of the business folder, so an agent cannot add one. One with agents in it cannot be removed.
+- Any other department is refused, naming the list and saying that the founder adds departments: an agent file with one is set aside and said under the agent list (#169). Every task of a business is told the list, so an agent hiring another need not guess.
+- Marketplace teams use the nine, by key.
 
-*Why:* departments are how the founder organises the team, and the right ones depend on the business (a developer team for Hedgen's site, legal for Numirama). Refusing a name the founder or an agent chose only hid the agent.
+*Why:* the founder organises the team; a closed list that misses what a business needs hides agents, and a list anyone can extend fills with near-duplicates. Nine cover an online company; the rest is the founder's choice.
 
-*Cost:* a typo makes a department of its own (`markting`), seen at once in the agent list and fixed by editing the agent. Nothing groups departments across businesses.
+*Cost:* the web interface keeps the nine's names for pages that show one department without the list. A department written in words that are neither the nine, their other words nor the founder's is still refused after the fact; checking an agent's change before review is the next step.
 
 ## 78. A model's answer is streamed to the chat as it is written
 

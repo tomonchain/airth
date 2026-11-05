@@ -589,6 +589,52 @@ mod tests {
         );
     }
 
+    /// Decision 79: the founder adds departments in Settings; one an agent
+    /// is in cannot be removed, and the team lists the nine then the own.
+    #[test]
+    fn the_founder_adds_departments_and_keeps_those_in_use() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        assert!(
+            app.update_realm("r", &json!({"departments": ["Development"]}))
+                .is_err()
+        );
+        app.update_realm("r", &json!({"departments": ["Events", "events"]}))
+            .unwrap();
+        crate::business::set_job(&realm.root().unwrap(), "host", "Run the events.").unwrap();
+        crate::business::set_agent_field(
+            &realm.root().unwrap(),
+            "host",
+            "department",
+            "events",
+            &["events".into()],
+        )
+        .unwrap();
+        let err = app
+            .update_realm("r", &json!({"departments": []}))
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("host is in events"), "{err:#}");
+        let team = app.team(&app.realm("r").unwrap()).unwrap();
+        let keys: Vec<&str> = team["departments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(keys.len(), 10);
+        assert_eq!((keys[0], keys[9]), ("leadership", "events"));
+        assert_eq!(team["agents"][0]["department"], "events");
+    }
+
     /// Steering shows what waits for the owner in this business only.
     #[test]
     fn steering_lists_this_realms_approvals_and_strategy() {

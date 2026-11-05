@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { api, enc, type Agent } from "@/lib/api"
+import { api, enc, type Agent, type Department } from "@/lib/api"
 
 export type Template = { name: string; title: string; department: string; desc: string; job: string }
 
@@ -71,7 +71,7 @@ export const face = (t: Template): Agent => ({ name: t.name || "new", title: t.t
 /** Hire an agent (decision 36): start from a job, change it, and it joins
     the team as a file in agents/. It works once a routine or a task names it. */
 export function HireAgent({ realm, taken, departments, open, onOpenChange, onHired }: {
-  realm: string; taken: string[]; departments: string[]; open: boolean; onOpenChange: (open: boolean) => void; onHired: (name: string) => void
+  realm: string; taken: string[]; departments: Department[]; open: boolean; onOpenChange: (open: boolean) => void; onHired: (name: string) => void
 }) {
   const [t, setT] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
@@ -85,13 +85,13 @@ export function HireAgent({ realm, taken, departments, open, onOpenChange, onHir
     setT({ ...x, name })
   }
   const clash = !!t && taken.includes(t.name)
-  const valid = !!t && /^[a-z0-9][a-z0-9_-]*$/.test(t.name) && !clash && !!t.title.trim() && !!t.department.trim() && !!t.job.trim()
+  const valid = !!t && /^[a-z0-9][a-z0-9_-]*$/.test(t.name) && !clash && !!t.title.trim() && !!t.department && !!t.job.trim()
 
   async function hire() {
     if (!t || !valid) return
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(t.name)}`, { job: t.job, title: t.title.trim(), department: t.department.trim() }, "PUT")
+      await api(`realms/${enc(realm)}/agents/${enc(t.name)}`, { job: t.job, title: t.title.trim(), department: t.department }, "PUT")
       toast.success(`${t.title} joined the team. Give it a routine, or a task, for it to work.`)
       onOpenChange(false)
       onHired(t.name)

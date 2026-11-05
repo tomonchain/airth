@@ -31,8 +31,9 @@ impl App {
 
     /// The agents, each with its routines, their last run, what waits for
     /// the founder, and the last 30 days' model cost and founder time.
-    fn team(&self, realm: &Realm) -> Result<Value> {
-        let config = match crate::business::config::load(&realm.root()?) {
+    pub(super) fn team(&self, realm: &Realm) -> Result<Value> {
+        let config = match crate::business::config::load(&realm.root()?, &realm.config.departments)
+        {
             Ok(c) => c,
             Err(e) => return Ok(json!({"error": format!("{e:#}"), "agents": []})),
         };
@@ -127,7 +128,7 @@ impl App {
                 "seconds": seconds.iter().find(|(a, _)| a.as_deref() == Some(name)).map_or(0, |(_, s)| *s),
             }));
         }
-        Ok(json!({"agents": agents, "broken": config.broken}))
+        Ok(json!({"agents": agents, "broken": config.broken, "departments": departments(realm)}))
     }
 
     /// The business's config as it stands, with what is left to fill.
@@ -137,7 +138,8 @@ impl App {
             .iter()
             .map(|r| json!({"name": r.name, "url": r.url}))
             .collect();
-        let config = match crate::business::config::load(&realm.root()?) {
+        let config = match crate::business::config::load(&realm.root()?, &realm.config.departments)
+        {
             Ok(c) => c,
             Err(e) => return Ok(json!({"error": format!("{e:#}"), "repos": repos})),
         };
@@ -150,6 +152,22 @@ impl App {
             "broken": config.broken,
         }))
     }
+}
+
+/// The business's departments, in the order shown: the nine, then the ones
+/// the founder added (decision 79).
+pub(super) fn departments(realm: &Realm) -> Value {
+    let nine = crate::business::config::DEPARTMENTS
+        .iter()
+        .map(|(key, name)| json!({"key": key, "name": name, "own": false}));
+    let own = realm.config.departments.iter().map(|key| {
+        let mut name = key.replace('-', " ");
+        if let Some(first) = name.get(0..1) {
+            name = first.to_uppercase() + &name[1..];
+        }
+        json!({"key": key, "name": name, "own": true})
+    });
+    Value::Array(nine.chain(own).collect())
 }
 
 /// A config file's front matter as JSON: text, a list, or null when not

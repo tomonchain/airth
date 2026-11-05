@@ -1,17 +1,19 @@
-import { Input } from "@/components/ui/input"
-import { DEPARTMENTS, departmentName } from "@/lib/api"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { departmentName, type Department } from "@/lib/api"
 
-/** An agent's department: one of the seven, one the business already has,
-    or a new one, written in (decision 79). */
-export function DepartmentField({ id, value, onChange, departments = [] }: {
-  id: string; value: string; onChange: (v: string) => void; departments?: string[]
+/** An agent's department: one of the nine or one the founder added in
+    Settings (decision 79). One read in other words shows as itself. */
+export function DepartmentField({ id, value, onChange, departments }: {
+  id: string; value: string; onChange: (v: string) => void; departments: Department[]
 }) {
-  const known = [...new Set([...DEPARTMENTS, ...departments])]
+  const known = departments.some((d) => d.key === value)
   return (
-    <>
-      <Input id={id} list={`${id}-list`} value={value} maxLength={40} autoComplete="off" placeholder="product, or a new one"
-        onChange={(e) => onChange(e.target.value)} />
-      <datalist id={`${id}-list`}>{known.map((d) => <option key={d} value={d}>{departmentName(d)}</option>)}</datalist>
-    </>
+    <Select value={value} onValueChange={(v) => onChange(String(v ?? ""))}>
+      <SelectTrigger id={id} className="w-full"><SelectValue placeholder="Choose">{(v: string) => (v ? departmentName(v) : "Choose")}</SelectValue></SelectTrigger>
+      <SelectContent>
+        {!known && value && <SelectItem value={value}>{departmentName(value)}</SelectItem>}
+        {departments.map((d) => <SelectItem key={d.key} value={d.key}>{d.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
   )
 }

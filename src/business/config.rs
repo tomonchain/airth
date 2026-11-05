@@ -3,7 +3,7 @@
 //! in `missing`; a wrong one (unknown key, bad date, no such department or
 //! line) refuses the config, naming the file. What agents may do is not here.
 
-use crate::frontmatter::{Doc, parse};
+use crate::frontmatter::{Doc, Value, parse};
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use std::path::Path;
@@ -57,7 +57,7 @@ pub struct Config {
     pub broken: Vec<String>,
 }
 
-pub fn load(root: &Path) -> Result<Config> {
+pub fn load(root: &Path, own: &[String]) -> Result<Config> {
     super::migrate(root)?;
     let mut c = Config::default();
     let m = &mut c.missing;
@@ -65,7 +65,19 @@ pub fn load(root: &Path) -> Result<Config> {
     let goal = read(root, "business/goal.md", GOAL, m, check_goal)?;
     let lines = folder(root, "business/lines", LINE, m, check_line, None)?;
     let b = &mut c.broken;
-    let agents = folder(root, "agents", AGENT, m, check_agent, Some(b))?;
+    let check_agent = |d: &Doc| check_agent(d, own);
+    let mut agents = folder(root, "agents", AGENT, m, check_agent, Some(b))?;
+    // A department said in other words is read as the department.
+    for (_, doc) in &mut agents {
+        for (k, v) in &mut doc.fields {
+            if k == "department"
+                && let Some(Value::Text(t)) = v
+                && let Ok(d) = department(t, own)
+            {
+                *t = d;
+            }
+        }
+    }
     (c.profile, c.goal, c.lines) = (profile, goal, lines);
     // A boss set aside is still an agent: only the wrong file is.
     let mut names: Vec<String> = agents.iter().map(|(n, _)| n.clone()).collect();
@@ -198,13 +210,84 @@ pub fn finance(root: &Path) -> Result<Option<Doc>> {
     .map(Some)
 }
 
-/// A department is the seven's or any short name the business gives one.
-pub fn department(value: &str) -> Result<()> {
-    let value = value.trim();
-    if value.is_empty() || value.chars().count() > 40 || value.contains(['\n', '\r']) {
-        bail!("department '{value}' is a short name, at most 40 characters");
+/// The departments every business has, in the order shown, with the names
+/// the founder reads (decision 79).
+#[rustfmt::skip]
+pub const DEPARTMENTS: &[(&str, &str)] = &[
+    ("leadership", "Leadership"), ("marketing", "Marketing"), ("sales", "Sales"),
+    ("support", "Support"), ("tech", "Product & tech"), ("operations", "Operations"),
+    ("finance", "Finance & admin"), ("legal", "Legal & compliance"), ("data", "Data & research"),
+];
+
+/// Other words for them, read as the department: what an agent naming a
+/// department in its own words most likely means.
+#[rustfmt::skip]
+const SYNONYMS: &[(&str, &str)] = &[
+    ("management", "leadership"), ("direction", "leadership"), ("executive", "leadership"),
+    ("content", "marketing"), ("editorial", "marketing"), ("growth", "marketing"),
+    ("communication", "marketing"), ("social", "marketing"), ("community", "marketing"),
+    ("brand", "marketing"),
+    ("business-development", "sales"), ("partnerships", "sales"),
+    ("customer-success", "support"), ("customer-service", "support"),
+    ("product", "tech"), ("development", "tech"), ("engineering", "tech"), ("dev", "tech"),
+    ("it", "tech"),
+    ("ops", "operations"), ("logistics", "operations"),
+    ("accounting", "finance"), ("admin", "finance"),
+    ("compliance", "legal"),
+    ("research", "data"), ("analytics", "data"), ("intelligence", "data"),
+];
+
+/// A department as written, as a key: lowercase, words joined by dashes.
+pub fn key(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .split(|c: char| c.is_whitespace() || c == '_' || c == '-')
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+/// The department `value` means: one of the nine, said in other words, or
+/// one the founder added for the business (`own`). Anything else is refused,
+/// naming what is allowed, so an agent can correct itself.
+pub fn department(value: &str, own: &[String]) -> Result<String> {
+    let k = key(value);
+    if let Some((d, _)) = DEPARTMENTS.iter().find(|(d, _)| *d == k) {
+        return Ok(d.to_string());
     }
-    Ok(())
+    if let Some((_, d)) = SYNONYMS.iter().find(|(s, _)| *s == k) {
+        return Ok(d.to_string());
+    }
+    if own.iter().any(|o| key(o) == k) {
+        return Ok(k);
+    }
+    let mut allowed: Vec<&str> = DEPARTMENTS.iter().map(|(d, _)| *d).collect();
+    allowed.extend(own.iter().map(String::as_str));
+    bail!(
+        "department '{}' is not one of: {} (the founder adds departments in Settings)",
+        value.trim(),
+        allowed.join(", ")
+    )
+}
+
+/// A department the founder adds for the business: a new name, not one of
+/// the nine nor another word for one.
+pub fn new_department(value: &str) -> Result<String> {
+    let k = key(value);
+    if k.is_empty() || k.chars().count() > 40 {
+        bail!("a department is a short name, at most 40 characters");
+    }
+    if !k
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        bail!("a department is letters, digits and spaces");
+    }
+    if let Ok(d) = department(&k, &[]) {
+        bail!("'{}' is already the department {d}", value.trim());
+    }
+    Ok(k)
 }
 
 fn one_of(d: &Doc, key: &str, allowed: &[&str]) -> Result<()> {
@@ -284,9 +367,9 @@ fn check_line(d: &Doc) -> Result<Vec<&'static str>> {
     Ok(vec!["title", "kind"])
 }
 
-fn check_agent(d: &Doc) -> Result<Vec<&'static str>> {
+fn check_agent(d: &Doc, own: &[String]) -> Result<Vec<&'static str>> {
     if let Some(v) = d.text("department") {
-        department(&v)?;
+        department(&v, own)?;
     }
     Ok(vec!["title", "department"])
 }
@@ -350,7 +433,7 @@ mod tests {
             "---\ngoal: Be the reference\nby: 2027-12-31\nmilestones:\n  - 2026-12-31 four weeks alone\n  \
              - First firm signed by 2027-03-31\n---\nStrategy.\n",
         );
-        let config = load(r).unwrap();
+        let config = load(r, &[]).unwrap();
         assert_eq!(config.goal.list("milestones").len(), 2);
         assert!(!config.missing.iter().any(|m| m.contains("milestones")));
         write(
@@ -358,7 +441,7 @@ mod tests {
             "business/goal.md",
             "---\nmilestones:\n  - First firm signed soon\n---\n",
         );
-        let e = format!("{:#}", load(r).unwrap_err());
+        let e = format!("{:#}", load(r, &[]).unwrap_err());
         assert!(e.contains("First firm signed soon"), "{e}");
     }
 
@@ -376,7 +459,7 @@ mod tests {
             "agents/writer.md",
             "---\ntitle: Writer\ndepartment: marketing\nintegrations: typefully\nskills: \nrepos: site\nlook: 0a1b2c3d\naccessory: book\n---\nWrite.\n",
         );
-        let config = load(r).unwrap();
+        let config = load(r, &[]).unwrap();
         assert_eq!(
             config.agents[0].1.text("integrations").as_deref(),
             Some("typefully")
@@ -398,7 +481,7 @@ mod tests {
             "---\nname: Acme\nconfirmation_date: 2026-10-01\n---\n",
         );
         assert!(
-            load(r)
+            load(r, &[])
                 .unwrap()
                 .missing
                 .iter()
@@ -409,13 +492,13 @@ mod tests {
             "business/profile.md",
             "---\nname: Acme\nconfirmation_date: soon\n---\n",
         );
-        assert!(format!("{:#}", load(r).unwrap_err()).contains("confirmation_date 'soon'"));
+        assert!(format!("{:#}", load(r, &[]).unwrap_err()).contains("confirmation_date 'soon'"));
         write(
             r,
             "business/profile.md",
             "---\nname: Acme\nreminders: [30, a week]\n---\n",
         );
-        assert!(format!("{:#}", load(r).unwrap_err()).contains("reminders 'a week'"));
+        assert!(format!("{:#}", load(r, &[]).unwrap_err()).contains("reminders 'a week'"));
     }
     #[test]
     fn a_business_loads_with_what_is_left_to_fill() {
@@ -447,7 +530,7 @@ mod tests {
             "---\ntitle: Writer\ndepartment: marketing\nreports_to: watcher\n---\nWrite.\n",
         );
         write(r, "agents/notes.txt", "not an agent");
-        let c = load(r).unwrap();
+        let c = load(r, &[]).unwrap();
         assert_eq!(c.profile.text("name").as_deref(), Some("Acme"));
         assert_eq!(c.goal.body, "Stay calm.\n");
         assert_eq!(c.goal.text("baseline_minutes").as_deref(), Some("300"));
@@ -467,7 +550,7 @@ mod tests {
     #[test]
     fn a_planned_business_needs_little_and_an_empty_folder_loads() {
         let root = tempfile::tempdir().unwrap();
-        let c = load(root.path()).unwrap();
+        let c = load(root.path(), &[]).unwrap();
         assert!(c.agents.is_empty() && c.profile.fields.is_empty());
         assert!(c.missing.contains(&"business/profile.md: name".to_string()));
         write(
@@ -475,7 +558,7 @@ mod tests {
             "business/profile.md",
             "---\nname: Numi\ncountry: FR\nstatus: planned\n---\n",
         );
-        let c = load(root.path()).unwrap();
+        let c = load(root.path(), &[]).unwrap();
         assert!(
             !c.missing
                 .iter()
@@ -515,8 +598,8 @@ mod tests {
             ),
             (
                 "agents/x.md",
-                "---\ndepartment: the department of everything the business does not do yet\n---\n",
-                "at most 40 characters",
+                "---\ndepartment: astrology\n---\n",
+                "department 'astrology' is not one of: leadership,",
             ),
             (
                 "agents/x.md",
@@ -535,7 +618,7 @@ mod tests {
             let root = tempfile::tempdir().unwrap();
             write(root.path(), path, text);
             // A wrong agent is set aside; any other wrong file refuses all.
-            let err = match load(root.path()) {
+            let err = match load(root.path(), &[]) {
                 Ok(c) if path.starts_with("agents/") => {
                     assert!(c.agents.is_empty(), "{path}");
                     c.broken.join("\n")
@@ -548,18 +631,54 @@ mod tests {
         }
     }
 
-    /// Decision 79: a department beyond the seven is added by naming it.
+    /// Decision 79: a department is one of the nine, said in other words
+    /// or not, or one the founder added; anything else names the list.
     #[test]
-    fn a_new_department_is_added_by_naming_it() {
+    fn departments_are_the_nine_their_other_words_and_the_founders() {
+        let own = ["events".to_string()];
+        for (written, read) in [
+            ("tech", "tech"),
+            ("Development", "tech"),
+            ("product", "tech"),
+            ("Customer service", "support"),
+            ("customer_success", "support"),
+            ("Research", "data"),
+            ("compliance", "legal"),
+            ("Events", "events"),
+        ] {
+            assert_eq!(department(written, &own).unwrap(), read, "{written}");
+        }
+        let err = format!("{:#}", department("astrology", &own).unwrap_err());
+        assert!(err.contains("one of: leadership, marketing"), "{err}");
+        assert!(err.contains("data, events"), "{err}");
+        assert!(err.contains("Settings"), "{err}");
+        // The file keeps what was written; the team reads the department.
         let root = tempfile::tempdir().unwrap();
         write(
             root.path(),
             "agents/dev.md",
             "---\ntitle: Developer\ndepartment: development\n---\n",
         );
-        let c = load(root.path()).unwrap();
+        let c = load(root.path(), &[]).unwrap();
         assert!(c.broken.is_empty(), "{:?}", c.broken);
-        assert_eq!(c.agents[0].1.text("department").unwrap(), "development");
+        assert_eq!(c.agents[0].1.text("department").unwrap(), "tech");
+    }
+
+    /// The founder adds a department with a new name only.
+    #[test]
+    fn a_department_the_founder_adds_is_a_new_name() {
+        assert_eq!(
+            new_department("Customer events").unwrap(),
+            "customer-events"
+        );
+        assert!(new_department("tech").is_err());
+        assert!(
+            new_department("Development").is_err(),
+            "another word for tech"
+        );
+        assert!(new_department(" ").is_err());
+        assert!(new_department("R&D").is_err());
+        assert!(new_department(&"x".repeat(41)).is_err());
     }
 
     /// An agent writing a wrong file leaves the rest of the team shown,
@@ -583,7 +702,7 @@ mod tests {
             "agents/intern.md",
             "---\ntitle: Intern\ndepartment: product\nreports_to: dev\n---\n",
         );
-        let c = load(r).unwrap();
+        let c = load(r, &[]).unwrap();
         let names: Vec<_> = c.agents.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["chief", "intern"]);
         assert_eq!(c.broken.len(), 1);

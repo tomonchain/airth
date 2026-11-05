@@ -12,7 +12,7 @@ const SHAPES = [
   '<path d="M50 6 L94 86 H6 Z" stroke-linejoin="round" stroke-width="12"/>',
 ]
 const EYE_Y = [46, 46, 48, 48, 42, 62]
-const DEPTS = ["leadership", "marketing", "sales", "support", "product", "operations", "finance"]
+const DEPTS = ["leadership", "marketing", "sales", "support", "tech", "operations", "finance", "legal", "data"]
 const LABEL: Record<AgentState, string> = { idle: "idle", working: "working", needs: "needs you", incident: "incident", asleep: "asleep" }
 const INK = "#111113"
 

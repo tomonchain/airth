@@ -153,6 +153,10 @@ pub struct RealmConfig {
     pub integrations: Vec<Integration>,
     #[serde(default)]
     pub archived: bool,
+    /// Departments the founder added beyond the nine (decision 79). Kept
+    /// here, out of the business folder, so an agent cannot add one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departments: Vec<String>,
     /// Runs may not reach the network (commands are cut off by the sandbox).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub offline: bool,
@@ -674,6 +678,7 @@ mod tests {
                 share_owner_profile: true,
                 integrations: vec![],
                 archived: false,
+                departments: Vec::new(),
                 offline: false,
                 created_at: Utc::now(),
             },
