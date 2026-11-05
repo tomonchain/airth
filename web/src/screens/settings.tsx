@@ -1,33 +1,41 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Bot, Check, Cpu, ExternalLink, FolderGit2, Info, KeyRound, Monitor, Moon, Plug, Shield, Smartphone, Sun, User, X, type LucideIcon } from "lucide-react"
+import { Bot, Brain, Building2, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Loading, Panel } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
+import { usePrefs } from "@/hooks/use-prefs"
 import { useTheme } from "@/hooks/use-theme"
 import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
+import { McpServers } from "@/screens/settings-mcp"
+import { Business, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
 
-type Section = "account" | "models" | "keys" | "connections" | "permissions" | "repositories" | "phone" | "about"
+type Section = "account" | "business" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
+  { id: "business", label: "Business", icon: Building2 },
   { id: "models", label: "Models", icon: Cpu },
   { id: "keys", label: "Keys", icon: KeyRound },
   { id: "connections", label: "Connections", icon: Plug },
   { id: "permissions", label: "Permissions", icon: Shield },
   { id: "repositories", label: "Repositories", icon: FolderGit2 },
+  { id: "memory", label: "Memory", icon: Brain },
   { id: "phone", label: "Phone", icon: Smartphone },
   { id: "about", label: "About", icon: Info },
 ]
 
 type Tier = { provider: string | null; model: string | null; effort: string | null; source: string | null }
 type Detail = {
+  model: string | null
+  model_error: string | null
   models: Record<"main" | "fast" | "fallback", Tier>
   policy: Record<string, string>
   integrations: { name: string; description: string; base_url: string; missing_secrets: string[] }[]
@@ -37,7 +45,6 @@ type Detail = {
 }
 type Providers = { default: string; providers: { id: string; name: string; configured: boolean; models: string[]; key: string | null; error: string | null }[] }
 type Connector = { connected: boolean; connector: { id: string; name: string; description: string; category: string } }
-type Mcp = { name: string; description: string; enabled: boolean; signed_in: boolean; error: string | null; connected_at: string | null; tools: unknown[] }
 type Owner = { name: string; about: string; avatar: string | null; preferences: string[]; updated_at?: string }
 
 /** Settings: the founder's account and the business's models, connections,
@@ -58,11 +65,13 @@ export function Settings({ realm }: { realm: string }) {
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div key={section} className="mx-auto max-w-2xl px-8 py-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
           {section === "account" ? <Account />
+            : section === "business" ? <Business realm={realm} onChanged={() => {}} />
+            : section === "memory" ? <Memory realm={realm} />
             : section === "models" ? <Models realm={realm} onKeys={() => setSection("keys")} />
             : section === "keys" ? <Keys realm={realm} />
             : section === "connections" ? <Connections realm={realm} />
             : section === "permissions" ? <Permissions realm={realm} />
-            : section === "repositories" ? <Repositories realm={realm} />
+            : section === "repositories" ? <Repositories realm={realm} onKeys={() => setSection("keys")} />
             : section === "phone" ? <Phone />
             : <About />}
         </div>
@@ -92,48 +101,68 @@ function Row({ label, hint, children }: { label: string; hint?: ReactNode; child
   )
 }
 
-const Classic = ({ what }: { what: string }) => (
-  <a href="/classic" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ExternalLink className="size-3" /> {what} in the classic interface</a>
-)
 
+const SEG = (on: boolean) => cn("rounded-md px-2.5 py-1 text-xs transition-colors", on ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")
+
+function Seg<T extends string>({ label, value, options, onPick }: { label: string; value: string; options: [T, string][]; onPick: (v: T) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg border p-0.5">
+      {options.map(([v, l]) => <button key={v} role="radio" aria-checked={value === v} onClick={() => onPick(v)} className={SEG(value === v)}>{l}</button>)}
+    </div>
+  )
+}
+
+/** The founder: picture, name, who they are and how they like things done
+    (given to the businesses that share the profile), and how Airth reads. */
 function Account() {
-  const { theme, setTheme } = useTheme()
+  const { choice, setTheme } = useTheme()
+  const { prefs, setPref } = usePrefs()
   const { data, refresh } = usePoll<Owner>(() => api("owner"), 600000, [])
   const [name, setName] = useState("")
   const [about, setAbout] = useState("")
+  const [likes, setLikes] = useState("")
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (data) { setName(data.name); setAbout(data.about) } }, [data])
+  useEffect(() => { if (data) { setName(data.name); setAbout(data.about); setLikes(data.preferences.join("\n")) } }, [data])
+  const list = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean)
+  const changed = !!data && (name !== data.name || about !== data.about || list(likes).join("\n") !== data.preferences.join("\n"))
   async function save() {
     if (!data) return
     setBusy(true)
-    try { await api("owner", { ...data, name, about }, "PUT"); toast.success("Saved."); refresh() }
+    try { await api("owner", { ...data, name: name.trim(), about: about.trim(), preferences: list(likes) }, "PUT"); toast.success("Saved."); refresh() }
     catch (e) { toast.error((e as Error).message) }
     finally { setBusy(false) }
   }
-  const themes = [{ id: "light", label: "Light", icon: Sun }, { id: "dark", label: "Dark", icon: Moon }] as const
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
   return (
     <>
-      <Head title="Account">You, as the agents know you.</Head>
+      <Head title="Account">What Airth knows about you. Businesses that share your profile give it to every agent; goals and limits belong to each business's strategy.</Head>
       {!data ? <Loading /> : (
         <Panel className="space-y-4 p-4">
+          <div className="space-y-1.5"><Label>Picture</Label><PictureEditor path="owner/avatar" version={data.avatar} text={data.name || "?"} round onDone={refresh} /></div>
           <div className="space-y-1.5"><Label htmlFor="owner-name">Name</Label><Input id="owner-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div className="space-y-1.5">
             <Label htmlFor="owner-about">About you</Label>
-            <Textarea id="owner-about" rows={4} value={about} onChange={(e) => setAbout(e.target.value)} placeholder="What the agents should know about you: your role, how you like things done." />
+            <Textarea id="owner-about" rows={3} value={about} onChange={(e) => setAbout(e.target.value)} placeholder="Who you are, what you do." />
           </div>
-          <div className="flex justify-end"><Button size="sm" disabled={busy || (name === data.name && about === data.about)} onClick={save}>Save</Button></div>
+          <div className="space-y-1.5">
+            <Label htmlFor="owner-likes">Preferences</Label>
+            <Textarea id="owner-likes" rows={3} value={likes} onChange={(e) => setLikes(e.target.value)} placeholder={"Answer in French\nShort, direct answers"} />
+            <p className="text-xs text-muted-foreground">How you like things done, one per line.</p>
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            {data.updated_at && !changed && <span className="text-xs text-muted-foreground">Updated {ago(data.updated_at)}</span>}
+            <Button size="sm" disabled={busy || !changed} onClick={save}>Save</Button>
+          </div>
         </Panel>
       )}
       <h3 className="mt-8 mb-2.5 text-sm font-semibold">Appearance</h3>
-      <div className="grid grid-cols-3 gap-2.5">
-        {themes.map((t) => (
-          <button key={t.id} onClick={() => setTheme(t.id)}
-            className={cn("flex flex-col items-center gap-2 rounded-xl border bg-bubble/40 py-4 text-sm transition-colors hover:border-foreground/20", theme === t.id && "border-sky-500 ring-3 ring-sky-500/20")}>
-            <t.icon className="size-5" /> {t.label}
-          </button>
-        ))}
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-4 text-xs text-muted-foreground"><Monitor className="size-5" /> Follows the system until you pick</div>
-      </div>
+      <p className="-mt-1.5 mb-2.5 text-xs text-muted-foreground">Kept in this browser or app window.</p>
+      <Panel className="divide-y">
+        <Row label="Theme" hint="Light, dark, or the same as your Mac."><Seg label="Theme" value={choice} options={[["system", "System"], ["light", "Light"], ["dark", "Dark"]]} onPick={setTheme} /></Row>
+        <Row label="Text size" hint="Conversations."><Seg label="Text size" value={prefs.text} options={[["s", "Small"], ["m", "Default"], ["l", "Large"], ["xl", "Larger"]]} onPick={(v) => setPref("text", v)} /></Row>
+        <Row label="Reading width" hint="How wide conversations can get."><Seg label="Reading width" value={prefs.width} options={[["narrow", "Narrow"], ["normal", "Normal"], ["wide", "Wide"]]} onPick={(v) => setPref("width", v)} /></Row>
+        <Row label="Send with" hint="In the message box; the other one adds a new line."><Seg label="Send with" value={prefs.send} options={[["enter", "↵"], ["mod", `${mod}↵`]]} onPick={(v) => setPref("send", v)} /></Row>
+      </Panel>
     </>
   )
 }
@@ -144,38 +173,78 @@ const TIERS = [
   { id: "fallback", label: "Fallback", hint: "Used when the main one fails." },
 ] as const
 
+const AUTO = "auto"
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"]
+const SOURCES: Record<string, string> = { realm: "This business", all: "All businesses", env: "Environment" }
+
+/** Which model each kind of work uses, and how hard it thinks: for this
+    business, or for all of them at once. */
 function Models({ realm, onKeys }: { realm: string; onKeys: () => void }) {
   const detail = usePoll<Detail>(() => api(`realms/${enc(realm)}`), 600000, [realm])
   const options = usePoll<Providers>(() => api(`realms/${enc(realm)}/models`), 600000, [realm])
-  async function set(tier: string, provider: string, model: string) {
-    try { await api(`realms/${enc(realm)}/models`, { tier, provider, model, effort: "" }); toast.success(`${tier} model: ${model}`); detail.refresh() }
+  const [all, setAll] = useState(false)
+  const [fresh, setFresh] = useState(false)
+  async function set(tier: string, choice: string, effort: string) {
+    const [provider, ...model] = choice === AUTO ? ["", ""] : choice.split("/")
+    try {
+      await api(`realms/${enc(realm)}/models`, { tier, provider, model: model.join("/"), effort, all_realms: all })
+      toast.success(all ? `${tier} model saved for all businesses.` : `${tier} model saved.`)
+      setAll(false)
+      detail.refresh()
+    } catch (e) { toast.error((e as Error).message) }
+  }
+  async function refresh() {
+    setFresh(true)
+    try { await api(`realms/${enc(realm)}/models?refresh=1`); options.refresh(); toast.success("The model lists are up to date.") }
     catch (e) { toast.error((e as Error).message) }
+    finally { setFresh(false) }
   }
   const ready = options.data?.providers.filter((p) => p.configured && p.models.length) ?? []
+  const d = detail.data
   return (
     <>
-      <Head title="Models">Which model each kind of work uses, for this business.</Head>
-      {!detail.data || !options.data ? <Loading /> : (
-        <Panel className="divide-y">
-          {TIERS.map((t) => {
-            const cur = detail.data!.models[t.id]
-            const value = cur.provider && cur.model ? `${cur.provider}/${cur.model}` : ""
-            return (
-              <Row key={t.id} label={t.label} hint={t.hint}>
-                <Select value={value} onValueChange={(v) => { const [p, ...m] = String(v).split("/"); set(t.id, p, m.join("/")) }}>
-                  <SelectTrigger className="w-60"><SelectValue placeholder={t.id === "fallback" ? "None" : "Choose"} /></SelectTrigger>
-                  <SelectContent>
-                    {ready.map((p) => p.models.map((m) => <SelectItem key={`${p.id}/${m}`} value={`${p.id}/${m}`}>{p.name} · {m}</SelectItem>))}
-                  </SelectContent>
-                </Select>
-              </Row>
-            )
-          })}
-        </Panel>
+      <Head title="Models">Which model each kind of work uses, for this business. With a fast model, simple requests go to it and cost much less.</Head>
+      {!d || !options.data ? <Loading /> : (
+        <>
+          <Panel className="divide-y">
+            {TIERS.map((t) => {
+              const cur = d.models[t.id]
+              const choice = cur.model ? `${cur.provider ?? d.models.main.provider ?? "anthropic"}/${cur.model}` : t.id === "main" && cur.provider ? `${cur.provider}/` : AUTO
+              const label = (v: string) => v === AUTO ? (t.id === "main" ? "Default" : "None") : ready.flatMap((p) => p.models.map((m) => [`${p.id}/${m}`, `${p.name} · ${m}`])).find(([k]) => k === v)?.[1] ?? v.replace("/", " · ")
+              return (
+                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-medium">{t.label}{cur.source && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground" title="Where this setting comes from">{SOURCES[cur.source] ?? cur.source}</span>}</div>
+                    <div className="text-xs text-muted-foreground">{t.hint}</div>
+                  </div>
+                  <Select value={choice} onValueChange={(v) => set(t.id, String(v), cur.effort ?? "")}>
+                    <SelectTrigger className="w-64"><SelectValue>{(v: string) => label(v)}</SelectValue></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={AUTO}>{t.id === "main" ? "Default" : "None"}</SelectItem>
+                      {ready.map((p) => p.models.map((m) => <SelectItem key={`${p.id}/${m}`} value={`${p.id}/${m}`}>{p.name} · {m}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={cur.effort ?? ""} disabled={choice === AUTO && t.id !== "main"} onValueChange={(v) => set(t.id, choice, String(v ?? ""))}>
+                    <SelectTrigger className="w-32" title="Reasoning effort: higher thinks more and costs more"><SelectValue>{(v: string) => `Effort: ${v || "default"}`}</SelectValue></SelectTrigger>
+                    <SelectContent>{EFFORTS.map((e) => <SelectItem key={e} value={e}>{e || "Default"}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )
+            })}
+          </Panel>
+          <label className="mt-3 flex items-start gap-2.5 text-sm">
+            <Switch checked={all} onCheckedChange={setAll} className="mt-0.5" />
+            <span>Apply my next change to all businesses<span className="block text-xs text-muted-foreground">It also replaces this business's own setting. Otherwise a change applies here only, and a business's own setting wins over the shared one.</span></span>
+          </label>
+          <p className="mt-3 text-xs text-muted-foreground">In use: {d.model ? <span className="text-foreground">{d.model}</span> : <span className="text-red-500">{d.model_error ?? "not configured"}</span>}</p>
+        </>
       )}
       {options.data && (
         <>
-          <h3 className="mt-8 mb-2.5 text-sm font-semibold">Providers</h3>
+          <div className="mt-8 mb-2.5 flex items-center">
+            <h3 className="flex-1 text-sm font-semibold">Providers</h3>
+            <Button size="sm" variant="ghost" disabled={fresh} onClick={refresh}><RotateCw className={cn(fresh && "animate-spin")} /> Refresh the lists</Button>
+          </div>
           <Panel className="divide-y">
             {options.data.providers.map((p) => (
               <Row key={p.id} label={p.name} hint={p.error ?? (p.configured ? `${p.models.length} models` : p.key ? `Needs ${p.key}` : "Not set up")}>
@@ -193,7 +262,6 @@ function Models({ realm, onKeys }: { realm: string; onKeys: () => void }) {
 
 function Connections({ realm }: { realm: string }) {
   const conn = usePoll<{ connectors: Connector[] }>(() => api(`realms/${enc(realm)}/connectors`), 600000, [realm])
-  const mcp = usePoll<Mcp[]>(() => api(`realms/${enc(realm)}/mcp`), 600000, [realm])
   const [checking, setChecking] = useState<string | null>(null)
   async function check(id: string) {
     setChecking(id)
@@ -209,18 +277,7 @@ function Connections({ realm }: { realm: string }) {
   return (
     <>
       <Head title="Connections">What the agents can reach. Each key stays with its connection and never reaches a model.</Head>
-      <h3 className="mb-2.5 text-sm font-semibold">MCP servers</h3>
-      {!mcp.data ? <Loading /> : (
-        <Panel className="divide-y">
-          {mcp.data.map((m) => (
-            <Row key={m.name} label={m.name} hint={m.error ?? `${m.description} · ${m.tools.length} tools${m.connected_at ? ` · connected ${ago(m.connected_at)}` : ""}`}>
-              {m.error ? <span className="inline-flex items-center gap-1 text-xs text-red-500"><X className="size-3.5" /> Error</span>
-                : m.signed_in ? <span className="inline-flex items-center gap-1 text-xs text-emerald-500"><Check className="size-3.5" /> Signed in</span>
-                : <span className="text-xs text-muted-foreground">{m.enabled ? "Not signed in" : "Off"}</span>}
-            </Row>
-          ))}
-        </Panel>
-      )}
+      <McpServers realm={realm} />
       <h3 className="mt-8 mb-2.5 text-sm font-semibold">Connectors</h3>
       {!conn.data ? <Loading /> : (
         <>
@@ -241,75 +298,16 @@ function Connections({ realm }: { realm: string }) {
               </div>
             ))}
           </div>
-          <p className="mt-2"><Classic what="Connect one" /></p>
+          <p className="mt-2 text-xs text-muted-foreground">Connect more from the Marketplace.</p>
         </>
       )}
     </>
   )
 }
 
-const POLICY: Record<string, string> = {
-  read: "Read files", write: "Write files", execute: "Run commands", network: "Use the network", memory: "Remember things", skill: "Use a skill",
-}
 
-function Permissions({ realm }: { realm: string }) {
-  const { data } = usePoll<Detail>(() => api(`realms/${enc(realm)}`), 600000, [realm])
-  const tone = (v: string) => (v === "allow" ? "text-emerald-500" : v === "deny" ? "text-red-500" : "text-amber-500")
-  return (
-    <>
-      <Head title="Permissions">What an agent's mission may do alone, and what asks you first. Routines follow their own autonomy levels.</Head>
-      {!data ? <Loading /> : (
-        <>
-          <Panel className="divide-y">
-            {Object.entries(data.policy).map(([k, v]) => (
-              <Row key={k} label={POLICY[k] ?? k}><span className={cn("text-xs font-medium capitalize", tone(v))}>{v === "ask" ? "Asks you" : v}</span></Row>
-            ))}
-          </Panel>
-          <Panel className="mt-2.5 divide-y">
-            <Row label="Isolation" hint="Where a mission works on code."><span className="text-xs capitalize text-muted-foreground">{data.isolation}</span></Row>
-            <Row label="Delivery" hint="What happens to a mission's changes."><span className="text-xs capitalize text-muted-foreground">{data.delivery}</span></Row>
-          </Panel>
-          <p className="mt-2"><Classic what="Change them" /></p>
-        </>
-      )}
-    </>
-  )
-}
 
-function Repositories({ realm }: { realm: string }) {
-  const { data } = usePoll<Detail>(() => api(`realms/${enc(realm)}`), 600000, [realm])
-  return (
-    <>
-      <Head title="Repositories">The code the business's developer agents work on.</Head>
-      {!data ? <Loading /> : (
-        <Panel className="divide-y">
-          {data.repos.map((r) => (
-            <Row key={r.name} label={r.name} hint={<span className="font-mono">{r.github ?? "local"}{r.branch ? ` · ${r.branch}` : ""}</span>}>
-              <span className="text-xs text-muted-foreground">{r.main ? "Main · " : ""}{r.delivery}</span>
-            </Row>
-          ))}
-        </Panel>
-      )}
-    </>
-  )
-}
 
-function Phone() {
-  const { data } = usePoll<{ hosts: { host: string }[] }>(() => api("phone"), 600000, [])
-  return (
-    <>
-      <Head title="Phone">Open Airth on your phone through your private network. Telegram stays the channel for Needs you.</Head>
-      {!data ? <Loading /> : (
-        <Panel className="divide-y">
-          {data.hosts.length ? data.hosts.map((h) => (
-            <Row key={h.host} label={h.host} hint="Allowed"><Smartphone className="size-4 text-muted-foreground" /></Row>
-          )) : <Row label="No phone address yet" hint="Add one with Tailscale."><span /></Row>}
-        </Panel>
-      )}
-      <p className="mt-2"><Classic what="Pair a phone (QR code)" /></p>
-    </>
-  )
-}
 
 function About() {
   const { data } = usePoll<{ home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])

@@ -9,6 +9,7 @@ import { OrderBox } from "@/components/order-box"
 import { RunTimeline } from "@/components/run-timeline"
 import { startOf, TaskThread } from "@/components/task-thread"
 import { usePoll } from "@/hooks/use-poll"
+import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
 import { api, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -30,6 +31,7 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
 export function Conversation({ realm, agent, onDone }: { realm: string; agent: Agent; onDone: () => void }) {
+  const { prefs } = usePrefs()
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/tasks`), 8000, [realm])
   // Tasks started here and not yet listed by the server.
@@ -110,7 +112,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scroller} onScroll={scrolled} className="min-h-0 flex-1 overflow-y-auto">
-        <div ref={content} className="mx-auto max-w-3xl px-6 pt-6 pb-4">
+        <div ref={content} className={cn("mx-auto px-6 pt-6 pb-4", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1 }}>
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (
@@ -149,7 +151,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
           {thread.data && busy && !outbox && <Working agent={agent} />}
         </div>
       </div>
-      <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+      <div className={cn("mx-auto w-full px-6 pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
         <OrderBox realm={realm} agent={agent.name} title={agent.title} task={latest} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)

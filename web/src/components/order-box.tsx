@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { ArrowUp, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { usePrefs } from "@/hooks/use-prefs"
 import { api, enc } from "@/lib/api"
 
 /** Writing to an agent. A message continues the agent's latest task, as a
@@ -12,6 +13,7 @@ export function OrderBox({ realm, agent, title, task, working, onSending, onSent
   onSending: (text: string, task: string | null) => void; onSent: (taskId: string | null) => void; onFailed: () => void
 }) {
   const [text, setText] = useState("")
+  const { prefs } = usePrefs()
   const [busy, setBusy] = useState(false)
   const [fresh, setFresh] = useState(false)
   useEffect(() => setFresh(false), [agent])
@@ -63,7 +65,11 @@ export function OrderBox({ realm, agent, title, task, working, onSending, onSent
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
+          onKeyDown={(e) => {
+            // ↵ or ⌘↵ sends, as the founder chose in Settings; the other adds a line.
+            const mod = e.metaKey || e.ctrlKey
+            if (e.key === "Enter" && !e.shiftKey && (prefs.send === "mod" ? mod : !mod)) { e.preventDefault(); send() }
+          }}
           rows={1}
           placeholder={`Write to ${title}`}
           className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground field-sizing-content"
