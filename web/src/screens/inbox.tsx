@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, MessageSquare, Search } from "lucide-react"
+import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare, Search } from "lucide-react"
 import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -28,8 +28,8 @@ const preview = (it: Item) => (it.kind === "approval" && it.text ? it.text : it.
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
     the left, the open item in full on the right; answering opens the next.
     J and K move, A, E and R answer. */
-export function Inbox({ realm, items, agents, onDone, onAgent }: {
-  realm: string; items: Item[]; agents: Agent[]; onDone: () => void; onAgent: (name: string) => void
+export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
+  realm: string; items: Item[]; agents: Agent[]; onDone: () => void; onAgent: (name: string) => void; onTask: (id: string) => void
 }) {
   const [q, setQ] = useState("")
   const sorted = useMemo(
@@ -155,7 +155,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
                   leaving.dir === "down" ? "slide-out-to-top-full" : "slide-out-to-bottom-full")}
               >
                 <div className="mx-auto max-w-2xl px-8 py-7">
-                  <Header it={leaving.item} agent={agent(leaving.item.agent)} onAgent={onAgent} />
+                  <Header it={leaving.item} agent={agent(leaving.item.agent)} onAgent={onAgent} onTask={onTask} />
                   <NeedCard realm={realm} it={leaving.item} page onDone={() => {}} still />
                 </div>
               </div>
@@ -166,7 +166,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
                 dir && "duration-300 ease-in-out animate-in", dir === "down" && "slide-in-from-bottom-full", dir === "up" && "slide-in-from-top-full")}
             >
               <div className="mx-auto max-w-2xl px-8 py-7">
-                <Header it={open} agent={agent(open.agent)} onAgent={onAgent} />
+                <Header it={open} agent={agent(open.agent)} onAgent={onAgent} onTask={onTask} />
                 <NeedCard
                   key={`${open.id}-${open.revision}`} realm={realm} it={open} page
                   onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}
@@ -180,7 +180,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent }: {
   )
 }
 
-function Header({ it, agent, onAgent }: { it: Item; agent?: Agent; onAgent: (name: string) => void }) {
+function Header({ it, agent, onAgent, onTask }: { it: Item; agent?: Agent; onAgent: (name: string) => void; onTask: (id: string) => void }) {
   const k = kindOf(it)
   return (
     <header>
@@ -197,6 +197,8 @@ function Header({ it, agent, onAgent }: { it: Item; agent?: Agent; onAgent: (nam
               <ExternalLink /> Source
             </a>
           )}
+          {/* What a task asked: the task itself, with its plan and what it did so far. A routine's item has its run in Routines. */}
+          {it.run && !it.routine && <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onTask(it.run!)}><ListChecks /> Its task</Button>}
           {agent && <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onAgent(agent.name)}><MessageSquare /> Conversation</Button>}
         </span>
       </div>

@@ -35,6 +35,7 @@ export default function App() {
   const [hash, setHash] = useState(route)
   const [welcome, setWelcome] = useState(() => location.hash === "#/welcome")
   const [founding, setFounding] = useState(false)
+  const [task, setTask] = useState<string | null>(null)
   useEffect(() => {
     const on = () => { setHash(route()); setWelcome(location.hash === "#/welcome") }
     addEventListener("hashchange", on)
@@ -65,7 +66,7 @@ export default function App() {
   const agents = data.data?.agents ?? []
   const items = data.data?.items ?? []
 
-  useEffect(() => { setCurrent(null); setTabs([]) }, [realm])
+  useEffect(() => { setCurrent(null); setTabs([]); setTask(null) }, [realm])
   useEffect(() => {
     if (page !== "agents" || current || !agents.length) return
     const first = agents.find((a) => a.waiting > 0) ?? agents[0]
@@ -130,7 +131,7 @@ export default function App() {
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
-          : page === "tasks" ? <Tasks realm={realm} agents={agents} onAgent={open} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} />
           : page === "usage" ? <Usage realm={realm} />
@@ -142,7 +143,7 @@ export default function App() {
           : (
           <>
           {page === "needs" ? (
-            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
+            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} />
           ) : (
           <>
           <AgentList realm={realm} agents={agents} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
