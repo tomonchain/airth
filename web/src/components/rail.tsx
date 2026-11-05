@@ -31,8 +31,7 @@ function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   )
 }
 
-/** The app's rail: the pages of a business. Pages not moved yet open in the
-    classic interface. */
+/** The app's rail: the pages of a business. */
 export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean }) {
   const { theme, setTheme } = useTheme()
   return (

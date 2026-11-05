@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 
-// Reading preferences, kept in this browser under the classic interface's
-// keys (/theme.js), so both read the same choice.
+// Reading preferences, kept in this browser under the keys the classic
+// interface used, so a choice made there before still holds.
 const DEFAULTS = { text: "m", width: "normal", send: "enter" }
 export type Prefs = typeof DEFAULTS
 const EVENT = "airth-prefs"

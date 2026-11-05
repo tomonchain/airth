@@ -123,7 +123,8 @@ pub(super) fn static_bytes(body: &[u8], kind: &str) -> HttpResponse {
         .with_header(
             Header::from_bytes(
                 "Content-Security-Policy",
-                // Inline styles: the editor (CodeMirror) writes its own. Scripts stay 'self' only.
+                // Inline styles: the interface sets some sizes in the page (and the
+                // sign-in callback page has its own). Scripts stay 'self' only.
                 "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
             )
             .unwrap(),

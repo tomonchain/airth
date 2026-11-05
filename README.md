@@ -171,7 +171,7 @@ A business reaches its services, and its agents gain tools, from the app's **Con
 
 In the app, a run is a **chat**. Chats can be renamed: click a chat's title, or double-click it in the sidebar. The name is only for you; the objective the agent works on does not change. What you type in a message box stays there as a draft (per chat, and per realm on the new-chat screen) when you switch chats or reload; you can write your next message while Airth works, and send it when it stops.
 
-Changed the app's page? `node scripts/ui_smoke.js` renders every view in a fake DOM with data full of empty fields, and fails if any visible text says `null`, `false`, `undefined` or similar.
+Changed the app's page? It lives in `web/`: `npm run check` and `npm run build` there, and commit `web/dist/`.
 
 ## Installing on a Mac
 
@@ -398,10 +398,7 @@ src/
                   and estimated costs, versioned result storage, comparison and regressions
   ui/             the local app and background runtime: request checks and routing (mod.rs), the
                   server and its threads (server.rs), live runs (live.rs), one router per area
-                  (general, realms, runs, extensions) and the page: index.html, theme.js,
-                  js/ and css/ (joined in name order into app.js and app.css by build.rs)
-                  editor/: the Documents editor (CodeMirror), bundled into
-                  vendor/editor.js by editor/build.sh
+                  (general, realms, runs, extensions); the page is web/'s build, embedded
   term.rs         terminal output for CLI runs
   cancel.rs       stop signal shared by the CLI, the app, the agent loop and tools
   agent.rs        the loop and the system prompt

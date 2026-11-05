@@ -36,7 +36,7 @@ enum UserEvent {
 
 /// The page draws its own title bar: it knows it runs in the app window, and
 /// a press on an empty spot of the top strip moves the window.
-/// (Runs before the document exists; theme.js applies it.)
+/// (Runs before the document exists; web/src/lib/shell.ts reads it.)
 const WINDOW_SCRIPT: &str = r#"window.airthShell = "mac";"#;
 
 /// Open a link outside the app, in the default browser.

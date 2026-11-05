@@ -3,8 +3,8 @@ import { useEffect, useState } from "react"
 const KEY = "airth-theme"
 const EVENT = "airth-theme"
 
-// Light or dark, shared with the other interfaces through the same key
-// (/theme.js); the system's choice until the founder picks one.
+// Light or dark, under the key the classic interface used, so an earlier
+// choice holds; the system's choice until the founder picks one.
 function initial(): "light" | "dark" {
   try {
     const t = localStorage.getItem(KEY)

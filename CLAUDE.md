@@ -153,8 +153,8 @@ Each business can have developer agents working on its own platforms, using the 
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
 - Visual reference: shadcn's components and the agent dashboards named in decision 73; `docs/design/DESIGN.md`'s tokens are the theme's starting point. Design a screen as a whole, leave out what does not serve its main task, and show it to the founder on a copy before it merges.
-- **One interface (decisions 72 and 73).** The interface in `web/`, whose first screen shows the agents at work in each business. The classic interface stays at `/classic` until each of its features has moved, or left by decision (decision 42); then it is removed.
-- Stack (decision 73): `web/`, Vite, React, TypeScript, Tailwind, shadcn (`base-nova`), Lucide, Sonner. `npm run build` writes `web/dist/`, committed and served from the binary, so `cargo build` needs no Node. `src/ui/next` (Preact) stays until `web/` replaces it, then leaves; no new work goes into it.
+- **One interface (decisions 72 and 73).** The interface in `web/`, whose first screen shows the agents at work in each business. Every feature of the classic and `/next` interfaces moved into it; both are removed.
+- Stack (decision 73): `web/`, Vite, React, TypeScript, Tailwind, shadcn (`base-nova`), Lucide, Sonner. `npm run build` writes `web/dist/`, committed and served from the binary, so `cargo build` needs no Node.
 
 ## Scope: the beta
 
@@ -186,7 +186,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
-If you changed `src/ui`: `node scripts/ui_smoke.js`. If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
+If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
 
 Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass. If a check fails for a reason you do not understand, stop and report it.
 

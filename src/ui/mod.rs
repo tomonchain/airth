@@ -64,32 +64,15 @@ pub(crate) use http::random_token;
 pub use server::start;
 pub use server::{open_url, persistent_token, running_url, serve};
 
-const INDEX_HTML: &str = include_str!("index.html");
-// js/ and css/, joined in name order by build.rs.
-const APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
-const APP_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
-const THEME_JS: &str = include_str!("theme.js");
-/// The Documents editor (CodeMirror), built from editor/ by editor/build.sh.
-const EDITOR_JS: &str = include_str!("vendor/editor.js");
-/// Preact, its hooks and htm (decision 72), vendored and joined in the
-/// order they need each other: no build step, nothing fetched.
-const NEXT_VENDOR_JS: &str = concat!(
-    include_str!("vendor/preact/preact-10.29.8.umd.js"),
-    "\n",
-    include_str!("vendor/preact/hooks-10.29.8.umd.js"),
-    "\n",
-    include_str!("vendor/preact/htm-3.1.1.umd.js"),
-    "\n",
-);
-const FAVICON: &str = include_str!("favicon.svg");
 /// The interface in web/ (decision 73), embedded by build.rs from web/dist.
 mod web {
     include!(concat!(env!("OUT_DIR"), "/web.rs"));
 }
-/// The new interface, served at /next next to the current one (decision 57).
-const NEXT_HTML: &str = include_str!("next/index.html");
-const NEXT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.js"));
-const NEXT_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.css"));
+/// The sign-in callback's page stands alone: a few lines of style, light or
+/// dark as the system is.
+const CALLBACK_STYLE: &str = "body{margin:0;min-height:100vh;display:grid;place-items:center;\
+font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:Canvas;color:CanvasText}\
+main{max-width:28rem;padding:2rem;text-align:center}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;opacity:.7}";
 const MAX_BODY: u64 = 1 << 20;
 
 pub struct UiOptions {
@@ -145,29 +128,7 @@ impl App {
         let method = request.method().clone();
 
         match (&method, path) {
-            // One interface, the new one (decision 72); the classic one
-            // stays at `/classic` until its last feature has moved.
-            (Method::Get, "/classic" | "/classic/") => {
-                return Ok(static_response(INDEX_HTML, "text/html; charset=utf-8"));
-            }
-            (Method::Get, "/app.js") => {
-                return Ok(static_response(APP_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/app.css") => {
-                return Ok(static_response(APP_CSS, "text/css; charset=utf-8"));
-            }
-            (Method::Get, "/vendor/editor.js") => {
-                return Ok(static_response(EDITOR_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/theme.js") => {
-                return Ok(static_response(THEME_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/favicon.svg") => {
-                return Ok(static_response(FAVICON, "image/svg+xml"));
-            }
-            (Method::Get, "/next" | "/next/") => {
-                return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
-            }
+            // One interface, the one in web/ (decisions 72 and 73).
             (Method::Get, p) if web_file(p).is_some() => {
                 let (body, kind) = web_file(p).unwrap();
                 let response = static_bytes(body, kind);
@@ -181,18 +142,6 @@ impl App {
                     response.with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
                 });
             }
-            (Method::Get, "/next/vendor.js") => {
-                return Ok(static_response(
-                    NEXT_VENDOR_JS,
-                    "text/javascript; charset=utf-8",
-                ));
-            }
-            (Method::Get, "/next/app.js") => {
-                return Ok(static_response(NEXT_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/next/app.css") => {
-                return Ok(static_response(NEXT_CSS, "text/css; charset=utf-8"));
-            }
             // The browser coming back from a connector's sign-in page. It cannot
             // carry the API token; the one-time `state` Airth issued is the proof.
             (Method::Get, "/oauth/callback") => {
@@ -203,8 +152,9 @@ impl App {
                     static_response(
                         &format!(
                             "<!doctype html><html><head><meta charset=\"utf-8\"><title>Airth</title>\
-                             <script src=\"/theme.js\"></script><link rel=\"stylesheet\" href=\"/app.css\"></head>\
-                             <body><div class=\"center-note\"><span class=\"logo\"></span><h1>{}</h1><p>{}</p></div></body></html>",
+                             <meta name=\"color-scheme\" content=\"light dark\"><style>{}</style></head>\
+                             <body><main><h1>{}</h1><p>{}</p></main></body></html>",
+                            CALLBACK_STYLE,
                             html_escape(title),
                             html_escape(text)
                         ),
@@ -468,6 +418,11 @@ mod tests {
             "/assets/../index.html",
             "/api/realms",
             "",
+            // The classic and /next interfaces left once their features moved.
+            "/classic",
+            "/next",
+            "/app.css",
+            "/theme.js",
         ] {
             assert!(web_file(path).is_none(), "{path}");
         }

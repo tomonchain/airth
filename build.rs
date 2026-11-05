@@ -1,8 +1,6 @@
 //! Records which commit and repository the binary is built from, so a running
 //! Airth can tell when its source has a newer version (see src/update.rs), and
-//! joins the app's scripts and styles into the one app.js and app.css it serves,
-//! and the new interface's into next.js and next.css, and embeds the library
-//! and the interface built in web/dist.
+//! embeds the library and the interface built in web/dist.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,23 +11,6 @@ fn git(args: &[&str]) -> Option<String> {
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
-}
-
-/// Join the files of `dir` with this extension, in name order, into `OUT_DIR/name`.
-fn bundle(dir: &str, ext: &str, name: &str) {
-    println!("cargo:rerun-if-changed={dir}");
-    let mut parts: Vec<PathBuf> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot read {dir}: {e}"))
-        .map(|entry| entry.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == ext))
-        .collect();
-    parts.sort();
-    let mut text = String::new();
-    for part in parts {
-        text.push_str(&std::fs::read_to_string(&part).unwrap());
-    }
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(name);
-    std::fs::write(out, text).unwrap();
 }
 
 /// Every file of `library/` (decision 74), as `(path, text)` pairs in
@@ -113,11 +94,6 @@ fn web() {
 fn main() {
     library();
     web();
-    bundle("src/ui/js", "js", "app.js");
-    bundle("src/ui/css", "css", "app.css");
-    // The new interface, next to the current one (decision 57).
-    bundle("src/ui/next/js", "js", "next.js");
-    bundle("src/ui/next/css", "css", "next.css");
     if let Some(commit) = git(&["rev-parse", "HEAD"]) {
         println!("cargo:rustc-env=AIRTH_COMMIT={commit}");
     }
