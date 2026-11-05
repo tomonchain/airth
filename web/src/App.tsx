@@ -192,8 +192,8 @@ export default function App() {
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background">
       <TopBar
-        realms={realms.data ?? []} realm={realm} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-        onTab={open} onClose={close} onNew={() => setPage("agents")} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
+        realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
+        onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
