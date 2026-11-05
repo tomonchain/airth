@@ -13,7 +13,7 @@ import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
 
-type Repo = { name: string; path: string; github: string | null; branch: string | null; main: boolean; delivery: string; checks: string[] }
+type Repo = { name: string; path: string; url: string | null; github: string | null; branch: string | null; main: boolean; delivery: string; checks: string[] }
 type Detail = {
   name: string; description: string; root: string; own_root: boolean; image: string | null; default: boolean; archived: boolean; share_owner_profile: boolean
   policy: Record<string, string>; repos: Repo[]; github_token: boolean
@@ -213,19 +213,22 @@ export function Permissions({ realm }: { realm: string }) {
 export function Repositories({ realm, onKeys }: { realm: string; onKeys: () => void }) {
   const { data: d, refresh } = useDetail(realm)
   const [adding, setAdding] = useState(false)
+  const [how, setHow] = useState<"github" | "address">("github")
   const [f, setF] = useState({ source: "", name: "", path: "" })
   const [busy, setBusy] = useState(false)
   const path = `realms/${enc(realm)}/repos`
   async function change(name: string, body: object, done: string) {
     try { await api(`${path}/${enc(name)}`, body, "PATCH"); toast.success(done); refresh() } catch (e) { toast.error((e as Error).message) }
   }
-  async function connect() {
-    if (!f.source.trim()) return
+  async function connectFrom(body: typeof f) {
+    if (!body.source.trim()) return
     setBusy(true)
-    try { await api(path, f, undefined, 300000); toast.success("Repository connected."); setAdding(false); setF({ source: "", name: "", path: "" }); refresh() }
+    setF(body)
+    try { await api(path, body, undefined, 300000); toast.success(`${body.name || "Repository"} connected.`); setAdding(false); setF({ source: "", name: "", path: "" }); refresh() }
     catch (e) { toast.error((e as Error).message) }
     finally { setBusy(false) }
   }
+  const connect = () => connectFrom(f)
   const cloning = /:\/\/|^git@/.test(f.source)
   return (
     <>
@@ -237,19 +240,30 @@ export function Repositories({ realm, onKeys }: { realm: string; onKeys: () => v
         {!adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus /> Connect</Button>}
       </div>
       {adding && (
-        <Panel className="mb-3 space-y-3 p-4">
-          <div className="text-sm font-medium">Connect a repository</div>
-          <Input autoFocus value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} onKeyDown={(e) => e.key === "Enter" && connect()}
-            placeholder="https://github.com/owner/name or ~/Code/project" spellCheck={false} className="font-mono" />
-          <div className="grid grid-cols-2 gap-2">
-            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Name (optional)" spellCheck={false} />
-            <Input value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="Where to clone it (optional)" spellCheck={false} className="font-mono" />
+        <Panel className="mb-3 p-4">
+          <div className="mb-3 flex items-center gap-1 text-xs">
+            {([["github", "From GitHub"], ["address", "By address or folder"]] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setHow(v)} className={cn("rounded-md px-2.5 py-1", how === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+            ))}
           </div>
-          <p className="text-xs text-muted-foreground">A URL is cloned next to the business's folder, or where you say; a folder is used where it is. Airth detects its checks.</p>
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
-            <Button size="sm" disabled={busy || !f.source.trim()} onClick={connect}>{busy ? <><Loader className="animate-spin" /> {cloning ? "Cloning…" : "Connecting…"}</> : "Connect"}</Button>
-          </div>
+          {how === "github" ? (
+            <GitHubPicker realm={realm} connected={d?.repos ?? []} busy={busy ? f.source : null} onKeys={onKeys}
+              onPick={(r) => connectFrom({ source: r.url, name: r.name, path: "" })} onCancel={() => setAdding(false)} />
+          ) : (
+            <div className="space-y-3">
+              <Input autoFocus value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} onKeyDown={(e) => e.key === "Enter" && connect()}
+                placeholder="https://github.com/owner/name or ~/Code/project" spellCheck={false} className="font-mono" />
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Name (optional)" spellCheck={false} />
+                <Input value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="Where to clone it (optional)" spellCheck={false} className="font-mono" />
+              </div>
+              <p className="text-xs text-muted-foreground">A URL is cloned next to the business's folder, or where you say; a folder is used where it is. Airth detects its checks.</p>
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+                <Button size="sm" disabled={busy || !f.source.trim()} onClick={connect}>{busy ? <><Loader className="animate-spin" /> {cloning ? "Cloning…" : "Connecting…"}</> : "Connect"}</Button>
+              </div>
+            </div>
+          )}
         </Panel>
       )}
       {!d ? <Loading /> : (
@@ -369,6 +383,65 @@ function Qr({ qr, label }: { qr: Pairing["qr"]; label: string }) {
     <div role="img" aria-label={label} className="shrink-0 rounded-lg bg-white p-2.5">
       <div className="grid size-36" style={{ gridTemplateColumns: `repeat(${qr.width}, 1fr)` }}>
         {[...qr.cells].map((c, i) => <span key={i} className={c === "1" ? "bg-black" : ""} />)}
+      </div>
+    </div>
+  )
+}
+
+type GhRepo = { full_name: string; name: string; private: boolean; archived: boolean; description: string | null; url: string; default_branch: string; pushed_at: string | null }
+
+/** The repositories the business's GITHUB_TOKEN reaches, to pick one:
+    cloned with that token, never typed in. */
+function GitHubPicker({ realm, connected, busy, onKeys, onPick, onCancel }: {
+  realm: string; connected: Repo[]; busy: string | null; onKeys: () => void; onPick: (r: GhRepo) => void; onCancel: () => void
+}) {
+  const { data } = usePoll<{ token: boolean; repos: GhRepo[]; error?: string }>(() => api(`realms/${enc(realm)}/github/repos`), 600000, [realm])
+  const [q, setQ] = useState("")
+  // Already here: the same GitHub repository, whatever the address's form.
+  const slug = (u: string | null | undefined) => u?.match(/github\.com[/:]([^/]+\/[^/.]+?)(\.git)?\/?$/i)?.[1]?.toLowerCase()
+  const have = new Set(connected.map((r) => slug(r.github ? `github.com/${r.github}` : r.url)).filter(Boolean))
+  if (!data) return <p className="py-2 text-sm text-muted-foreground"><Loader className="mr-1.5 inline size-3.5 animate-spin" />Asking GitHub…</p>
+  if (!data.token) {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>To pick from your GitHub repositories, this business needs a <span className="font-mono">GITHUB_TOKEN</span>: a fine-grained token for the repositories its agents may work on, with Contents and Pull requests (read and write).</p>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onKeys}>Add GITHUB_TOKEN in Keys</Button>
+          <a className="inline-flex items-center gap-1 text-xs text-sky-500 hover:underline" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create one on GitHub</a>
+          <span className="flex-1" />
+          <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+        </div>
+      </div>
+    )
+  }
+  if (data.error) return <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">{data.error}</p>
+  const shown = data.repos.filter((r) => !q || `${r.full_name} ${r.description ?? ""}`.toLowerCase().includes(q.toLowerCase()))
+  return (
+    <div className="space-y-2.5">
+      <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${data.repos.length} repositories`} aria-label="Search repositories" />
+      <div className="max-h-80 divide-y overflow-y-auto rounded-lg border">
+        {shown.length ? shown.map((r) => {
+          const here = have.has(r.full_name.toLowerCase())
+          return (
+            <div key={r.full_name} className={cn("flex items-center gap-3 px-3 py-2", r.archived && "opacity-60")}>
+              <GitPullRequest className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="truncate font-medium">{r.full_name}</span>
+                  {r.private && <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">Private</span>}
+                  {r.archived && <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">Archived</span>}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">{[r.description, r.pushed_at && `pushed ${ago(r.pushed_at)}`].filter(Boolean).join(" · ")}</div>
+              </div>
+              {here ? <span className="text-xs text-emerald-500">Connected</span>
+                : <Button size="xs" variant="outline" disabled={!!busy} onClick={() => onPick(r)}>{busy === r.url ? <><Loader className="animate-spin" /> Cloning…</> : "Connect"}</Button>}
+            </div>
+          )
+        }) : <p className="px-3 py-3 text-sm text-muted-foreground">No repository matches.</p>}
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Cloned next to the business's folder with its token. Not listed? The token does not reach it.</p>
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   )

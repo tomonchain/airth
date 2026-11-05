@@ -447,6 +447,17 @@ impl App {
             (Method::Get, ["realms", r, "repos"]) => {
                 json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
             }
+            // What the business's GitHub token reaches, to pick from.
+            (Method::Get, ["realms", r, "github", "repos"]) => {
+                match self.hub.github_repos(&self.realm(r)?) {
+                    Ok(Some(repos)) => json_response(200, json!({"token": true, "repos": repos})),
+                    Ok(None) => json_response(200, json!({"token": false, "repos": []})),
+                    Err(e) => json_response(
+                        200,
+                        json!({"token": true, "repos": [], "error": format!("{e:#}")}),
+                    ),
+                }
+            }
             (Method::Post, ["realms", r, "repos"]) => {
                 let body = read_json(request)?;
                 let mut realm = self.realm(r)?;

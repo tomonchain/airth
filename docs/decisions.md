@@ -2,6 +2,17 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 77. A repository is picked from the ones the business's GitHub token reaches
+
+**Accepted.** The founder, 5 November 2026: "meilleure expérience si on sélectionne le repo plutôt que l'URL".
+
+- `GET realms/{r}/github/repos` asks GitHub for the repositories the business's `GITHUB_TOKEN` reaches (owned, shared, its organisations'; the 100 latest pushed), with the token in the header only, as pull requests already do (decision 11). Without a token, nothing is asked: the page says how to add one.
+- Settings → Repositories → Connect opens on that list (search, private and archived marked, those already connected shown so); a pick is cloned with the token, as a pasted GitHub URL already was. Pasting an address or a folder stays, one tab away.
+
+*Why:* picking is quicker and cannot mistype; the token is the one the business already holds for its pull requests, so nothing new is trusted.
+
+*Cost:* one more GitHub API call, made only when the founder opens the list; no new state.
+
 ## 76. The Documents editor is CodeMirror 6, in web/
 
 **Accepted.** The founder, 5 November 2026, once the classic interface left (decision 72): "Go faire la coloration". Its Documents page had a CodeMirror editor with syntax colours; `web/` had a plain text box.

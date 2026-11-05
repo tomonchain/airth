@@ -102,6 +102,20 @@ pub struct PrStatus {
     pub failed: Vec<String>,
 }
 
+/// A repository the token reaches, for the founder to pick one to connect.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RepoInfo {
+    pub full_name: String,
+    pub name: String,
+    pub private: bool,
+    pub archived: bool,
+    pub description: Option<String>,
+    /// Its page, also what Airth clones (as `owner/name`).
+    pub url: String,
+    pub default_branch: String,
+    pub pushed_at: Option<String>,
+}
+
 pub struct GitHub {
     token: String,
     api: String,
@@ -232,6 +246,35 @@ impl GitHub {
             bail!("GitHub answered {}: {message}", status.as_u16());
         }
         Ok(value)
+    }
+
+    /// The repositories the token reaches (owned, shared, or its
+    /// organisations'), the latest pushed first; at most 100.
+    pub fn repos(&self) -> Result<Vec<RepoInfo>> {
+        let list = self.call(
+            reqwest::Method::GET,
+            "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member",
+            None,
+        )?;
+        let text = |v: &Value, k: &str| v[k].as_str().map(String::from);
+        Ok(list
+            .as_array()
+            .map(|a| a.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|r| {
+                Some(RepoInfo {
+                    full_name: text(r, "full_name")?,
+                    name: text(r, "name")?,
+                    private: r["private"].as_bool().unwrap_or(true),
+                    archived: r["archived"].as_bool().unwrap_or(false),
+                    description: text(r, "description"),
+                    url: text(r, "html_url")?,
+                    default_branch: text(r, "default_branch").unwrap_or_else(|| "main".into()),
+                    pushed_at: text(r, "pushed_at"),
+                })
+            })
+            .collect())
     }
 
     /// Open a pull request from `head` into `base`, or find the open one
@@ -416,6 +459,44 @@ pub(crate) mod tests {
         ] {
             assert_eq!(Remote::parse(url), None, "{url}");
         }
+    }
+
+    /// The repositories the token reaches, latest first, as the picker
+    /// shows them; the token goes in the header only.
+    #[test]
+    fn lists_the_repositories_the_token_reaches() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let seen = std::thread::spawn(move || {
+            let req = server.recv().unwrap();
+            let auth = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.to_string());
+            let url = req.url().to_string();
+            let body = r#"[{"full_name":"o/site","name":"site","private":true,"description":"The site",
+                "html_url":"https://github.com/o/site","clone_url":"https://github.com/o/site.git",
+                "default_branch":"main","pushed_at":"2026-11-04T10:00:00Z","archived":false},
+                {"full_name":"o/old","name":"old","private":false,"description":null,
+                "html_url":"https://github.com/o/old","clone_url":"https://github.com/o/old.git",
+                "default_branch":"master","pushed_at":null,"archived":true}]"#;
+            req.respond(tiny_http::Response::from_string(body)).unwrap();
+            (auth, url)
+        });
+        let gh = GitHub::at("t0k", &format!("http://127.0.0.1:{port}"), "");
+        let repos = gh.repos().unwrap();
+        let (auth, url) = seen.join().unwrap();
+        assert_eq!(auth.as_deref(), Some("Bearer t0k"));
+        assert!(
+            url.starts_with("/user/repos?") && url.contains("sort=pushed"),
+            "{url}"
+        );
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].full_name, "o/site");
+        assert!(repos[0].private);
+        assert_eq!(repos[0].url, "https://github.com/o/site");
+        assert!(repos[1].archived);
     }
 
     #[test]

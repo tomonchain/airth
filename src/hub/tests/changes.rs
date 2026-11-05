@@ -691,3 +691,21 @@ fn failed_checks_block_adoption() {
     hub.discard(&realm, &state.id).unwrap();
     assert!(!repo.path().join("b.txt").exists());
 }
+
+/// The repository picker asks GitHub only with the business's token: none,
+/// nothing is asked and the page says to add one.
+#[test]
+fn the_repository_picker_needs_the_business_token() {
+    let home_dir = tempfile::tempdir().unwrap();
+    let home = Home::at(home_dir.path()).unwrap();
+    let realm = home
+        .create_realm(NewRealm {
+            name: "company".into(),
+            description: String::new(),
+            root: None,
+            isolation: None,
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(&home, vec![]);
+    assert!(hub.github_repos(&realm).unwrap().is_none());
+}
