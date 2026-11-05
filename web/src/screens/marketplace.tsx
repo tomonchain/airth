@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, Users, Workflow, type LucideIcon } from "lucide-react"
+import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Store, Users, Workflow, RotateCw, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { ConnectDialog, type Method } from "@/components/connect-dialog"
@@ -133,6 +133,12 @@ const Done = ({ children }: { children: React.ReactNode }) => (
 
 function Skills({ realm, q }: { realm: string; q: string }) {
   const cat = usePoll<Catalog>(() => api("catalog"), 600000, [])
+  const [fresh, setFresh] = useState(false)
+  // The catalog is kept a while; this asks Anthropic's list again now.
+  async function refresh() {
+    setFresh(true)
+    try { await api("catalog?refresh=1"); cat.refresh() } catch (e) { toast.error((e as Error).message) } finally { setFresh(false) }
+  }
   const mine = usePoll<Installed>(() => api(`realms/${enc(realm)}/catalog`), 3000, [realm])
   const [open, setOpen] = useState<Skill | null>(null)
   const shown = (cat.data?.skills ?? []).filter((s) => !q || `${s.title} ${s.description}`.toLowerCase().includes(q.toLowerCase()))
@@ -155,6 +161,7 @@ function Skills({ realm, q }: { realm: string; q: string }) {
       <p className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground">
         From <a href={cat.data?.source ?? "https://github.com/anthropics/skills"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-foreground">Anthropic's skills catalog <ExternalLink className="size-3" /></a>
         · Text only: an agent reads a skill as data, under this business's rules.
+        <button onClick={refresh} disabled={fresh} className="ml-auto inline-flex items-center gap-1 hover:text-foreground disabled:opacity-50"><RotateCw className={cn("size-3", fresh && "animate-spin")} /> Refresh the list</button>
       </p>
       {!cat.data ? <Loading /> : cat.data.error && !cat.data.skills.length ? <Empty icon={Sparkles} title="The catalog cannot be reached">{cat.data.error}</Empty> : (
         <Grid>

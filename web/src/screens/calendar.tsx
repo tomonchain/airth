@@ -96,7 +96,36 @@ export function Calendar({ realm, agents, onAgent }: { realm: string; agents: Ag
         : view === "month" ? <Month days={data.days} anchor={anchor} face={face} onAgent={onAgent} onDay={(d) => { setAnchor(d); setView("day") }} />
         : view === "agenda" ? <Agenda data={data} face={face} onAgent={onAgent} />
         : <Grid days={data.days} face={face} onAgent={onAgent} onDay={(d) => { setAnchor(d); setView("day") }} />}
+      <Planning realm={realm} face={face} onAgent={onAgent} />
     </div>
+  )
+}
+
+type Planned = { at: string; name: string; kind: string; bot: string | null; status?: string; run?: string | null }
+
+/** The agent routines and fixed sequences (the classic Planning page): the
+    coming week's times and how the last week's went. Block routines are in
+    the calendar above. */
+function Planning({ realm, face, onAgent }: { realm: string; face: Face; onAgent: (n: string) => void }) {
+  const { data } = usePoll<{ coming: Planned[]; past: Planned[] }>(() => api(`realms/${enc(realm)}/planning`), 60000, [realm])
+  if (!data || (!data.coming.length && !data.past.length)) return null
+  const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  const row = (x: Planned, past: boolean) => {
+    const a = x.bot ? face(x.bot) : undefined
+    return (
+      <button key={`${x.name}${x.at}`} disabled={!a} onClick={() => a && onAgent(a.name)} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs enabled:hover:bg-accent/60">
+        <span className="w-24 shrink-0 text-muted-foreground tabular-nums">{when(x.at)}</span>
+        <span className="min-w-0 flex-1 truncate font-mono">{x.name}</span>
+        <span className="shrink-0 text-muted-foreground">{a?.title ?? (x.kind === "pipeline" ? "Fixed sequence" : x.bot ?? "")}</span>
+        {past && <span className={cn("w-16 shrink-0 text-right", x.status === "completed" ? "text-emerald-500" : x.status === "failed" ? "text-red-500" : "text-muted-foreground")}>{x.status}</span>}
+      </button>
+    )
+  }
+  return (
+    <section className="grid max-h-56 shrink-0 grid-cols-2 gap-6 overflow-y-auto border-t px-6 py-3">
+      <div><h2 className="mb-1 text-xs font-semibold">Agent routines and fixed sequences · coming 7 days</h2>{data.coming.length ? data.coming.slice(0, 30).map((x) => row(x, false)) : <p className="text-xs text-muted-foreground">Nothing scheduled.</p>}</div>
+      <div><h2 className="mb-1 text-xs font-semibold">Last 7 days</h2>{data.past.length ? data.past.map((x) => row(x, true)) : <p className="text-xs text-muted-foreground">Nothing ran.</p>}</div>
+    </section>
   )
 }
 
