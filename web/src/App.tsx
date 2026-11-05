@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { AgentList, type Last } from "@/components/agent-list"
 import { Details } from "@/components/details"
 import { Rail, type Page } from "@/components/rail"
 import { TopBar } from "@/components/topbar"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Business, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
+import { failure } from "@/components/task-thread"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
@@ -27,9 +28,19 @@ const Settings = lazy(() => import("@/screens/settings").then((m) => ({ default:
 const Tasks = lazy(() => import("@/screens/tasks").then((m) => ({ default: m.Tasks })))
 const Welcome = lazy(() => import("@/screens/welcome").then((m) => ({ default: m.Welcome })))
 
+const PAGES: Page[] = ["home", "agents", "needs", "routines", "tasks", "calendar", "documents", "finance", "usage", "hq", "company", "settings", "marketplace"]
+
 function route(): string | null {
   const m = location.hash.match(/^#\/b\/([^/?&]+)/)
   return m ? decodeURIComponent(m[1]) : null
+}
+
+// The page and agent open, after the business in the address
+// (#/b/hedgen/agents/writer): a reload comes back to them, and a link opens them.
+function opened(): { page: Page; agent: string | null } {
+  const m = location.hash.match(/^#\/b\/[^/?&]+\/([a-z]+)(?:\/([^/?&]+))?/)
+  const page = PAGES.find((p) => p === m?.[1]) ?? "home"
+  return { page, agent: page === "agents" && m?.[2] ? decodeURIComponent(m[2]) : null }
 }
 
 type Data = { agents: Agent[]; items: Item[]; tasks: Tasks | null }
@@ -59,7 +70,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const on = () => { setHash(route()); setWelcome(location.hash === "#/welcome") }
+    const on = () => {
+      setHash(route()); setWelcome(location.hash === "#/welcome")
+      // A link to a page or an agent opens it.
+      const to = opened()
+      if (/^#\/b\/[^/]+\/[a-z]/.test(location.hash)) {
+        setPage(to.page)
+        if (to.agent) { setCurrent(to.agent); setTabs((t) => (t.includes(to.agent!) ? t : [...t, to.agent!])) }
+      }
+    }
     addEventListener("hashchange", on)
     return () => removeEventListener("hashchange", on)
   }, [])
@@ -89,14 +108,26 @@ export default function App() {
   const hq = usePoll<{ businesses: Business[] }>(realm ? () => api("hq") : null, 15000, [realm])
   const business = hq.data?.businesses.find((b) => b.name === realm) ?? null
 
-  const [page, setPage] = useState<Page>("home")
-  const [current, setCurrent] = useState<string | null>(null)
-  const [tabs, setTabs] = useState<string[]>([])
+  const [page, setPage] = useState<Page>(() => opened().page)
+  const [current, setCurrent] = useState<string | null>(() => opened().agent)
+  const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
   const [details, setDetails] = useState(true)
   const agents = data.data?.agents ?? []
   const items = data.data?.items ?? []
 
-  useEffect(() => { setCurrent(null); setTabs([]); setTask(null) }, [realm])
+  // Another business: its own agents' tabs. Not on the first render, which
+  // opens what the address says.
+  const shownRealm = useRef(realm)
+  useEffect(() => {
+    if (shownRealm.current === realm) return
+    shownRealm.current = realm
+    setCurrent(null); setTabs([]); setTask(null)
+  }, [realm])
+  useEffect(() => {
+    if (!realm) return
+    const at = `#/b/${encodeURIComponent(realm)}/${page}${page === "agents" && current ? `/${encodeURIComponent(current)}` : ""}`
+    if (location.hash !== at && route() === realm) history.replaceState(null, "", at)
+  }, [realm, page, current])
   useEffect(() => {
     if (page !== "agents" || current || !agents.length) return
     const first = agents.find((a) => a.waiting > 0) ?? agents[0]
@@ -134,7 +165,8 @@ export default function App() {
       if (t.agent && (!latest[t.agent] || latest[t.agent].id < t.id)) latest[t.agent] = t
     }
     for (const [agent, t] of Object.entries(latest)) {
-      const line = (t.line || t.order || "").replace(/[*_`#>]/g, "").split("\n").find((x) => x.trim()) ?? ""
+      const said = t.status === "failed" ? failure(t.line || null) : t.line || t.order || ""
+      const line = said.replace(/[*_`#>]/g, "").split("\n").find((x) => x.trim()) ?? ""
       if (line) take(agent, line.trim(), t.at ?? t.updated_at)
     }
     for (const it of items) if (it.agent) take(it.agent, it.text?.split("\n")[0] ?? it.title, it.created_at)

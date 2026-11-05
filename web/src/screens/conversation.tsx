@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
+import { ArrowDown, Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Character } from "@/components/character"
@@ -107,9 +107,12 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
     o.observe(content.current)
     return () => o.disconnect()
   }, [])
+  // Scrolled up to read: a button brings the newest back.
+  const [away, setAway] = useState(false)
   function scrolled() {
     const el = scroller.current
     if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    setAway(!pinned.current)
   }
 
   function refresh() { thread.refresh(); onDone() }
@@ -158,7 +161,13 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
           {thread.data && busy && !outbox && <Working agent={agent} />}
         </div>
       </div>
-      <div className={cn("mx-auto w-full px-6 pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
+      <div className={cn("relative mx-auto w-full px-6 pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
+        {away && (
+          <button onClick={() => { pinned.current = true; setAway(false); toBottom(true) }} aria-label="Newest messages"
+            className="absolute -top-11 left-1/2 grid size-8 -translate-x-1/2 place-items-center rounded-full border bg-popover text-muted-foreground shadow-md fade-up hover:text-foreground">
+            <ArrowDown className="size-4" />
+          </button>
+        )}
         <OrderBox realm={realm} agent={agent.name} title={agent.title} task={closed ? undefined : latest} closed={closed} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)

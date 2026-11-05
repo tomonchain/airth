@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronRight, CircleAlert, ShieldQuestion, Square, Wrench, X } from "lucide-react"
+import { Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, Wrench, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
@@ -326,7 +326,12 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
           r={{ live, change: view.state.change, checks_required: !!view.checks_required, delivery: view.delivery ?? "adopt", config: view.config ?? { files: [], agents: [] } }}
           onAsk={async (text) => { await api(`realms/${enc(realm)}/runs/${enc(id)}/messages`, { message: text }); refresh(); onChange() }} />
       )}
-      {!live && status === "failed" && <p className="mb-4 ml-10 text-xs text-red-500">{view.state.report ?? "It failed."}</p>}
+      {!live && status === "failed" && (
+        <div className="mb-4 ml-10 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-red-500">{failure(view.state.report)}</span>
+          <Button size="xs" variant="outline" disabled={busy} onClick={goOn}><RotateCw /> Try again</Button>
+        </div>
+      )}
       {!live && status === "stopped" && !question && (
         <div className="mb-4 ml-10 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>
@@ -339,6 +344,19 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
       )}
     </div>
   )
+}
+
+/** Why a task failed, in a line: a model's error is long and technical. */
+export function failure(report: string | null) {
+  if (!report) return "It failed."
+  if (/^model error/i.test(report)) {
+    if (/\b(429|rate.?limit|overloaded|529)\b/i.test(report)) return "The model is busy right now."
+    if (/\b(401|403|invalid.*key|authentication)\b/i.test(report)) return "The model refused its key: check it in Settings → Keys."
+    if (/\b(402|credit|balance|quota)\b/i.test(report)) return "The model's account is out of credit."
+    if (/not answering|timed? ?out|connection|broke off/i.test(report)) return "The model stopped answering."
+    return "The model failed to answer."
+  }
+  return report.split("\n")[0]
 }
 
 /** What the agent is at, in a few words: its step in progress, else thinking. */

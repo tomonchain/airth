@@ -18,6 +18,9 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
   const [busy, setBusy] = useState(false)
   const [fresh, setFresh] = useState(false)
   useEffect(() => setFresh(false), [agent])
+  // ↑ in the empty box brings back the last message, to fix and send again.
+  const [last, setLast] = useState("")
+  useEffect(() => setLast(""), [agent])
   // At work, a message goes to what it is doing: it reads it at its next step.
   const continuing = !!task && (!fresh || working)
 
@@ -28,6 +31,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
     // The message goes into the thread now, as a chat does; the server's
     // copy replaces it when it comes back.
     setText("")
+    setLast(t)
     onSending(t, continuing ? task! : null)
     try {
       // Closed since the page last looked (its change adopted elsewhere): the
@@ -50,10 +54,14 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
     }
   }
 
+  async function stop() {
+    try { await api(`realms/${enc(realm)}/runs/${enc(task!)}/stop`, {}) } catch (e) { toast.error((e as Error).message) }
+  }
+
   return (
     <div>
       <div className="mb-1.5 flex h-6 items-center gap-2 px-1 text-xs text-muted-foreground">
-        {working ? <span>{title} is working. It reads what you write at its next step.</span>
+        {working ? <span>{title} is working. It reads what you write at its next step. <kbd className="font-sans">Esc</kbd> stops it.</span>
           : continuing ? (
             <>
               <span>Continues the current task</span>
@@ -75,6 +83,9 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
             // ↵ or ⌘↵ sends, as the founder chose in Settings; the other adds a line.
             const mod = e.metaKey || e.ctrlKey
             if (e.key === "Enter" && !e.shiftKey && (prefs.send === "mod" ? mod : !mod)) { e.preventDefault(); send() }
+            else if (e.key === "ArrowUp" && !text && last) { e.preventDefault(); setText(last) }
+            // Esc stops what the agent is doing.
+            else if (e.key === "Escape" && working && task) { e.preventDefault(); stop() }
           }}
           rows={1}
           placeholder={`Write to ${title}`}
