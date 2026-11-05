@@ -1,5 +1,6 @@
-import { ChevronsUpDown, PanelRight, Plus, Sparkles, X } from "lucide-react"
+import { Building, ChevronsUpDown, PanelRight, Plus, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
+import { UpdateNotice } from "@/components/update-notice"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { Agent, Realm } from "@/lib/api"
@@ -7,9 +8,9 @@ import { cn } from "@/lib/utils"
 
 /** The window's top: the business, the open conversations as tabs, the
     details toggle. In the Mac app it is the title bar. */
-export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, onNew, onNewBusiness, details, onDetails }: {
+export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, onNew, onNewBusiness, onHq, details, onDetails }: {
   realms: Realm[]; realm: string; tabs: string[]; current: string | null; agents: Agent[]
-  onTab: (name: string) => void; onClose: (name: string) => void; onNew: () => void; onNewBusiness: () => void; details: boolean; onDetails: () => void
+  onTab: (name: string) => void; onClose: (name: string) => void; onNew: () => void; onNewBusiness: () => void; onHq: () => void; details: boolean; onDetails: () => void
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 pr-3">
@@ -31,6 +32,7 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
             ))}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
             <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
             <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
           </DropdownMenuContent>
@@ -54,6 +56,7 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
         })}
         <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Open an agent" onClick={onNew}><Plus /></Button>
       </nav>
+      <UpdateNotice working={agents.filter((a) => a.state === "working").length} />
       <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground", details && "bg-accent text-foreground")} aria-label="Details" onClick={onDetails}><PanelRight /></Button>
     </header>
   )

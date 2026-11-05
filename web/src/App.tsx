@@ -15,6 +15,8 @@ import { NewBusiness } from "@/components/new-business"
 const Calendar = lazy(() => import("@/screens/calendar").then((m) => ({ default: m.Calendar })))
 const Company = lazy(() => import("@/screens/company").then((m) => ({ default: m.Company })))
 const Documents = lazy(() => import("@/screens/documents").then((m) => ({ default: m.Documents })))
+const Hq = lazy(() => import("@/screens/hq").then((m) => ({ default: m.Hq })))
+const Usage = lazy(() => import("@/screens/usage").then((m) => ({ default: m.Usage })))
 const Finance = lazy(() => import("@/screens/finance").then((m) => ({ default: m.Finance })))
 const Marketplace = lazy(() => import("@/screens/marketplace").then((m) => ({ default: m.Marketplace })))
 const Routines = lazy(() => import("@/screens/routines").then((m) => ({ default: m.Routines })))
@@ -117,7 +119,7 @@ export default function App() {
     <div className="flex h-svh flex-col overflow-hidden bg-background">
       <TopBar
         realms={realms.data ?? []} realm={realm} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-        onTab={open} onClose={close} onNew={() => setPage("agents")} onNewBusiness={() => setFounding(true)} details={details} onDetails={() => setDetails(!details)}
+        onTab={open} onClose={close} onNew={() => setPage("agents")} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
       <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
@@ -131,6 +133,8 @@ export default function App() {
           : page === "tasks" ? <Tasks realm={realm} agents={agents} onAgent={open} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} />
+          : page === "usage" ? <Usage realm={realm} />
+          : page === "hq" ? <Hq onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
           : page === "settings" ? <Settings realm={realm} />
           : page === "marketplace" ? <Marketplace realm={realm} />
