@@ -55,6 +55,28 @@ pub fn parse(text: &str) -> Doc {
                 }
                 value = parts.join(" ").trim().to_string();
             }
+            // A list written one item per line, as YAML allows: `- item`.
+            if value.is_empty()
+                && lines
+                    .get(i + 1)
+                    .is_some_and(|l| l.starts_with([' ', '\t']) && l.trim_start().starts_with("- "))
+            {
+                let mut items = Vec::new();
+                while let Some(item) = lines
+                    .get(i + 1)
+                    .filter(|l| l.starts_with([' ', '\t']))
+                    .and_then(|l| l.trim_start().strip_prefix("- "))
+                {
+                    i += 1;
+                    let item = unquote(item);
+                    if !item.is_empty() && item != "TODO" {
+                        items.push(item.to_string());
+                    }
+                }
+                fields.push((key.trim().to_string(), Some(Value::List(items))));
+                i += 1;
+                continue;
+            }
             fields.push((key.trim().to_string(), value_of(&value)));
         }
         i += 1;
@@ -154,6 +176,23 @@ impl Doc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A list written one item per line (`- item`), as YAML allows and as
+    /// agents write it, reads like `[a, b]`; an empty field stays unknown.
+    #[test]
+    fn reads_a_list_written_one_item_per_line() {
+        let doc = parse(
+            "---\ngoal: Be the reference\nmilestones:\n  - 20 calls by 2026-12-31\n  - \"First firm: signed\"\n  - TODO\n\
+             links:\nby: 2027-12-31\n---\nBody\n",
+        );
+        assert_eq!(
+            doc.list("milestones"),
+            vec!["20 calls by 2026-12-31", "First firm: signed"]
+        );
+        assert_eq!(doc.text("by").as_deref(), Some("2027-12-31"));
+        assert_eq!(doc.unknown(&["milestones", "links"]), vec!["links"]);
+        assert_eq!(doc.body, "Body\n");
+    }
 
     #[test]
     fn reads_flat_fields_lists_and_the_body() {
