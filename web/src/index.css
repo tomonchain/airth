@@ -213,3 +213,27 @@
 ::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 14%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in oklch, var(--foreground) 24%, transparent); }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* Syntax colours in the Documents editor (CodeMirror's .tok-* classes), the
+   classic interface's palette, light then dark. */
+.cm-editor {
+  --tok-keyword: #8b3fd9; --tok-string: #0a7d4f; --tok-number: #b45309; --tok-comment: #8f8f8f;
+  --tok-type: #0f6fb8; --tok-fn: #2557d6; --tok-prop: #a3366f; --tok-meta: #6b7280; --tok-heading: #0d0d0d;
+}
+.dark .cm-editor {
+  --tok-keyword: #c792ea; --tok-string: #a5d6a7; --tok-number: #f9b872; --tok-comment: #7f8590;
+  --tok-type: #82aaff; --tok-fn: #89ddff; --tok-prop: #f78c9c; --tok-meta: #9aa0aa; --tok-heading: #ffffff;
+}
+.cm-editor .tok-keyword, .cm-editor .tok-operatorKeyword, .cm-editor .tok-controlKeyword { color: var(--tok-keyword); }
+.cm-editor .tok-string, .cm-editor .tok-string2, .cm-editor .tok-inserted { color: var(--tok-string); }
+.cm-editor .tok-number, .cm-editor .tok-bool, .cm-editor .tok-atom, .cm-editor .tok-literal { color: var(--tok-number); }
+.cm-editor .tok-comment { color: var(--tok-comment); font-style: italic; }
+.cm-editor .tok-typeName, .cm-editor .tok-className, .cm-editor .tok-namespace { color: var(--tok-type); }
+.cm-editor .tok-definition, .cm-editor .tok-macroName { color: var(--tok-fn); }
+.cm-editor .tok-propertyName, .cm-editor .tok-attributeName, .cm-editor .tok-labelName { color: var(--tok-prop); }
+.cm-editor .tok-meta, .cm-editor .tok-processingInstruction { color: var(--tok-meta); }
+.cm-editor .tok-heading { color: var(--tok-heading); font-weight: 650; }
+.cm-editor .tok-link, .cm-editor .tok-url { color: var(--tok-type); text-decoration: underline; }
+.cm-editor .tok-emphasis { font-style: italic; }
+.cm-editor .tok-strong { font-weight: 650; }
+.cm-editor .tok-deleted, .cm-editor .tok-invalid { color: var(--color-red-500); }

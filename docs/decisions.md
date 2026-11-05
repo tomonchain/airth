@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 76. The Documents editor is CodeMirror 6, in web/
+
+**Accepted.** The founder, 5 November 2026, once the classic interface left (decision 72): "Go faire la coloration". Its Documents page had a CodeMirror editor with syntax colours; `web/` had a plain text box.
+
+- `web/` depends on CodeMirror 6 and its languages, pinned at the versions the classic editor bundle used (`@codemirror/*`, `@lezer/highlight`, `codemirror`): JavaScript and TypeScript, JSON, Markdown, Python, Rust, CSS, HTML, YAML, SQL, XML, Go, Java, C and C++, PHP, and shell, TOML, Swift and Ruby.
+- It is its own chunk, fetched the first time a text file opens; the Documents page and the rest of the interface do not load it.
+- Colours are the classic palette, through CodeMirror's `.tok-*` classes, light and dark with the theme.
+
+*Why:* reading and changing a business's code and config without colours is slower and more error-prone; CodeMirror is what the classic interface already shipped, with the same languages, so nothing new is trusted.
+
+*Cost:* about 1 MB of script (380 kB compressed) in `web/dist/`, embedded in the binary, loaded on demand. Its versions are kept by `web/package-lock.json`.
+
 ## 75. A task written in an agent's chat is watched by the founder
 
 **Accepted.** The founder, 4 November 2026, after talking to an agent in the new interface: "it's not going smooth to talk to an agent". Each message started a separate task; the first command the agent wanted to run stopped it (decision 64: an order runs unwatched, its questions go to Needs you); its replies never showed.

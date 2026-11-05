@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { AppWindow, ChevronRight, Eye, File, FileImage, FilePlus, FileText, Folder, FolderOpen, FolderPlus, Pencil, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
 import { toast } from "sonner"
+import { selection } from "@/lib/editor-selection"
 import { Rich } from "@/components/rich"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -11,6 +12,9 @@ import { cn } from "@/lib/utils"
 type Entry = { name: string; dir: boolean; size: number; modified: string | null }
 type Listing = { root: string; own_root: boolean; path: string; entries: Entry[]; made: { path: string; run: string; run_title: string | null; at: string; edited: boolean }[] }
 type Tab = { path: string; kind: "text" | "image" | "pdf" | "other"; text?: string; saved?: string; version?: string; url?: string; error?: string; preview?: boolean; changed?: boolean }
+
+// CodeMirror and its languages, fetched the first time a text file opens.
+const CodeEditor = lazy(() => import("@/components/code-editor"))
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|heic)$/i
 const PDF = /\.pdf$/i
@@ -168,13 +172,10 @@ export function Documents({ realm, onAsk }: { realm: string; onAsk: (text: strin
   // ⌘L: ask the team about this file, or the lines selected in it.
   async function ask(t: Tab) {
     if (t.kind === "text" && t.text !== t.saved) await save(t)
-    const el = document.querySelector<HTMLTextAreaElement>("textarea[data-doc]")
+    const sel = t.kind === "text" && !t.preview ? selection() : null
     const lang = t.path.match(/\.([a-z0-9]+)$/i)?.[1] ?? ""
-    if (el && el.selectionEnd > el.selectionStart) {
-      const before = el.value.slice(0, el.selectionStart).split("\n").length
-      const text = el.value.slice(el.selectionStart, el.selectionEnd)
-      const after = before + text.split("\n").length - 1
-      onAsk(`About \`${t.path}\` (line${after > before ? `s ${before}–${after}` : ` ${before}`}):\n\`\`\`${lang}\n${text.length > 4000 ? `${text.slice(0, 4000)}\n…` : text}\n\`\`\`\n`)
+    if (sel) {
+      onAsk(`About \`${t.path}\` (line${sel.to > sel.from ? `s ${sel.from}–${sel.to}` : ` ${sel.from}`}):\n\`\`\`${lang}\n${sel.text.length > 4000 ? `${sel.text.slice(0, 4000)}\n…` : sel.text}\n\`\`\`\n`)
     } else onAsk(`About \`${t.path}\`: `)
   }
 
@@ -382,11 +383,6 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
   const [sure, setSure] = useState(false)
   const [pos, setPos] = useState({ line: 1, col: 1 })
   const dirty = t.text !== t.saved
-  const lines = useMemo(() => (t.text ?? "").split("\n").length, [t.text])
-  const caret = (el: HTMLTextAreaElement) => {
-    const before = el.value.slice(0, el.selectionStart).split("\n")
-    setPos({ line: before.length, col: before.at(-1)!.length + 1 })
-  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {t.changed && (
@@ -408,19 +404,10 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
           ) : t.text === undefined ? <p className="p-6 text-sm text-muted-foreground">Loading…</p>
           : t.preview ? <div className="mx-auto max-w-3xl px-8 py-8 text-sm leading-relaxed"><Rich text={t.text} /></div>
           : (
-            <div className="flex min-h-full font-mono text-[12.5px] leading-[1.6]">
-              <pre aria-hidden className="shrink-0 py-4 pr-3 pl-4 text-right text-muted-foreground/50 select-none">{Array.from({ length: lines }, (_, i) => i + 1).join("\n")}</pre>
-              <textarea value={t.text} onChange={(e) => { onText(e.target.value); caret(e.target) }} onSelect={(e) => caret(e.currentTarget)} onClick={(e) => caret(e.currentTarget)}
-                spellCheck={false} aria-label={base(t.path)} wrap="off" data-doc
-                onKeyDown={(e) => {
-                  if (e.key !== "Tab") return
-                  e.preventDefault()
-                  const el = e.currentTarget, s = el.selectionStart
-                  onText(el.value.slice(0, s) + "  " + el.value.slice(el.selectionEnd))
-                  requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 2 })
-                }}
-                style={{ height: `${lines * 1.6 + 2}em` }}
-                className="min-h-full flex-1 resize-none overflow-hidden bg-transparent py-4 pr-6 outline-none" />
+            <div className="h-full">
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading the editor…</p>}>
+                <CodeEditor key={t.path} path={t.path} value={t.text} onChange={onText} onCaret={(line, col) => setPos({ line, col })} />
+              </Suspense>
             </div>
           )}
       </div>
