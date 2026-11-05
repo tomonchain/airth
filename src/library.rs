@@ -203,8 +203,18 @@ mod tests {
                     let doc = crate::frontmatter::parse(text);
                     assert!(doc.text("title").is_some(), "{rel}");
                     let d = doc.text("department").unwrap();
+                    // Teams ship in the seven departments of CLAUDE.md.
                     assert!(
-                        crate::business::config::DEPARTMENTS.contains(&d.as_str()),
+                        [
+                            "leadership",
+                            "marketing",
+                            "sales",
+                            "support",
+                            "product",
+                            "operations",
+                            "finance"
+                        ]
+                        .contains(&d.as_str()),
                         "{rel}"
                     );
                     assert!(doc.body.contains("## Mission"), "{rel}");

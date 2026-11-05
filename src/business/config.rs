@@ -44,12 +44,6 @@ const AGENT: &[&str] = &[
     "integrations", "skills", "repos", "look", "accessory",
 ];
 
-/// The seven departments of `CLAUDE.md`, fixed in Airth.
-#[rustfmt::skip]
-pub const DEPARTMENTS: &[&str] = &[
-    "leadership", "marketing", "sales", "support", "product", "operations", "finance",
-];
-
 #[derive(Debug, Default)]
 pub struct Config {
     pub profile: Doc,
@@ -204,6 +198,15 @@ pub fn finance(root: &Path) -> Result<Option<Doc>> {
     .map(Some)
 }
 
+/// A department is the seven's or any short name the business gives one.
+pub fn department(value: &str) -> Result<()> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().count() > 40 || value.contains(['\n', '\r']) {
+        bail!("department '{value}' is a short name, at most 40 characters");
+    }
+    Ok(())
+}
+
 fn one_of(d: &Doc, key: &str, allowed: &[&str]) -> Result<()> {
     match d.text(key) {
         Some(v) if !allowed.contains(&v.as_str()) => {
@@ -282,7 +285,9 @@ fn check_line(d: &Doc) -> Result<Vec<&'static str>> {
 }
 
 fn check_agent(d: &Doc) -> Result<Vec<&'static str>> {
-    one_of(d, "department", DEPARTMENTS)?;
+    if let Some(v) = d.text("department") {
+        department(&v)?;
+    }
     Ok(vec!["title", "department"])
 }
 
@@ -510,8 +515,8 @@ mod tests {
             ),
             (
                 "agents/x.md",
-                "---\ndepartment: editorial\n---\n",
-                "department 'editorial'",
+                "---\ndepartment: the department of everything the business does not do yet\n---\n",
+                "at most 40 characters",
             ),
             (
                 "agents/x.md",
@@ -543,6 +548,20 @@ mod tests {
         }
     }
 
+    /// Decision 79: a department beyond the seven is added by naming it.
+    #[test]
+    fn a_new_department_is_added_by_naming_it() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            root.path(),
+            "agents/dev.md",
+            "---\ntitle: Developer\ndepartment: development\n---\n",
+        );
+        let c = load(root.path()).unwrap();
+        assert!(c.broken.is_empty(), "{:?}", c.broken);
+        assert_eq!(c.agents[0].1.text("department").unwrap(), "development");
+    }
+
     /// An agent writing a wrong file leaves the rest of the team shown,
     /// including those who report to the agent set aside.
     #[test]
@@ -557,7 +576,7 @@ mod tests {
         write(
             r,
             "agents/dev.md",
-            "---\ntitle: Dev\ndepartment: development\n---\n",
+            "---\ntitle: Dev\ndepartment: product\nreports: chief\n---\n",
         );
         write(
             r,
@@ -570,7 +589,7 @@ mod tests {
         assert_eq!(c.broken.len(), 1);
         assert!(c.broken[0].starts_with("agents/dev.md: "), "{:?}", c.broken);
         assert!(
-            c.broken[0].contains("department 'development'"),
+            c.broken[0].contains("unknown field 'reports'"),
             "{:?}",
             c.broken
         );

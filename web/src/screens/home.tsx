@@ -3,7 +3,7 @@ import { Activity as ActivityIcon, ChevronRight, CircleAlert, CircleCheck, Circl
 import { Character } from "@/components/character"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Activity, type Agent, type AgentState, type Business, type Item } from "@/lib/api"
+import { api, departmentName, enc, type Activity, type Agent, type AgentState, type Business, type Item } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -189,7 +189,7 @@ function AgentRow({ agent, activity, onOpen }: { agent: Agent; activity?: Activi
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{agent.title}</span>
-            <span className="text-xs text-muted-foreground capitalize">{agent.department}</span>
+            <span className="text-xs text-muted-foreground">{departmentName(agent.department)}</span>
           </div>
           {agent.state === "working" ? (
             <div className="mt-1 flex items-center gap-2">

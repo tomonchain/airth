@@ -38,7 +38,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | HQ | The founder's view across all businesses | — | to build |
 | Business | A company and its activity | realm | exists; legal identity to add |
 | Line | An editorial line, range or brand inside a business | business config | to build, config only |
-| Department | A group of roles: Leadership, Marketing, Sales, Support, Product & tech, Operations, Finance & admin | business config | to build, config only |
+| Department | A group of roles: Leadership, Marketing, Sales, Support, Product & tech, Operations, Finance & admin by default, and any other the business names (decision 79) | business config | to build, config only |
 | Agent | A permanent role: department, mission, routines, prompts, optional mailbox, autonomy, statistics | — | to build |
 | Routine | Recurring work of an agent, as a graph of blocks | objective + pipeline | scheduling exists; pipelines to build |
 | Mission | A one-off order executed by an agent | run, chat | exists |

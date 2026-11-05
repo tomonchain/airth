@@ -152,3 +152,15 @@ export type Company = {
 }
 
 export const DEPARTMENTS = ["leadership", "marketing", "sales", "support", "product", "operations", "finance"] as const
+
+// The glossary's departments, as the founder reads them; any other is the
+// business's own, named as written (decision 79).
+const DEPARTMENT_NAMES: Record<string, string> = {
+  leadership: "Leadership", marketing: "Marketing", sales: "Sales", support: "Support",
+  product: "Product & tech", operations: "Operations", finance: "Finance & admin",
+}
+export const departmentKey = (d: string | null | undefined) => (d ?? "").trim().toLowerCase()
+export function departmentName(d: string | null | undefined) {
+  const key = departmentKey(d)
+  return DEPARTMENT_NAMES[key] ?? (key ? d!.trim().charAt(0).toUpperCase() + d!.trim().slice(1) : "No department")
+}

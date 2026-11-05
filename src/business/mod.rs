@@ -274,11 +274,7 @@ pub fn check_agent_field(key: &str, value: &str) -> Result<()> {
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;
             }
         }
-        "department" if config::DEPARTMENTS.contains(&value) => {}
-        "department" => anyhow::bail!(
-            "department '{value}' is not one of {}",
-            config::DEPARTMENTS.join(", ")
-        ),
+        "department" => config::department(value)?,
         _ => anyhow::bail!("{key} cannot be set here"),
     }
     if value.contains(['\n', '\r']) {
@@ -606,7 +602,9 @@ mod tests {
                 .unwrap()
                 .starts_with("---\ntitle: Analyst\n---\n")
         );
-        assert!(set_agent_field(root.path(), "writer", "department", "legal").is_err());
+        // A department beyond the seven is added by naming it (decision 79).
+        set_agent_field(root.path(), "writer", "department", "legal").unwrap();
+        assert!(set_agent_field(root.path(), "writer", "department", " ").is_err());
         assert!(set_agent_field(root.path(), "writer", "title", " ").is_err());
         assert!(set_agent_field(root.path(), "writer", "title", "a\nb").is_err());
         assert!(set_agent_field(root.path(), "writer", "look", "00000000").is_err());

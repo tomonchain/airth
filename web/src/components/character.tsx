@@ -31,10 +31,15 @@ export function characterSvg(a: Look, still = false) {
   const seed = /^[0-9a-f]{8}$/.test(a.look ?? "") ? a.look! : "00000000"
   const i = parseInt(seed.slice(0, 2), 16) % SHAPES.length
   const state = LABEL[a.state] ? a.state : "idle"
-  const dept = a.department && DEPTS.includes(a.department) ? a.department : "none"
-  const id = `g${seed}${dept}`
+  const key = (a.department ?? "").trim().toLowerCase()
+  const dept = DEPTS.includes(key) ? key : "none"
+  // The business's own department: a colour of its own, from its name. Only
+  // the number reaches the SVG, never the name.
+  const hue = key && dept === "none" ? [...key].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7) : null
+  const [top, bottom] = hue === null ? [`var(--dept-${dept})`, `var(--dept-${dept}-dark)`] : [`oklch(0.72 0.13 ${hue})`, `oklch(0.55 0.13 ${hue})`]
+  const id = `g${seed}${hue ?? dept}`
   return `<svg class="ch st-${state}${still ? " still" : ""}" viewBox="0 0 100 100" width="100%" height="100%">`
-    + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="var(--dept-${dept})"/><stop offset="1" stop-color="var(--dept-${dept}-dark)"/></linearGradient></defs>`
+    + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`
     + `<g class="body" fill="url(#${id})" stroke="url(#${id})">${SHAPES[i]}</g>`
     + eyes(state, EYE_Y[i]) + "</svg>"
 }

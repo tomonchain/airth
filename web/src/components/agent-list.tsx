@@ -2,17 +2,11 @@ import { useEffect, useState } from "react"
 import { Pin, PinOff, Plus, Search, TriangleAlert } from "lucide-react"
 import { Character } from "@/components/character"
 import { HireAgent } from "@/components/hire-agent"
-import { DEPARTMENTS, type Agent, type Item } from "@/lib/api"
+import { DEPARTMENTS, departmentKey, departmentName, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 export type Last = { text: string; at: string | null }
-
-// The glossary's departments, as the founder reads them.
-const DEPARTMENT_NAMES: Record<string, string> = {
-  leadership: "Leadership", marketing: "Marketing", sales: "Sales", support: "Support",
-  product: "Product & tech", operations: "Operations", finance: "Finance & admin",
-}
 
 /** The agents as conversations: the one with something for the founder
     first, then the latest to have worked. */
@@ -34,11 +28,16 @@ export function AgentList({ realm, agents, broken, items, last, selected, onOpen
   const shown = agents
     .filter((a) => !q || `${a.title} ${a.department} ${a.job}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => Number(waiting(b) > 0) - Number(waiting(a) > 0) || (last[b.name]?.at ?? "").localeCompare(last[a.name]?.at ?? ""))
-  // By department, in the glossary's order; pinned agents on top.
+  // By department: the glossary's seven in order, then the business's own,
+  // then none; pinned agents on top.
+  const own = [...new Set(agents.map((a) => departmentKey(a.department)))]
+    .filter((d) => d && !(DEPARTMENTS as readonly string[]).includes(d)).sort()
   const groups = [
     { label: "Pinned", list: shown.filter((a) => pins.includes(a.name)) },
-    ...DEPARTMENTS.map((d) => ({ label: DEPARTMENT_NAMES[d], list: shown.filter((a) => !pins.includes(a.name) && a.department === d) })),
-    { label: "No department", list: shown.filter((a) => !pins.includes(a.name) && !DEPARTMENTS.includes(a.department as (typeof DEPARTMENTS)[number])) },
+    ...[...DEPARTMENTS, ...own, ""].map((d) => ({
+      label: departmentName(d || null),
+      list: shown.filter((a) => !pins.includes(a.name) && departmentKey(a.department) === d),
+    })),
   ].filter((g) => g.list.length)
   return (
     <div className="flex w-[280px] shrink-0 flex-col border-r">
@@ -101,7 +100,7 @@ export function AgentList({ realm, agents, broken, items, last, selected, onOpen
           <Plus className="size-4" /> Hire an agent
         </button>
       </div>
-      <HireAgent realm={realm} taken={agents.map((a) => a.name)} open={hiring} onOpenChange={setHiring} onHired={onHired} />
+      <HireAgent realm={realm} taken={agents.map((a) => a.name)} departments={own} open={hiring} onOpenChange={setHiring} onHired={onHired} />
     </div>
   )
 }

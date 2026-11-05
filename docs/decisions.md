@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 79. A business adds its own departments by naming them
+
+**Accepted.** The founder, 5 November 2026, after the Chief of Staff hired a Developer in a department called `development`: "if I ask an agent to create an agent in a department that is not in the list, it should add it, not warn me". The seven departments of `CLAUDE.md` were the only ones an agent file could name; any other refused the file.
+
+- An agent's `department` is any short name (one line, at most 40 characters). The seven stay the defaults: offered first in the hire and edit forms, shown first and in their order in the agent list, with their names and colours.
+- Any other department is the business's own: the agent list shows it after the seven, under the name as written, and its agents get a colour computed from the name. The forms offer the business's departments next to the seven; typing a new name adds it.
+- There is no list of departments to keep: a department exists while an agent is in it.
+- Teams shipped in the Marketplace keep to the seven.
+
+*Why:* departments are how the founder organises the team, and the right ones depend on the business (a developer team for Hedgen's site, legal for Numirama). Refusing a name the founder or an agent chose only hid the agent.
+
+*Cost:* a typo makes a department of its own (`markting`), seen at once in the agent list and fixed by editing the agent. Nothing groups departments across businesses.
+
 ## 78. A model's answer is streamed to the chat as it is written
 
 **Accepted.** The founder, 5 November 2026: "go à fond" on a smoother chat with the agents. An answer showed only once the model had written all of it (10 to 60 s), then was typed out by an animation; the page looked for changes every 1.5 s.

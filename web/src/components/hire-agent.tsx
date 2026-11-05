@@ -2,13 +2,13 @@ import { useState } from "react"
 import { ArrowLeft, PenLine } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
+import { DepartmentField } from "@/components/department-field"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { api, DEPARTMENTS, enc, type Agent } from "@/lib/api"
+import { api, enc, type Agent } from "@/lib/api"
 
 export type Template = { name: string; title: string; department: string; desc: string; job: string }
 
@@ -70,8 +70,8 @@ export const face = (t: Template): Agent => ({ name: t.name || "new", title: t.t
 
 /** Hire an agent (decision 36): start from a job, change it, and it joins
     the team as a file in agents/. It works once a routine or a task names it. */
-export function HireAgent({ realm, taken, open, onOpenChange, onHired }: {
-  realm: string; taken: string[]; open: boolean; onOpenChange: (open: boolean) => void; onHired: (name: string) => void
+export function HireAgent({ realm, taken, departments, open, onOpenChange, onHired }: {
+  realm: string; taken: string[]; departments: string[]; open: boolean; onOpenChange: (open: boolean) => void; onHired: (name: string) => void
 }) {
   const [t, setT] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
@@ -85,13 +85,13 @@ export function HireAgent({ realm, taken, open, onOpenChange, onHired }: {
     setT({ ...x, name })
   }
   const clash = !!t && taken.includes(t.name)
-  const valid = !!t && /^[a-z0-9][a-z0-9_-]*$/.test(t.name) && !clash && !!t.title.trim() && !!t.department && !!t.job.trim()
+  const valid = !!t && /^[a-z0-9][a-z0-9_-]*$/.test(t.name) && !clash && !!t.title.trim() && !!t.department.trim() && !!t.job.trim()
 
   async function hire() {
     if (!t || !valid) return
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(t.name)}`, { job: t.job, title: t.title.trim(), department: t.department }, "PUT")
+      await api(`realms/${enc(realm)}/agents/${enc(t.name)}`, { job: t.job, title: t.title.trim(), department: t.department.trim() }, "PUT")
       toast.success(`${t.title} joined the team. Give it a routine, or a task, for it to work.`)
       onOpenChange(false)
       onHired(t.name)
@@ -146,11 +146,8 @@ export function HireAgent({ realm, taken, open, onOpenChange, onHired }: {
                 <Input id="hire-title" value={t.title} placeholder="Writer" onChange={(e) => setT({ ...t, title: e.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Department</Label>
-                <Select value={t.department} onValueChange={(v) => setT({ ...t, department: String(v ?? "") })}>
-                  <SelectTrigger className="w-full capitalize"><SelectValue placeholder="Choose" /></SelectTrigger>
-                  <SelectContent>{DEPARTMENTS.map((d) => <SelectItem key={d} value={d} className="capitalize">{d}</SelectItem>)}</SelectContent>
-                </Select>
+                <Label htmlFor="hire-department">Department</Label>
+                <DepartmentField id="hire-department" value={t.department} departments={departments} onChange={(department) => setT({ ...t, department })} />
               </div>
             </div>
             <div className="flex min-h-0 flex-1 flex-col space-y-1.5">

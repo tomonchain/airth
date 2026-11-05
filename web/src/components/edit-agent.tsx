@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
+import { DepartmentField } from "@/components/department-field"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useTools } from "@/hooks/use-tools"
-import { api, DEPARTMENTS, enc, type Agent } from "@/lib/api"
+import { api, enc, type Agent } from "@/lib/api"
 import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
 
@@ -38,7 +38,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
   async function save() {
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department, job, integrations, skills }, "PUT")
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department: department.trim(), job, integrations, skills }, "PUT")
       toast.success(`${title} is saved.`)
       onSaved()
       onOpenChange(false)
@@ -85,13 +85,8 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
               <Input id="agent-title" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Select value={department} onValueChange={(v) => setDepartment(String(v ?? ""))}>
-                <SelectTrigger className="w-full capitalize"><SelectValue placeholder="Choose" /></SelectTrigger>
-                <SelectContent>
-                  {DEPARTMENTS.map((d) => <SelectItem key={d} value={d} className="capitalize">{d}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="agent-department">Department</Label>
+              <DepartmentField id="agent-department" value={department} onChange={setDepartment} />
             </div>
           </div>
           <div className="space-y-2">
@@ -120,7 +115,7 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }:
             </span>
           ) : <Button variant="ghost" className="mr-auto text-muted-foreground hover:text-red-500" onClick={() => setLeaving(true)}>Let go</Button>}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy || !changed || !title.trim() || !job.trim() || !department} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
+          <Button disabled={busy || !changed || !title.trim() || !job.trim() || !department.trim()} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -134,7 +134,7 @@ type Face = (name: string) => Agent | undefined
 function Chip({ run, face, onAgent, compact, slot }: { run: Run; face: Face; onAgent: (n: string) => void; compact?: boolean; slot?: boolean }) {
   const a = face(run.agent)
   const s = STATE[run.state] ?? STATE.planned
-  const hue = `var(--dept-${a?.department ?? "none"})`
+  const hue = `var(--dept-${a?.department?.trim().toLowerCase().replace(/[^a-z]/g, "") || "none"}, var(--dept-none))`
   return (
     <button onClick={() => onAgent(run.agent)} title={`${run.routine} · ${run.time} · ${s.label}`}
       className={cn("flex w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left transition-[filter] hover:brightness-110", compact ? "h-5" : slot ? "h-full" : "h-full min-h-6 items-start py-1", s.cls)}
