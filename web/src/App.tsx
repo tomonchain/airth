@@ -124,11 +124,11 @@ export default function App() {
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} />
           ) : (
           <>
-          <AgentList realm={realm} agents={agents} items={items} last={last} selected={current} onOpen={open} />
+          <AgentList realm={realm} agents={agents} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
           {agent ? (
             <>
               <Conversation key={agent.name} realm={realm} agent={agent} onDone={data.refresh} />
-              {details && <Details realm={realm} agent={agent} onSaved={data.refresh} />}
+              {details && <Details realm={realm} agent={agent} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
             </>
           ) : (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>

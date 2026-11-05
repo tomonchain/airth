@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
-import { Pin, PinOff, Search } from "lucide-react"
+import { Pin, PinOff, Plus, Search } from "lucide-react"
 import { Character } from "@/components/character"
+import { HireAgent } from "@/components/hire-agent"
 import type { Agent, Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -9,10 +10,11 @@ export type Last = { text: string; at: string | null }
 
 /** The agents as conversations: the one with something for the founder
     first, then the latest to have worked. */
-export function AgentList({ realm, agents, items, last, selected, onOpen }: {
-  realm: string; agents: Agent[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void
+export function AgentList({ realm, agents, items, last, selected, onOpen, onHired }: {
+  realm: string; agents: Agent[]; items: Item[]; last: Record<string, Last>; selected: string | null; onOpen: (name: string) => void; onHired: (name: string) => void
 }) {
   const [q, setQ] = useState("")
+  const [hiring, setHiring] = useState(false)
   // Pinned agents stay on top; kept in this browser, per business.
   const key = `airth-pins:${realm}`
   const [pins, setPins] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(key) ?? "[]") } catch { return [] } })
@@ -67,6 +69,12 @@ export function AgentList({ realm, agents, items, last, selected, onOpen }: {
           )
         })}
       </ul>
+      <div className="border-t p-2">
+        <button onClick={() => setHiring(true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground">
+          <Plus className="size-4" /> Hire an agent
+        </button>
+      </div>
+      <HireAgent realm={realm} taken={agents.map((a) => a.name)} open={hiring} onOpenChange={setHiring} onHired={onHired} />
     </div>
   )
 }

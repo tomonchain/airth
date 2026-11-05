@@ -14,20 +14,21 @@ import { cn } from "@/lib/utils"
 
 /** Edit an agent: its title, its department and its job, written in its
     file in the business folder. Only the founder does; runs cannot. */
-export function EditAgent({ realm, agent, open, onOpenChange, onSaved }: {
-  realm: string; agent: Agent; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void
+export function EditAgent({ realm, agent, open, onOpenChange, onSaved, onGone }: {
+  realm: string; agent: Agent; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void; onGone: () => void
 }) {
   const [title, setTitle] = useState(agent.title)
   const [department, setDepartment] = useState(agent.department ?? "")
   const [job, setJob] = useState(agent.body || agent.job || "")
   const [busy, setBusy] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const tools = useTools(realm)
   const [integrations, setIntegrations] = useState<string[]>(agent.integrations ?? [])
   const [skills, setSkills] = useState<string[]>(agent.skills ?? [])
   useEffect(() => {
     if (!open) return
     setTitle(agent.title); setDepartment(agent.department ?? ""); setJob(agent.body || agent.job || "")
-    setIntegrations(agent.integrations ?? []); setSkills(agent.skills ?? [])
+    setIntegrations(agent.integrations ?? []); setSkills(agent.skills ?? []); setLeaving(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
@@ -43,6 +44,23 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved }: {
       onOpenChange(false)
     } catch (e) {
       toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Its file leaves agents/; its past tasks stay. The server refuses while
+  // a routine still names it, and says which.
+  async function letGo() {
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, undefined, "DELETE")
+      toast.success(`${agent.title} left the team.`)
+      onOpenChange(false)
+      onGone()
+    } catch (e) {
+      toast.error((e as Error).message)
+      setLeaving(false)
     } finally {
       setBusy(false)
     }
@@ -95,6 +113,12 @@ export function EditAgent({ realm, agent, open, onOpenChange, onSaved }: {
           </div>
         </div>
         <DialogFooter className="m-0 flex-row justify-end rounded-b-xl border-t bg-muted/30 p-4">
+          {leaving ? (
+            <span className="mr-auto flex items-center gap-1">
+              <Button variant="destructive" disabled={busy} onClick={letGo}>Let {agent.title} go</Button>
+              <Button variant="ghost" onClick={() => setLeaving(false)}>Keep</Button>
+            </span>
+          ) : <Button variant="ghost" className="mr-auto text-muted-foreground hover:text-red-500" onClick={() => setLeaving(true)}>Let go</Button>}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button disabled={busy || !changed || !title.trim() || !job.trim() || !department} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
         </DialogFooter>
