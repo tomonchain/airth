@@ -19,8 +19,8 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
       {/* In the Mac app the window's traffic lights sit here. */}
       <div className={cn("flex w-[404px] shrink-0 items-center", mac ? "pl-[78px]" : "pl-4")}>
         <DropdownMenu>
-          {/* In the app, as small as the window's buttons beside it. */}
-          <DropdownMenuTrigger render={<button className={cn("flex items-center rounded-lg font-semibold hover:bg-accent", mac ? "mt-[5px] h-6 gap-1.5 px-1.5 text-[12.5px]" : "gap-2 px-2 py-1 text-[13.5px]")} />}>
+          {/* In the app, as small as the window's buttons and on their line: their centre is 19 pt from the top, the bar's 24. */}
+          <DropdownMenuTrigger render={<button className={cn("flex items-center rounded-lg font-semibold hover:bg-accent", mac ? "relative -top-[5px] h-6 gap-1.5 px-1.5 text-[12.5px]" : "gap-2 px-2 py-1 text-[13.5px]")} />}>
             <span className={cn("rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner", mac ? "size-3.5" : "size-5")} />
             <span className="capitalize">{realm}</span>
             {/* Another business waits for the founder: said here, wherever they are. */}
