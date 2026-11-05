@@ -9,8 +9,8 @@ import { api, enc } from "@/lib/api"
 /** Writing to an agent. A message continues the agent's latest task, as a
     chat does; a new task is started on purpose. Sent from here, the founder
     watches it, so its questions come back here (decision 75). */
-export function OrderBox({ realm, agent, title, task, working, onSending, onSent, onFailed }: {
-  realm: string; agent: string; title: string; task?: string; working: boolean
+export function OrderBox({ realm, agent, title, task, closed, working, onSending, onSent, onFailed }: {
+  realm: string; agent: string; title: string; task?: string; closed?: string | null; working: boolean
   onSending: (text: string, task: string | null) => void; onSent: (taskId: string | null) => void; onFailed: () => void
 }) {
   const [text, setText] = useState("")
@@ -29,8 +29,11 @@ export function OrderBox({ realm, agent, title, task, working, onSending, onSent
     setText("")
     onSending(t, continuing ? task! : null)
     try {
-      if (continuing) {
-        await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
+      // Closed since the page last looked (its change adopted elsewhere): the
+      // message starts a new task rather than failing.
+      const goOn = continuing && await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
+        .then(() => true, (e: Error) => { if (/change was (adopted|discarded)/.test(e.message)) return false; throw e })
+      if (goOn) {
         onSent(null)
       } else {
         const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text: t, agent, watched: true })
@@ -60,7 +63,8 @@ export function OrderBox({ realm, agent, title, task, working, onSending, onSent
               <span>Starts a new task</span>
               <button onClick={() => setFresh(false)} className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 hover:bg-accent hover:text-foreground"><X className="size-3" /> Keep the current one</button>
             </>
-          ) : <span>Starts a task: {title} asks you here before anything that needs your OK.</span>}
+          ) : closed ? <span>The last task is closed (its change was {closed}): this starts a new one.</span>
+          : <span>Starts a task: {title} asks you here before anything that needs your OK.</span>}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); send() }} className="flex items-end gap-2 rounded-2xl border bg-bubble/60 p-2 shadow-sm focus-within:border-ring/50">
         <textarea

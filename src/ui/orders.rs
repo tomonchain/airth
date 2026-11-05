@@ -98,6 +98,9 @@ impl App {
                 "line": line,
                 "at": run.updated_at,
                 "item": waiting.get(&run.id),
+                // A change adopted or discarded closes the task: the chat's
+                // next message starts a new one.
+                "change": run.change.map(|c| c.as_str()),
             });
             let group = match (status, waiting.contains_key(&run.id), run.change) {
                 (_, true, _) => "waiting",
@@ -158,6 +161,14 @@ mod tests {
             .unwrap();
         finished.status = crate::state::Status::Completed;
         finished.report = Some("\nThe outline is in the run.\nMore.".into());
+        // Its change adopted: the task is closed, the chat starts anew.
+        finished.change = Some(
+            serde_json::from_value(serde_json::json!({
+                "repo": "/r", "path": "/r/wt", "branch": "airth/x", "base": "a", "head": "b",
+                "status": "adopted", "files": [], "checks": null,
+            }))
+            .unwrap(),
+        );
         finished.save().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
         app.hub.create_run_in(&realm, "Just a chat", None).unwrap();
@@ -182,6 +193,8 @@ mod tests {
         assert_eq!(page["done"].as_array().unwrap().len(), 1);
         assert_eq!(page["done"][0]["line"], "The outline is in the run.");
         assert_eq!(page["done"][0]["agent"], "writer");
+        assert_eq!(page["done"][0]["change"], "adopted");
+        assert!(page["waiting"][0]["change"].is_null());
         let all = page.to_string();
         assert!(!all.contains("Just a chat"), "a chat is not a task");
     }

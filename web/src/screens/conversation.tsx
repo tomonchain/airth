@@ -44,6 +44,10 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
   }, [tasks.data, started, agent.name])
   const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
   const latest = taskIds[taskIds.length - 1]
+  // A task whose change was adopted or thrown away is closed: the next
+  // message starts a new one (the server refuses to go on with it).
+  const closedBy = Object.values(tasks.data ?? {}).flat().find((t) => t.id === latest)?.change
+  const closed = closedBy === "adopted" || closedBy === "discarded" ? closedBy : null
   const [mine] = useState(() => new Set<string>())
   // What the founder just sent, until its task shows it.
   const [outbox, setOutbox] = useState<{ text: string; task: string | null; at: string } | null>(null)
@@ -152,7 +156,7 @@ export function Conversation({ realm, agent, onDone }: { realm: string; agent: A
         </div>
       </div>
       <div className={cn("mx-auto w-full px-6 pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
-        <OrderBox realm={realm} agent={agent.name} title={agent.title} task={latest} working={running}
+        <OrderBox realm={realm} agent={agent.name} title={agent.title} task={closed ? undefined : latest} closed={closed} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)
             setOutbox({ text, task, at: new Date().toISOString() })
