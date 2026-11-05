@@ -223,10 +223,18 @@ fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
 
 fn check_goal(d: &Doc) -> Result<Vec<&'static str>> {
     date(d, "by")?;
+    // Its date first ("2026-12-31 four weeks alone") or last ("four weeks
+    // alone by 2026-12-31"), with something said besides.
+    let is_date = |w: &str| NaiveDate::parse_from_str(w, "%Y-%m-%d").is_ok();
     for m in d.list("milestones") {
-        let day = m.split_whitespace().next().unwrap_or("");
-        if NaiveDate::parse_from_str(day, "%Y-%m-%d").is_err() || m.trim() == day {
-            bail!("milestone '{m}' is not a date then what: 2026-12-31 four weeks alone");
+        let words: Vec<&str> = m.split_whitespace().collect();
+        let first = words.len() > 1 && is_date(words[0]);
+        let last =
+            words.len() > 2 && words[words.len() - 2] == "by" && is_date(words[words.len() - 1]);
+        if !first && !last {
+            bail!(
+                "milestone '{m}' has no date: 2026-12-31 four weeks alone, or four weeks alone by 2026-12-31"
+            );
         }
     }
     if let Some(v) = d.text("baseline_minutes")
@@ -287,6 +295,36 @@ mod tests {
                 "{e}"
             );
         }
+    }
+
+    /// A milestone says its date first or last ("2026-12-31 what" or "what
+    /// by 2026-12-31"), written one per line as agents do; without a date it
+    /// is refused.
+    #[test]
+    fn milestones_take_their_date_first_or_last() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(
+            r,
+            "business/profile.md",
+            "---\nname: Acme\n---\nA business.\n",
+        );
+        write(
+            r,
+            "business/goal.md",
+            "---\ngoal: Be the reference\nby: 2027-12-31\nmilestones:\n  - 2026-12-31 four weeks alone\n  \
+             - First firm signed by 2027-03-31\n---\nStrategy.\n",
+        );
+        let config = load(r).unwrap();
+        assert_eq!(config.goal.list("milestones").len(), 2);
+        assert!(!config.missing.iter().any(|m| m.contains("milestones")));
+        write(
+            r,
+            "business/goal.md",
+            "---\nmilestones:\n  - First firm signed soon\n---\n",
+        );
+        let e = format!("{:#}", load(r).unwrap_err());
+        assert!(e.contains("First firm signed soon"), "{e}");
     }
 
     #[test]
@@ -433,7 +471,7 @@ mod tests {
             (
                 "business/goal.md",
                 "---\nmilestones: [soon]\n---\n",
-                "is not a date then what",
+                "has no date",
             ),
             (
                 "business/goal.md",
