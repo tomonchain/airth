@@ -1,1 +1,0 @@
-import{c as e}from"./skeleton-BY5h7UfB.js";var t={name:`check`,size:24,node:[[`path`,{d:`M20 6 9 17l-5-5`,key:`1gmf2c`}]]};t.node;var n=e(t),r={name:`x`,size:24,node:[[`path`,{d:`M18 6 6 18`,key:`1bl5f8`}],[`path`,{d:`m6 6 12 12`,key:`d8bk6v`}]]};r.node;var i=e(r);export{n,i as t};

@@ -16,7 +16,7 @@ type Detail = { secrets: { key: string; provider: boolean }[]; integrations: Int
 const asked = (i: Integration) => Object.values(i.headers).flatMap((v) => [...v.matchAll(/\[secret:([A-Za-z0-9_]+)\]/g)].map((m) => m[1]))
 
 /** A button that asks once more before it removes. */
-function Remove({ label, onRemove }: { label: string; onRemove: () => Promise<void> }) {
+export function Remove({ label, onRemove }: { label: string; onRemove: () => Promise<void> }) {
   const [sure, setSure] = useState(false)
   const [busy, setBusy] = useState(false)
   if (!sure) return <Button size="icon-sm" variant="ghost" className="text-muted-foreground" aria-label={`Remove ${label}`} title="Remove" onClick={() => setSure(true)}><Trash2 /></Button>

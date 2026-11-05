@@ -14,15 +14,16 @@ function token(): string {
   return sessionStorage.getItem(KEY) ?? ""
 }
 
-export async function api<T>(path: string, body?: unknown, method?: "PUT" | "DELETE"): Promise<T> {
+export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number): Promise<T> {
   const verb = method ?? (body === undefined ? "GET" : "POST")
   // A request that never answers would hold its page's refresh for good: a
-  // read gives up after 20 s, a change (which may call a service) after 60.
+  // read gives up after 20 s, a change (which may call a service) after 60,
+  // unless the caller knows it takes longer.
   const r = await fetch(`/api/${path}`, {
     method: verb,
     headers: { "X-Airth-Token": token(), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(verb === "GET" ? 20000 : 60000),
+    signal: AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)),
   }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
@@ -125,8 +126,12 @@ export type Routine = {
   unpriced: number
   next_at: string | null
   runs: { at: string; ok: boolean; error: string | null }[]
-  graph: { agent: string; trigger: { schedule: string | null; manual: unknown; telegram: string | null; webhook: unknown }; blocks: { id: string; type: string }[] }
+  error?: string
+  graph?: { description: string; agent: string; trigger: { schedule: string | null; manual: unknown; telegram: string | null; webhook: string | null }; blocks: GraphBlock[] }
 }
+
+/** A routine's block as its file says: the six kinds' fields (src/routine). */
+export type GraphBlock = { id: string; type: string; [field: string]: unknown }
 
 export type Company = {
   profile: Record<string, string | null>
