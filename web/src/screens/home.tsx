@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
-import { Activity as ActivityIcon, ChevronRight, CircleDollarSign, Clock3, Hand, Loader } from "lucide-react"
+import { Activity as ActivityIcon, ChevronRight, CircleAlert, CircleCheck, CircleDollarSign, Clock3, Hand, Loader } from "lucide-react"
 import { Character } from "@/components/character"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { Activity, Agent, AgentState, Business, Item } from "@/lib/api"
+import { usePoll } from "@/hooks/use-poll"
+import { api, enc, type Activity, type Agent, type AgentState, type Business, type Item } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -22,6 +23,7 @@ export function Home({ realm, agents, items, business, at, error, onAgent, onNee
 }) {
   const b = business
   const working = agents?.filter((a) => a.state === "working").length ?? 0
+  const week = usePoll<Steering>(() => api(`realms/${enc(realm)}/steering`), 60000, [realm]).data
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-8 pt-9 pb-16">
@@ -88,9 +90,60 @@ export function Home({ realm, agents, items, business, at, error, onAgent, onNee
             </ol>
           </section>
         )}
+
+        {!!week?.attention.length && (
+          <section className="mt-9">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><CircleAlert className="size-4 text-red-500" /> Needs attention</h2>
+            <ol className="space-y-0.5">
+              {week.attention.map((x, i) => (
+                <li key={i} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+                  <span className="min-w-0 flex-1 truncate text-sm text-red-600 dark:text-red-400" title={x.title}>{x.title.split("\n")[0]}</span>
+                  {x.at && <span className="w-14 shrink-0 text-right text-xs text-muted-foreground">{ago(x.at)}</span>}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        {!!week?.delivered.length && (
+          <section className="mt-9">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><CircleCheck className="size-4 text-muted-foreground" /> Delivered this week</h2>
+            <ol className="space-y-0.5">
+              {week.delivered.map((x) => {
+                const a = agents?.find((y) => y.name === x.agent)
+                return (
+                  <li key={x.run}>
+                    <button disabled={!a} onClick={() => a && onAgent(a.name)} className="flex w-full items-start gap-3 rounded-lg px-2 py-1.5 text-left enabled:hover:bg-accent/60">
+                      {a ? <Character agent={a} size={20} still /> : <span className="size-5 shrink-0" />}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{x.title}</span>
+                        {x.report && <span className="line-clamp-1 text-xs text-muted-foreground">{x.report}</span>}
+                      </span>
+                      <span className="w-14 shrink-0 text-right text-xs text-muted-foreground">{ago(x.at)}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+          </section>
+        )}
+
+        {week && week.week.approved + week.week.rejected > 0 && (
+          <p className="mt-9 text-xs text-muted-foreground">
+            Drafts this week: {[`${week.week.approved} approved`, week.week.approved && `${Math.round((100 * week.week.unedited) / week.week.approved)}% of them unedited`, `${week.week.rejected} rejected`].filter(Boolean).join(", ")}.
+          </p>
+        )}
       </div>
     </div>
   )
+}
+
+/** What the old Steering page showed beyond the figures: what went wrong,
+    what the team finished, and how the drafts fared this week. */
+type Steering = {
+  attention: { kind: string; title: string; run?: string | null; at?: string | null }[]
+  delivered: { run: string; title: string; agent: string | null; at: string; report: string }[]
+  week: { approved: number; unedited: number; rejected: number }
 }
 
 function Stat({ icon: Icon, label, value, tone, spin, onClick }: {

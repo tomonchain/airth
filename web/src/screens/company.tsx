@@ -1,5 +1,10 @@
-import { FolderGit2, Target } from "lucide-react"
+import { useState } from "react"
+import { Compass, FolderGit2, Pencil, Target } from "lucide-react"
+import { toast } from "sonner"
 import { Empty, Loading, Page, Panel, Section } from "@/components/page"
+import { Rich } from "@/components/rich"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Company as Data } from "@/lib/api"
 import { Fact } from "@/screens/finance"
@@ -34,6 +39,8 @@ export function Company({ realm, description }: { realm: string; description: st
             ) : <Empty icon={Target} title="No goal yet">Write it in business/goal.md: the goal, how it is measured, the target and the date.</Empty>}
           </Section>
 
+          <Strategy realm={realm} />
+
           <Section title="Repositories">
             {data.repos.length ? (
               <Panel className="divide-y">
@@ -57,5 +64,51 @@ export function Company({ realm, description }: { realm: string; description: st
         </>
       )}
     </Page>
+  )
+}
+
+const EXAMPLE = `Your goals, the line every agent follows, and what the team may do alone.
+
+For example:
+- One article a week on the blog.
+- Explain, never hype. Facts and numbers first.
+- Ask me before publishing or spending money.`
+
+/** The strategy every agent of the business reads before it works: read
+    as text, opened for editing on demand. */
+function Strategy({ realm }: { realm: string }) {
+  const { data, refresh } = usePoll<{ strategy: string }>(() => api(`realms/${enc(realm)}/steering`), 120000, [realm])
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const text = data?.strategy ?? ""
+  const editing = draft !== null
+  async function save() {
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/strategy`, { text: draft }, "PUT")
+      toast.success("Strategy saved: every agent reads it from its next run.")
+      setDraft(null)
+      refresh()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  return (
+    <Section title="Strategy" note={editing ? "Every agent of this business reads it before it works" : text.trim() && <Button size="xs" variant="ghost" onClick={() => setDraft(text)}><Pencil /> Edit</Button>}>
+      {!data ? <Loading /> : editing ? (
+        <div className="space-y-2.5">
+          <Textarea aria-label="Strategy" rows={12} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={EXAMPLE} autoFocus className="text-sm leading-relaxed" />
+          <div className="flex gap-2">
+            <Button size="sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save the strategy"}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
+          </div>
+        </div>
+      ) : text.trim() ? (
+        <Panel className="px-4 py-3.5 text-sm leading-relaxed"><Rich text={text} /></Panel>
+      ) : (
+        <Empty icon={Compass} title="No strategy yet">
+          The goals, the line every agent follows, what the team may do alone. <button className="text-sky-500 hover:underline" onClick={() => setDraft("")}>Write it</button>
+        </Empty>
+      )}
+    </Section>
   )
 }
