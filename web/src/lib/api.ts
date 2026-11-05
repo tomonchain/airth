@@ -55,6 +55,7 @@ export type Agent = {
   skills: string[]
   accessory: "pen" | "lens" | "book" | null
   look: string | null
+  look_saved?: boolean
   state: AgentState
   waiting: number
   cost_usd: number

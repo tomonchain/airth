@@ -1,10 +1,11 @@
 import { useState } from "react"
+import { toast } from "sonner"
 import { Pencil } from "lucide-react"
 import { Character } from "@/components/character"
 import { EditAgent } from "@/components/edit-agent"
 import { Button } from "@/components/ui/button"
 import { LOGOS } from "@/lib/logos"
-import type { Agent } from "@/lib/api"
+import { api, enc, type Agent } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +25,12 @@ export function Details({ realm, agent, onSaved, onGone }: { realm: string; agen
         <h2 className="mt-4 text-lg font-semibold">{agent.title}</h2>
         <p className="text-sm text-muted-foreground capitalize">{agent.department}</p>
         <span className="mt-2 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">{STATE[agent.state]}</span>
+        {/* Decision 65: a look comes from the name until the founder keeps it. */}
+        {agent.look_saved === false && (
+          <p className="mt-3 text-xs text-muted-foreground">Its look comes from its name for now. <button className="underline underline-offset-2 hover:text-foreground" onClick={async () => {
+            try { await api(`realms/${enc(realm)}/agents/${enc(agent.name)}/look`, {}); toast.success("Look kept."); onSaved() } catch (e) { toast.error((e as Error).message) }
+          }}>Keep this look</button></p>
+        )}
       </div>
       {agent.job && <p className="mt-5 text-sm leading-relaxed text-foreground/80">{agent.job}</p>}
       <dl className="mt-5 grid grid-cols-2 gap-2">

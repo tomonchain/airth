@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
+import { MicButton } from "@/components/mic"
 import { useRun, TaskThread } from "@/components/task-thread"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,8 +35,9 @@ const ORDER = ["Waiting for you", "Running", "To review", "Done"]
 /** Every task of the business (the classic interface's Tasks): yours and
     those its routines started. Ask the team for something; follow, rename,
     archive or delete a task; read its plan and details. */
-export function Tasks({ realm, agents, items, open, onOpen, onAgent }: {
+export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill }: {
   realm: string; agents: Agent[]; items: Item[]; open: string | null; onOpen: (id: string | null) => void; onAgent: (name: string) => void
+  prefill?: { text: string; at: number } | null
 }) {
   const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 5000, [realm])
   const tasks = usePoll<{ waiting: { id: string; agent: string }[]; running: { id: string; agent: string }[]; review: { id: string; agent: string }[]; done: { id: string; agent: string }[] }>(() => api(`realms/${enc(realm)}/tasks`), 8000, [realm])
@@ -57,7 +59,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent }: {
           <h1 className="text-lg font-semibold">Tasks</h1>
           <p className="text-xs text-muted-foreground">Yours, and those the routines started.</p>
         </div>
-        <Ask realm={realm} agents={agents} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
+        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
         <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
           {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
             <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("rounded-md px-2 py-1", archived === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l as string}</button>
@@ -106,8 +108,15 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent }: {
 
 /** Ask the team: the order goes to the agent that fits (or the one named),
     or to Airth itself, with a model and a repository to work in. */
-function Ask({ realm, agents, onStarted }: { realm: string; agents: Agent[]; onStarted: (id: string) => void }) {
+function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Agent[]; prefill?: { text: string; at: number } | null; onStarted: (id: string) => void }) {
   const [text, setText] = useState("")
+  const box = useRef<HTMLTextAreaElement>(null)
+  // Asked from elsewhere (⌘⇧O, a document's ⌘L): the box, filled and ready.
+  useEffect(() => {
+    if (!prefill) return
+    setText(prefill.text)
+    requestAnimationFrame(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length } })
+  }, [prefill])
   const [who, setWho] = useState<string>("route")
   const [why, setWhy] = useState<string | null>(null)
   const [model, setModel] = useState(AUTO)
@@ -142,7 +151,7 @@ function Ask({ realm, agents, onStarted }: { realm: string; agents: Agent[]; onS
   const whoLabel = (v: string) => (v === "route" ? "The agent that fits" : v === NOBODY ? "Airth itself" : agents.find((a) => a.name === v)?.title ?? v)
   return (
     <div className="mx-3 rounded-xl border bg-surface p-2.5">
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Ask the team for something…" aria-label="Ask the team for something"
+      <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Ask the team for something…" aria-label="Ask the team for something"
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
         className="w-full resize-none bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground" />
       <div className="flex flex-wrap items-center gap-1.5">
@@ -170,6 +179,7 @@ function Ask({ realm, agents, onStarted }: { realm: string; agents: Agent[]; onS
           </Select>
         )}
         <span className="flex-1" />
+        <MicButton value={text} onChange={setText} />
         <Button size="icon-sm" disabled={!text.trim() || busy} onClick={send} aria-label="Start" title="Start (⌘↵)"><ArrowUp /></Button>
       </div>
       {why && <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">{why}</p>}

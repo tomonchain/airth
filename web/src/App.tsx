@@ -9,6 +9,7 @@ import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
 import { NewBusiness } from "@/components/new-business"
+import { Palette } from "@/components/palette"
 
 // The pages opened now and then load when first opened, so the first
 // screen comes up sooner.
@@ -36,6 +37,22 @@ export default function App() {
   const [welcome, setWelcome] = useState(() => location.hash === "#/welcome")
   const [founding, setFounding] = useState(false)
   const [task, setTask] = useState<string | null>(null)
+  const [palette, setPalette] = useState(false)
+  const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
+  const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
+
+  // ⌘K goes anywhere; ⌘⇧O asks the team (the classic interface's keys).
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k === "k" && !e.shiftKey) { e.preventDefault(); setPalette((o) => !o) }
+      if (k === "o" && e.shiftKey) { e.preventDefault(); ask() }
+    }
+    addEventListener("keydown", key)
+    return () => removeEventListener("keydown", key)
+  }, [])
+
   useEffect(() => {
     const on = () => { setHash(route()); setWelcome(location.hash === "#/welcome") }
     addEventListener("hashchange", on)
@@ -43,6 +60,10 @@ export default function App() {
   }, [])
   const realms = usePoll(() => api<Realm[]>("realms"), 15000, [])
   const realm = hash ?? realms.data?.find((r) => r.default)?.name ?? realms.data?.[0]?.name ?? null
+
+  // The tab says how many things wait for the founder, in every business.
+  const waiting = (realms.data ?? []).reduce((n, r) => n + (r.archived ? 0 : r.needs_approval || 0), 0)
+  useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${realm.charAt(0).toUpperCase()}${realm.slice(1)} · ` : ""}Airth` }, [waiting, realm])
 
   const data = usePoll<Data>(
     realm
@@ -122,6 +143,8 @@ export default function App() {
         realms={realms.data ?? []} realm={realm} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
         onTab={open} onClose={close} onNew={() => setPage("agents")} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
+      <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
+        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
       <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
         <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
@@ -131,9 +154,9 @@ export default function App() {
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={data.data?.business ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
-          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
-          : page === "documents" ? <Documents realm={realm} />
+          : page === "documents" ? <Documents realm={realm} onAsk={ask} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />

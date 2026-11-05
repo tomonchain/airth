@@ -1,6 +1,7 @@
 import { Building, ChevronsUpDown, PanelRight, Plus, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
+import { mac, titleBar } from "@/lib/shell"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { Agent, Realm } from "@/lib/api"
@@ -12,13 +13,17 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
   realms: Realm[]; realm: string; tabs: string[]; current: string | null; agents: Agent[]
   onTab: (name: string) => void; onClose: (name: string) => void; onNew: () => void; onNewBusiness: () => void; onHq: () => void; details: boolean; onDetails: () => void
 }) {
+  const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 pr-3">
-      <div className="flex w-[404px] shrink-0 items-center pl-4">
+    <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none">
+      {/* In the Mac app the window's traffic lights sit here. */}
+      <div className={cn("flex w-[404px] shrink-0 items-center", mac ? "pl-20" : "pl-4")}>
         <DropdownMenu>
           <DropdownMenuTrigger render={<button className="flex items-center gap-2 rounded-lg px-2 py-1 text-[13.5px] font-semibold hover:bg-accent" />}>
             <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
             <span className="capitalize">{realm}</span>
+            {/* Another business waits for the founder: said here, wherever they are. */}
+            {others > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white" title={`${others} waiting in your other businesses`}>{others}</span>}
             <ChevronsUpDown className="size-3.5 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
@@ -27,7 +32,9 @@ export function TopBar({ realms, realm, tabs, current, agents, onTab, onClose, o
             <DropdownMenuLabel>Businesses</DropdownMenuLabel>
             {realms.filter((r) => !r.archived).map((r) => (
               <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)} className="capitalize">
-                {r.name}
+                <span className="flex-1">{r.name}</span>
+                {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
+                {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
               </DropdownMenuItem>
             ))}
             </DropdownMenuGroup>

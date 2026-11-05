@@ -42,7 +42,7 @@ const Icon = ({ name, dir, open, className }: { name: string; dir?: boolean; ope
 /** The business's documents (the classic interface's): its folder as a tree,
     files open as tabs, text edited and saved in place (⌘S), Markdown, images
     and PDFs shown, files added by dropping them, ⌘P to go to a file. */
-export function Documents({ realm }: { realm: string }) {
+export function Documents({ realm, onAsk }: { realm: string; onAsk: (text: string) => void }) {
   const base_ = `realms/${enc(realm)}/files`
   const [dirs, setDirs] = useState<Record<string, Listing>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]))
@@ -159,10 +159,24 @@ export function Documents({ realm }: { realm: string }) {
       if (!(e.metaKey || e.ctrlKey)) return
       if (e.key === "s" && tab?.kind === "text") { e.preventDefault(); save(tab) }
       if (e.key === "p") { e.preventDefault(); setQuick(true) }
+      if (e.key === "l" && tab) { e.preventDefault(); ask(tab) }
     }
     addEventListener("keydown", key)
     return () => removeEventListener("keydown", key)
   })
+
+  // ⌘L: ask the team about this file, or the lines selected in it.
+  async function ask(t: Tab) {
+    if (t.kind === "text" && t.text !== t.saved) await save(t)
+    const el = document.querySelector<HTMLTextAreaElement>("textarea[data-doc]")
+    const lang = t.path.match(/\.([a-z0-9]+)$/i)?.[1] ?? ""
+    if (el && el.selectionEnd > el.selectionStart) {
+      const before = el.value.slice(0, el.selectionStart).split("\n").length
+      const text = el.value.slice(el.selectionStart, el.selectionEnd)
+      const after = before + text.split("\n").length - 1
+      onAsk(`About \`${t.path}\` (line${after > before ? `s ${before}–${after}` : ` ${before}`}):\n\`\`\`${lang}\n${text.length > 4000 ? `${text.slice(0, 4000)}\n…` : text}\n\`\`\`\n`)
+    } else onAsk(`About \`${t.path}\`: `)
+  }
 
   async function add(files: FileList | File[], dir: string) {
     const list = [...files]
@@ -233,7 +247,7 @@ export function Documents({ realm }: { realm: string }) {
         {tab ? (
           <FileView t={tab} onText={(text) => patch(tab.path, { text })} onPreview={(p) => patch(tab.path, { preview: p })}
             onSave={() => save(tab)} onOverwrite={() => save(tab, true)} onReload={() => reload(tab)}
-            onApp={() => reveal(tab.path, false)} onFinder={() => reveal(tab.path, true)} onTrash={() => trash(tab.path)} />
+            onApp={() => reveal(tab.path, false)} onFinder={() => reveal(tab.path, true)} onTrash={() => trash(tab.path)} onAsk={() => ask(tab)} />
         ) : (
           <div className={cn("relative min-h-0 flex-1 overflow-y-auto", drop && "bg-sky-500/5")}
             onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDrop(true) } }}
@@ -361,9 +375,9 @@ function FolderView({ realm, path, d, root, onFile, onFolder, onFinder, onAdd }:
   )
 }
 
-function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, onFinder, onTrash }: {
+function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, onFinder, onTrash, onAsk }: {
   t: Tab; onText: (s: string) => void; onPreview: (p: boolean) => void; onSave: () => void; onOverwrite: () => void; onReload: () => void
-  onApp: () => void; onFinder: () => void; onTrash: () => void
+  onApp: () => void; onFinder: () => void; onTrash: () => void; onAsk: () => void
 }) {
   const [sure, setSure] = useState(false)
   const [pos, setPos] = useState({ line: 1, col: 1 })
@@ -397,7 +411,7 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
             <div className="flex min-h-full font-mono text-[12.5px] leading-[1.6]">
               <pre aria-hidden className="shrink-0 py-4 pr-3 pl-4 text-right text-muted-foreground/50 select-none">{Array.from({ length: lines }, (_, i) => i + 1).join("\n")}</pre>
               <textarea value={t.text} onChange={(e) => { onText(e.target.value); caret(e.target) }} onSelect={(e) => caret(e.currentTarget)} onClick={(e) => caret(e.currentTarget)}
-                spellCheck={false} aria-label={base(t.path)} wrap="off"
+                spellCheck={false} aria-label={base(t.path)} wrap="off" data-doc
                 onKeyDown={(e) => {
                   if (e.key !== "Tab") return
                   e.preventDefault()
@@ -420,6 +434,7 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
         <span className="flex-1" />
         {t.kind === "text" && dirty && <Button size="xs" onClick={onSave}>Save</Button>}
         {t.kind === "text" && MD.test(t.path) && <Button size="xs" variant="ghost" onClick={() => onPreview(!t.preview)}>{t.preview ? <><Pencil /> Edit</> : <><Eye /> Preview</>}</Button>}
+        <Button size="xs" variant="ghost" title="Ask the team about this file, or the selected lines (⌘L)" onClick={onAsk}><Sparkles /> Ask about it</Button>
         <Button size="icon-xs" variant="ghost" title="Open with the Mac's app" aria-label="Open with the Mac's app" onClick={onApp}><AppWindow /></Button>
         <Button size="icon-xs" variant="ghost" title="Show in the Finder" aria-label="Show in the Finder" onClick={onFinder}><Folder /></Button>
         {sure

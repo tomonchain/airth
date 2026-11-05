@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { ArrowUp, Plus, X } from "lucide-react"
 import { toast } from "sonner"
+import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { usePrefs } from "@/hooks/use-prefs"
 import { api, enc } from "@/lib/api"
@@ -74,6 +75,7 @@ export function OrderBox({ realm, agent, title, task, working, onSending, onSent
           placeholder={`Write to ${title}`}
           className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground field-sizing-content"
         />
+        <MicButton value={text} onChange={setText} className="mb-0.5" />
         <Button type="submit" size="icon" className="rounded-full" disabled={busy || working || !text.trim()} aria-label="Send"><ArrowUp /></Button>
       </form>
     </div>
