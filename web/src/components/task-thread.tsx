@@ -3,6 +3,7 @@ import { Check, ChevronRight, CircleAlert, ShieldQuestion, Square, Wrench, X } f
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
+import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
 import { Typing } from "@/components/typing"
@@ -20,7 +21,11 @@ export type RunView = {
   live: boolean
   version: number
   unchanged?: boolean
-  state: { id: string; objective: string; status: "running" | "completed" | "stopped" | "failed"; report: string | null; resume: string | null; messages: Message[]; updated_at: string }
+  state: { id: string; objective: string; status: "running" | "completed" | "stopped" | "failed"; report: string | null; resume: string | null; messages: Message[]; updated_at: string; change?: Change | null }
+  title?: string | null
+  checks_required?: boolean
+  delivery?: Review["delivery"]
+  config?: Review["config"]
   pending: { id: number; tool: string; capability: string; preview: string; warnings: string[]; grantable: boolean; grant_label: string | null } | null
 }
 
@@ -279,6 +284,11 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
             <button onClick={stop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
           </div>
         </Bubble>
+      )}
+      {view.state.change && (
+        <ChangePanel realm={realm} id={id} title={view.title ?? view.state.objective} onChange={() => { refresh(); onChange() }}
+          r={{ live, change: view.state.change, checks_required: !!view.checks_required, delivery: view.delivery ?? "adopt", config: view.config ?? { files: [], agents: [] } }}
+          onAsk={async (text) => { await api(`realms/${enc(realm)}/runs/${enc(id)}/messages`, { message: text }); refresh(); onChange() }} />
       )}
       {!live && status === "failed" && <p className="mb-4 ml-10 text-xs text-red-500">{view.state.report ?? "It failed."}</p>}
       {!live && status === "stopped" && !question && (

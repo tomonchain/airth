@@ -205,9 +205,15 @@ impl App {
             .split('&')
             .find_map(|kv| kv.strip_prefix("since="))
             .and_then(|v| v.parse().ok());
+        // How the change reaches its repository decides the review's main
+        // button: open a pull request, or adopt into the checkout.
         let repo = |state: &State| {
             let r = self.hub.repo_of(realm, state);
-            (!r.checks.is_empty(), state.change.as_ref().map(|_| r.name))
+            (
+                !r.checks.is_empty(),
+                state.change.as_ref().map(|_| r.name),
+                r.delivery.as_str(),
+            )
         };
         if let Some(live) = self.live(realm.name(), id) {
             live.watch.seen();
@@ -216,7 +222,7 @@ impl App {
                 return Ok(json!({"unchanged": true, "version": version}));
             }
             let state = live.snapshot.lock().unwrap().clone();
-            let (checks_required, repo_name) = repo(&state);
+            let (checks_required, repo_name, delivery) = repo(&state);
             let pending = live.pending.lock().unwrap().as_ref().map(|p| {
                 json!({
                     "id": p.id,
@@ -237,11 +243,12 @@ impl App {
                 "checks_required": checks_required,
                 "config": config_of(&state),
                 "repo": repo_name,
+                "delivery": delivery,
                 "title": realm.run_titles().get(id),
             }));
         }
         let state = self.hub.load_run(realm, id)?;
-        let (checks_required, repo_name) = repo(&state);
+        let (checks_required, repo_name, delivery) = repo(&state);
         let live_elsewhere = self.hub.is_live(realm, id);
         Ok(json!({
             "version": 0,
@@ -253,6 +260,7 @@ impl App {
             "checks_required": checks_required,
                 "config": config_of(&state),
             "repo": repo_name,
+            "delivery": delivery,
             "title": realm.run_titles().get(id),
         }))
     }
@@ -371,4 +379,32 @@ fn config_of(state: &State) -> crate::business::ConfigChanges {
             .as_ref()
             .map_or(&[][..], |c| c.files.as_slice()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A task's view says how its change would reach the repository, so
+    /// the review offers the right button: adopt, or open a pull request.
+    #[test]
+    fn a_run_says_how_its_change_is_delivered() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let mut state = State::new("fix the header", Some(&realm.runs_dir()));
+        state.status = Status::Completed;
+        state.save().unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let view = app.run(&realm, &state.id, "").unwrap();
+        assert_eq!(view["delivery"], "adopt");
+        assert_eq!(view["repo"], Value::Null, "no change, no repository named");
+    }
 }
