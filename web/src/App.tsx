@@ -14,6 +14,7 @@ import { NewBusiness } from "@/components/new-business"
 // screen comes up sooner.
 const Calendar = lazy(() => import("@/screens/calendar").then((m) => ({ default: m.Calendar })))
 const Company = lazy(() => import("@/screens/company").then((m) => ({ default: m.Company })))
+const Documents = lazy(() => import("@/screens/documents").then((m) => ({ default: m.Documents })))
 const Finance = lazy(() => import("@/screens/finance").then((m) => ({ default: m.Finance })))
 const Marketplace = lazy(() => import("@/screens/marketplace").then((m) => ({ default: m.Marketplace })))
 const Routines = lazy(() => import("@/screens/routines").then((m) => ({ default: m.Routines })))
@@ -129,6 +130,7 @@ export default function App() {
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} onAgent={open} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
+          : page === "documents" ? <Documents realm={realm} />
           : page === "finance" ? <Finance realm={realm} business={data.data?.business ?? null} agents={agents} />
           : page === "settings" ? <Settings realm={realm} />
           : page === "marketplace" ? <Marketplace realm={realm} />

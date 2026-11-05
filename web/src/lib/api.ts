@@ -32,6 +32,15 @@ export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PAT
 
 export const enc = encodeURIComponent
 
+/** A request whose body or answer is not JSON (a document's bytes), with
+    the same key; an error answer still says why, as JSON. */
+export async function raw(path: string, init: RequestInit = {}): Promise<Response> {
+  const r = await fetch(`/api/${path}`, { ...init, headers: { "X-Airth-Token": token() } })
+    .catch(() => { throw new Error("Airth is not answering.") })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status} ${r.statusText}`)
+  return r
+}
+
 export type Realm = { name: string; description: string | null; archived: boolean; default: boolean; live: number; needs_approval: number }
 
 export type AgentState = "needs" | "incident" | "working" | "idle" | "asleep"

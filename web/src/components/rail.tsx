@@ -1,9 +1,9 @@
-import { Bot, Building2, Store, CalendarClock, House, Inbox, ListChecks, Moon, Settings, Sun, Wallet, Workflow, type LucideIcon } from "lucide-react"
+import { Bot, Building2, CalendarClock, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
-export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "finance" | "company" | "settings" | "marketplace"
+export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "documents" | "finance" | "company" | "settings" | "marketplace"
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
@@ -44,6 +44,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
       <RailButton icon={Workflow} label="Routines" active={page === "routines"} onClick={() => onPage("routines")} />
       <RailButton icon={ListChecks} label="Tasks" active={page === "tasks"} onClick={() => onPage("tasks")} />
       <RailButton icon={CalendarClock} label="Calendar" active={page === "calendar"} onClick={() => onPage("calendar")} />
+      <RailButton icon={FolderOpen} label="Documents" active={page === "documents"} onClick={() => onPage("documents")} />
       <span className="my-1.5 h-px w-6 bg-border" />
       <RailButton icon={Wallet} label="Finance" active={page === "finance"} onClick={() => onPage("finance")} />
       <RailButton icon={Building2} label="Company" active={page === "company"} onClick={() => onPage("company")} />
