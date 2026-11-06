@@ -126,7 +126,7 @@ function parts(view: RunView): Part[] {
         // the founder wrote after, before the agent answered, is theirs.
         else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
         else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it." })
-        else if (text.startsWith("[Airth runtime]")) out.push({ kind: "note", text: "Picked up again." })
+        else if (text.startsWith("[Airth runtime]") || text === "Go on with the order.") out.push({ kind: "note", text: "Picked up again." })
         else out.push({ kind: "founder", text })
       } else if (b.type === "tool_use") {
         const step = { name: b.name, input: b.input, done: false }

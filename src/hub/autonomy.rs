@@ -127,10 +127,23 @@ impl Authority for FounderAuthority {
         if watched {
             return Ok(Decision::AskFounder);
         }
+        // What it would do, in the founder's terms: the request, not only
+        // the action's name.
+        let request = [
+            arguments["method"].as_str().unwrap_or("GET"),
+            arguments["url"].as_str().unwrap_or_default(),
+        ]
+        .join(" ");
+        let title = match arguments["url"].as_str() {
+            Some(_) => format!("{action}: {}", request.trim()),
+            None => format!("{action}, from a task you started"),
+        };
         let item = Store::of(&self.realm)?.propose(&NewItem {
             kind: "approval",
-            title: &format!("{action}, from a task you started"),
-            agent: None,
+            title: &title,
+            // The task's agent: the question shows in its chat, where the
+            // founder answers it and the task goes on.
+            agent: self.agent.as_deref(),
             routine: None,
             run: Some(&self.run),
             action: Some(action),

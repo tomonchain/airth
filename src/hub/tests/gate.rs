@@ -366,3 +366,29 @@ fn a_routine_is_told_the_strategy_and_memory_the_founder_keeps() {
         calls[0].prompt_version
     );
 }
+
+/// A task nobody watches files what commits the business under its agent,
+/// so the question shows in that agent's chat (where the founder answers it
+/// and the task goes on), titled by the request it would make.
+#[test]
+fn an_unwatched_tasks_approval_is_filed_under_its_agent() {
+    use crate::runtime::{Authority, Decision};
+    let f = fixture();
+    let mut state = crate::state::State::new("Optimise the landing page", None);
+    state.agent = Some("developer".into());
+    let mut authority = crate::hub::autonomy::FounderAuthority::for_run(&f.realm, &state).unwrap();
+    let decision = authority
+        .decide(
+            "http_request",
+            "github.undeclared",
+            &json!({"integration": "github", "url": "/user/repos"}),
+            "c1",
+            false,
+        )
+        .unwrap();
+    assert!(matches!(decision, Decision::Stop(_)));
+    let items = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].agent.as_deref(), Some("developer"));
+    assert_eq!(items[0].title, "github.undeclared: GET /user/repos");
+}
