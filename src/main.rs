@@ -9,6 +9,7 @@ mod connectors;
 mod desktop;
 mod documents;
 mod drive;
+mod extract;
 mod frontmatter;
 mod github;
 mod home;

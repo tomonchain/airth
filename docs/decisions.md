@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 86. Word documents and PDFs are read as text, with flate2
+
+**Accepted.** The founder, 6 November 2026, after the Chief of staff could not read the company's documents in Drive: they are PDFs and Word files, which decision 85 said unreadable.
+
+- `extract::text` reads a .docx (a zip of XML: its `word/document.xml`, paragraphs and tabs kept) and a PDF made by software (its compressed streams, the text operators of its pages, characters mapped through the fonts' ToUnicode tables, else Latin-1). A PDF with no text, a scan, is said to be one; nothing is guessed. A compressed part may grow to 50 MB at most.
+- Drive's `read` uses it for PDFs and Word documents.
+- `flate2` becomes a direct dependency for the decompression: it was already built (through reqwest's TLS stack), so nothing new is downloaded or compiled. The zip and PDF reading is Airth's own, small, and tested; a PDF library would bring far more than this needs.
+
+*Why:* company documents are PDFs and Word files far more often than Google Docs.
+
+*Cost:* a PDF that hides its text in a way this does not read (some font encodings without ToUnicode, text drawn as shapes) gives little or garbled text; a scan gives none and says so. Reading scans needs OCR or a model that reads images: not here.
+
 ## 85. Google Drive, read only, one folder
 
 **Accepted.** The founder, 6 November 2026: the agents need the company's documents, which are in Google Drive ("Go pour le connecteur"). It was an open question (Google OAuth for Drive). Integrations were HTTP with a key; Drive needs a Google sign-in.

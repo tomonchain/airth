@@ -17,6 +17,7 @@ dependencies = [
  "chrono",
  "clap",
  "ctrlc",
+ "flate2",
  "global-hotkey",
  "libc",
  "qrcode",

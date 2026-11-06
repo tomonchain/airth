@@ -21,6 +21,9 @@ fn fake_drive() -> String {
                 "sheet" => {
                     json!({"id": "sheet", "name": "Budget", "mimeType": "application/vnd.google-apps.spreadsheet", "parents": ["R"]})
                 }
+                "pdf" => {
+                    json!({"id": "pdf", "name": "taxpayer_id.pdf", "mimeType": "application/pdf", "parents": ["R"]})
+                }
                 "X" => {
                     json!({"id": "X", "name": "Personal", "mimeType": "application/vnd.google-apps.folder", "parents": ["root"]})
                 }
@@ -48,6 +51,12 @@ fn fake_drive() -> String {
                 .to_string();
             let (status, body) = if !authorized {
                 (401, json!({"error": {"message": "no token"}}).to_string())
+            } else if path.is_empty()
+                && q.get("q").is_some_and(|x| x.contains("fullText"))
+                && q.contains_key("orderBy")
+            {
+                // As Drive answers a sorted full-text search.
+                (403, json!({"error": {"message": "Sorting is not supported for queries with fullText terms."}}).to_string())
             } else if path.is_empty() {
                 let query = q.get("q").cloned().unwrap_or_default();
                 let files: Vec<Value> = if query.contains("'R' in parents") {
@@ -69,6 +78,8 @@ fn fake_drive() -> String {
                         json!({"error": {"message": "cannot export"}}).to_string(),
                     ),
                 }
+            } else if path == "pdf" && q.get("alt").map(String::as_str) == Some("media") {
+                (200, "%PDF-1.4\n1 0 obj\n<< /Length 44 >>\nstream\nBT (Taxpayer ID: 0123456789) Tj ET\nendstream\nendobj\n%%EOF".into())
             } else {
                 match meta(&path) {
                     Some(m) => (200, m.to_string()),
@@ -123,6 +134,8 @@ fn only_the_shared_folder_is_read() {
         ("Articles", "# Articles\n\nOne a week.")
     );
     assert_eq!(drive.read("sheet").unwrap().1, "month,spent\nNov,120");
+    // A PDF made by software reads as its text (decision 86).
+    assert_eq!(drive.read("pdf").unwrap().1, "Taxpayer ID: 0123456789");
     let err = format!("{:#}", drive.read("out").unwrap_err());
     assert!(
         err.contains("Tax return is not in the folder shared"),

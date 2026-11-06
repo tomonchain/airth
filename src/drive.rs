@@ -231,7 +231,7 @@ impl Drive {
             self.within(&folder)?;
         }
         let q = format!("'{}' in parents and trashed = false", quoted(&folder));
-        self.files(&q, 200)
+        self.files(&q, 200, true)
     }
 
     /// Files whose name or contents hold `words`, in the shared folder.
@@ -241,28 +241,27 @@ impl Drive {
             quoted(words.trim())
         );
         Ok(self
-            .files(&q, 30)?
+            // Drive refuses to sort a full-text search: by relevance only.
+            .files(&q, 30, false)?
             .into_iter()
             .filter(|f| f["id"].as_str().is_some_and(|id| self.within(id).is_ok()))
             .take(20)
             .collect())
     }
 
-    fn files(&self, q: &str, size: usize) -> Result<Vec<Value>> {
+    fn files(&self, q: &str, size: usize, sorted: bool) -> Result<Vec<Value>> {
         let size = size.to_string();
-        let body: Value = self
-            .get(
-                "/files",
-                &[
-                    ("q", q),
-                    ("fields", "files(id,name,mimeType,modifiedTime,size)"),
-                    ("pageSize", &size),
-                    ("orderBy", "folder,name"),
-                    ("supportsAllDrives", "true"),
-                    ("includeItemsFromAllDrives", "true"),
-                ],
-            )?
-            .json()?;
+        let mut query = vec![
+            ("q", q),
+            ("fields", "files(id,name,mimeType,modifiedTime,size)"),
+            ("pageSize", size.as_str()),
+            ("supportsAllDrives", "true"),
+            ("includeItemsFromAllDrives", "true"),
+        ];
+        if sorted {
+            query.push(("orderBy", "folder,name"));
+        }
+        let body: Value = self.get("/files", &query)?.json()?;
         Ok(body["files"].as_array().cloned().unwrap_or_default())
     }
 
@@ -289,6 +288,17 @@ impl Drive {
                     &[("alt", "media"), ("supportsAllDrives", "true")],
                 )?
                 .text()?,
+            // A Word document or a PDF: its text, read here (decision 86).
+            "application/pdf"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                let bytes = self
+                    .get(
+                        &format!("/files/{id}"),
+                        &[("alt", "media"), ("supportsAllDrives", "true")],
+                    )?
+                    .bytes()?;
+                crate::extract::text(&bytes, mime).with_context(|| format!("reading {name}"))?
+            }
             other => bail!("{name} is a {other} file, which Airth cannot read as text yet"),
         };
         Ok((name, cut(text)))
