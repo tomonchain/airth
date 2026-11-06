@@ -393,6 +393,13 @@ fn migrate(conn: &mut Connection) -> Result<()> {
 }
 
 fn migrate_unchecked(conn: &mut Connection) -> Result<()> {
+    // A database already up to date is opened many times a minute (the
+    // scheduler, the bot, every page): checking it whole and writing its
+    // version each time read and wrote gigabytes a day for nothing.
+    let current: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if current == MIGRATIONS.len() as i64 {
+        return Ok(());
+    }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let applied: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
     let applied = usize::try_from(applied).unwrap_or(usize::MAX);
@@ -483,6 +490,30 @@ mod tests {
         drop(store);
         let err = Store::open(&path).err().unwrap();
         assert!(format!("{err:#}").contains("newer than this Airth"));
+    }
+
+    #[test]
+    fn opening_a_database_up_to_date_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        drop(Store::open(&path).unwrap());
+        let watcher = Connection::open(&path).unwrap();
+        let changes = || -> i64 {
+            watcher
+                .pragma_query_value(None, "data_version", |r| r.get(0))
+                .unwrap()
+        };
+        let before = changes();
+        for _ in 0..3 {
+            drop(Store::open(&path).unwrap());
+        }
+        assert_eq!(changes(), before, "an open wrote to the database");
+        // A write from another connection is seen, so the watch is real.
+        let mut store = Store::open(&path).unwrap();
+        store
+            .write(|tx| Ok(tx.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?))
+            .unwrap();
+        assert_ne!(changes(), before);
     }
 
     /// Decision 47: a database of the version before holding rows migrates

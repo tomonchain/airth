@@ -206,7 +206,9 @@ pub fn open_url(url: &str) {
 /// Look for due objectives and pipelines every few seconds and start them. Only one
 /// app serves a home at a time, so only one scheduler runs.
 pub(super) fn run_scheduler(runner: Runner) {
+    let mut held = HashMap::new();
     loop {
+        hold_databases(&runner.hub, &mut held);
         match scheduler::due(&runner.hub, chrono::Utc::now()) {
             Ok(due) => {
                 for d in due {
@@ -330,6 +332,26 @@ pub(super) fn run_scheduler(runner: Runner) {
             Err(e) => eprintln!("retried actions: {e:#}"),
         }
         std::thread::sleep(scheduler::TICK);
+    }
+}
+
+/// One connection to each business database, held while the service runs.
+/// Without one, every short open (a dozen a tick, the bot, every page)
+/// creates the database's journal files and deletes them on close, which
+/// wrote about a gigabyte a day. A database not created yet is left so.
+fn hold_databases(hub: &Hub, held: &mut HashMap<String, crate::business::store::Store>) {
+    let Ok(realms) = hub.home().realms() else {
+        return;
+    };
+    for realm in realms {
+        if held.contains_key(realm.name())
+            || !realm.dir().join(crate::business::store::FILE).exists()
+        {
+            continue;
+        }
+        if let Ok(store) = crate::business::store::Store::of(&realm) {
+            held.insert(realm.name().to_string(), store);
+        }
     }
 }
 
@@ -554,6 +576,38 @@ pub(super) fn shut_down(registry: &Registry, info_path: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+    use crate::business::store::{FILE, Store};
+
+    /// The service holds each business database open, so the journal files
+    /// stay between the short opens; it creates no database.
+    #[test]
+    fn the_service_holds_each_business_database_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let new = |name: &str| crate::home::NewRealm {
+            name: name.into(),
+            description: String::new(),
+            root: None,
+            isolation: None,
+        };
+        let a = home.create_realm(new("a")).unwrap();
+        let b = home.create_realm(new("b")).unwrap();
+        drop(Store::of(&a).unwrap());
+        let hub = crate::hub::Hub::new(home);
+        let mut held = std::collections::HashMap::new();
+        super::hold_databases(&hub, &mut held);
+        assert_eq!(held.keys().collect::<Vec<_>>(), ["a"]);
+        assert!(!b.dir().join(FILE).exists(), "no database created");
+        drop(Store::of(&a).unwrap());
+        assert!(a.dir().join(format!("{FILE}-wal")).exists());
+        drop(held);
+        drop(Store::of(&a).unwrap());
+        assert!(
+            !a.dir().join(format!("{FILE}-wal")).exists(),
+            "the watch is real"
+        );
+    }
+
     /// A preview runs nothing on its own: its start message must not say
     /// that routines run.
     #[test]
