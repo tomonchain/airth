@@ -122,7 +122,9 @@ function parts(view: RunView): Part[] {
         const text = b.text.trim()
         if (!text) continue
         if (m.role === "assistant") out.push({ kind: "agent", text })
-        else if (i === 0) continue // the agent's job and the order, which the founder wrote above
+        // The agent's job and the order, which the founder wrote above; what
+        // the founder wrote after, before the agent answered, is theirs.
+        else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
         else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it." })
         else if (text.startsWith("[Airth runtime]")) out.push({ kind: "note", text: "Picked up again." })
         else out.push({ kind: "founder", text })
@@ -200,10 +202,10 @@ function Bubble({ side, children, last, agent, time }: { side: "left" | "right";
 /** One task with an agent, as a chat: the founder's messages on the right,
     the agent's words on the left, its steps folded in between, and its
     question to the founder when it has one. */
-export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onChange }: {
-  realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echo?: string; onEcho?: () => void; onChange: () => void
+export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange }: {
+  realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echoes?: string[]; onEcho?: (text: string) => void; onChange: () => void
 }) {
-  const { view, draft, refresh } = useRun(realm, id, fresh || !!echo)
+  const { view, draft, refresh } = useRun(realm, id, fresh || echoes.length > 0)
   // Words the founder already read as they were written are not written
   // out again once they are in the run.
   const read = useRef("")
@@ -211,12 +213,13 @@ export function TaskThread({ realm, id, agent, items, fresh, echo, onEcho, onCha
   const [busy, setBusy] = useState(false)
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
-  // The message the founder just sent, shown by the conversation until the
-  // run has it.
+  // The messages the founder just sent, shown by the conversation until the
+  // run has them: looked for among its latest words only.
   useEffect(() => {
-    const said = ps.filter((p) => p.kind === "founder").at(-1)
-    if (echo && said?.kind === "founder" && said.text === echo.trim()) onEcho?.()
-  }, [ps, echo, onEcho])
+    if (!echoes.length) return
+    const said = ps.filter((p) => p.kind === "founder").slice(-(echoes.length + 1)).map((p) => p.text)
+    for (const e of echoes) if (said.includes(e.trim())) onEcho?.(e)
+  }, [ps, echoes, onEcho])
   if (!view) return null
   if (shown.current === null) shown.current = fresh ? 1 : ps.length
   const live = view.live

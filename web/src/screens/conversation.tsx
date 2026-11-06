@@ -50,10 +50,12 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
   const closedBy = Object.values(tasks.data ?? {}).flat().find((t) => t.id === latest)?.change
   const closed = closedBy === "adopted" || closedBy === "discarded" ? closedBy : null
   const [mine] = useState(() => new Set<string>())
-  // What the founder just sent, until its task shows it.
-  const [outbox, setOutbox] = useState<{ text: string; task: string | null; at: string; queued?: boolean } | null>(null)
-  useEffect(() => setOutbox(null), [agent.name])
-  const echoed = useCallback(() => setOutbox(null), [])
+  // What the founder just sent, until its task shows it: the message that
+  // started the agent, then those written while it works, in their order.
+  type Sent = { text: string; task: string | null; at: string; queued?: boolean }
+  const [outbox, setOutbox] = useState<Sent[]>([])
+  useEffect(() => setOutbox([]), [agent.name])
+  const echoed = useCallback((text: string) => setOutbox((o) => { const i = o.findIndex((s) => s.text === text); return i < 0 ? o : [...o.slice(0, i), ...o.slice(i + 1)] }), [])
 
   const entries = useMemo(() => {
     const e: Entry[] = []
@@ -71,7 +73,7 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
   const units = useMemo(() => {
     const u: { side: "left" | "right" | "task"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
     for (const x of entries) {
-      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echo={outbox?.task === x.id ? outbox.text : undefined} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
+      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
       else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
       else {
         const it = x.item
@@ -147,18 +149,16 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
               )
             })
           )}
-          {outbox && outbox.queued ? (
-            <div className="mb-5 fade-up"><Mine text={outbox.text} at={outbox.at} note="it reads this at its next step" /></div>
-          ) : outbox && (
-            <>
-              <div className="mb-5 fade-up"><Mine text={outbox.text} at={outbox.at} /></div>
-              <div className="mb-5 flex items-end gap-2.5 fade-up">
-                <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
-                <div className="inline-flex items-center rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"><Typing /></div>
-              </div>
-            </>
+          {outbox.map((s, i) => (
+            <div key={`${s.at}${i}`} className="mb-5 fade-up"><Mine text={s.text} at={s.at} note={s.queued ? "Waiting: it reads this at its next step" : undefined} /></div>
+          ))}
+          {outbox.length > 0 && !outbox[0].queued && (
+            <div className="mb-5 flex items-end gap-2.5 fade-up">
+              <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+              <div className="inline-flex items-center rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"><Typing /></div>
+            </div>
           )}
-          {thread.data && busy && !outbox && <Working agent={agent} />}
+          {thread.data && busy && !outbox.length && <Working agent={agent} />}
         </div>
       </div>
       <div className={cn("relative mx-auto w-full px-6 pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
@@ -171,15 +171,15 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
         <OrderBox realm={realm} agent={agent.name} title={agent.title} task={closed ? undefined : latest} closed={closed} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)
-            setOutbox({ text, task, at: new Date().toISOString(), queued: running })
+            setOutbox((o) => [...o, { text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
             pinned.current = true
             requestAnimationFrame(() => toBottom(true))
           }}
           onSent={(id) => {
-            if (id) { mine.add(id); setStarted((s) => (s.includes(id) ? s : [...s, id])); setOutbox((o) => o && { ...o, task: id }) }
+            if (id) { mine.add(id); setStarted((s) => (s.includes(id) ? s : [...s, id])); setOutbox((o) => o.map((s) => (s.task ? s : { ...s, task: id }))) }
             tasks.refresh()
           }}
-          onFailed={() => setOutbox(null)} />
+          onFailed={() => setOutbox((o) => o.slice(0, -1))} />
       </div>
     </div>
   )
