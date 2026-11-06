@@ -469,7 +469,13 @@ impl Hub {
             realm_description: realm.config.description.clone(),
             owner,
             business: crate::business::briefing(&realm.root()?, &realm.config.departments)?,
-            memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
+            // With its id, so an agent can propose a decision that replaces it.
+            memory: realm
+                .memory()
+                .list()?
+                .into_iter()
+                .map(|m| format!("{} [{}]", m.text, m.id))
+                .collect(),
             isolated: state.change.is_some(),
             pull_requests: state.change.is_some()
                 && self.repo_of(realm, state).delivery == Delivery::PullRequest,

@@ -72,6 +72,32 @@ impl MemoryStore {
         Ok(entry)
     }
 
+    /// Put `text` in place of the entry `id`, in one write: a decision that
+    /// changes an earlier one replaces it rather than sits beside it.
+    pub fn replace(&self, id: &str, text: &str, source: &str) -> Result<MemoryEntry> {
+        let text = text.trim();
+        if text.is_empty() {
+            bail!("nothing to remember");
+        }
+        if text.chars().count() > MAX_ENTRY_CHARS {
+            bail!("a memory is limited to {MAX_ENTRY_CHARS} characters; keep it to one fact");
+        }
+        let _guard = LOCK.lock().unwrap();
+        let mut entries = self.list()?;
+        let Some(at) = entries.iter().position(|e| e.id == id) else {
+            bail!("there is no memory {id} to replace");
+        };
+        let entry = MemoryEntry {
+            id: next_id(&entries),
+            text: text.to_string(),
+            source: source.to_string(),
+            created_at: Utc::now(),
+        };
+        entries[at] = entry.clone();
+        self.write(&entries)?;
+        Ok(entry)
+    }
+
     /// Delete an entry; false if there was none with this id.
     pub fn remove(&self, id: &str) -> Result<bool> {
         let _guard = LOCK.lock().unwrap();
@@ -108,6 +134,36 @@ fn next_id(entries: &[MemoryEntry]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A decision that changes an earlier one takes its place, under a new
+    /// id; one that names no memory is refused, nothing written.
+    #[test]
+    fn a_decision_replaces_the_one_it_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::new(dir.path().join("memory.json"));
+        store.add("Posts go out at 08:00", "owner").unwrap();
+        store.add("No price predictions", "owner").unwrap();
+        let new = store
+            .replace("m1", "Posts go out at 09:00", "run:7")
+            .unwrap();
+        let texts: Vec<_> = store
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.id, e.text))
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                ("m3".to_string(), "Posts go out at 09:00".to_string()),
+                ("m2".into(), "No price predictions".into())
+            ]
+        );
+        assert_eq!(new.source, "run:7");
+        assert!(store.replace("m9", "x", "owner").is_err());
+        assert!(store.replace("m2", "  ", "owner").is_err());
+        assert_eq!(store.list().unwrap().len(), 2);
+    }
 
     #[test]
     fn add_list_remove() {

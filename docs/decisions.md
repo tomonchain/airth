@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 83. The memory keeps what the founder decided, not what was discussed
+
+**Accepted.** The founder, 6 November 2026, asking that what is said in a chat reach the whole team: "il faut distinguer ce qui est du brainstorming avec les équipes de ce qu'on teste / approuve pour la mémoire."
+
+- Nothing said in a chat enters the business's memory on its own. The memory (decision 82: told to every task and every routine) holds what the founder decided, tested or approved.
+- The founder keeps a decision from a chat: beside each of their messages and each answer, "Keep as a decision" opens the words to edit into the decision, and asks whether it changes an earlier one.
+- An agent proposes one with `remember`, told to propose only what the owner decided or approved, never an idea from a brainstorm. Its proposal shows as a card, "proposes to keep this for the whole team", with Keep or Not now; the realm's `memory` policy still decides whether it is asked (it asks by default).
+- A decision that changes an earlier one replaces it (`MemoryStore::replace`, `replaces` in `remember` and in the app), in one write, rather than sitting beside it. The agents see each memory's id to name the one they replace.
+
+*Why:* a memory every routine follows must not fill with ideas that were only explored, nor keep two rules that contradict each other.
+
+*Cost:* the founder's click is needed for every decision; the memory holds only what someone chose to keep. A founder who sets `memory` to Allow lets agents keep decisions without asking, and loses that distinction.
+
 ## 82. A routine's model calls are told what the founder's tasks are told
 
 **Accepted.** The founder, 6 November 2026: how to make the agents keep what they are told, so that when an element of the business changes, all of them know. A task was told the business's profile, its strategy and its memory; a routine's AI block was told only its prompt file. A decision recorded in the strategy or the memory reached every task and no routine.

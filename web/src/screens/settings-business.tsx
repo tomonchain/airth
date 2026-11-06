@@ -179,9 +179,9 @@ export function Memory({ realm }: { realm: string }) {
   }
   return (
     <>
-      <Head title="Memory">What the agents remember in this business. Tasks in other businesses never see it.</Head>
+      <Head title="Memory">What the whole team keeps: decisions you made or approved. Every agent and routine of this business is told them; brainstorming stays in its chat. Other businesses never see them.</Head>
       <div className="mb-2.5 flex gap-2">
-        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Something the agents should remember in this business…" />
+        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="A decision for the whole team, like: no posts on weekends" />
         <Button variant="outline" disabled={!text.trim()} onClick={add}><Plus /> Add</Button>
       </div>
       {!d ? <Loading /> : (
@@ -190,12 +190,12 @@ export function Memory({ realm }: { realm: string }) {
             <div key={m.id} className="flex items-start gap-3 px-4 py-2.5">
               <div className="min-w-0 flex-1">
                 <p className="text-sm">{m.text}</p>
-                <p className="text-xs text-muted-foreground">{m.source === "owner" ? "Added by you" : "Learned in a task"} · {ago(m.created_at)}</p>
+                <p className="text-xs text-muted-foreground">{m.source === "owner" ? "Kept by you" : "Proposed in a task"} · {ago(m.created_at)}</p>
               </div>
               <Button size="icon-sm" variant="ghost" className="text-muted-foreground" aria-label="Forget" title="Forget"
                 onClick={async () => { try { await api(`realms/${enc(realm)}/memory/${enc(m.id)}`, undefined, "DELETE"); refresh() } catch (e) { toast.error((e as Error).message) } }}><X /></Button>
             </div>
-          )) : <p className="px-4 py-3 text-sm text-muted-foreground">Nothing yet. Tasks add what they learn; you can add facts here.</p>}
+          )) : <p className="px-4 py-3 text-sm text-muted-foreground">Nothing yet. Keep a decision from a chat (the bookmark beside a message), or write one here.</p>}
         </Panel>
       )}
     </>

@@ -269,9 +269,11 @@ impl App {
             (Method::Post, ["realms", r, "memory"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                realm
-                    .memory()
-                    .add(body["text"].as_str().unwrap_or_default(), "owner")?;
+                let text = body["text"].as_str().unwrap_or_default();
+                match body["replaces"].as_str().filter(|id| !id.is_empty()) {
+                    Some(id) => realm.memory().replace(id, text, "owner")?,
+                    None => realm.memory().add(text, "owner")?,
+                };
                 json_response(200, self.realm_detail(&realm)?)
             }
             (Method::Delete, ["realms", r, "memory", id]) => {

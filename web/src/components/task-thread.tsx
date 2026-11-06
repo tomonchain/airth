@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
+import { BookmarkPlus, Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
+import { KeepButton } from "@/components/keep-decision"
 import { Rich } from "@/components/rich"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
@@ -144,7 +145,7 @@ function parts(view: RunView): Part[] {
 
 const TOOL: Record<string, string> = {
   read_file: "Read", list_directory: "Listed", write_file: "Wrote", edit_file: "Edited", execute_command: "Ran",
-  update_plan: "Updated its plan", use_skill: "Used the skill", http_request: "Called", search_files: "Searched",
+  update_plan: "Updated its plan", use_skill: "Used the skill", remember: "Proposed a decision", http_request: "Called", search_files: "Searched",
 }
 function stepLine(s: Step) {
   const verb = TOOL[s.name] ?? (s.name.startsWith("mcp__") ? s.name.split("__").slice(1).join(" · ") : s.name.replace(/_/g, " "))
@@ -219,11 +220,14 @@ function Work({ items, live, saying, tail }: { items: Part[]; live: boolean; say
   )
 }
 
-function Bubble({ side, children, last, agent, time }: { side: "left" | "right"; children: React.ReactNode; last?: boolean; agent: Agent; time?: string }) {
+function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "right"; children: React.ReactNode; last?: boolean; agent: Agent; time?: string; aside?: React.ReactNode }) {
   if (side === "right") {
     return (
       <div className={cn("flex flex-col items-end", last ? "mb-4" : "mb-1.5")}>
-        <div className="max-w-[75%] rounded-2xl rounded-br-md bg-me px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground">{children}</div>
+        <div className="flex max-w-[75%] items-start gap-1">
+          {aside}
+          <div className="min-w-0 rounded-2xl rounded-br-md bg-me px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground">{children}</div>
+        </div>
         {time && last && <div className="mt-1 pr-1 text-[11px] text-muted-foreground">{time}</div>}
       </div>
     )
@@ -231,7 +235,7 @@ function Bubble({ side, children, last, agent, time }: { side: "left" | "right";
   return (
     <div className={cn("flex items-end gap-2.5", last ? "mb-4" : "mb-1.5")}>
       <span className="w-8 shrink-0">{last && <Character agent={agent} size={32} still />}</span>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="flex min-w-0 flex-1 items-start gap-1">{children}{aside}</div>
     </div>
   )
 }
@@ -317,12 +321,17 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         const next = shownTurns[i + 1]
         const isNew = t.at >= (shown.current ?? 0)
         if (t.kind === "founder") {
-          return <div key={t.at} className={cn(isNew && "fade-up")}><Bubble side="right" agent={agent} last={next?.kind !== "founder"} time={t.at === 0 ? stamp(startOf(id)) : undefined}>{t.text}</Bubble></div>
+          return (
+            <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
+              <Bubble side="right" agent={agent} last={next?.kind !== "founder"} time={t.at === 0 ? stamp(startOf(id)) : undefined}
+                aside={<KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" />}>{t.text}</Bubble>
+            </div>
+          )
         }
         const last = (!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question))
         return (
-          <div key={t.at} className={cn(isNew && "fade-up")}>
-            <Bubble side="left" agent={agent} last={last}>
+          <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
+            <Bubble side="left" agent={agent} last={last} aside={t.kind === "answer" ? <KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" /> : undefined}>
               {t.kind === "work" ? <Work items={t.items} live={t.live && !long} saying={t.live ? short : undefined} tail={t.live && !long && !view.pending ? timer : undefined} /> : (
                 <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
                   <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
@@ -332,7 +341,26 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           </div>
         )
       })}
-      {(view.pending || question) && (
+      {/* The agent proposes a decision for the whole team (decision 83):
+          kept only if the founder says so. */}
+      {view.pending?.tool === "remember" && (() => {
+        const [decision, replaced] = view.pending.preview.split("\n\nReplaces: ")
+        return (
+          <Bubble side="left" agent={agent} last>
+            <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-sky-400/40 bg-bubble px-4 py-3 fade-up">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 dark:text-sky-300"><BookmarkPlus className="size-3.5" /> {agent.title} proposes to keep this for the whole team</div>
+              <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{decision}</p>
+              {replaced && <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium">In place of:</span> <span className="line-through decoration-muted-foreground/50">{replaced}</span></p>}
+              <p className="mt-2 text-xs text-muted-foreground">Every agent and routine is told it from now on. Keep only what you decided, not ideas still open.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" disabled={busy} onClick={() => answerLive(true)}><Check /> Keep</Button>
+                <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => answerLive(false)}>Not now</Button>
+              </div>
+            </div>
+          </Bubble>
+        )
+      })()}
+      {((view.pending && view.pending.tool !== "remember") || question) && (
         <Bubble side="left" agent={agent} last>
           <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-amber-400/40 bg-bubble px-4 py-3 fade-up">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-300"><ShieldQuestion className="size-3.5" /> {agent.title} asks before it goes on</div>
