@@ -15,6 +15,7 @@ fn agent(root: &std::path::Path, name: &str, front: &str) {
 
 fn integration(name: &str) -> crate::integration::Integration {
     crate::integration::Integration {
+        free_reads: false,
         name: name.into(),
         description: String::new(),
         base_url: format!("https://{name}.example.com"),

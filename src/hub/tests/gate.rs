@@ -73,6 +73,7 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
     }
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base,

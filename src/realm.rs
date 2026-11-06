@@ -179,8 +179,9 @@ impl Realm {
         let path = dir.join("realm.json");
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let config =
+        let mut config: RealmConfig =
             serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        crate::connectors::free_reads_of_catalog(&mut config.integrations);
         Ok(Self {
             dir: dir.to_path_buf(),
             config,
@@ -641,6 +642,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut r = realm(dir.path());
         let integration = |url: &str| Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: url.into(),

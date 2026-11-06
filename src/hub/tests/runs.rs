@@ -361,6 +361,7 @@ fn multi_step_task_across_tools_resumes_after_interruption() {
         .unwrap();
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "tracker".into(),
             description: "The team's issue tracker".into(),
             base_url: base,
@@ -874,6 +875,7 @@ fn an_integration_with_declared_actions_takes_nothing_else() {
     let mut f = fixture();
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "blog".into(),
             description: String::new(),
             base_url: base,

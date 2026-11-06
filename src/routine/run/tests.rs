@@ -69,6 +69,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
     ]}))
     .unwrap();
     let typefully = Integration {
+        free_reads: false,
         name: "typefully".into(),
         description: String::new(),
         base_url: "https://api.typefully.com".into(),

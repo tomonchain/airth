@@ -54,6 +54,9 @@ const fn get(path: &'static str) -> Option<Check> {
     })
 }
 
+/// Connectors whose reads (GET, HEAD) ask nothing (decision 84).
+const FREE_READS: &[&str] = &["github"];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Connector {
     pub id: &'static str,
@@ -261,6 +264,23 @@ pub fn catalog() -> Vec<Connector> {
     ]
 }
 
+/// A connector added before decision 84 reads free as one added since: an
+/// integration that is a catalog connector, at its own address, whose reads
+/// change nothing.
+pub fn free_reads_of_catalog(integrations: &mut [Integration]) {
+    for i in integrations
+        .iter_mut()
+        .filter(|i| FREE_READS.contains(&i.name.as_str()))
+    {
+        if let Ok(c) = find(&i.name)
+            && let Kind::Http { base_url, .. } = c.kind
+            && i.base_url == base_url
+        {
+            i.free_reads = true;
+        }
+    }
+}
+
 pub fn find(id: &str) -> Result<Connector> {
     catalog()
         .into_iter()
@@ -286,6 +306,8 @@ pub fn integration_for(c: &Connector) -> Result<Integration> {
         headers.insert(k.to_string(), v.to_string());
     }
     let integration = Integration {
+        // Its reads change nothing: they ask nothing (decision 84).
+        free_reads: FREE_READS.contains(&c.id),
         name: c.id.to_string(),
         description: format!(
             "{} ({}). {} Docs: {}",

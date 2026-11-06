@@ -439,6 +439,7 @@ mod tests {
         )
         .unwrap();
         let integration = |name: &str| Integration {
+            free_reads: false,
             name: name.into(),
             description: String::new(),
             base_url: format!("https://{name}.example.com"),

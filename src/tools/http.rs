@@ -149,6 +149,11 @@ impl Tool for HttpRequest {
             return Ok((!read).then(|| format!("web.{}", method.to_ascii_lowercase())));
         };
         let integration = self.integration(name)?;
+        // A read of a service the founder declared reads free of (decision
+        // 84) is no action: the realm's network rule decides, as for the web.
+        if integration.free_reads && (method == "GET" || method == "HEAD") {
+            return Ok(None);
+        }
         if integration.actions.is_empty() {
             return Ok(Some(format!("{name}.undeclared")));
         }
@@ -439,6 +444,7 @@ mod tests {
     fn tool(base: &str) -> HttpRequest {
         HttpRequest {
             integrations: vec![Integration {
+                free_reads: false,
                 name: "svc".into(),
                 description: "A test service".into(),
                 base_url: format!("{base}/api"),
@@ -450,6 +456,49 @@ mod tests {
             }],
             cut: Default::default(),
         }
+    }
+
+    /// Decision 84: through a service the founder declared reads free of, a
+    /// GET or HEAD is no action; anything else still commits, and without
+    /// the declaration a read commits as before.
+    #[test]
+    fn only_the_reads_of_a_service_declared_free_skip_the_founder() {
+        let mut t = tool("https://api.example");
+        let call = |m: &str| json!({"integration": "svc", "url": "/user/repos", "method": m});
+        assert_eq!(
+            t.action(&call("GET")).unwrap().as_deref(),
+            Some("svc.undeclared")
+        );
+        t.integrations[0].free_reads = true;
+        assert_eq!(t.action(&call("GET")).unwrap(), None);
+        assert_eq!(t.action(&call("head")).unwrap(), None);
+        assert_eq!(
+            t.action(&json!({"integration": "svc", "url": "/user"}))
+                .unwrap(),
+            None,
+            "GET by default"
+        );
+        for write in ["POST", "PUT", "PATCH", "DELETE"] {
+            assert_eq!(
+                t.action(&call(write)).unwrap().as_deref(),
+                Some("svc.undeclared"),
+                "{write}"
+            );
+        }
+        // The GitHub connector declares it; another does not.
+        let of = |id: &str| {
+            crate::connectors::integration_for(&crate::connectors::find(id).unwrap()).unwrap()
+        };
+        assert!(of("github").free_reads);
+        assert!(!of("linear").free_reads);
+        // A GitHub connected before reads free too; a look-alike elsewhere does not.
+        let mut old = of("github");
+        old.free_reads = false;
+        let mut elsewhere = old.clone();
+        elsewhere.base_url = "https://github.example.com/api".into();
+        let mut list = [old, elsewhere];
+        crate::connectors::free_reads_of_catalog(&mut list);
+        assert!(list[0].free_reads && !list[1].free_reads);
     }
 
     #[test]

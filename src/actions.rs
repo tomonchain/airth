@@ -473,6 +473,7 @@ mod tests {
             json!([{"name": "set", "place": "path"}]),
         );
         let i = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),
@@ -525,6 +526,7 @@ mod tests {
             json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "ETH left the queue."}]}}})
         );
         let i = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),
@@ -570,6 +572,7 @@ mod tests {
         reply.class = Some(Class::Reversible);
         reply.max_level = Some(0);
         let integration = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),

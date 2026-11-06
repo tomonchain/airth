@@ -52,6 +52,8 @@ export type Agent = {
   job: string | null
   body: string
   integrations: string[]
+  /** The repositories its tasks work in (decision 64). */
+  repos?: string[]
   skills: string[]
   accessory: "pen" | "lens" | "book" | null
   look: string | null

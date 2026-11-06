@@ -268,7 +268,7 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
         "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
         "title" => {}
         // What its tasks may use (decision 64): names, comma-separated.
-        "integrations" | "skills" => {
+        "integrations" | "skills" | "repos" => {
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
                 crate::realm::validate_name(name)
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;

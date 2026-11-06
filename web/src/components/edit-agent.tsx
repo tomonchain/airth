@@ -25,20 +25,21 @@ export function EditAgent({ realm, agent, departments, open, onOpenChange, onSav
   const tools = useTools(realm, open)
   const [integrations, setIntegrations] = useState<string[]>(agent.integrations ?? [])
   const [skills, setSkills] = useState<string[]>(agent.skills ?? [])
+  const [repos, setRepos] = useState<string[]>(agent.repos ?? [])
   useEffect(() => {
     if (!open) return
     setTitle(agent.title); setDepartment(agent.department ?? ""); setJob(agent.body || agent.job || "")
-    setIntegrations(agent.integrations ?? []); setSkills(agent.skills ?? []); setLeaving(false)
+    setIntegrations(agent.integrations ?? []); setSkills(agent.skills ?? []); setRepos(agent.repos ?? []); setLeaving(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
   const changed = title !== agent.title || department !== (agent.department ?? "") || job !== (agent.body || agent.job || "")
-    || !same(integrations, agent.integrations ?? []) || !same(skills, agent.skills ?? [])
+    || !same(integrations, agent.integrations ?? []) || !same(skills, agent.skills ?? []) || !same(repos, agent.repos ?? [])
 
   async function save() {
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department, job, integrations, skills }, "PUT")
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title, department, job, integrations, skills, repos }, "PUT")
       toast.success(`${title} is saved.`)
       onSaved()
       onOpenChange(false)
@@ -97,6 +98,8 @@ export function EditAgent({ realm, agent, departments, open, onOpenChange, onSav
                 {tools.data.integrations.map((n) => <Toggle key={`i${n}`} label={n} on={integrations.includes(n)} onClick={() => setIntegrations((l) => flip(l, n))} />)}
                 {tools.data.servers.map((m) => <Toggle key={`m${m.name}`} label={m.name} hint={m.description} on={skills.includes(m.name)} onClick={() => setSkills((l) => flip(l, m.name))} />)}
                 {tools.data.skills.map((n) => <Toggle key={`s${n}`} label={n} skill on={skills.includes(n)} onClick={() => setSkills((l) => flip(l, n))} />)}
+                {/* A repository: its tasks work there, on their own branch. */}
+                {tools.data.repos.map((n) => <Toggle key={`r${n}`} label={`${n} (code)`} hint="Its tasks work in this repository, each on its own branch" on={repos.includes(n)} onClick={() => setRepos((l) => flip(l, n))} />)}
                 {!tools.data.integrations.length && !tools.data.servers.length && !tools.data.skills.length && <span className="text-xs text-muted-foreground">This business has no connector or skill yet.</span>}
               </div>
             )}

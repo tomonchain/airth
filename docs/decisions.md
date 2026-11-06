@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 84. A service whose reads change nothing is read without asking
+
+**Accepted.** The founder, 6 November 2026, after the Developer stopped on every read of GitHub: "il faut qu'il puisse lire". A request through an integration with no declared actions is an action nobody declared, so it commits (CLAUDE.md), and a plain `GET /user/repos` waited for the founder's approval.
+
+- An integration may say its reads are free (`free_reads`): through it, a GET or a HEAD is no action, and the realm's network rule decides, as for a read of the web. Any other method is still an action nobody declared, and commits.
+- The GitHub connector says so (`connectors::FREE_READS`); a GitHub connected before this reads free too, if it is the catalog's at its own address. No other connector does until the founder says so.
+- The agent's own repositories are not read through GitHub: a task whose agent names a repository (`repos:`, decision 64, now chosen in the agent's Edit form) works in its own worktree of it, on its own branch, and writes there without asking (decision 80).
+
+*Why:* a read of GitHub changes nothing for the business; asking for each one stopped the Developer at every step, and taught the founder to approve without reading.
+
+*Cost:* a read may still leak what the agent was told into a URL's query; the network rule and the realm's integrations are the bound, as for the web. A service whose GETs do change things must not be marked free.
+
 ## 83. The memory keeps what the founder decided, not what was discussed
 
 **Accepted.** The founder, 6 November 2026, asking that what is said in a chat reach the whole team: "il faut distinguer ce qui est du brainstorming avec les équipes de ce qu'on teste / approuve pour la mémoire."

@@ -129,6 +129,8 @@ impl App {
                 // What its tasks may use (decision 64).
                 "integrations": doc.text("integrations").map(|t| split_names(&t)).unwrap_or_default(),
                 "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
+                // The repositories its tasks work in (decision 64).
+                "repos": doc.text("repos").map(|t| split_names(&t)).unwrap_or_default(),
                 "routines": routines,
                 "waiting": waits,
                 "cost_usd": cost,
