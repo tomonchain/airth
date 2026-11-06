@@ -77,7 +77,8 @@ impl Hub {
                 action: Some(LAUNCH_MISSION),
                 args: &args.to_string(),
                 execute_at: at,
-                source: &json!({"tool": LAUNCH_MISSION}).to_string(),
+                // The founder reads the brief, not the routine's whole item.
+                source: &json!({"tool": LAUNCH_MISSION, "show": "brief"}).to_string(),
                 model_call: None,
             })?;
             bail!("not done: proposed to the founder (item {id})");
