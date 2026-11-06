@@ -34,10 +34,11 @@ export function OrderBox({ realm, agent, title, task, closed, working, onSending
     setLast(t)
     onSending(t, continuing ? task! : null)
     try {
-      // Closed since the page last looked (its change adopted elsewhere): the
-      // message starts a new task rather than failing.
+      // Closed since the page last looked (its change adopted elsewhere), or
+      // the agent now works in another repository: the message starts a new
+      // task rather than failing.
       const goOn = continuing && await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
-        .then(() => true, (e: Error) => { if (/change was (adopted|discarded)/.test(e.message)) return false; throw e })
+        .then(() => true, (e: Error) => { if (/change was (adopted|discarded)|start a new task instead/.test(e.message)) return false; throw e })
       if (goOn) {
         onSent(null)
       } else {

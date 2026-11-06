@@ -186,6 +186,25 @@ impl Hub {
                 change.status.as_str()
             );
         }
+        // A task works in the repository its agent declared when it began;
+        // if the agent was since given another, what the founder writes is a
+        // new task there, not more of this one.
+        if let (Some(agent), Some(change)) = (&state.agent, &state.change)
+            && let Ok(root) = realm.root()
+            && let Ok(scope) = crate::business::scope(&root, agent)
+            && let Ok(Some(now)) = realm.repo(scope.repos.first().map(String::as_str))
+            && !same_path(&now.path, &change.repo)
+        {
+            bail!(
+                "this task works in {}, and {agent} now works in {}: start a new task instead",
+                change
+                    .repo
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default(),
+                now.name
+            );
+        }
         state.close_dangling_tool_calls();
         Ok(state)
     }
@@ -566,6 +585,14 @@ fn latest_ask(state: &State) -> Option<String> {
 
 /// Add a user message, merging into the last message if it is already a user
 /// turn (e.g. tool results from a run that hit its iteration limit).
+/// Whether two paths name the same place, symlinks resolved.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 pub(crate) fn append_user_text(messages: &mut Vec<Message>, text: &str) {
     match messages.last_mut() {
         Some(last) if last.role == Role::User => last.content.push(ContentBlock::Text {
