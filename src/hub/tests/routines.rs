@@ -652,6 +652,8 @@ fn a_routine_launches_a_mission_and_goes_on_with_its_report() {
     assert_eq!(asked[0].action.as_deref(), Some("airth.launch_mission"));
     let brief = asked[0].args["brief"].as_str().unwrap();
     assert!(brief.starts_with("Write the article of 20"), "{brief}");
+    // What Needs you and Telegram show: the brief.
+    assert_eq!(asked[0].source["show"], "brief");
     assert!(hub.take_hand_offs().unwrap().is_empty());
 
     let (item, _) = hub
