@@ -1,8 +1,9 @@
-import { useState } from "react"
-import { Bot, BookOpen, Check, ChevronDown, FlaskConical, GitBranch, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Sparkles, X, Zap, type LucideIcon } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Bot, BookOpen, Check, ChevronDown, FlaskConical, GitBranch, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Save, Sparkles, Undo2, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
+import { BlockFields, TriggerFields, type Declared, type Draft } from "@/components/routine-editor"
 import { Empty, Loading, Page, Panel, Section } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -93,7 +94,7 @@ type Ran = { running: boolean; report?: string; error?: string }
     (decision 49), agents given a task on a schedule (decision 37), and the
     fixed sequences of business/pipelines/ (decision 30). */
 export function Routines({ realm, agents, onAgent }: { realm: string; agents: Agent[]; onAgent: (name: string) => void }) {
-  const graphs = usePoll<{ routines: Routine[] }>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
+  const graphs = usePoll<{ routines: Routine[]; actions: Declared[]; prompts: string[] }>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/routines`), 15000, [realm])
   const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
   const [open, setOpen] = useState<string | null>(null)
@@ -133,8 +134,9 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
         {!graphs.data ? <Loading /> : graphs.data.routines.length ? (
           <div className="space-y-2.5">
             {graphs.data.routines.map((r) => (
-              <GraphCard key={r.name} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} open={open === r.name}
-                onOpen={() => setOpen(open === r.name ? null : r.name)} onAgent={onAgent} dry={dry[r.name]} onDry={() => dryRun(r.name)} ran={ran[r.name]} onRun={() => runNow(r.name)} />
+              <GraphCard key={r.name} realm={realm} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} open={open === r.name}
+                onOpen={() => setOpen(open === r.name ? null : r.name)} onAgent={onAgent} dry={dry[r.name]} onDry={() => dryRun(r.name)} ran={ran[r.name]} onRun={() => runNow(r.name)}
+                actions={graphs.data!.actions} prompts={graphs.data!.prompts} onSaved={graphs.refresh} />
             ))}
           </div>
         ) : <Empty icon={Repeat} title="No routine yet">A routine is a file in routines/ in the business folder: a trigger, then its blocks.</Empty>}
@@ -173,19 +175,53 @@ function Last({ ok, at }: { ok: boolean; at: string }) {
   )
 }
 
-function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun }: {
-  r: Routine; agent?: Agent; open: boolean; onOpen: () => void; onAgent: (name: string) => void; dry?: Dry; onDry: () => void; ran?: Ran; onRun: () => void
+/** The routine's file, parsed; null when it does not parse. */
+function parse(source: string): Draft | null {
+  try { return JSON.parse(source) as Draft } catch { return null }
+}
+
+function GraphCard({ realm, r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun, actions, prompts, onSaved }: {
+  realm: string; r: Routine; agent?: Agent; open: boolean; onOpen: () => void; onAgent: (name: string) => void; dry?: Dry; onDry: () => void; ran?: Ran; onRun: () => void
+  actions: Declared[]; prompts: string[]; onSaved: () => Promise<void>
 }) {
   const [block, setBlock] = useState<string | null>(null)
-  const g = r.graph
+  // The founder's edits (decision 69), on the file as it was read.
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [refused, setRefused] = useState<{ text: string; block?: string; changed?: boolean } | null>(null)
+  const saved = r.graph ? parse(r.source) : null
+  const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved)
+  // A newer file replaces the page's copy, unless the founder is editing it.
+  useEffect(() => { if (!dirty) setDraft(r.graph ? parse(r.source) : null) }, [r.version])
+  const g = r.graph && draft ? { ...r.graph, ...draft, trigger: { ...r.graph.trigger, ...draft.trigger } } : r.graph
   const last = r.runs[0]
-  const report = dry?.report
+  const report = dirty ? undefined : dry?.report
+
+  function edit(d: Draft) { setDraft(d); setRefused(null) }
+  function discard() { setDraft(saved); setRefused(null) }
+  async function save() {
+    if (!draft) return
+    setSaving(true)
+    try {
+      // Indented as the files are, so git shows only what changed.
+      const text = JSON.stringify(draft, null, 2) + (r.source.endsWith("\n") ? "\n" : "")
+      await api(`realms/${enc(realm)}/graphs/${enc(r.name)}`, { text, version: r.version }, "PUT")
+      toast.success(`${r.name} saved. Commit it in the business folder to keep it in git.`)
+      setRefused(null)
+      await onSaved()
+    } catch (e) {
+      const text = (e as Error).message
+      setRefused({ text, block: text.match(/block '([^']+)'/)?.[1], changed: /changed since you opened it/.test(text) })
+    } finally { setSaving(false) }
+  }
+  const selected = draft?.blocks.find((b) => b.id === block)
+
   return (
     <Panel className={cn("transition-colors", open && "bg-bubble/70")}>
       <div className="flex items-center gap-3 px-4 py-3.5">
         {agent ? <button onClick={() => onAgent(agent.name)} aria-label={agent.title}><Character agent={agent} size={30} still /></button> : <Bot className="size-6 text-muted-foreground" />}
         <button className="min-w-0 flex-1 text-left" onClick={onOpen} aria-expanded={open}>
-          <div className="font-mono text-[13px] font-medium">{r.name}</div>
+          <div className="flex items-center gap-2 font-mono text-[13px] font-medium">{r.name}{dirty && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[11px] text-amber-600 dark:text-amber-300">Not saved</span>}</div>
           <div className="truncate text-xs text-muted-foreground">
             {g ? <>{r.agent_title ?? g.agent} · {trigger(g.trigger)}{r.next_at ? ` · next ${clock(r.next_at)}` : ""}</> : <span className="text-red-500">This file does not hold</span>}
           </div>
@@ -217,33 +253,57 @@ function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun }: 
 
       {open && (
         <div className="grid gap-6 border-t px-4 py-4 md:grid-cols-[1fr_17rem]">
-          {g ? (
+          {g && draft ? (
             <div className="min-w-0">
               {g.description && <p className="mb-3 text-sm text-foreground/80">{g.description}</p>}
               <ol className="relative space-y-1.5 before:absolute before:top-4 before:bottom-4 before:left-[15px] before:w-px before:bg-border">
-                <Node icon={Play} type="Trigger" title={trigger(g.trigger)} sub={r.next_at ? `next ${clock(r.next_at)}` : ""} />
+                <Node icon={Play} type="Trigger" title={trigger(g.trigger)} sub={r.next_at ? `next ${clock(r.next_at)}` : ""}
+                  current={block === TRIGGER} onClick={() => setBlock(block === TRIGGER ? null : TRIGGER)} />
                 {g.blocks.map((b) => {
                   const k = BLOCK[b.type] ?? BLOCK.act
                   const [title, sub] = describe(b)
                   const ran = report?.blocks.find((x) => x.id === b.id)
                   return (
-                    <Node key={b.id} icon={k.icon} type={k.label} title={title} sub={sub} warn={b.type === "approval"}
-                      current={block === b.id} onClick={report ? () => setBlock(block === b.id ? null : b.id) : undefined}
+                    <Node key={b.id} icon={k.icon} type={k.label} title={title} sub={sub} warn={b.type === "approval"} wrong={refused?.block === b.id}
+                      current={block === b.id} onClick={() => setBlock(block === b.id ? null : b.id)}
                       out={report && (ran ? { ok: !ran.notes.length, text: `${ran.items_in} → ${ran.items_out} · ${ran.secs.toFixed(1)} s` } : { ok: null, text: "not reached" })} />
                   )
                 })}
               </ol>
-              {report && <BlockReport report={report} open={block} />}
+              {block && (
+                <section className="mt-3 space-y-3 rounded-lg border bg-surface p-3" aria-label={`Change ${block === TRIGGER ? "the trigger" : block}`}>
+                  <h3 className="text-xs font-medium">{block === TRIGGER ? "The routine" : <>Change <span className="font-mono">{block}</span></>}</h3>
+                  {refused && (refused.block === block || (!refused.block && block === TRIGGER)) && <Refused text={refused.text} />}
+                  {block === TRIGGER
+                    ? <TriggerFields draft={draft} onChange={edit} when={schedule} />
+                    : selected && <BlockFields block={selected} actions={actions} prompts={prompts}
+                        onChange={(nb) => edit({ ...draft, blocks: draft.blocks.map((x) => (x.id === nb.id ? nb : x)) })} />}
+                </section>
+              )}
+              {report && block && block !== TRIGGER && <BlockReport report={report} open={block} />}
+              {!block && <p className="mt-3 text-xs text-muted-foreground">Choose a block to change it{report ? " or see what it did" : ""}. Adding, removing or linking blocks is done in the file.</p>}
               <p className="mt-4 text-xs text-muted-foreground">A dry run reads and asks the model for real, takes every approval as given, and only shows what each act would do. Nothing is sent.</p>
             </div>
           ) : <p className="font-mono text-xs break-words text-red-500">{r.error}</p>}
 
           <aside className="space-y-4 text-sm">
+            {dirty ? (
+              <div className="space-y-2 rounded-lg border border-amber-400/40 bg-amber-500/5 p-3">
+                <p className="text-xs">Your changes are not saved. Airth checks the routine as when it loads it: nothing is written if it would be refused.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" disabled={saving} onClick={save}>{saving ? <><Loader className="animate-spin" /> Saving…</> : <><Save /> Save</>}</Button>
+                  <Button size="sm" variant="outline" disabled={saving} onClick={discard}><Undo2 /> Discard</Button>
+                </div>
+                {refused && !refused.block && block !== TRIGGER && <Refused text={refused.text} />}
+                {refused?.block && block !== refused.block && <button className="text-left text-xs text-red-600 hover:underline dark:text-red-300" onClick={() => setBlock(refused.block!)}>Refused at {refused.block}: see why</button>}
+                {refused?.changed && <p className="text-xs text-muted-foreground">Someone changed the file since you opened it. Discard to see their version, then make your change again.</p>}
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <Button disabled={!g || ran?.running || dry?.running} onClick={onRun} title="Run it now, for real: as at its time, what needs you waits in Needs you">
+              <Button disabled={!g || dirty || ran?.running || dry?.running} onClick={onRun} title={dirty ? "Save your changes first" : "Run it now, for real: as at its time, what needs you waits in Needs you"}>
                 {ran?.running ? <><Loader className="animate-spin" /> Running…</> : <><Play /> Run now</>}
               </Button>
-              <Button variant="outline" disabled={!g || dry?.running || ran?.running} onClick={onDry} title="Everything but the acts: nothing is sent">
+              <Button variant="outline" disabled={!g || dirty || dry?.running || ran?.running} onClick={onDry} title={dirty ? "Save your changes first: a dry run runs what is saved" : "Everything but the acts: nothing is sent"}>
                 {dry?.running ? <><Loader className="animate-spin" /> Dry…</> : <><FlaskConical /> Dry run</>}
               </Button>
             </div>
@@ -285,6 +345,13 @@ function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun }: 
   )
 }
 
+// The trigger's row, selectable like a block's.
+const TRIGGER = "\u0000trigger"
+
+function Refused({ text }: { text: string }) {
+  return <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{text}</p>
+}
+
 /** How late a scheduled run started, past the 15 minutes of grace. */
 function late(run: { at: string; due_at?: string | null }): string | null {
   if (!run.due_at) return null
@@ -293,13 +360,13 @@ function late(run: { at: string; due_at?: string | null }): string | null {
   return min < 120 ? `${min} min` : `${Math.round(min / 60)} h`
 }
 
-function Node({ icon: Icon, type, title, sub, warn, current, onClick, out }: {
-  icon: LucideIcon; type: string; title: string; sub: string; warn?: boolean; current?: boolean; onClick?: () => void
+function Node({ icon: Icon, type, title, sub, warn, wrong, current, onClick, out }: {
+  icon: LucideIcon; type: string; title: string; sub: string; warn?: boolean; wrong?: boolean; current?: boolean; onClick?: () => void
   out?: { ok: boolean | null; text: string }
 }) {
   const body = (
     <>
-      <span className={cn("relative z-10 grid size-[31px] shrink-0 place-items-center rounded-lg border bg-surface", warn && "border-amber-400/50 text-amber-600 dark:text-amber-300")}><Icon className="size-4" /></span>
+      <span className={cn("relative z-10 grid size-[31px] shrink-0 place-items-center rounded-lg border bg-surface", warn && "border-amber-400/50 text-amber-600 dark:text-amber-300", wrong && "border-red-500 text-red-500")}><Icon className="size-4" /></span>
       <span className="min-w-0 flex-1">
         <span className="block text-[11px] text-muted-foreground">{type}</span>
         <span className="block truncate text-sm font-medium">{title}</span>

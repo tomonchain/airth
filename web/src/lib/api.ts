@@ -139,6 +139,9 @@ export type Routine = {
   next_at: string | null
   runs: { at: string; ok: boolean; error: string | null }[]
   error?: string
+  /** The file as written, and its version, for the editor (decision 69). */
+  source: string
+  version: string
   graph?: { description: string; agent: string; trigger: { schedule: string | null; manual: unknown; telegram: string | null; webhook: string | null }; blocks: GraphBlock[] }
 }
 
