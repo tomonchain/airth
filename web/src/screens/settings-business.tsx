@@ -204,7 +204,7 @@ export function Memory({ realm }: { realm: string }) {
 
 const CAPS: [string, string, string][] = [
   ["read", "Read files", "Read files and list folders"],
-  ["write", "Change files", "Create and change files"],
+  ["write", "Change files", "Create and change files. In a task's own copy, Ask lets it write: you review the whole change before it is adopted"],
   ["execute", "Run commands", "Run shell commands"],
   ["memory", "Remember things", "Save facts to this business's memory"],
   ["network", "Use the web and integrations", "Call integrations and websites"],

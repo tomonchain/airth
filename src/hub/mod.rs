@@ -231,7 +231,8 @@ impl Hub {
                 files: state.agent.is_none() || state.change.is_some(),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
-                .with_grants(state.grants.clone()),
+                .with_grants(state.grants.clone())
+                .with_isolated_writes(state.change.is_some()),
             workspace.clone(),
             hooks.cancel.clone(),
         )

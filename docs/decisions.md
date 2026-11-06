@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 80. A run in its own worktree writes without asking
+
+**Accepted.** The founder, 6 November 2026: "on vire les confirmations". A task asked before every file it wrote, though it worked in its own git worktree: nothing it writes reaches the founder's files until they adopt the change, after reading the whole diff.
+
+- In a run with an isolated change (`state.change`), a write the realm's policy would ask about is allowed (`PermissionGate::with_isolated_writes`). The adoption, with its diff and its checks, is where the founder approves.
+- Only writes, only there. A write that carries a warning (a file that enforces a security boundary, `SECURITY_CRITICAL`) is still asked. A policy that denies writes still denies them. Commands, memory, the network and skills ask as before, with "Allow for this task". A call the founder is asked about explicitly (decision 56) is still asked.
+- A run without a worktree (a realm that works in place) asks before writing, as before.
+- Settings → Permissions says so under "Change files".
+
+*Why:* the question came before every step of work whose every line the founder reads anyway at adoption; it taught them to click Allow without reading, which is worse than one review.
+
+*Cost:* a task may fill its worktree with files the founder then throws away. The diff, not each write, is now the one place to catch a write that should not be adopted.
+
 ## 79. Nine departments, the founder adds others in Settings
 
 **Accepted.** The founder, 5 November 2026. The Chief of Staff hired a Developer in a department it called `development`; the seven departments of `CLAUDE.md` were the only ones allowed, and "Product & tech" was written `product`, which it could not guess. The founder wants a list that stays generic and is right, agents choosing within it, and the founder alone adding to it.
