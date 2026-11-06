@@ -53,6 +53,7 @@ fn a_routine_waits_for_the_founder_and_acts_once_on_the_approval() {
     }
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base.clone(),
@@ -187,6 +188,7 @@ fn a_failed_act_is_an_incident_and_demotes_its_agent() {
     .unwrap();
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base,
@@ -412,6 +414,7 @@ fn approved_and_failed(f: &mut Fixture, base: &str, path: &str, class: &str) -> 
 fn declare(f: &mut Fixture, base: &str, path: &str, class: &str) {
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base.into(),

@@ -1,0 +1,249 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-surface: var(--surface);
+    --color-bubble: var(--bubble);
+    --color-me: var(--me);
+    --color-me-foreground: var(--me-foreground);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: #ececee;
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+    --surface: oklch(1 0 0);
+    --bubble: oklch(0.967 0.001 286);
+    --me: #2f6bff;
+    --me-foreground: #ffffff;
+}
+
+.dark {
+    --background: #0e0e0f;
+    --surface: #161617;
+    --bubble: #1f1f21;
+    --me: #3a6df0;
+    --me-foreground: #ffffff;
+    --foreground: #ececed;
+    --card: #1f1f21;
+    --card-foreground: #ececed;
+    --popover: #1c1c1e;
+    --popover-foreground: #ececed;
+    --primary: #f4f4f5;
+    --primary-foreground: #18181b;
+    --secondary: #26262a;
+    --secondary-foreground: #ececed;
+    --muted: #222224;
+    --muted-foreground: #9a9aa1;
+    --accent: #252528;
+    --accent-foreground: #ececed;
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: rgb(255 255 255 / 7%);
+    --input: rgb(255 255 255 / 10%);
+    --ring: #6b8cff;
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: #161617;
+    --sidebar-foreground: #ececed;
+    --sidebar-primary: #6b8cff;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #232325;
+    --sidebar-accent-foreground: #ececed;
+    --sidebar-border: rgb(255 255 255 / 7%);
+    --sidebar-ring: #6b8cff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  button:not(:disabled), [role="button"]:not(:disabled) {
+    cursor: pointer;
+    }
+  html {
+    font-size: 15px;
+    @apply font-sans;
+    }
+}
+@keyframes slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+/* Department hues for the characters (decision 65), never a status colour. */
+:root {
+  /* Every side column, left list or right panel: one width. */
+  --side: 300px;
+  --dept-leadership: #E07AB8; --dept-leadership-dark: #A34E85;
+  --dept-marketing: #F39C4A; --dept-marketing-dark: #C7742B;
+  --dept-sales: #3FB8C9; --dept-sales-dark: #2A8593;
+  --dept-support: #4C8DFF; --dept-support-dark: #2F63C4;
+  --dept-tech: #8B6CF6; --dept-tech-dark: #6547C9;
+  --dept-operations: #8A94A6; --dept-operations-dark: #5E6778;
+  --dept-finance: #6C9BD2; --dept-finance-dark: #4A729F;
+  --dept-legal: #C9A43F; --dept-legal-dark: #957828;
+  --dept-data: #4FB286; --dept-data-dark: #36825F;
+  --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
+}
+
+/* The faces' life: they blink; a working one looks around. */
+.ch .eyes { transform-box: fill-box; transform-origin: center; animation: ch-blink 5s infinite; }
+.st-working .body { transform-box: fill-box; transform-origin: center bottom; animation: ch-bob 1.2s ease-in-out infinite; }
+.st-working .pupils.look { animation: ch-look 2.4s ease-in-out infinite; }
+@keyframes ch-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes ch-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes ch-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
+.ch.still * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .ch * { animation: none !important; } }
+
+/* Beautiful UI (beautifului.dev, by Turbo, MIT): the keyframes and the
+   StreamText caret and tail its Shimmer and StreamText atoms use, with
+   Airth's colours. */
+@keyframes shimmer-text { from { background-position: 150% center; } to { background-position: -50% center; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.stream-tail {
+  filter: blur(1.6px);
+  -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+  mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+}
+.stream-caret {
+  display: inline-block; width: 2px; height: 1.05em; margin-left: 1.5px; translate: 0 -0.5px;
+  border-radius: 1px; background: var(--foreground); vertical-align: text-bottom;
+  animation: caret-blink 1s step-end infinite;
+}
+.stream-caret.is-streaming { animation: none; }
+/* Words the model is writing now: the caret at the end of its last line. */
+.writing > :last-child::after, .writing > :last-child > li:last-child::after {
+  content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px;
+  border-radius: 1px; background: var(--foreground); vertical-align: text-bottom;
+}
+.writing > ul:last-child::after, .writing > ol:last-child::after { content: none; }
+.fade-up { animation: fade-up 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .stream-caret, .fade-up { animation: none; }
+  .stream-tail { filter: none; -webkit-mask-image: none; mask-image: none; }
+}
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+/* The dots between Airth and a service while the link is made. */
+@keyframes link {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.25); }
+}
+
+/* Scrollbars that blend in: thin, no track, a faint thumb of the text's
+   colour. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 14%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 14%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in oklch, var(--foreground) 24%, transparent); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* Syntax colours in the Documents editor (CodeMirror's .tok-* classes), the
+   classic interface's palette, light then dark. */
+.cm-editor {
+  --tok-keyword: #8b3fd9; --tok-string: #0a7d4f; --tok-number: #b45309; --tok-comment: #8f8f8f;
+  --tok-type: #0f6fb8; --tok-fn: #2557d6; --tok-prop: #a3366f; --tok-meta: #6b7280; --tok-heading: #0d0d0d;
+}
+.dark .cm-editor {
+  --tok-keyword: #c792ea; --tok-string: #a5d6a7; --tok-number: #f9b872; --tok-comment: #7f8590;
+  --tok-type: #82aaff; --tok-fn: #89ddff; --tok-prop: #f78c9c; --tok-meta: #9aa0aa; --tok-heading: #ffffff;
+}
+.cm-editor .tok-keyword, .cm-editor .tok-operatorKeyword, .cm-editor .tok-controlKeyword { color: var(--tok-keyword); }
+.cm-editor .tok-string, .cm-editor .tok-string2, .cm-editor .tok-inserted { color: var(--tok-string); }
+.cm-editor .tok-number, .cm-editor .tok-bool, .cm-editor .tok-atom, .cm-editor .tok-literal { color: var(--tok-number); }
+.cm-editor .tok-comment { color: var(--tok-comment); font-style: italic; }
+.cm-editor .tok-typeName, .cm-editor .tok-className, .cm-editor .tok-namespace { color: var(--tok-type); }
+.cm-editor .tok-definition, .cm-editor .tok-macroName { color: var(--tok-fn); }
+.cm-editor .tok-propertyName, .cm-editor .tok-attributeName, .cm-editor .tok-labelName { color: var(--tok-prop); }
+.cm-editor .tok-meta, .cm-editor .tok-processingInstruction { color: var(--tok-meta); }
+.cm-editor .tok-heading { color: var(--tok-heading); font-weight: 650; }
+.cm-editor .tok-link, .cm-editor .tok-url { color: var(--tok-type); text-decoration: underline; }
+.cm-editor .tok-emphasis { font-style: italic; }
+.cm-editor .tok-strong { font-weight: 650; }
+.cm-editor .tok-deleted, .cm-editor .tok-invalid { color: var(--color-red-500); }

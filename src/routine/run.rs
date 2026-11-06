@@ -121,15 +121,35 @@ fn holds(test: &Test, item: &Item) -> bool {
 
 /// An AI block's prompt and the schema beside it, checked when the graph
 /// was loaded.
-fn prompt(root: &Path, path: &str) -> Result<Prompt> {
-    let text =
+/// A block's prompt, after the business's essentials (decision 82): the
+/// same profile, strategy and memory the founder's tasks read, so a
+/// decision the founder records reaches the routines too. Its version is
+/// the prompt file's, then the essentials', both recorded with each call.
+fn prompt(root: &Path, path: &str, context: &str) -> Result<Prompt> {
+    let file =
         std::fs::read_to_string(root.join(path)).with_context(|| format!("reading {path}"))?;
+    let (text, version) = if context.trim().is_empty() {
+        (file.clone(), crate::update::sha256_hex(file.as_bytes()))
+    } else {
+        let essentials = crate::update::sha256_hex(context.as_bytes());
+        (
+            format!(
+                "{}\n\nWhat follows is your task. Where it and the above disagree, the above is the owner's latest word.\n\n{file}",
+                context.trim()
+            ),
+            format!(
+                "{}+{}",
+                crate::update::sha256_hex(file.as_bytes()),
+                &essentials[..12]
+            ),
+        )
+    };
     let schema_path = path.replace(".md", ".schema.json");
     let schema = serde_json::from_str(&std::fs::read_to_string(root.join(&schema_path))?)
         .with_context(|| format!("{schema_path} is not JSON"))?;
     Ok(Prompt {
         path: path.to_string(),
-        version: crate::update::sha256_hex(text.as_bytes()),
+        version,
         text,
         schema,
     })
@@ -177,6 +197,8 @@ fn order(graph: &Graph) -> Result<Vec<usize>> {
 /// model, and its integrations to show what acts would call.
 pub struct Dry<'a, 'b> {
     pub root: &'a Path,
+    /// The business's essentials, told before every prompt (decision 82).
+    pub context: &'a str,
     pub store: &'a mut Store,
     pub io: &'a mut Io<'b>,
     pub integrations: &'a [Integration],
@@ -400,7 +422,7 @@ pub fn run(
                 over,
                 model,
             } => {
-                let p = prompt(dry.root, path)?;
+                let p = prompt(dry.root, path, dry.context)?;
                 let into = into.as_deref().unwrap_or("answer");
                 let asking = Asking {
                     name,

@@ -8,6 +8,8 @@ mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
 mod documents;
+mod drive;
+mod extract;
 mod frontmatter;
 mod github;
 mod home;
@@ -18,6 +20,7 @@ mod images;
 mod integration;
 mod isolation;
 mod legal;
+mod library;
 mod memory;
 mod models;
 mod notify;
@@ -946,7 +949,11 @@ fn doctor(ctx: &Ctx) -> Result<bool> {
     // The business's config (decision 43): wrong fields fail; what is left
     // to fill is listed.
     if let Some(root) = realm.as_ref().ok().and_then(|r| r.root().ok()) {
-        let config = business::config::load(&root).map_err(|e| format!("{e:#}"));
+        let own = realm
+            .as_ref()
+            .map(|r| r.config.departments.clone())
+            .unwrap_or_default();
+        let config = business::config::load(&root, &own).map_err(|e| format!("{e:#}"));
         check(
             "business config",
             config.map(|c| match c.missing.is_empty() {

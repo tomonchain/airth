@@ -12,4 +12,4 @@ At least once every 12 months, the company confirms the information Companies Ho
 
 Filing early moves the next review period: it then counts from the confirmation date the company chose, which the founder enters as `confirmation_date`.
 
-Checked against Companies House's record for Hedgen Ltd: incorporated 7 November 2025, first statement date 6 November 2026, due by 20 November 2026.
+Checked against Companies House's record for a company incorporated on 7 November 2025: first statement date 6 November 2026, due by 20 November 2026.

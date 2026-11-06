@@ -97,6 +97,48 @@ impl App {
                 }
                 json_response(200, self.connectors(&realm, None))
             }
+            // Google Drive, read only, one folder (decision 85): the founder's
+            // OAuth client and the folder, then Google's sign-in page.
+            (Method::Post, ["realms", r, "drive"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
+                let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
+                // Under the write lock every changing request already holds
+                // (`handle`): taking it again here would wait forever.
+                let url = crate::drive::start(
+                    &realm.skills_dir(),
+                    &text("client_id"),
+                    &text("client_secret"),
+                    &text("folder"),
+                    &redirect,
+                )?;
+                let open = url.clone();
+                std::thread::spawn(move || open_url(&open));
+                json_response(200, json!({"sign_in": url}))
+            }
+            (Method::Get, ["realms", r, "drive"]) => {
+                let dir = self.realm(r)?.skills_dir();
+                let connected = crate::drive::connected(&dir);
+                let folder = crate::drive::folder(&dir);
+                // Its name, asked of Drive once connected; an error is said.
+                let (name, error) = match (connected, &folder) {
+                    (true, Some(_)) => match crate::drive::folder_name(&dir) {
+                        Ok(n) => (Some(n), None),
+                        Err(e) => (None, Some(format!("{e:#}"))),
+                    },
+                    _ => (None, None),
+                };
+                json_response(
+                    200,
+                    json!({"connected": connected, "folder": folder.map(|f| f.id), "name": name, "error": error}),
+                )
+            }
+            (Method::Delete, ["realms", r, "drive"]) => {
+                let dir = self.realm(r)?.skills_dir();
+                crate::drive::disconnect(&dir);
+                json_response(200, json!({"ok": true}))
+            }
             (Method::Post, ["realms", r, "connect"]) => {
                 // A remote MCP connector: save it, then open its sign-in page.
                 let body = read_json(request)?;

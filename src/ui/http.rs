@@ -113,13 +113,18 @@ pub(super) fn json_response(status: u16, value: Value) -> HttpResponse {
 }
 
 pub(super) fn static_response(body: &str, kind: &str) -> HttpResponse {
-    Response::from_string(body)
+    static_bytes(body.as_bytes(), kind)
+}
+
+pub(super) fn static_bytes(body: &[u8], kind: &str) -> HttpResponse {
+    Response::from_data(body)
         .with_header(content_type(kind))
         .with_header(Header::from_bytes("X-Frame-Options", "DENY").unwrap())
         .with_header(
             Header::from_bytes(
                 "Content-Security-Policy",
-                // Inline styles: the editor (CodeMirror) writes its own. Scripts stay 'self' only.
+                // Inline styles: the interface sets some sizes in the page (and the
+                // sign-in callback page has its own). Scripts stay 'self' only.
                 "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
             )
             .unwrap(),

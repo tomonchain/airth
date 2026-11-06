@@ -251,10 +251,62 @@ fn register(http: &Client, auth: &mut Auth, redirect_uri: &str) -> Result<()> {
 struct Pending {
     skills_dir: PathBuf,
     name: String,
-    url: String,
+    /// The MCP server's URL, sent as the token's resource and listed for its
+    /// tools once signed in; None for a service whose endpoints Airth knows
+    /// (Google Drive, decision 85), which has neither.
+    url: Option<String>,
     verifier: String,
     auth: Auth,
     started: DateTime<Utc>,
+}
+
+/// Begin signing in to a service whose endpoints Airth knows (decision 85):
+/// `auth` names them, the client and the scope; `extra` adds to the sign-in
+/// page's query. The browser comes back to the same callback as an MCP
+/// server's, and the tokens are kept the same way, as `name`.
+pub fn start_known(
+    skills_dir: &Path,
+    name: &str,
+    auth: Auth,
+    extra: &[(&str, &str)],
+) -> Result<String> {
+    let verifier = format!(
+        "{}{}",
+        crate::ui::random_token()?,
+        crate::ui::random_token()?
+    );
+    let state = crate::ui::random_token()?;
+    let mut authorize =
+        Url::parse(&auth.authorization_endpoint).context("invalid authorization endpoint")?;
+    {
+        let mut q = authorize.query_pairs_mut();
+        q.append_pair("response_type", "code")
+            .append_pair("client_id", &auth.client_id)
+            .append_pair("redirect_uri", &auth.redirect_uri)
+            .append_pair("code_challenge", &challenge(&verifier))
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", &state);
+        if let Some(scope) = &auth.scope {
+            q.append_pair("scope", scope);
+        }
+        for (k, v) in extra {
+            q.append_pair(k, v);
+        }
+    }
+    let mut map = pending().lock().unwrap();
+    map.retain(|_, p| Utc::now() - p.started < chrono::Duration::minutes(15));
+    map.insert(
+        state,
+        Pending {
+            skills_dir: skills_dir.to_path_buf(),
+            name: name.to_string(),
+            url: None,
+            verifier,
+            auth,
+            started: Utc::now(),
+        },
+    );
+    Ok(authorize.to_string())
 }
 
 fn pending() -> &'static Mutex<HashMap<String, Pending>> {
@@ -321,7 +373,7 @@ pub fn start(skills_dir: &Path, name: &str, redirect_uri: &str) -> Result<Starte
         Pending {
             skills_dir: skills_dir.to_path_buf(),
             name: name.to_string(),
-            url,
+            url: Some(url),
             verifier,
             auth,
             started: Utc::now(),
@@ -380,19 +432,20 @@ pub fn finish(state: &str, code: &str) -> Result<String> {
         anyhow!("this sign-in expired or was already used; start again from Airth")
     })?;
     let http = client()?;
-    let auth = token_request(
-        &http,
-        &p.auth,
-        &[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", &p.auth.redirect_uri),
-            ("code_verifier", &p.verifier),
-            ("resource", &p.url),
-        ],
-    )?;
+    let mut form = vec![
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("redirect_uri", p.auth.redirect_uri.as_str()),
+        ("code_verifier", p.verifier.as_str()),
+    ];
+    if let Some(url) = &p.url {
+        form.push(("resource", url));
+    }
+    let auth = token_request(&http, &p.auth, &form)?;
     save_auth(&p.skills_dir, &p.name, &auth)?;
-    refresh_tools(&p.skills_dir, &p.name)?;
+    if p.url.is_some() {
+        refresh_tools(&p.skills_dir, &p.name)?;
+    }
     Ok(p.name)
 }
 
@@ -652,6 +705,62 @@ pub fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 85: a service whose endpoints Airth knows (Google Drive)
+    /// signs in with PKCE and the extras it asks; the code is traded with
+    /// the verifier and without an MCP resource, and the tokens are kept.
+    #[test]
+    fn a_known_service_signs_in_and_keeps_its_tokens() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let token_url = format!("http://{}/token", server.server_addr().to_ip().unwrap());
+        let got = std::thread::spawn(move || {
+            let mut req = server.recv().unwrap();
+            let mut body = String::new();
+            req.as_reader().read_to_string(&mut body).unwrap();
+            req.respond(tiny_http::Response::from_string(
+                r#"{"access_token": "at", "refresh_token": "rt", "expires_in": 3599}"#,
+            ))
+            .unwrap();
+            body
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let auth = Auth {
+            client_id: "cid".into(),
+            client_secret: Some("cs".into()),
+            redirect_uri: "http://127.0.0.1:7457/oauth/callback".into(),
+            authorization_endpoint: "https://accounts.example/auth".into(),
+            token_endpoint: token_url,
+            scope: Some("drive.readonly".into()),
+            ..Default::default()
+        };
+        let page = start_known(
+            dir.path(),
+            "google-drive",
+            auth,
+            &[("access_type", "offline")],
+        )
+        .unwrap();
+        let page = Url::parse(&page).unwrap();
+        let q: HashMap<String, String> = page.query_pairs().into_owned().collect();
+        assert_eq!(q["client_id"], "cid");
+        assert_eq!(q["scope"], "drive.readonly");
+        assert_eq!(q["access_type"], "offline");
+        assert_eq!(q["code_challenge_method"], "S256");
+        assert!(!q.contains_key("resource"));
+        assert_eq!(finish(&q["state"], "the-code").unwrap(), "google-drive");
+        let form = got.join().unwrap();
+        assert!(
+            form.contains("code=the-code")
+                && form.contains("code_verifier=")
+                && form.contains("client_secret=cs"),
+            "{form}"
+        );
+        assert!(!form.contains("resource="), "{form}");
+        let kept = load_auth(dir.path(), "google-drive").unwrap();
+        assert_eq!(kept.refresh_token.as_deref(), Some("rt"));
+        // A state is used once.
+        assert!(finish(&q["state"], "again").is_err());
+    }
 
     #[test]
     fn pkce_matches_rfc_7636() {

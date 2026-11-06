@@ -58,9 +58,11 @@ impl Hub {
     ) -> Result<crate::routine::run::Report> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
+        let context = routine_context(realm)?;
         self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
             let dry = crate::routine::run::Dry {
                 root: &root,
+                context: &context,
                 store,
                 io,
                 integrations: &realm.config.integrations,
@@ -84,8 +86,10 @@ impl Hub {
     ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
+        let context = routine_context(realm)?;
         let workspace = Workspace::new(&root)?
             .with_secrets(realm.command_env()?, self.redactions(realm)?)
+            .with_credentials(realm.integration_credentials()?)
             .with_network(!realm.config.offline);
         let runtime = || {
             Runtime::new(
@@ -251,6 +255,7 @@ impl Hub {
             |store, io| {
                 let dry = crate::routine::run::Dry {
                     root: &root,
+                    context: &context,
                     store,
                     io,
                     integrations: &realm.config.integrations,
@@ -702,21 +707,66 @@ impl Hub {
     /// heartbeat with both times, so the next time knows it ended (decision
     /// 34) and the weekly report knows if it started late.
     pub fn run_scheduled_routine(&self, realm: &Realm, name: &str, due: DateTime<Utc>) {
+        let _ = self.run_and_record(realm, name, Some(due));
+    }
+
+    /// Run a routine now because the founder asked, from the app: as it runs
+    /// at its time (its acts within the agent's levels, what needs the
+    /// founder in the queue), recorded the same way. Its report, or why it
+    /// failed.
+    pub fn run_routine_by_hand(&self, realm: &Realm, name: &str) -> Result<String> {
+        self.run_and_record(realm, name, None)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    fn run_and_record(
+        &self,
+        realm: &Realm,
+        name: &str,
+        due: Option<DateTime<Utc>>,
+    ) -> std::result::Result<String, String> {
         let started = Utc::now();
-        let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
-        let outcome =
-            self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None);
+        let attempt = || {
+            let run = format!("{name}-{}", Utc::now().format("%Y%m%dT%H%M%S"));
+            self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None)
+        };
+        let mut outcome = attempt();
+        // At its time, a run that failed is tried again before it becomes an
+        // incident (decision 81): an act never runs twice for one item, so
+        // what the first try did is not done again. Not a file that does not
+        // load, which a wait does not mend; not a run the founder started,
+        // who sees the error at once.
+        let mut tries = 1;
+        let loads = || {
+            self.with_routine_checks(realm, |c| crate::routine::load(c, name))
+                .is_ok()
+        };
+        if due.is_some() && outcome.is_err() && loads() {
+            for wait in ROUTINE_RETRY_WAITS {
+                std::thread::sleep(wait);
+                tries += 1;
+                outcome = attempt();
+                if outcome.is_ok() {
+                    break;
+                }
+            }
+        }
+        let notes = if tries > 1 {
+            format!("tried {tries} times")
+        } else {
+            String::new()
+        };
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
         let report = outcome.ok().map(|ran| ran.text);
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
-            due: Some(due),
+            due,
             started,
             finished: Utc::now(),
             items_read: 0,
             items_kept: 0,
             report: report.as_deref(),
-            notes: "",
+            notes: &notes,
             error: error.as_deref(),
         };
         let recorded = Store::of(realm).and_then(|mut s| s.record_run(&beat, &[]));
@@ -726,10 +776,10 @@ impl Hub {
                 realm.name()
             );
         }
-        if let Some(e) = error {
+        if let Some(e) = &error {
             let incident = super::incidents::Incident {
                 title: &format!("{name} failed"),
-                detail: &e,
+                detail: e,
                 agent: None,
                 routine: Some(name),
                 action: None,
@@ -743,7 +793,28 @@ impl Hub {
                 );
             }
         }
+        match error {
+            Some(e) => Err(e),
+            None => Ok(report.unwrap_or_default()),
+        }
     }
+}
+
+/// A scheduled routine that failed is tried again after these waits
+/// (decision 81); none in tests.
+#[cfg(not(test))]
+const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(60),
+    std::time::Duration::from_secs(300),
+];
+#[cfg(test)]
+const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO; 2];
+
+/// The business's essentials told to a routine's model calls (decision 82):
+/// read at each run, so what the founder changed reaches the next one.
+fn routine_context(realm: &Realm) -> Result<String> {
+    let memory: Vec<String> = realm.memory().list()?.into_iter().map(|m| m.text).collect();
+    crate::business::essentials(&realm.root()?, &memory)
 }
 
 /// What became of an approved action now.

@@ -473,6 +473,7 @@ mod tests {
             json!([{"name": "set", "place": "path"}]),
         );
         let i = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),
@@ -481,8 +482,8 @@ mod tests {
         };
         let url = |v: &str| a.url(&i, &[("set".to_string(), v.to_string())].into());
         assert_eq!(
-            url("hedgen 2").unwrap().as_str(),
-            "https://api.typefully.com/v1/sets/hedgen%202/drafts"
+            url("acme 2").unwrap().as_str(),
+            "https://api.typefully.com/v1/sets/acme%202/drafts"
         );
         assert_eq!(url("a%2Fb").unwrap().path(), "/v1/sets/a%252Fb/drafts");
         for bad in ["../admin", "..", ".", "a/b", "https://evil.example/x", ""] {
@@ -525,6 +526,7 @@ mod tests {
             json!({"platforms": {"x": {"enabled": true, "posts": [{"text": "ETH left the queue."}]}}})
         );
         let i = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),
@@ -570,6 +572,7 @@ mod tests {
         reply.class = Some(Class::Reversible);
         reply.max_level = Some(0);
         let integration = Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: "https://api.typefully.com".into(),

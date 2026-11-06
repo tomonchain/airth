@@ -38,7 +38,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | HQ | The founder's view across all businesses | — | to build |
 | Business | A company and its activity | realm | exists; legal identity to add |
 | Line | An editorial line, range or brand inside a business | business config | to build, config only |
-| Department | A group of roles: Leadership, Marketing, Sales, Support, Product & tech, Operations, Finance & admin | business config | to build, config only |
+| Department | A group of roles: Leadership, Marketing, Sales, Support, Product & tech, Operations, Finance & admin, Legal & compliance, Data & research, and any the founder adds in Settings (decision 79) | business config | to build, config only |
 | Agent | A permanent role: department, mission, routines, prompts, optional mailbox, autonomy, statistics | — | to build |
 | Routine | Recurring work of an agent, as a graph of blocks | objective + pipeline | scheduling exists; pipelines to build |
 | Mission | A one-off order executed by an agent | run, chat | exists |
@@ -47,7 +47,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | Goal | The business's objective and milestones | a field of the business config | to build |
 | Needs you | Everything waiting for the founder: approvals, code reviews, decisions, incidents | approval queue, inbox, pending permissions | queue to build |
 | Autonomy level | What an agent may do alone, per action class | — | to build |
-| Business template | Preset departments, roles and routines to create a business | — | to build, extracted from Hedgen |
+| Team | Preset agents, routines and prompts, with the skills and connectors they need, installed from the Marketplace | `library/teams/` (decision 74) | Media and E-commerce |
 | Mailbox | An address on the business's domain, assigned to a role | mail connector | to build |
 
 An agent is not a process that runs continuously. It is a stable identity, written in the business folder, to which routines, missions, a mailbox and statistics are attached. What executes is still a routine or a mission.
@@ -153,8 +153,8 @@ Each business can have developer agents working on its own platforms, using the 
 - The redesign moves existing features, it does not remove them; a feature leaves Airth only through a decision of its own (decision 42). What serves building Airth goes to the Workshop; what serves running a business comes up into the business pages.
 - Telegram is the phone channel for Needs you. A channel decides who answers, never what an answer may do.
 - Visual reference: shadcn's components and the agent dashboards named in decision 73; `docs/design/DESIGN.md`'s tokens are the theme's starting point. Design a screen as a whole, leave out what does not serve its main task, and show it to the founder on a copy before it merges.
-- **One interface (decisions 72 and 73).** The interface in `web/`, whose first screen shows the agents at work in each business. The classic interface stays at `/classic` until each of its features has moved, or left by decision (decision 42); then it is removed.
-- Stack (decision 73): `web/`, Vite, React, TypeScript, Tailwind, shadcn (`base-nova`), Lucide, Sonner. `npm run build` writes `web/dist/`, committed and served from the binary, so `cargo build` needs no Node. `src/ui/next` (Preact) stays until `web/` replaces it, then leaves; no new work goes into it.
+- **One interface (decisions 72 and 73).** The interface in `web/`, whose first screen shows the agents at work in each business. Every feature of the classic and `/next` interfaces moved into it; both are removed.
+- Stack (decision 73): `web/`, Vite, React, TypeScript, Tailwind, shadcn (`base-nova`), Lucide, Sonner. `npm run build` writes `web/dist/`, committed and served from the binary, so `cargo build` needs no Node.
 
 ## Scope: the beta
 
@@ -172,7 +172,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.
 9. **VPS.** Linux sandbox, security scenarios green on Linux, deployment, access through a tunnel only.
 
-**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media, automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
+**Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media and e-commerce (decision 74), automatic autonomy promotion, full drag and drop in the routine editor, the iOS app, multiple human users, a hosted offer, semantic search.
 
 **Current milestone: 3.** Milestone 1 is closed: its decisions are 42 to 49. Exception, decided by the founder: milestone 2's code is done, but its gate (Hedgen Ltd fully described in config) stays open until the founder fills the config; milestone 3 goes ahead in parallel because it does not depend on that config technically. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
@@ -186,7 +186,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
-If you changed `src/ui`: `node scripts/ui_smoke.js`. If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
+If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
 
 Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass. If a check fails for a reason you do not understand, stop and report it.
 

@@ -27,6 +27,148 @@ pub(crate) fn backoff(attempt: u32) -> Duration {
     Duration::from_secs(2u64.pow(attempt))
 }
 
+/// Sends a streamed request and returns what `read` makes of its events,
+/// sent again as a whole request is when it fails on the way or the answer
+/// breaks off; `on_text` hears the new attempt start from nothing.
+pub(crate) fn stream(
+    provider: &str,
+    request: impl Fn() -> reqwest::blocking::RequestBuilder,
+    on_text: &mut dyn FnMut(&str),
+    stopped: &dyn Fn() -> bool,
+    read: impl Fn(&mut dyn std::io::BufRead, &mut dyn FnMut(&str)) -> anyhow::Result<Value>,
+) -> anyhow::Result<Value> {
+    use anyhow::Context;
+    let mut attempt = 0;
+    loop {
+        let result = request().send();
+        let retryable = match &result {
+            Ok(resp) => {
+                let s = resp.status().as_u16();
+                s == 408 || s == 409 || s == 429 || s >= 500
+            }
+            Err(e) => worth_retrying(e),
+        };
+        if retryable && attempt < MAX_RETRIES {
+            attempt += 1;
+            std::thread::sleep(backoff(attempt));
+            continue;
+        }
+        let resp = result.with_context(|| format!("request to {provider} failed"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().unwrap_or_default();
+            anyhow::bail!("{provider} API error {status}: {text}");
+        }
+        // Each line read is a moment to give up: providers send events, or
+        // keep-alive lines, every few seconds even while the model thinks.
+        let mut lines = Stoppable {
+            inner: std::io::BufReader::new(resp),
+            stopped,
+        };
+        match read(&mut lines, on_text) {
+            Ok(answer) => return Ok(answer),
+            Err(e) if stopped() => return Err(e).context("stopped"),
+            Err(_) if attempt < MAX_RETRIES => {
+                on_text("");
+                attempt += 1;
+                std::thread::sleep(backoff(attempt));
+            }
+            Err(e) => return Err(e).context("reading the model's answer failed"),
+        }
+    }
+}
+
+/// A stream that ends, as broken off, once `stopped` says so.
+struct Stoppable<'a, R> {
+    inner: R,
+    stopped: &'a dyn Fn() -> bool,
+}
+
+impl<R: std::io::Read> std::io::Read for Stoppable<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<R: std::io::BufRead> std::io::BufRead for Stoppable<'_, R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if (self.stopped)() {
+            return Err(std::io::Error::other("stopped"));
+        }
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.inner.consume(amount);
+    }
+}
+
+/// Tries of a streamed request after the first, as the providers' own.
+const MAX_RETRIES: u32 = 3;
+
+/// Whether a failed model call may work if tried again later: the provider
+/// busy or down, the network, an answer cut off (decision 81). A refused
+/// key, no credit or a request the provider refuses will not.
+pub fn transient(error: &str) -> bool {
+    let e = error.to_lowercase();
+    let lasting = [
+        "401",
+        "402",
+        "403",
+        "unauthorized",
+        "forbidden",
+        "api key",
+        "insufficient",
+        "credit",
+        "billing",
+        "invalid_request",
+    ];
+    if lasting.iter().any(|w| e.contains(w)) {
+        return false;
+    }
+    [
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+        "529",
+        "overloaded",
+        "rate limit",
+        "timed out",
+        "timeout",
+        "connection",
+        "error sending request",
+        "broke off",
+        "busy",
+        "temporarily",
+    ]
+    .iter()
+    .any(|w| e.contains(w))
+}
+
+/// Hands each server-sent event's data to `on` until it says the answer is
+/// whole; false when the stream ended first.
+pub(crate) fn events(
+    r: &mut dyn std::io::BufRead,
+    mut on: impl FnMut(&str) -> anyhow::Result<bool>,
+) -> anyhow::Result<bool> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if r.read_line(&mut line)? == 0 {
+            return Ok(false);
+        }
+        // Event names, ids and keep-alive comments carry nothing needed:
+        // every event's data says its own type.
+        if let Some(data) = line.trim_end().strip_prefix("data:")
+            && on(data.trim_start())?
+        {
+            return Ok(true);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -139,6 +281,19 @@ pub struct ModelResponse {
 pub trait Model: Send + Sync {
     fn name(&self) -> String;
     fn complete(&self, request: &ModelRequest) -> Result<ModelResponse>;
+
+    /// Like `complete`, telling `on_text` the answer's text so far as it is
+    /// written, so the founder reads it as it comes. Started again from
+    /// nothing when the request is sent again. Gives up as soon as `stopped`
+    /// says so. A provider that cannot stream answers all at once.
+    fn stream(
+        &self,
+        request: &ModelRequest,
+        _on_text: &mut dyn FnMut(&str),
+        _stopped: &dyn Fn() -> bool,
+    ) -> Result<ModelResponse> {
+        self.complete(request)
+    }
 
     /// Keep the provider's prompt cache of `request` (a request already sent)
     /// alive without generating anything, so the next request after a long
@@ -285,6 +440,31 @@ pub fn from_settings(get: &dyn Fn(&str) -> Option<String>) -> Result<Box<dyn Mod
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 81: a busy or unreachable provider is tried again later; a
+    /// refused key, no credit or a refused request is not.
+    #[test]
+    fn a_passing_failure_is_told_from_one_that_lasts() {
+        for passing in [
+            "DeepSeek API error 503 Service Unavailable: overloaded",
+            "Anthropic API error 529: {\"type\": \"overloaded_error\"}",
+            "OpenAI API error 429 Too Many Requests: rate limit reached",
+            "error sending request for url (https://api.deepseek.com/chat/completions)",
+            "operation timed out",
+            "the answer broke off",
+        ] {
+            assert!(transient(passing), "{passing}");
+        }
+        for lasting in [
+            "ollama API error 401 Unauthorized: Authentication Fails, your api key is invalid",
+            "DeepSeek API error 402 Payment Required: Insufficient Balance",
+            "OpenAI API error 400 Bad Request: invalid_request_error: context too long",
+            "Stopped by the user.",
+            "write_file: permission denied",
+        ] {
+            assert!(!transient(lasting), "{lasting}");
+        }
+    }
 
     #[test]
     fn a_chosen_model_only_uses_its_own_providers_key() {

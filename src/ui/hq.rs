@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 
 /// Runs shown under Latest activity.
 const ACTIVITY: usize = 3;
+/// Runs and items in an agent's thread.
+const THREAD: usize = 30;
 
 impl App {
     /// The HQ's route; None when the request is not it.
@@ -26,8 +28,51 @@ impl App {
     ) -> Result<Option<HttpResponse>> {
         Ok(Some(match (method, segments) {
             (Method::Get, ["hq"]) => json_response(200, self.hq(Utc::now())?),
+            (Method::Get, ["realms", r, "agents", name, "thread"]) => {
+                json_response(200, self.agent_thread(&self.realm(r)?, name)?)
+            }
             _ => return Ok(None),
         }))
+    }
+
+    /// One agent's work as a thread (decision 73): its routines' latest
+    /// runs, block by block with their sentence, and what it sent to the
+    /// founder, answered or not. Newest first; the page orders them.
+    fn agent_thread(&self, realm: &Realm, agent: &str) -> Result<Value> {
+        let store = Store::of(realm)?;
+        let graphs: BTreeMap<String, Graph> = self
+            .hub
+            .with_routine_checks(realm, crate::routine::load_all)?
+            .into_iter()
+            .filter_map(|(name, g)| g.ok().map(|g| (name, g)))
+            .filter(|(_, g)| g.agent == agent)
+            .collect();
+        let mut runs = Vec::new();
+        for (routine, run) in store.latest_runs(THREAD * 10)? {
+            let Some(graph) = graphs.get(&routine) else {
+                continue;
+            };
+            let blocks = store.run_blocks(&routine, &run)?;
+            runs.push(json!({
+                "routine": routine,
+                "run": run,
+                "sentence": sentence(Some(graph), &blocks),
+                "at": blocks.first().map(|b| b.started_at.clone()),
+                "blocks": blocks,
+            }));
+            if runs.len() == THREAD {
+                break;
+            }
+        }
+        let items: Vec<Value> = store
+            .queue(&["pending", "approved", "rejected", "done", "failed"])?
+            .iter()
+            .rev()
+            .filter(|i| i.agent.as_deref() == Some(agent))
+            .take(THREAD)
+            .map(super::queue::shown)
+            .collect();
+        Ok(json!({"runs": runs, "items": items}))
     }
 
     fn hq(&self, now: DateTime<Utc>) -> Result<Value> {
@@ -574,6 +619,25 @@ mod tests {
         assert_eq!(quiet["health"]["state"], "not started");
         assert!(quiet["activity"].as_array().unwrap().is_empty());
         assert!(quiet["vitals"].as_array().unwrap().is_empty());
+        // The writer's thread: its run with its sentence, and both items,
+        // the answered one with its status.
+        let thread = app.agent_thread(&media, "writer").unwrap();
+        assert_eq!(thread["runs"][0]["run"], "r1");
+        assert_eq!(
+            thread["runs"][0]["sentence"],
+            "Read 58 items, kept 3 and sent 3 to you."
+        );
+        assert_eq!(thread["runs"][0]["blocks"].as_array().unwrap().len(), 3);
+        let statuses: Vec<&str> = thread["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(statuses, ["pending", "approved"]);
+        let other = app.agent_thread(&media, "nobody").unwrap();
+        assert!(other["runs"].as_array().unwrap().is_empty());
+        assert!(other["items"].as_array().unwrap().is_empty());
         let _ = auctions;
     }
 }

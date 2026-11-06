@@ -945,6 +945,7 @@ pub fn integration(ctx: &Ctx, command: IntegrationCmd) -> Result<bool> {
                 map.insert(k.trim().to_string(), v.trim().to_string());
             }
             let integration = crate::integration::Integration {
+                free_reads: false,
                 name,
                 description,
                 base_url,

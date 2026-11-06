@@ -15,6 +15,7 @@ fn agent(root: &std::path::Path, name: &str, front: &str) {
 
 fn integration(name: &str) -> crate::integration::Integration {
     crate::integration::Integration {
+        free_reads: false,
         name: name.into(),
         description: String::new(),
         base_url: format!("https://{name}.example.com"),
@@ -273,4 +274,80 @@ fn an_order_finds_its_agent() {
     let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
     assert_eq!(calls.len(), 3, "each routing call is journaled");
     assert!(calls[2].error.is_some());
+}
+
+/// An agent given another repository: what the founder writes to its task
+/// in the old one is refused with \"start a new task instead\", which the
+/// app takes to start one, in the new repository.
+#[test]
+fn a_task_left_behind_by_its_agents_repository_is_not_gone_on() {
+    let home_dir = tempfile::tempdir().unwrap();
+    let home = Home::at(home_dir.path()).unwrap();
+    let business = crate::isolation::tests::repo();
+    let site = crate::isolation::tests::repo();
+    let mut realm = home
+        .create_realm(NewRealm {
+            name: "biz".into(),
+            description: String::new(),
+            root: Some(business.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    realm.add_repo("site.xyz", site.path(), None).unwrap();
+    realm.save().unwrap();
+    agent(business.path(), "developer", "");
+    let (hub, _, _) = make_hub(&home, vec![]);
+    let first = hub
+        .start_task(&realm, "developer", "Read the plan")
+        .unwrap();
+    assert!(
+        hub.follow_up(&realm, &first.id, "And now?").is_ok(),
+        "same repository"
+    );
+
+    agent(business.path(), "developer", "repos: site.xyz\n");
+    let err = hub
+        .follow_up(&realm, &first.id, "Optimise the SEO")
+        .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("now works in site.xyz: start a new task instead"),
+        "{err:#}"
+    );
+    let next = hub
+        .start_task(&realm, "developer", "Optimise the SEO")
+        .unwrap();
+    assert_eq!(
+        next.change.unwrap().repo.canonicalize().unwrap(),
+        site.path().canonicalize().unwrap()
+    );
+}
+
+/// What the founder gives an agent counts in its open task from the next
+/// message: a task keeps no old copy of what its agent may use.
+#[test]
+fn a_task_goes_on_with_what_its_agent_may_use_now() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(&root, "chief", "");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let task = hub
+        .start_task(&f.realm, "chief", "Read the company documents")
+        .unwrap();
+    assert_eq!(task.tools, Some(Vec::new()));
+    agent(
+        &root,
+        "chief",
+        "integrations: google-drive\nskills: linear\n",
+    );
+    let going_on = hub
+        .follow_up(&f.realm, &task.id, "Now you have the Drive")
+        .unwrap();
+    assert_eq!(
+        going_on.tools,
+        Some(vec!["google-drive".to_string(), "linear".into()])
+    );
+    // Taken away, it is gone too.
+    agent(&root, "chief", "");
+    let state = hub.follow_up(&f.realm, &task.id, "Without it").unwrap();
+    assert_eq!(state.tools, Some(Vec::new()));
 }

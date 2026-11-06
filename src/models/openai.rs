@@ -169,17 +169,22 @@ impl OpenAiCompatible {
         body
     }
 
+    /// The request for `body`, with this connection's key.
+    fn request(&self, body: &Value) -> reqwest::blocking::RequestBuilder {
+        let mut req = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("content-type", "application/json");
+        if let Some(key) = &self.api_key {
+            req = req.bearer_auth(key);
+        }
+        req.json(body)
+    }
+
     fn send(&self, body: &Value) -> Result<Value> {
         let mut attempt = 0;
         loop {
-            let mut req = self
-                .client
-                .post(format!("{}/chat/completions", self.base_url))
-                .header("content-type", "application/json");
-            if let Some(key) = &self.api_key {
-                req = req.bearer_auth(key);
-            }
-            let result = req.json(body).send();
+            let result = self.request(body).send();
             let retryable = match &result {
                 Ok(resp) => {
                     let s = resp.status().as_u16();
@@ -222,6 +227,103 @@ impl Model for OpenAiCompatible {
         let resp = self.send(&self.body(request))?;
         decode_response(&resp)
     }
+
+    fn stream(
+        &self,
+        request: &ModelRequest,
+        on_text: &mut dyn FnMut(&str),
+        stopped: &dyn Fn() -> bool,
+    ) -> Result<ModelResponse> {
+        let mut body = self.body(request);
+        body["stream"] = json!(true);
+        // The usage comes in a last event, when asked for; Mistral refuses
+        // the field and sends it anyway.
+        if self.provider != "mistral" {
+            body["stream_options"] = json!({"include_usage": true});
+        }
+        let resp = super::stream(
+            self.provider,
+            || self.request(&body),
+            on_text,
+            stopped,
+            read_stream,
+        )?;
+        decode_response(&resp)
+    }
+}
+
+/// A streamed answer put back together as the API would have sent it whole.
+fn read_stream(r: &mut dyn std::io::BufRead, on_text: &mut dyn FnMut(&str)) -> Result<Value> {
+    let (mut model, mut usage, mut finish) = (Value::Null, Value::Null, Value::Null);
+    let (mut text, mut refusal) = (String::new(), String::new());
+    let mut calls: Vec<Value> = Vec::new();
+    let done = super::events(r, |data| {
+        if data == "[DONE]" {
+            return Ok(true);
+        }
+        let event: Value = serde_json::from_str(data).context("invalid JSON in the answer")?;
+        if !event["error"].is_null() {
+            bail!("API error: {}", event["error"]);
+        }
+        if model.is_null() {
+            model = event["model"].clone();
+        }
+        if event["usage"].is_object() {
+            usage = event["usage"].clone();
+        }
+        let choice = &event["choices"][0];
+        if !choice["finish_reason"].is_null() {
+            finish = choice["finish_reason"].clone();
+        }
+        let delta = &choice["delta"];
+        if let Some(piece) = delta["content"].as_str().filter(|p| !p.is_empty()) {
+            text.push_str(piece);
+            on_text(&text);
+        }
+        refusal.push_str(delta["refusal"].as_str().unwrap_or_default());
+        for call in delta["tool_calls"].as_array().into_iter().flatten() {
+            // A call's pieces share its index; its id and name come first.
+            let i = match call["index"].as_u64() {
+                Some(i) => i as usize,
+                None if call["id"].as_str().is_some_and(|id| !id.is_empty()) => calls.len(),
+                None => calls.len().saturating_sub(1),
+            };
+            if calls.len() <= i {
+                calls.resize(
+                    i + 1,
+                    json!({"id": "", "function": {"name": "", "arguments": ""}}),
+                );
+            }
+            let c = &mut calls[i];
+            let first = |piece: &Value, at: &Value| at == "" && piece.is_string();
+            if first(&call["id"], &c["id"]) {
+                c["id"] = call["id"].clone();
+            }
+            if first(&call["function"]["name"], &c["function"]["name"]) {
+                c["function"]["name"] = call["function"]["name"].clone();
+            }
+            let so_far = c["function"]["arguments"].as_str().unwrap_or_default();
+            let piece = call["function"]["arguments"].as_str().unwrap_or_default();
+            c["function"]["arguments"] = json!(format!("{so_far}{piece}"));
+        }
+        Ok(false)
+    })?;
+    // Some servers end without [DONE] once the answer is finished.
+    if !done && finish.is_null() {
+        bail!("the answer broke off");
+    }
+    Ok(json!({
+        "model": model,
+        "usage": usage,
+        "choices": [{
+            "finish_reason": finish,
+            "message": {
+                "content": text,
+                "refusal": (!refusal.is_empty()).then_some(refusal),
+                "tool_calls": calls,
+            },
+        }],
+    }))
 }
 
 /// One Airth message becomes one or more chat messages: tool results are
@@ -421,6 +523,120 @@ mod tests {
             .unwrap();
         assert!(matches!(&answer.content[0], ContentBlock::Text { text } if text == "fine"));
         assert_eq!(server.join().unwrap(), 3);
+    }
+
+    /// A streamed answer: its words heard as they come, the tool call it
+    /// sends in pieces put together, and its usage from the last event. An
+    /// answer that breaks off is asked again, the words heard from nothing.
+    #[test]
+    fn a_streamed_answer_is_heard_as_it_comes_and_rebuilt_whole() {
+        use std::io::Write;
+        let events = [
+            r#"{"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"}}]}"#,
+            r#"{"model":"m","choices":[{"index":0,"delta":{"content":"ing."}}]}"#,
+            r#"{"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"read_file","arguments":""}}]}}]}"#,
+            r#"{"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]}}]}"#,
+            r#"{"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \"x\"}"}}]}}]}"#,
+            r#"{"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+            r#"{"model":"m","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":7,"prompt_cache_hit_tokens":4}}"#,
+        ];
+        let stream: String = events
+            .iter()
+            .map(|e| format!("data: {e}\n\n"))
+            .chain([": keep-alive\n\n".into(), "data: [DONE]\n\n".into()])
+            .collect();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            for (served, s) in listener.incoming().take(2).enumerate() {
+                let mut s = s.unwrap();
+                read_request(&mut s);
+                let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+                // The first answer breaks off after its first words.
+                let body = if served == 0 {
+                    &stream[..stream.find("ing.").unwrap()]
+                } else {
+                    &stream
+                };
+                s.write_all(format!("{head}{body}").as_bytes()).unwrap();
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/v1");
+        let model = OpenAiCompatible::from_settings(
+            "deepseek",
+            &settings(&[
+                ("AIRTH_MODEL", "m"),
+                ("OPENAI_BASE_URL", &url),
+                ("DEEPSEEK_API_KEY", "k"),
+            ]),
+        )
+        .unwrap();
+        let mut heard = Vec::new();
+        let answer = model
+            .stream(
+                &ModelRequest::new("s", &[Message::user_text("hi")], &[]),
+                &mut |t| heard.push(t.to_string()),
+                &|| false,
+            )
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(heard, ["Look", "", "Look", "Looking."]);
+        assert_eq!(answer.stop_reason, StopReason::ToolUse);
+        assert!(matches!(&answer.content[0], ContentBlock::Text { text } if text == "Looking."));
+        assert!(matches!(
+            &answer.content[1],
+            ContentBlock::ToolUse { id, name, input } if id == "c1" && name == "read_file" && input == &json!({"path": "x"})
+        ));
+        assert_eq!(
+            (
+                answer.input_tokens,
+                answer.output_tokens,
+                answer.cache_read_tokens
+            ),
+            (12, 7, 4)
+        );
+    }
+
+    /// Stopped while it writes, the answer is dropped at once and never
+    /// asked again.
+    #[test]
+    fn a_stopped_stream_ends_at_once_and_is_not_asked_again() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let mut s = listener.incoming().next().unwrap().unwrap();
+            read_request(&mut s);
+            s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n")
+                .unwrap();
+            // Words, then keep-alive lines while the model thinks on.
+            let word = r#"data: {"choices":[{"index":0,"delta":{"content":"Thinking"}}]}"#;
+            s.write_all(format!("{word}\n\n").as_bytes()).unwrap();
+            for _ in 0..50 {
+                if s.write_all(b": keep-alive\n\n").is_err() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            listener.set_nonblocking(true).unwrap();
+            listener.accept().is_ok()
+        });
+        let url = format!("http://127.0.0.1:{port}/v1");
+        let model = OpenAiCompatible::from_settings(
+            "ollama",
+            &settings(&[("AIRTH_MODEL", "m"), ("OPENAI_BASE_URL", &url)]),
+        )
+        .unwrap();
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let started = std::time::Instant::now();
+        let result = model.stream(
+            &ModelRequest::new("s", &[Message::user_text("hi")], &[]),
+            &mut |_| stop.store(true, std::sync::atomic::Ordering::SeqCst),
+            &|| stop.load(std::sync::atomic::Ordering::SeqCst),
+        );
+        assert!(result.is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!server.join().unwrap(), "asked again");
     }
 
     #[test]

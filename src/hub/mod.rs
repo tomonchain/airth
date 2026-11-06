@@ -186,6 +186,33 @@ impl Hub {
                 change.status.as_str()
             );
         }
+        // A task works in the repository its agent declared when it began;
+        // if the agent was since given another, what the founder writes is a
+        // new task there, not more of this one.
+        if let (Some(agent), Some(change)) = (&state.agent, &state.change)
+            && let Ok(root) = realm.root()
+            && let Ok(scope) = crate::business::scope(&root, agent)
+            && let Ok(Some(now)) = realm.repo(scope.repos.first().map(String::as_str))
+            && !same_path(&now.path, &change.repo)
+        {
+            bail!(
+                "this task works in {}, and {agent} now works in {}: start a new task instead",
+                change
+                    .repo
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default(),
+                now.name
+            );
+        }
+        // Going on, a task uses what its agent may use now: an integration or
+        // skill the founder gave or took since it began counts from here.
+        if let Some(agent) = &state.agent
+            && let Ok(root) = realm.root()
+            && let Ok(scope) = crate::business::scope(&root, agent)
+        {
+            state.tools = Some(scope.integrations.into_iter().chain(scope.skills).collect());
+        }
         state.close_dangling_tool_calls();
         Ok(state)
     }
@@ -231,7 +258,8 @@ impl Hub {
                 files: state.agent.is_none() || state.change.is_some(),
             }),
             PermissionGate::new(realm.config.policy.clone(), hooks.approver)
-                .with_grants(state.grants.clone()),
+                .with_grants(state.grants.clone())
+                .with_isolated_writes(state.change.is_some()),
             workspace.clone(),
             hooks.cancel.clone(),
         )
@@ -407,6 +435,7 @@ impl Hub {
         }
         Ok(ws
             .with_secrets(env, self.redactions(realm)?)
+            .with_credentials(realm.integration_credentials()?)
             .with_sandbox(true)
             .with_network(!realm.config.offline)
             // A routine's commands are offline: its network goes through
@@ -467,8 +496,14 @@ impl Hub {
             realm: Some(realm.name().to_string()),
             realm_description: realm.config.description.clone(),
             owner,
-            business: crate::business::briefing(&realm.root()?)?,
-            memory: realm.memory().list()?.into_iter().map(|m| m.text).collect(),
+            business: crate::business::briefing(&realm.root()?, &realm.config.departments)?,
+            // With its id, so an agent can propose a decision that replaces it.
+            memory: realm
+                .memory()
+                .list()?
+                .into_iter()
+                .map(|m| format!("{} [{}]", m.text, m.id))
+                .collect(),
             isolated: state.change.is_some(),
             pull_requests: state.change.is_some()
                 && self.repo_of(realm, state).delivery == Delivery::PullRequest,
@@ -558,7 +593,15 @@ fn latest_ask(state: &State) -> Option<String> {
 
 /// Add a user message, merging into the last message if it is already a user
 /// turn (e.g. tool results from a run that hit its iteration limit).
-fn append_user_text(messages: &mut Vec<Message>, text: &str) {
+/// Whether two paths name the same place, symlinks resolved.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+pub(crate) fn append_user_text(messages: &mut Vec<Message>, text: &str) {
     match messages.last_mut() {
         Some(last) if last.role == Role::User => last.content.push(ContentBlock::Text {
             text: text.to_string(),

@@ -1,6 +1,6 @@
 # Testing Airth by hand
 
-What to check by hand, and how, when a milestone reaches a point the founder tests. Automated checks are in `CLAUDE.md` (`cargo test`, `node scripts/ui_smoke.js`); this file is for what needs the real business, the real model and the founder's eyes.
+What to check by hand, and how, when a milestone reaches a point the founder tests. Automated checks are in `CLAUDE.md` (`cargo test`, and `npm run check` in `web/`); this file is for what needs the real business, the real model and the founder's eyes.
 
 ## Point A: a dry run of Hedgen's routines (milestone 3, step 4)
 

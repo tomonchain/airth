@@ -121,6 +121,10 @@ pub struct PullRequest {
     pub url: String,
     /// The last commit pushed to it.
     pub pushed: String,
+    /// The reviews by a reviewing app already given to the chat (decision
+    /// 87): each is answered once, and only so many are.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answered: Vec<u64>,
 }
 
 /// What merging the base branch into a change did.

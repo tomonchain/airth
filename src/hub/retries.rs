@@ -191,6 +191,7 @@ impl Hub {
         let root = realm.root()?;
         let workspace = Workspace::new(&root)?
             .with_secrets(realm.command_env()?, self.redactions(realm)?)
+            .with_credentials(realm.integration_credentials()?)
             .with_network(!realm.config.offline);
         Ok(Runtime::new(
             tools::pipeline_tools(realm.config.integrations.clone()),

@@ -102,6 +102,20 @@ pub fn detect_checks(dir: &Path) -> Vec<String> {
     }
 }
 
+/// A repository's name: letters, digits, - _ and . (as `acme.example`).
+pub fn validate_repo_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        || name.starts_with('.')
+    {
+        bail!("a repository name uses letters, digits, - _ and . only");
+    }
+    Ok(())
+}
+
 /// A valid repository name: what it would be called from a URL or folder.
 pub fn repo_name_from(source: &str) -> String {
     let last = source
@@ -153,6 +167,10 @@ pub struct RealmConfig {
     pub integrations: Vec<Integration>,
     #[serde(default)]
     pub archived: bool,
+    /// Departments the founder added beyond the nine (decision 79). Kept
+    /// here, out of the business folder, so an agent cannot add one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departments: Vec<String>,
     /// Runs may not reach the network (commands are cut off by the sandbox).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub offline: bool,
@@ -175,8 +193,9 @@ impl Realm {
         let path = dir.join("realm.json");
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let config =
+        let mut config: RealmConfig =
             serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        crate::connectors::free_reads_of_catalog(&mut config.integrations);
         Ok(Self {
             dir: dir.to_path_buf(),
             config,
@@ -283,15 +302,7 @@ impl Realm {
     /// Add a repository (an existing checkout). Its checks are detected.
     pub fn add_repo(&mut self, name: &str, path: &Path, url: Option<String>) -> Result<Repo> {
         let name = name.trim();
-        if name.is_empty()
-            || name.len() > 64
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            || name.starts_with('.')
-        {
-            bail!("a repository name uses letters, digits, - _ and . only");
-        }
+        validate_repo_name(name)?;
         if self.repos().iter().any(|r| r.name == name) {
             bail!("this realm already has a repository named '{name}'");
         }
@@ -468,6 +479,22 @@ impl Realm {
             .collect())
     }
 
+    /// The credentials the realm's integrations name in their headers, with
+    /// their values: for those headers only, never for commands.
+    pub fn integration_credentials(&self) -> Result<Vec<(String, String)>> {
+        let names: Vec<String> = self
+            .config
+            .integrations
+            .iter()
+            .flat_map(|i| i.secret_names())
+            .collect();
+        Ok(self
+            .secrets()?
+            .into_iter()
+            .filter(|(k, _)| names.contains(k))
+            .collect())
+    }
+
     /// Add an integration, or replace the one with the same name.
     pub fn set_integration(&mut self, integration: Integration) -> Result<()> {
         integration.validate()?;
@@ -637,6 +664,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut r = realm(dir.path());
         let integration = |url: &str| Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: url.into(),
@@ -674,6 +702,7 @@ mod tests {
                 share_owner_profile: true,
                 integrations: vec![],
                 archived: false,
+                departments: Vec::new(),
                 offline: false,
                 created_at: Utc::now(),
             },
@@ -786,6 +815,26 @@ mod tests {
         assert!(!realm.remove_secret("GITHUB_TOKEN").unwrap());
         assert!(realm.set_secret("bad key", "x").is_err());
         assert!(realm.set_secret("K", "a\nb").is_err());
+    }
+
+    /// Only the credentials an integration names are its own; the provider
+    /// keys and anything else are not.
+    #[test]
+    fn integrations_get_only_the_credentials_they_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut realm = realm(dir.path());
+        realm.set_secret("GITHUB_TOKEN", "ghp_z").unwrap();
+        realm.set_secret("ANTHROPIC_API_KEY", "sk-work").unwrap();
+        realm.set_secret("OTHER", "o").unwrap();
+        assert!(realm.integration_credentials().unwrap().is_empty());
+        let github =
+            crate::connectors::integration_for(&crate::connectors::find("github").unwrap())
+                .unwrap();
+        realm.set_integration(github).unwrap();
+        assert_eq!(
+            realm.integration_credentials().unwrap(),
+            vec![("GITHUB_TOKEN".to_string(), "ghp_z".to_string())]
+        );
     }
 
     #[test]

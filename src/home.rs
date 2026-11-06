@@ -267,6 +267,7 @@ impl Home {
                 share_owner_profile: true,
                 integrations: Vec::new(),
                 archived: false,
+                departments: Vec::new(),
                 offline: false,
                 created_at: Utc::now(),
             },

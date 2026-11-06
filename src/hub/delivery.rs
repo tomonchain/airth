@@ -91,6 +91,7 @@ impl Hub {
                 let change = state.change.as_mut().expect("checked above");
                 let (number, url) = gh.open(&remote, &change.branch, &base, &title, &body)?;
                 change.pull_request = Some(PullRequest {
+                    answered: Vec::new(),
                     number,
                     url,
                     pushed: change.head.clone(),
@@ -194,6 +195,14 @@ impl Hub {
                 let _ = gh.delete_branch(&remote, &change.branch);
                 PrEvent::Closed
             }
+            // A reviewing app's review of what was pushed: the chat answers it
+            // first; the base is brought in on the next look.
+            PrState::Open if let Some(review) = review_to_answer(&gh, &remote, &pr)? => {
+                if let Some(p) = change.pull_request.as_mut() {
+                    p.answered.push(review.id);
+                }
+                PrEvent::Reviewed(review_text(&review, pr.number))
+            }
             PrState::Open => {
                 let base = change
                     .base_branch
@@ -219,6 +228,9 @@ impl Hub {
             PrEvent::Closed => Some((Kind::Stopped, "closed without merging")),
             PrEvent::Conflict if !known_conflict => {
                 Some((Kind::Review, "conflicts with its base: Airth resolves them"))
+            }
+            PrEvent::Reviewed(_) => {
+                Some((Kind::Review, "was reviewed: the agent answers the review"))
             }
             _ => None,
         };
@@ -316,6 +328,50 @@ impl Hub {
     }
 }
 
+/// The apps whose reviews a chat answers on its own (decision 87), by the
+/// login they post as.
+const REVIEWERS: &[&str] = &["cubic"];
+/// The most reviews a chat answers on one pull request: after that the
+/// founder decides, so a disagreement does not go round forever.
+const REVIEW_ROUNDS: usize = 2;
+
+/// A reviewing app's review of the commit last pushed, not answered yet,
+/// with something to say; None once `REVIEW_ROUNDS` were answered.
+fn review_to_answer(
+    gh: &GitHub,
+    remote: &Remote,
+    pr: &PullRequest,
+) -> Result<Option<crate::github::Review>> {
+    if pr.answered.len() >= REVIEW_ROUNDS {
+        return Ok(None);
+    }
+    Ok(gh.reviews(remote, pr.number)?.into_iter().find(|r| {
+        let login = r.login.to_ascii_lowercase();
+        REVIEWERS.iter().any(|app| login.contains(app))
+            && r.commit == pr.pushed
+            && !pr.answered.contains(&r.id)
+            && (!r.comments.is_empty() || r.state == "CHANGES_REQUESTED")
+    }))
+}
+
+fn review_text(r: &crate::github::Review, number: u64) -> String {
+    let mut out = format!(
+        "{} reviewed pull request #{number} ({}).",
+        r.login,
+        r.state.to_lowercase().replace('_', " ")
+    );
+    if !r.body.is_empty() {
+        out.push_str(&format!("\n\n{}", r.body));
+    }
+    if !r.comments.is_empty() {
+        out.push_str("\n\nOn the lines:");
+        for c in &r.comments {
+            out.push_str(&format!("\n- {c}"));
+        }
+    }
+    out
+}
+
 /// A change's pull request was merged: the change is adopted, its branches
 /// go, and the owner's checkout moves forward when it can.
 fn record_merged(gh: &GitHub, remote: &Remote, change: &mut isolation::Change) {
@@ -338,6 +394,8 @@ pub enum PrEvent {
     Updated,
     /// The base moved on and conflicts: the chat must resolve it.
     Conflict,
+    /// A reviewing app reviewed what was pushed: the chat answers it.
+    Reviewed(String),
 }
 
 #[cfg(test)]

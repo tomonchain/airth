@@ -73,7 +73,7 @@ impl App {
     fn needs_you(&self, realm: &Realm) -> Result<Value> {
         let items = Store::of(realm)?.queue(&["pending"])?;
         // A business still filling its config shows its items all the same.
-        let agents: Vec<Value> = crate::business::config::load(&realm.root()?)
+        let agents: Vec<Value> = crate::business::config::load(&realm.root()?, &realm.config.departments)
             .map(|c| c.agents)
             .unwrap_or_default()
             .iter()
@@ -104,7 +104,7 @@ impl App {
 
 /// An item as the page shows it: what is asked, in plain text, and where
 /// it comes from.
-fn shown(item: &Item) -> Value {
+pub(super) fn shown(item: &Item) -> Value {
     let at = |path: &str| {
         path.split('.')
             .try_fold(&item.args, |v, key| v.get(key))

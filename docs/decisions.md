@@ -2,6 +2,191 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 87. An agent answers cubic's review of its pull request
+
+**Accepted.** The founder, 6 November 2026: "j'aimerai bien qu'on intègre cubic.dev pour les reviews". cubic is a GitHub app that reviews each pull request with comments on its lines; it also has an MCP server (OAuth) for coding agents.
+
+- Airth follows the pull requests it opens (every two minutes). When an app it knows as a reviewer (`REVIEWERS`: cubic, by the login it posts as) reviews the commit Airth last pushed, with comments or changes requested, the chat is given the review and goes on: it fixes what is right, says why it leaves the rest, the runtime pushes, and the app looks again. A person's review, an approval with nothing to say, or a review of an older commit is not answered by the chat.
+- Twice at most per pull request (`REVIEW_ROUNDS`); after that the founder decides. Each review is answered once (`PullRequest.answered`). The founder is told in the inbox each time.
+- The review is given as data, a reviewer's opinion and not the founder's instructions, to be checked against the code.
+- cubic is an official connector in the Marketplace (its MCP server), so an agent given it can read its findings and ask for a review. Installing cubic's GitHub app on the repositories is the founder's, on cubic.dev.
+- Merging stays the founder's (CLAUDE.md).
+
+*Why:* a second reader on every change the agents push, whose findings the agent fixes before the founder looks.
+
+*Cost:* each round is a task's model calls; two rounds bound it. cubic is free for public repositories and 20 reviews a month for private ones, then paid. A reviewer that is wrong twice leaves the disagreement to the founder.
+
+## 86. Word documents and PDFs are read as text, with flate2
+
+**Accepted.** The founder, 6 November 2026, after the Chief of staff could not read the company's documents in Drive: they are PDFs and Word files, which decision 85 said unreadable.
+
+- `extract::text` reads a .docx (a zip of XML: its `word/document.xml`, paragraphs and tabs kept) and a PDF made by software (its compressed streams, the text operators of its pages, characters mapped through the fonts' ToUnicode tables, else Latin-1). A PDF with no text, a scan, is said to be one; nothing is guessed. A compressed part may grow to 50 MB at most.
+- Drive's `read` uses it for PDFs and Word documents.
+- `flate2` becomes a direct dependency for the decompression: it was already built (through reqwest's TLS stack), so nothing new is downloaded or compiled. The zip and PDF reading is Airth's own, small, and tested; a PDF library would bring far more than this needs.
+
+*Why:* company documents are PDFs and Word files far more often than Google Docs.
+
+*Cost:* a PDF that hides its text in a way this does not read (some font encodings without ToUnicode, text drawn as shapes) gives little or garbled text; a scan gives none and says so. Reading scans needs OCR or a model that reads images: not here.
+
+## 85. Google Drive, read only, one folder
+
+**Accepted.** The founder, 6 November 2026: the agents need the company's documents, which are in Google Drive ("Go pour le connecteur"). It was an open question (Google OAuth for Drive). Integrations were HTTP with a key; Drive needs a Google sign-in.
+
+- The founder connects Drive in Settings → Connections with their own Google OAuth client (a Desktop app client of their Google Cloud project) and the link of one folder. Airth signs in with PKCE through the sign-in remote MCP servers use (`tools::remote::start_known`, the same callback, the same private token file, refreshed when it expires). The scope is `drive.readonly`.
+- Agents read only that folder and what is under it: every file asked for is followed up its parents to the folder, or refused (`Drive::within`); a search keeps only what is inside. They list, search and read: a Doc as Markdown, a Sheet as CSV, Slides as text, a text file as it is; other files are said unreadable for now (PDF included). A document is cut past 100,000 characters, and handed over as data, never instructions.
+- The tool (`google_drive`) is a read, through the runtime like any tool. It is offered once Drive is connected, to the founder's own chats and to an agent whose file names `google-drive` (its Edit form offers it).
+- Nothing is written to Drive.
+
+*Why:* the business's documents live in Drive; copying them into the business folder by hand goes stale. One folder, read only, keeps the rest of the founder's Drive out of reach.
+
+*Cost:* the founder sets up a Google Cloud client once, and publishes it (a Testing app's sign-in ends every 7 days). PDFs in Drive are not read yet. Google's tokens sit in the realm's private files like the remote MCP servers' (encrypting keys at rest is still open).
+
+## 84. A service whose reads change nothing is read without asking
+
+**Accepted.** The founder, 6 November 2026, after the Developer stopped on every read of GitHub: "il faut qu'il puisse lire". A request through an integration with no declared actions is an action nobody declared, so it commits (CLAUDE.md), and a plain `GET /user/repos` waited for the founder's approval.
+
+- An integration may say its reads are free (`free_reads`): through it, a GET or a HEAD is no action, and the realm's network rule decides, as for a read of the web. Any other method is still an action nobody declared, and commits.
+- The GitHub connector says so (`connectors::FREE_READS`); a GitHub connected before this reads free too, if it is the catalog's at its own address. No other connector does until the founder says so.
+- The agent's own repositories are not read through GitHub: a task whose agent names a repository (`repos:`, decision 64, now chosen in the agent's Edit form) works in its own worktree of it, on its own branch, and writes there without asking (decision 80).
+
+*Why:* a read of GitHub changes nothing for the business; asking for each one stopped the Developer at every step, and taught the founder to approve without reading.
+
+*Cost:* a read may still leak what the agent was told into a URL's query; the network rule and the realm's integrations are the bound, as for the web. A service whose GETs do change things must not be marked free.
+
+## 83. The memory keeps what the founder decided, not what was discussed
+
+**Accepted.** The founder, 6 November 2026, asking that what is said in a chat reach the whole team: "il faut distinguer ce qui est du brainstorming avec les équipes de ce qu'on teste / approuve pour la mémoire."
+
+- Nothing said in a chat enters the business's memory on its own. The memory (decision 82: told to every task and every routine) holds what the founder decided, tested or approved.
+- The founder keeps a decision from a chat: beside each of their messages and each answer, "Keep as a decision" opens the words to edit into the decision, and asks whether it changes an earlier one.
+- An agent proposes one with `remember`, told to propose only what the owner decided or approved, never an idea from a brainstorm. Its proposal shows as a card, "proposes to keep this for the whole team", with Keep or Not now; the realm's `memory` policy still decides whether it is asked (it asks by default).
+- A decision that changes an earlier one replaces it (`MemoryStore::replace`, `replaces` in `remember` and in the app), in one write, rather than sitting beside it. The agents see each memory's id to name the one they replace.
+
+*Why:* a memory every routine follows must not fill with ideas that were only explored, nor keep two rules that contradict each other.
+
+*Cost:* the founder's click is needed for every decision; the memory holds only what someone chose to keep. A founder who sets `memory` to Allow lets agents keep decisions without asking, and loses that distinction.
+
+## 82. A routine's model calls are told what the founder's tasks are told
+
+**Accepted.** The founder, 6 November 2026: how to make the agents keep what they are told, so that when an element of the business changes, all of them know. A task was told the business's profile, its strategy and its memory; a routine's AI block was told only its prompt file. A decision recorded in the strategy or the memory reached every task and no routine.
+
+- Every AI block of a routine is told, before its prompt, the business's essentials (`business::essentials`): its profile, the owner's strategy, and what the business remembers. They are read at each run, so a change reaches the next one. The prompt says that where the task and the essentials disagree, the essentials are the owner's latest word.
+- The journal records a call's prompt version as the prompt file's SHA-256, then `+` and the first 12 characters of the essentials': which prompt, under which state of the business.
+- A business with no profile, strategy or memory sends the prompt alone, as before.
+
+*Why:* one place to change the business, read by everything that works for it. Editing every prompt file after each decision is what the founder should not have to do.
+
+*Cost:* about a thousand tokens more per call for Hedgen (3.8 KB of profile and strategy, two memories), the same text each time, so mostly read from the provider's cache. A prompt that contradicts the strategy now loses to it.
+
+## 81. A task or a routine tries again on its own before it waits for the founder
+
+**Accepted.** The founder, 6 November 2026: "if a run fails, the agents stop and wait for my go; they should try again N times." A task that failed on a busy model stopped with Try again; one that reached its 30-minute budget stopped until the founder said go on; a scheduled routine that failed became an incident at once.
+
+- **A passing failure** (the provider busy or down, the network, an answer cut off: `models::transient`) is tried again three times, after 30 s, 2 min and 8 min, after the few quick retries of each model call. A refused key, no credit or a refused request is not: those need the founder. The thread says "The model is busy right now. Trying again in 2 min (2 of 3)."; Stop still stops.
+- **A time budget reached** is renewed twice: a task works up to three budgets (90 minutes by default) before it stops for the founder. A cost or token budget is never renewed alone.
+- **A routine that fails at its time** is run again after 1 and 5 minutes before it becomes one incident; its heartbeat says "tried 3 times". An act never runs twice for one item (CLAUDE.md), so what a failed try did is not done again. Not a routine whose file does not load, nor one the founder started by hand, who sees the error at once.
+- What waits for a decision (an approval, a question in Needs you) still waits: that is the founder's to answer.
+
+*Why:* most failures seen were the provider's, and pass within minutes; a task that waited for a go until the founder looked lost hours.
+
+*Cost:* a failure the founder would have fixed at once (a provider down for an hour) is said about 10 minutes later. A task may spend up to three time budgets alone.
+
+## 80. A run in its own worktree writes without asking
+
+**Accepted.** The founder, 6 November 2026: "on vire les confirmations". A task asked before every file it wrote, though it worked in its own git worktree: nothing it writes reaches the founder's files until they adopt the change, after reading the whole diff.
+
+- In a run with an isolated change (`state.change`), a write the realm's policy would ask about is allowed (`PermissionGate::with_isolated_writes`). The adoption, with its diff and its checks, is where the founder approves.
+- Only writes, only there. A write that carries a warning (a file that enforces a security boundary, `SECURITY_CRITICAL`) is still asked. A policy that denies writes still denies them. Commands, memory, the network and skills ask as before, with "Allow for this task". A call the founder is asked about explicitly (decision 56) is still asked.
+- A run without a worktree (a realm that works in place) asks before writing, as before.
+- Settings → Permissions says so under "Change files".
+
+*Why:* the question came before every step of work whose every line the founder reads anyway at adoption; it taught them to click Allow without reading, which is worse than one review.
+
+*Cost:* a task may fill its worktree with files the founder then throws away. The diff, not each write, is now the one place to catch a write that should not be adopted.
+
+## 79. Nine departments, the founder adds others in Settings
+
+**Accepted.** The founder, 5 November 2026. The Chief of Staff hired a Developer in a department it called `development`; the seven departments of `CLAUDE.md` were the only ones allowed, and "Product & tech" was written `product`, which it could not guess. The founder wants a list that stays generic and is right, agents choosing within it, and the founder alone adding to it.
+
+- Nine departments every business has, in this order: `leadership` (Leadership), `marketing` (Marketing), `sales` (Sales), `support` (Support), `tech` (Product & tech), `operations` (Operations), `finance` (Finance & admin), `legal` (Legal & compliance, new: deadlines, contracts, terms) and `data` (Data & research, new: watch, market analysis, statistics). Left out: people (the staff are agents), design (Marketing or Product & tech), purchasing (Operations).
+- Other words for them are read as them: `development`, `engineering`, `product` → `tech`; `research`, `analytics` → `data`; `customer service` → `support`; and a few more (`config.rs`). A file keeps what it says; the app reads the department, and a department set from the app is written as its key.
+- The founder adds a department in Settings → Departments: a new name, not one of the nine nor another word for one. They are kept in the realm's settings (`realm.json`, in Airth's home), out of the business folder, so an agent cannot add one. One with agents in it cannot be removed.
+- Any other department is refused, naming the list and saying that the founder adds departments: an agent file with one is set aside and said under the agent list (#169). Every task of a business is told the list, so an agent hiring another need not guess.
+- Marketplace teams use the nine, by key.
+
+*Why:* the founder organises the team; a closed list that misses what a business needs hides agents, and a list anyone can extend fills with near-duplicates. Nine cover an online company; the rest is the founder's choice.
+
+*Cost:* the web interface keeps the nine's names for pages that show one department without the list. A department written in words that are neither the nine, their other words nor the founder's is still refused after the fact; checking an agent's change before review is the next step.
+
+## 78. A model's answer is streamed to the chat as it is written
+
+**Accepted.** The founder, 5 November 2026: "go à fond" on a smoother chat with the agents. An answer showed only once the model had written all of it (10 to 60 s), then was typed out by an animation; the page looked for changes every 1.5 s.
+
+- `Model::stream` asks the provider for server-sent events and hands the answer's text so far to a callback; the answer is then put back together exactly as the whole one would have come, and journaled, priced and checked as before. Anthropic and the OpenAI-compatible providers stream; any other model answers at once (the trait's default). A request that fails on the way, or an answer that breaks off, is sent again whole, as before; the callback hears it start again from nothing.
+- The agent loop streams every working call and passes the text to its observer (`Observer::writing`). A run driven by the app keeps it in memory beside its snapshot, and drops it once the answer is in the run's state. Nothing is written to disk.
+- `GET realms/{r}/runs/{id}/live?version=&draft=` waits (up to 8 s, under the gap after which the founder counts as gone, decision 56) until the run's state or the words being written change, and says which. The page asks again at once, so the founder reads the answer as it is written and sees each step as it happens. A run driven by another process is still looked at every 1.5 s.
+
+- The founder may write while the agent works. The message waits in memory, beside the run's snapshot, and the agent reads it at its next turn, even if it thought it was done (`Observer::said`). A message written as the run ends drives it again, as a follow-up would. Nothing is kept for a run that is only running its checks, or one the founder stopped.
+- Stop ends a model call while it is being written: the stream is given up at its next line (providers send events or keep-alive lines every few seconds, even while the model thinks), what it wrote is dropped, and it is not sent again.
+
+*Why:* waiting a minute in front of "Thinking" was the main reason the chat felt slow; the providers stream natively, and `reqwest`'s blocking response reads as a stream, so no new crate is needed.
+
+*Cost:* one thread per open chat waiting on its run (the server already gives each request its own); a page polls nothing while it waits. The model call path gained a second way to read an answer, tested against recorded event streams for both families of providers.
+
+## 77. A repository is picked from the ones the business's GitHub token reaches
+
+**Accepted.** The founder, 5 November 2026: "meilleure expérience si on sélectionne le repo plutôt que l'URL".
+
+- `GET realms/{r}/github/repos` asks GitHub for the repositories the business's `GITHUB_TOKEN` reaches (owned, shared, its organisations'; the 100 latest pushed), with the token in the header only, as pull requests already do (decision 11). Without a token, nothing is asked: the page says how to add one.
+- Settings → Repositories → Connect opens on that list (search, private and archived marked, those already connected shown so); a pick is cloned with the token, as a pasted GitHub URL already was. Pasting an address or a folder stays, one tab away.
+
+*Why:* picking is quicker and cannot mistype; the token is the one the business already holds for its pull requests, so nothing new is trusted.
+
+*Cost:* one more GitHub API call, made only when the founder opens the list; no new state.
+
+## 76. The Documents editor is CodeMirror 6, in web/
+
+**Accepted.** The founder, 5 November 2026, once the classic interface left (decision 72): "Go faire la coloration". Its Documents page had a CodeMirror editor with syntax colours; `web/` had a plain text box.
+
+- `web/` depends on CodeMirror 6 and its languages, pinned at the versions the classic editor bundle used (`@codemirror/*`, `@lezer/highlight`, `codemirror`): JavaScript and TypeScript, JSON, Markdown, Python, Rust, CSS, HTML, YAML, SQL, XML, Go, Java, C and C++, PHP, and shell, TOML, Swift and Ruby.
+- It is its own chunk, fetched the first time a text file opens; the Documents page and the rest of the interface do not load it.
+- Colours are the classic palette, through CodeMirror's `.tok-*` classes, light and dark with the theme.
+
+*Why:* reading and changing a business's code and config without colours is slower and more error-prone; CodeMirror is what the classic interface already shipped, with the same languages, so nothing new is trusted.
+
+*Cost:* about 1 MB of script (380 kB compressed) in `web/dist/`, embedded in the binary, loaded on demand. Its versions are kept by `web/package-lock.json`.
+
+## 75. A task written in an agent's chat is watched by the founder
+
+**Accepted.** The founder, 4 November 2026, after talking to an agent in the new interface: "it's not going smooth to talk to an agent". Each message started a separate task; the first command the agent wanted to run stopped it (decision 64: an order runs unwatched, its questions go to Needs you); its replies never showed.
+
+- An order sent from an agent's chat (`POST realms/{r}/orders` with `watched: true`) is driven as a run the founder watches (decision 56): while the chat looks at it, a permission the agent needs is asked there, live, and answered there. The chat looks at a live run every second or two; once the founder leaves, it is unwatched again and its questions go to Needs you, as before.
+- The founder's next message in the chat continues that task (`runs/{id}/messages`), as a conversation does; a new task is started on purpose.
+- A task stopped on a question shows it in the chat; allowing it there closes the Needs you item and goes on at once, with the same message the service would send.
+- The command bar's orders stay unwatched (decision 64).
+
+*Why:* a chat is the founder present. Asking them where they are is what decision 56 already does for a run's page; the queue is for when they are not there.
+
+*Cost:* none on the rules: who approves is unchanged and every permission is still asked (decision 2). The chat polls a live run often, as the run's page did.
+
+## 74. The Marketplace: Anthropic's skills, the official connectors and the MCP Registry, and Airth's library of teams
+
+**Accepted.** The founder, 4 November 2026: a Marketplace page to add skills, agents and connectors from an external library; then "une équipe de N agents dédiés aux basiques de la gestion d'une société e-commerce… on installe l'équipe et c'est prêt à démarrer"; then "go" on the order below.
+
+- **Skills:** Anthropic's catalog (`github.com/anthropics/skills`), as decision 18 installs it: text files only, read by agents as data through `use_skill`. skills.sh (Vercel, over a million skills) is not added: nothing there is reviewed, and a Snyk scan found a security issue in 37% of the skills it checked. Adding it later needs its own decision.
+- **Connectors:** the thirteen official remote MCP servers checked with Airth's sign-in, shown with their Simple Icons marks, then the official MCP Registry, marked "not checked by Airth" (decision 20). Unchanged.
+- **Teams, in Airth's library.** No shared library of business roles exists; the directories found hold sub-agents for developers. Airth ships its own, in `library/teams/<id>/`, embedded in the binary by build.rs: reviewed in a pull request, versioned with Airth, nothing downloaded.
+  - A team is `team.md` (title, description, the catalog skills and the connectors it needs, the setup steps) and its `agents/`, `routines/` and `prompts/` in the business folder's format.
+  - Installing copies those files into the business folder and starts its skills' install. It writes nothing when any of its files is already there: a team never overwrites the founder's work. Connectors are the founder's to connect, each with its own sign-in; keys never travel with a team.
+  - A routine that needs the founder's setup first (its sources, its voice) ships with a manual trigger; the setup steps say when to give it a schedule. Everything keeps its autonomy level: new actions start at level 1.
+  - Nothing in the library names a real business; where a team needs the business's own words, its files say so in square brackets.
+- **The first teams:** Media, extracted from what Hedgen runs, made generic; then E-commerce (support, operations, marketing, finance, chief of staff), which also prepares Numirama (milestone 8). E-commerce comes into the beta with this decision; its support and operations routines wait for agent mail (milestone 7) and a shop connector.
+- **Single agents** in the library come later, from the teams' agents.
+
+*Why:* every source the Marketplace adds is text or a server the business's agents will trust. A curated source per kind keeps that trust earned; an agent's job is what it obeys, so it never comes from a source nobody reviews. A team installed whole is what makes a new business start in minutes, which the beta's Numirama goal needs.
+
+*Cost:* the library is written and kept by us; a team is only as good as its prompts, and its prompts need the business's own words before they run. Teams update with Airth's releases, not on their own.
+
 ## 73. The interface is a React app built with shadcn, and its first screen shows the agents at work
 
 **Accepted.** Replaces decision 57's stack and decision 72's part 2 (Preact with `htm`). Decision 72's parts 1 and 3 change as written below.
@@ -319,12 +504,12 @@ Decision 43 left the legal calendar's rules to milestone 2: "derived from `count
 
 **Fields: a UK Ltd.** `business/profile.md` already has them (decision 43). Their names stay; the app shows the product words.
 
-| Field | UK meaning | Hedgen, from Companies House |
+| Field | UK meaning | Example |
 | --- | --- | --- |
-| `registration_number` | Company number | 16838911 |
+| `registration_number` | Company number | 01234567 |
 | `incorporated_on` | Incorporation date | 2025-11-07 |
 | `fiscal_year_end` | Accounting reference date, as `MM-DD`; shown as "Accounting reference date" for a GB company | 11-30 |
-| `registered_office` | Registered office | 71-75 Shelton Street, Covent Garden, London, WC2H 9JQ |
+| `registered_office` | Registered office | 1 Example Street, London, EC1A 1AA |
 
 Two new optional fields:
 - `confirmation_date`: the date on the last confirmation statement filed. It is empty before the first one. Filing early moves the next review period, so Airth needs that date. Airth never writes it (decision 44): when the founder answers **Filed** on time, the record in the database is enough, so the field is only needed after an early filing.

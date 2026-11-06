@@ -3,6 +3,7 @@
 
 pub mod catalog;
 pub mod delegate;
+mod drive;
 mod fs;
 mod http;
 pub use http::{CUT, NOT_SENT};
@@ -137,6 +138,13 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         tools.push(Box::new(delegate::HandOff(delegation.clone())));
         tools.push(Box::new(delegate::AskAgent(delegation)));
     }
+    // The Google Drive folder the founder shared (decision 85), to agents
+    // whose file names it.
+    if allows(crate::drive::NAME) && crate::drive::connected(&realm.skills_dir) {
+        tools.push(Box::new(drive::GoogleDrive {
+            skills_dir: realm.skills_dir.clone(),
+        }));
+    }
     // Tools of the MCP servers the owner connected to this realm.
     tools.extend(mcp::tools_of(&realm.skills_dir, allows));
     // Skills the owner installed from the catalog, read through `use_skill`.
@@ -174,6 +182,11 @@ pub struct Workspace {
     env: Vec<(String, String)>,
     /// Values never shown to the model: replaced in every tool result.
     secrets: Vec<(String, String)>,
+    /// The credentials the realm's integrations name, for their headers
+    /// only (decisions 7 and 10): never given to commands, so a key kept
+    /// from them (GITHUB_TOKEN when Airth pushes) still reaches its
+    /// integration.
+    credentials: Vec<(String, String)>,
     sandboxed: bool,
     /// Whether commands and requests may reach other machines.
     network: bool,
@@ -194,6 +207,7 @@ impl Workspace {
             root,
             env: Vec::new(),
             secrets: Vec::new(),
+            credentials: Vec::new(),
             sandboxed: false,
             network: true,
             command_network: true,
@@ -281,6 +295,22 @@ impl Workspace {
 
     pub fn env(&self) -> &[(String, String)] {
         &self.env
+    }
+
+    /// The credentials of the realm's integrations (see `credentials`).
+    pub fn with_credentials(mut self, credentials: Vec<(String, String)>) -> Self {
+        self.credentials = credentials;
+        self
+    }
+
+    /// An integration's credential `key`: from the integrations' own, else
+    /// the commands' environment. None when empty.
+    pub fn credential(&self, key: &str) -> Option<String> {
+        self.credentials
+            .iter()
+            .chain(&self.env)
+            .find(|(k, v)| k == key && !v.is_empty())
+            .map(|(_, v)| v.clone())
     }
 
     pub fn sandboxed(&self) -> bool {
@@ -439,6 +469,7 @@ mod tests {
         )
         .unwrap();
         let integration = |name: &str| Integration {
+            free_reads: false,
             name: name.into(),
             description: String::new(),
             base_url: format!("https://{name}.example.com"),
@@ -463,6 +494,44 @@ mod tests {
             .description;
         let names = tools.iter().map(|t| t.spec().name).collect();
         (dir, names, http)
+    }
+
+    /// Decision 85: the Drive folder is offered once connected, and only to
+    /// an agent whose file names it.
+    #[test]
+    fn google_drive_is_offered_when_connected_to_whom_names_it() {
+        let offered = |connected: bool, allowed: Option<Vec<String>>| {
+            let dir = tempfile::tempdir().unwrap();
+            let skills = dir.path().join("skills");
+            if connected {
+                std::fs::create_dir_all(skills.join("mcp-auth")).unwrap();
+                std::fs::write(skills.join("drive.json"), r#"{"id": "R"}"#).unwrap();
+                std::fs::write(
+                    skills.join("mcp-auth/google-drive.json"),
+                    r#"{"client_id": "c", "redirect_uri": "r", "authorization_endpoint": "a", "token_endpoint": "t", "refresh_token": "rt"}"#,
+                )
+                .unwrap();
+            }
+            realm_tools(RealmTools {
+                memory: MemoryStore::new(dir.path().join("memory.json")),
+                source: String::new(),
+                plan: PlanHandle::default(),
+                integrations: Vec::new(),
+                skills_dir: skills,
+                allowed,
+                delegation: None,
+                files: false,
+            })
+            .iter()
+            .any(|t| t.spec().name == "google_drive")
+        };
+        assert!(offered(true, None), "the founder's own chat");
+        assert!(offered(true, Some(vec!["google-drive".into()])));
+        assert!(
+            !offered(true, Some(vec!["github".into()])),
+            "an agent that does not name it"
+        );
+        assert!(!offered(false, None), "not connected");
     }
 
     #[test]

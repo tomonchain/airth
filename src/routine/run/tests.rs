@@ -64,11 +64,12 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         {"id": "good", "type": "condition", "if": {"field": "answer.score", "op": ">=", "value": 3}, "else": "skip"},
         {"id": "ok", "type": "approval", "show": "answer.draft"},
         {"id": "send", "type": "act", "action": "typefully.create_draft",
-            "fields": {"set": "hedgen", "content": "{{answer.draft}}"}, "next": null},
+            "fields": {"set": "acme", "content": "{{answer.draft}}"}, "next": null},
         {"id": "skip", "type": "act", "action": "airth.report", "fields": {"title": "Left out: {{title}}"}}
     ]}))
     .unwrap();
     let typefully = Integration {
+        free_reads: false,
         name: "typefully".into(),
         description: String::new(),
         base_url: "https://api.typefully.com".into(),
@@ -116,6 +117,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         &graph,
         Dry {
             root: root.path(),
+            context: "",
             store: &mut store,
             io: &mut io,
             integrations: &integrations,
@@ -129,7 +131,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         "{report}"
     );
     assert!(
-        report.contains("would typefully.create_draft [posts/https://e.com/1/send]: POST https://api.typefully.com/v1/sets/hedgen/drafts"),
+        report.contains("would typefully.create_draft [posts/https://e.com/1/send]: POST https://api.typefully.com/v1/sets/acme/drafts"),
         "{report}"
     );
     assert!(
@@ -207,6 +209,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
     };
     let dry = Dry {
         root: root.path(),
+        context: "",
         store: &mut store,
         io: &mut io,
         integrations: &[],
@@ -246,6 +249,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
     for it in [item, nameless] {
         let dry = Dry {
             root: root.path(),
+            context: "",
             store: &mut store,
             io: &mut io,
             integrations: &[],
@@ -366,6 +370,7 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
             &graph,
             Dry {
                 root: root.path(),
+                context: "",
                 store,
                 io: &mut io,
                 integrations: &[],
@@ -477,6 +482,7 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
         &graph,
         Dry {
             root: root.path(),
+            context: "",
             store: &mut store,
             io: &mut io,
             integrations: &[],
@@ -592,6 +598,7 @@ fn sort_list(titles: &[&str], answers: &[&str]) -> (Result<String>, Vec<String>)
         &graph,
         Dry {
             root: root.path(),
+            context: "",
             store: &mut store,
             io: &mut io,
             integrations: &[],
@@ -735,6 +742,7 @@ fn a_block_asks_the_fast_model_or_says_the_main_one_answered() {
             &graph,
             Dry {
                 root: root.path(),
+                context: "",
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
@@ -828,6 +836,7 @@ fn a_draft_that_does_not_fit_is_asked_once_more_then_dropped_by_name() {
             &graph,
             Dry {
                 root: root.path(),
+                context: "",
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
@@ -927,6 +936,7 @@ fn what_a_run_drops_reaches_the_founder() {
             &graph,
             Dry {
                 root: root.path(),
+                context: "",
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
@@ -1039,6 +1049,7 @@ fn a_reply_run_reads_the_post_and_stops_on_a_thin_one() {
             &graph,
             Dry {
                 root: root.path(),
+                context: "",
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],

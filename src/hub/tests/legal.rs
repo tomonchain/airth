@@ -30,7 +30,7 @@ fn profile(realm: &Realm, fields: &str) {
     std::fs::write(root.join("business/profile.md"), text).unwrap();
 }
 
-const HEDGEN: &str = "incorporated_on: 2025-11-07\nfiscal_year_end: 11-30\n";
+const ACME: &str = "incorporated_on: 2025-11-07\nfiscal_year_end: 11-30\n";
 
 #[test]
 fn a_deadline_is_reminded_once_per_reminder_then_filed() {
@@ -42,7 +42,7 @@ fn a_deadline_is_reminded_once_per_reminder_then_filed() {
         deadlines(&f.realm).is_empty(),
         "no dates, nothing to remind"
     );
-    profile(&f.realm, HEDGEN);
+    profile(&f.realm, ACME);
     // 17 days ahead: the 30-day reminder's day has passed, so it comes now.
     hub.remind_deadlines(on(2026, 11, 3)).unwrap();
     hub.remind_deadlines(on(2026, 11, 4)).unwrap();
@@ -70,7 +70,7 @@ fn a_deadline_is_reminded_once_per_reminder_then_filed() {
     let left = deadlines(&f.realm);
     assert_eq!(left.len(), 1);
     // Filed: recorded, and nothing more comes for it.
-    profile(&f.realm, &format!("{HEDGEN}reminders: [30, 7, 1]\n"));
+    profile(&f.realm, &format!("{ACME}reminders: [30, 7, 1]\n"));
     hub.remind_deadlines(on(2026, 11, 19)).unwrap();
     assert_eq!(deadlines(&f.realm).len(), 2, "the profile's own reminders");
     let (_, said) = hub
@@ -95,7 +95,7 @@ fn a_deadline_is_reminded_once_per_reminder_then_filed() {
 fn an_unfiled_deadline_is_overdue_until_filed() {
     let f = fixture();
     let (hub, _, _) = make_hub(&f.home, vec![]);
-    profile(&f.realm, HEDGEN);
+    profile(&f.realm, ACME);
     hub.remind_deadlines(on(2026, 11, 21)).unwrap();
     let overdue: Vec<Item> = deadlines(&f.realm)
         .into_iter()

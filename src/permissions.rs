@@ -215,6 +215,9 @@ pub struct PermissionGate {
     grants: Vec<Grant>,
     /// Once nobody watches the run, nobody does for the rest of it.
     detached: bool,
+    /// The run works in its own worktree (decision 80): what it writes
+    /// reaches the founder's files only through an adoption they review.
+    isolated_writes: bool,
 }
 
 impl PermissionGate {
@@ -224,7 +227,25 @@ impl PermissionGate {
             approver,
             grants: Vec::new(),
             detached: false,
+            isolated_writes: false,
         }
+    }
+
+    /// A run in its own worktree (decision 80): a write the policy would
+    /// ask about is allowed, since the founder reviews the whole change
+    /// before it is adopted. A write that carries a warning (a file that
+    /// enforces a security boundary) is still asked; a denied write stays
+    /// denied; nothing else changes.
+    pub fn with_isolated_writes(mut self, isolated: bool) -> Self {
+        self.isolated_writes = isolated;
+        self
+    }
+
+    fn reviewed_later(&self, request: &PermissionRequest) -> bool {
+        self.isolated_writes
+            && request.capability == Capability::Write
+            && request.warnings.is_empty()
+            && self.policy.rule(Capability::Write) == Rule::Ask
     }
 
     /// Whether the founder watches the run now and has since it started.
@@ -260,10 +281,14 @@ impl PermissionGate {
     /// of the run covers the call.
     pub fn would_ask(&self, request: &PermissionRequest) -> bool {
         self.policy.rule(request.capability) == Rule::Ask
+            && !self.reviewed_later(request)
             && !(request.grantable() && self.grants.iter().any(|g| g.covers(request)))
     }
 
     pub fn check(&mut self, request: &PermissionRequest) -> Result<Verdict> {
+        if self.reviewed_later(request) {
+            return Ok(Verdict::Allowed);
+        }
         Ok(match self.policy.rule(request.capability) {
             Rule::Allow => Verdict::Allowed,
             Rule::Deny => Verdict::Denied(format!(
@@ -389,6 +414,58 @@ mod tests {
             warnings: vec![],
             scope: None,
         }
+    }
+
+    /// Decision 80: in a run's own worktree a write is not asked, since the
+    /// founder reviews the change before it is adopted. Only writes, only
+    /// there, never one with a warning, never against a denying policy; an
+    /// approver that would refuse proves nobody was asked.
+    #[test]
+    fn an_isolated_run_writes_without_asking_and_nothing_else_changes() {
+        let mut gate = PermissionGate::new(Policy::default(), Box::new(Fixed(false)))
+            .with_isolated_writes(true);
+        assert!(!gate.would_ask(&req(Capability::Write)));
+        assert_eq!(
+            gate.check(&req(Capability::Write)).unwrap(),
+            Verdict::Allowed
+        );
+        for other in [
+            Capability::Execute,
+            Capability::Memory,
+            Capability::Network,
+            Capability::Skill,
+        ] {
+            assert!(gate.would_ask(&req(other)), "{other:?}");
+            assert!(
+                matches!(gate.check(&req(other)).unwrap(), Verdict::Denied(_)),
+                "{other:?}"
+            );
+        }
+        let mut warned = req(Capability::Write);
+        warned.warnings.push("edits src/permissions.rs".into());
+        assert!(gate.would_ask(&warned));
+        assert!(matches!(gate.check(&warned).unwrap(), Verdict::Denied(_)));
+        // The founder's own call is still theirs (decision 56).
+        assert!(matches!(
+            gate.check_explicit(&req(Capability::Write)).unwrap(),
+            Verdict::Denied(_)
+        ));
+
+        let mut denying = Policy::default();
+        denying.set(Capability::Write, Rule::Deny);
+        let mut gate =
+            PermissionGate::new(denying, Box::new(Fixed(true))).with_isolated_writes(true);
+        assert!(matches!(
+            gate.check(&req(Capability::Write)).unwrap(),
+            Verdict::Denied(_)
+        ));
+
+        // Outside a worktree, a write is asked as before.
+        let mut gate = PermissionGate::new(Policy::default(), Box::new(Fixed(false)));
+        assert!(matches!(
+            gate.check(&req(Capability::Write)).unwrap(),
+            Verdict::Denied(_)
+        ));
     }
 
     #[test]

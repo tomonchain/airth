@@ -10,12 +10,66 @@ pub(super) struct Live {
     pub(super) cancel: CancelToken,
     pub(super) version: AtomicU64,
     pub(super) watch: Watch,
+    pub(super) draft: Draft,
+    /// What the founder wrote while the agent worked, until it reads it. None
+    /// once nothing will read it: a job that is not the agent's, or a run
+    /// whose thread is ending.
+    pub(super) said: Mutex<Option<Vec<String>>>,
+}
+
+/// What the model is writing in the run, while it writes it: gone once its
+/// answer is in the snapshot.
+#[derive(Default)]
+pub(super) struct Draft {
+    pub(super) text: Mutex<String>,
+    /// Counts each change, for a page waiting for the next one.
+    pub(super) seq: AtomicU64,
+}
+
+impl Draft {
+    fn set(&self, text: &str) {
+        let mut t = self.text.lock().unwrap();
+        if *t != text {
+            text.clone_into(&mut t);
+            self.seq.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 }
 
 /// Longer than this between two looks at a run, and the founder has left
 /// it. The run's page looks every 600 ms; a hidden tab, about once a second
 /// until the browser slows it down further.
 const WATCH_GAP: Duration = Duration::from_secs(10);
+
+/// A run that failed on a passing error is tried again after these waits,
+/// then left failed (decision 81).
+const RETRY_WAITS: [Duration; 3] = [
+    Duration::from_secs(30),
+    Duration::from_secs(120),
+    Duration::from_secs(480),
+];
+/// A run that reached its time budget goes on alone this many times more.
+const TIME_BUDGETS_MORE: usize = 2;
+
+/// What a run that ended on `status` with `report` does next on its own:
+/// try again after a wait, go on at once, or nothing (decision 81).
+pub(super) fn next_on_its_own(
+    status: Status,
+    report: Option<&str>,
+    retries: usize,
+    budgets: usize,
+) -> Option<Duration> {
+    let report = report.unwrap_or_default();
+    match status {
+        Status::Failed if crate::models::transient(report) => RETRY_WAITS.get(retries).copied(),
+        Status::Stopped
+            if report.contains("reached its time budget") && budgets < TIME_BUDGETS_MORE =>
+        {
+            Some(Duration::ZERO)
+        }
+        _ => None,
+    }
+}
 
 /// Whether the founder watches a run in the app (decision 56): its page
 /// looks at it again and again. Once they left, they left, for the run.
@@ -72,12 +126,41 @@ pub(super) fn key(realm: &str, id: &str) -> String {
     format!("{realm}/{id}")
 }
 
-pub(super) struct UiObserver(Arc<Live>);
+pub(super) struct UiObserver(pub(super) Arc<Live>);
 
 impl Observer for UiObserver {
     fn changed(&mut self, state: &State) {
         *self.0.snapshot.lock().unwrap() = state.clone();
         self.0.bump();
+        self.0.draft.set("");
+    }
+
+    fn writing(&mut self, text: &str) {
+        self.0.draft.set(text);
+    }
+
+    fn said(&mut self) -> Vec<String> {
+        self.0
+            .said
+            .lock()
+            .unwrap()
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+}
+
+impl Live {
+    /// Keeps what the founder wrote for the agent's next turn; false when
+    /// nothing will read it.
+    pub(super) fn tell(&self, text: &str) -> bool {
+        match self.said.lock().unwrap().as_mut() {
+            Some(said) if !self.cancel.is_cancelled() => {
+                said.push(text.to_string());
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -206,6 +289,10 @@ impl Runner {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch: Watch::for_job(&job),
+            draft: Draft::default(),
+            said: Mutex::new(
+                matches!(job, Job::Drive | Job::Alone | Job::Unattended { .. }).then(Vec::new),
+            ),
         });
         self.registry
             .lock()
@@ -218,7 +305,7 @@ impl Runner {
         std::thread::spawn(move || {
             let mut state = state;
             let mut observer = UiObserver(live.clone());
-            let away = match &job {
+            let mut away = match &job {
                 Job::Unattended {
                     objective,
                     wait_minutes,
@@ -233,21 +320,86 @@ impl Runner {
             };
             match job {
                 Job::Drive | Job::Alone | Job::Unattended { .. } => {
-                    let hooks = RunHooks {
-                        approver: Box::new(UiApprover {
-                            live: live.clone(),
-                            next_id: 0,
-                            away,
-                        }),
-                        observer: &mut observer,
-                        cancel: live.cancel.clone(),
-                    };
-                    if let Err(e) =
-                        hub.drive(&realm, &mut state, AgentConfig::new(max_iterations), hooks)
-                        && state.status == Status::Running
-                    {
-                        state.status = Status::Failed;
-                        state.report = Some(format!("{e:#}"));
+                    let (mut retries, mut budgets) = (0, 0);
+                    loop {
+                        let hooks = RunHooks {
+                            approver: Box::new(UiApprover {
+                                live: live.clone(),
+                                next_id: 0,
+                                // Who writes to a run is there to answer it.
+                                away: away.take(),
+                            }),
+                            observer: &mut observer,
+                            cancel: live.cancel.clone(),
+                        };
+                        if let Err(e) =
+                            hub.drive(&realm, &mut state, AgentConfig::new(max_iterations), hooks)
+                            && state.status == Status::Running
+                        {
+                            state.status = Status::Failed;
+                            state.report = Some(format!("{e:#}"));
+                            let _ = state.save();
+                        }
+                        // A passing failure is tried again, a time budget renewed,
+                        // without the founder's go (decision 81).
+                        if !live.cancel.is_cancelled()
+                            && let Some(wait) = next_on_its_own(
+                                state.status,
+                                state.report.as_deref(),
+                                retries,
+                                budgets,
+                            )
+                        {
+                            if state.status == Status::Failed {
+                                retries += 1;
+                                state.report = Some(format!(
+                                    "Trying again in {} ({retries} of {}): {}",
+                                    if wait.as_secs() < 60 {
+                                        format!("{} s", wait.as_secs())
+                                    } else {
+                                        format!("{} min", wait.as_secs() / 60)
+                                    },
+                                    RETRY_WAITS.len(),
+                                    state.report.as_deref().unwrap_or_default()
+                                ));
+                            } else {
+                                budgets += 1;
+                            }
+                            state.status = Status::Running;
+                            let _ = state.save();
+                            observer.changed(&state);
+                            let until = std::time::Instant::now() + wait;
+                            while std::time::Instant::now() < until && !live.cancel.is_cancelled() {
+                                std::thread::sleep(Duration::from_millis(250).min(wait));
+                            }
+                            if live.cancel.is_cancelled() {
+                                state.status = Status::Stopped;
+                                state.report = Some("Stopped by the user.".into());
+                                let _ = state.save();
+                                break;
+                            }
+                            state.report = None;
+                            let _ = state.save();
+                            continue;
+                        }
+                        // Written as the run ended: it goes on with it, as a
+                        // follow-up would. Past this, what is written starts
+                        // the run again the usual way.
+                        let mut said = live.said.lock().unwrap();
+                        let left = said.take().unwrap_or_default();
+                        if left.is_empty()
+                            || live.cancel.is_cancelled()
+                            || state.status == Status::Failed
+                        {
+                            break;
+                        }
+                        *said = Some(Vec::new());
+                        drop(said);
+                        for text in &left {
+                            crate::hub::append_user_text(&mut state.messages, text);
+                        }
+                        state.status = Status::Running;
+                        state.report = None;
                         let _ = state.save();
                     }
                 }
@@ -287,6 +439,56 @@ impl Runner {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// Decision 81: a passing failure is tried again three times, later and
+    /// later; a time budget is renewed twice; anything else waits for the
+    /// founder.
+    #[test]
+    fn a_run_goes_on_alone_after_a_passing_failure_or_its_time_budget() {
+        let busy = Some("DeepSeek API error 503: overloaded");
+        let waits: Vec<_> = (0..4)
+            .map(|n| next_on_its_own(Status::Failed, busy, n, 0))
+            .collect();
+        assert_eq!(
+            waits,
+            [
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(120)),
+                Some(Duration::from_secs(480)),
+                None
+            ]
+        );
+        assert_eq!(
+            next_on_its_own(
+                Status::Failed,
+                Some("API error 401: api key is invalid"),
+                0,
+                0
+            ),
+            None
+        );
+        let budget = Some("Stopped: reached its time budget (30 minutes).");
+        assert_eq!(
+            next_on_its_own(Status::Stopped, budget, 0, 0),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(
+            next_on_its_own(Status::Stopped, budget, 0, 1),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(next_on_its_own(Status::Stopped, budget, 0, 2), None);
+        for waits_for_the_founder in [
+            "Stopped: reached its cost budget ($2.00 of $2.00).",
+            "Stopped by the user.",
+            "not done: nobody is watching this task, so the founder is asked in Needs you (item 9)",
+        ] {
+            assert_eq!(
+                next_on_its_own(Status::Stopped, Some(waits_for_the_founder), 0, 0),
+                None
+            );
+        }
+        assert_eq!(next_on_its_own(Status::Completed, None, 0, 0), None);
+    }
 
     fn left(ago: u64) -> Watch {
         Watch(Mutex::new((
@@ -331,6 +533,8 @@ mod tests {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch,
+            draft: Draft::default(),
+            said: Mutex::new(None),
         })
     }
 
@@ -359,6 +563,22 @@ mod tests {
             panic!("not approved");
         };
         assert!(why.contains("left"), "{why}");
+    }
+
+    /// What the founder writes to a run at work waits for the agent's next
+    /// turn, once; nothing is kept for a run nothing will read it in, or one
+    /// they stopped.
+    #[test]
+    fn what_the_founder_writes_to_a_run_at_work_waits_for_its_next_turn() {
+        let at_work = live(Watch::from_now());
+        *at_work.said.lock().unwrap() = Some(Vec::new());
+        assert!(at_work.tell("Add a title too."));
+        let mut observer = UiObserver(at_work.clone());
+        assert_eq!(observer.said(), ["Add a title too."]);
+        assert!(observer.said().is_empty());
+        at_work.cancel.cancel();
+        assert!(!at_work.tell("And a summary."));
+        assert!(!live(Watch::from_now()).tell("Checking? Not read."));
     }
 
     #[test]

@@ -26,6 +26,11 @@ pub struct Integration {
     /// The calls a routine's `act` may make through it (decision 49).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<crate::actions::HttpAction>,
+    /// Its reads (GET, HEAD) are reads, asked about by nobody (decision 84):
+    /// declared by the founder for a service whose reads change nothing.
+    /// Any other request is still an action nobody declared, which commits.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub free_reads: bool,
 }
 
 impl Integration {
@@ -154,6 +159,7 @@ mod tests {
 
     fn github() -> Integration {
         Integration {
+            free_reads: false,
             name: "github".into(),
             description: String::new(),
             base_url: "https://api.github.com/repos/me".into(),
