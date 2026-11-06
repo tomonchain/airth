@@ -104,16 +104,15 @@ impl App {
                 let realm = self.realm(r)?;
                 let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
                 let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
-                let url = {
-                    let _w = self.write_lock();
-                    crate::drive::start(
-                        &realm.skills_dir(),
-                        &text("client_id"),
-                        &text("client_secret"),
-                        &text("folder"),
-                        &redirect,
-                    )?
-                };
+                // Under the write lock every changing request already holds
+                // (`handle`): taking it again here would wait forever.
+                let url = crate::drive::start(
+                    &realm.skills_dir(),
+                    &text("client_id"),
+                    &text("client_secret"),
+                    &text("folder"),
+                    &redirect,
+                )?;
                 let open = url.clone();
                 std::thread::spawn(move || open_url(&open));
                 json_response(200, json!({"sign_in": url}))
@@ -137,7 +136,6 @@ impl App {
             }
             (Method::Delete, ["realms", r, "drive"]) => {
                 let dir = self.realm(r)?.skills_dir();
-                let _w = self.write_lock();
                 crate::drive::disconnect(&dir);
                 json_response(200, json!({"ok": true}))
             }

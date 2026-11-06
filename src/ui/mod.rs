@@ -234,6 +234,9 @@ impl App {
                 [.., "approval"]
                     | [.., "stop"]
                     | ["realms", _, "graphs", _, "dry-run"]
+                    // A routine run by hand lasts minutes, and records its
+                    // run through the store, not the settings.
+                    | ["realms", _, "graphs", _, "run"]
                     | ["realms", _, "orders", "route"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
@@ -753,6 +756,54 @@ mod tests {
         );
         // The slow connection itself still finishes (with the service's error).
         assert_eq!(pending.join().unwrap().unwrap(), 400);
+    }
+
+    /// The Drive routes answer through the server, under the write lock
+    /// every changing request holds, and leave the app's writes free: one
+    /// took that lock a second time and froze every write after it.
+    #[test]
+    fn connecting_google_drive_does_not_freeze_the_app() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        home.create_realm(NewRealm {
+            name: "r".into(),
+            description: String::new(),
+            root: Some(root.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let app = test_app(home, port);
+        std::thread::spawn(move || serve_requests(server, app));
+        let http = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let send = |method: reqwest::Method, path: &str, body: Value| {
+            http.request(method, format!("http://127.0.0.1:{port}/api/{path}"))
+                .header("X-Airth-Token", "t0k3n")
+                .body(body.to_string())
+                .send()
+                .map(|r| r.status().as_u16())
+                .unwrap_or_else(|e| panic!("{path}: no answer ({e})"))
+        };
+        let bad = json!({"client_id": "c", "client_secret": "s", "folder": "https://drive.google.com/drive/my-drive"});
+        assert_eq!(send(reqwest::Method::POST, "realms/r/drive", bad), 400);
+        assert_eq!(
+            send(reqwest::Method::DELETE, "realms/r/drive", json!({})),
+            200
+        );
+        // The next write still goes.
+        assert_eq!(
+            send(
+                reqwest::Method::POST,
+                "realms/r/memory",
+                json!({"text": "Posts at 09:00"})
+            ),
+            200
+        );
     }
 
     #[test]
