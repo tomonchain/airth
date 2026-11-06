@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, Wrench, X } from "lucide-react"
+import { Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
@@ -153,29 +153,66 @@ function stepLine(s: Step) {
   return { verb, arg: typeof arg === "string" ? arg : undefined }
 }
 
-function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
+// A turn of the agent's, as shown: what it did (its notes on the way, its
+// steps, what the founder allowed), folded into one line, then its answer.
+type Shown =
+  | { kind: "founder"; text: string; at: number }
+  | { kind: "work"; items: Part[]; at: number; live: boolean }
+  | { kind: "answer"; text: string; at: number }
+
+function turns(ps: Part[], live: boolean): Shown[] {
+  const out: Shown[] = []
+  let work: { p: Part; at: number }[] = []
+  const flush = (end: boolean) => {
+    if (!work.length) return
+    // The turn's last words are its answer, once it is over; while the
+    // agent works they may be a note before its next step.
+    const last = work[work.length - 1]
+    const answer = last.p.kind === "agent" && !(end && live) ? work.pop()! : null
+    if (work.length) out.push({ kind: "work", items: work.map((w) => w.p), at: work[0].at, live: end && live })
+    if (answer && answer.p.kind === "agent") out.push({ kind: "answer", text: answer.p.text, at: answer.at })
+    work = []
+  }
+  ps.forEach((p, at) => {
+    if (p.kind === "founder") { flush(false); out.push({ kind: "founder", text: p.text, at }) }
+    else work.push({ p, at })
+  })
+  flush(true)
+  return out
+}
+
+function Work({ items, live, tail }: { items: Part[]; live: boolean; tail?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
-  const errors = steps.filter((s) => s.error).length
-  const running = live && steps.some((s) => !s.done)
+  const steps = items.flatMap((p) => (p.kind === "steps" ? p.steps : []))
+  const now = (() => {
+    const step = steps.find((x) => !x.done)
+    if (step) { const l = stepLine(step); return `${l.verb}${l.arg ? ` ${l.arg.length > 48 ? `${l.arg.slice(0, 48)}…` : l.arg}` : ""}` }
+    const said = [...items].reverse().find((p) => p.kind === "agent")
+    return said?.kind === "agent" ? said.text.split("\n")[0].slice(0, 80) : "Thinking"
+  })()
   return (
     <div className="max-w-[85%]">
-      <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1.5 rounded-full border bg-bubble/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        <Wrench className="size-3" />
-        {running ? <Shimmer>{(() => { const l = stepLine(steps[steps.length - 1]); return `${l.verb}${l.arg ? ` ${l.arg.length > 48 ? `${l.arg.slice(0, 48)}…` : l.arg}` : ""}…` })()}</Shimmer> : `${steps.length} step${steps.length === 1 ? "" : "s"}`}
-        {errors > 0 && <span className="text-red-500">· {errors} failed</span>}
+      <button onClick={() => setOpen(!open)} className="inline-flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")} />
+        {live ? <Shimmer className="truncate">{`${now.replace(/[\s.…:]+$/, "")}…`}</Shimmer> : <span>Worked{steps.length ? ` · ${steps.length} step${steps.length === 1 ? "" : "s"}` : ""}</span>}
       </button>
+      {tail}
       {open && (
-        <ol className="mt-1.5 ml-3 space-y-1 border-l pl-3 fade-up">
-          {steps.map((s, i) => {
-            const l = stepLine(s)
-            return (
-              <li key={i} className="flex items-start gap-2 text-xs">
-                {s.error ? <X className="mt-0.5 size-3 shrink-0 text-red-500" /> : s.done ? <Check className="mt-0.5 size-3 shrink-0 text-emerald-500" /> : <span className="mt-1 size-2 shrink-0 animate-pulse rounded-full bg-sky-500" />}
-                <span className="min-w-0"><span className="text-foreground/80">{l.verb}</span>{l.arg && <span className="ml-1.5 font-mono break-all text-muted-foreground">{l.arg.length > 140 ? `${l.arg.slice(0, 140)}…` : l.arg}</span>}</span>
-              </li>
-            )
-          })}
+        <ol className="mt-1 ml-1.5 space-y-1.5 border-l pl-3 fade-up">
+          {items.map((p, i) =>
+            p.kind === "agent" ? <li key={i} className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">{p.text}</li>
+            : p.kind === "note" ? <li key={i} className="text-xs text-muted-foreground italic">{p.text}</li>
+            : p.kind === "steps" ? p.steps.map((s, k) => {
+              const l = stepLine(s)
+              return (
+                <li key={`${i}.${k}`} className="flex items-start gap-2 text-xs">
+                  {/* A step that failed is part of the work: the agent went on. */}
+                  {s.error ? <X className="mt-0.5 size-3 shrink-0 text-muted-foreground" /> : s.done ? <Check className="mt-0.5 size-3 shrink-0 text-emerald-500" /> : <span className="mt-1 size-2 shrink-0 animate-pulse rounded-full bg-sky-500" />}
+                  <span className="min-w-0"><span className="text-foreground/80">{l.verb}</span>{l.arg && <span className="ml-1.5 font-mono break-all text-muted-foreground">{l.arg.length > 140 ? `${l.arg.slice(0, 140)}…` : l.arg}</span>}{s.error && <span className="ml-1.5 text-muted-foreground">· did not work</span>}</span>
+                </li>
+              )
+            }) : null,
+          )}
         </ol>
       )}
     </div>
@@ -213,6 +250,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const [busy, setBusy] = useState(false)
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
+  const shownTurns = useMemo(() => turns(ps, !!view?.live), [ps, view?.live])
   // The messages the founder just sent, shown by the conversation until the
   // run has them: looked for among its latest words only.
   useEffect(() => {
@@ -268,20 +306,20 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
 
   return (
     <div>
-      {ps.map((p, i) => {
-        const nextSide = ps[i + 1] ? (ps[i + 1].kind === "founder" ? "right" : ps[i + 1].kind === "note" ? "none" : "left") : "end"
-        const isNew = i >= (shown.current ?? 0)
-        if (p.kind === "note") return <p key={i} className="my-3 text-center text-[11px] text-muted-foreground">{p.text}</p>
-        if (p.kind === "founder") {
-          return <div key={i} className={cn(isNew && "fade-up")}><Bubble side="right" agent={agent} last={nextSide !== "right"} time={i === 0 ? stamp(startOf(id)) : undefined}>{p.text}</Bubble></div>
+      {shownTurns.map((t, i) => {
+        const next = shownTurns[i + 1]
+        const isNew = t.at >= (shown.current ?? 0)
+        if (t.kind === "founder") {
+          return <div key={t.at} className={cn(isNew && "fade-up")}><Bubble side="right" agent={agent} last={next?.kind !== "founder"} time={t.at === 0 ? stamp(startOf(id)) : undefined}>{t.text}</Bubble></div>
         }
-        const last = nextSide !== "left" && !(i === ps.length - 1 && (live || question))
+        const last = (!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question))
         return (
-          <div key={i} className={cn(isNew && "fade-up")}>
+          <div key={t.at} className={cn(isNew && "fade-up")}>
             <Bubble side="left" agent={agent} last={last}>
-              {p.kind === "steps" ? <Steps steps={p.steps} live={live} /> : (
+              {t.kind === "work" ? <Work items={t.items} live={t.live && !draft}
+                tail={t.live && !draft && !view.pending && working ? <span className="ml-2 inline-flex items-center gap-1.5 align-middle"><Elapsed from={working} /><StopButton onStop={stop} /></span> : undefined} /> : (
                 <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
-                  <AgentText text={p.text} stream={isNew && !read.current.includes(p.text)} />
+                  <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
                 </div>
               )}
             </Bubble>
@@ -314,11 +352,10 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           </div>
         </Bubble>
       )}
-      {live && !view.pending && !draft && working && (
+      {live && !view.pending && !draft && working && shownTurns.at(-1)?.kind !== "work" && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
           <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 fade-up">
             <Typing />
-            <span className="text-xs text-muted-foreground">{doing(ps)}</span>
             <Elapsed from={working} />
             <button onClick={stop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
           </div>
@@ -363,16 +400,8 @@ export function failure(report: string | null) {
 }
 
 /** What the agent is at, in a few words: its step in progress, else thinking. */
-function doing(ps: Part[]) {
-  const last = ps[ps.length - 1]
-  if (last?.kind === "steps") {
-    const step = last.steps.find((x) => !x.done)
-    if (step) {
-      const l = stepLine(step)
-      return l.arg ? `${l.verb} ${l.arg.length > 40 ? `${l.arg.slice(0, 40)}…` : l.arg}` : l.verb
-    }
-  }
-  return "Thinking"
+function StopButton({ onStop }: { onStop: () => void }) {
+  return <button onClick={onStop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
 }
 
 /** An agent's words: streamed as they arrive, then shown with links, lists,
