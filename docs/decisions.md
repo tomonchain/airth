@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 82. A routine's model calls are told what the founder's tasks are told
+
+**Accepted.** The founder, 6 November 2026: how to make the agents keep what they are told, so that when an element of the business changes, all of them know. A task was told the business's profile, its strategy and its memory; a routine's AI block was told only its prompt file. A decision recorded in the strategy or the memory reached every task and no routine.
+
+- Every AI block of a routine is told, before its prompt, the business's essentials (`business::essentials`): its profile, the owner's strategy, and what the business remembers. They are read at each run, so a change reaches the next one. The prompt says that where the task and the essentials disagree, the essentials are the owner's latest word.
+- The journal records a call's prompt version as the prompt file's SHA-256, then `+` and the first 12 characters of the essentials': which prompt, under which state of the business.
+- A business with no profile, strategy or memory sends the prompt alone, as before.
+
+*Why:* one place to change the business, read by everything that works for it. Editing every prompt file after each decision is what the founder should not have to do.
+
+*Cost:* about a thousand tokens more per call for Hedgen (3.8 KB of profile and strategy, two memories), the same text each time, so mostly read from the provider's cache. A prompt that contradicts the strategy now loses to it.
+
 ## 81. A task or a routine tries again on its own before it waits for the founder
 
 **Accepted.** The founder, 6 November 2026: "if a run fails, the agents stop and wait for my go; they should try again N times." A task that failed on a busy model stopped with Try again; one that reached its 30-minute budget stopped until the founder said go on; a scheduled routine that failed became an incident at once.

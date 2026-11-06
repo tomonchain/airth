@@ -383,6 +383,31 @@ fn capped(text: &str, file: &str) -> String {
     }
 }
 
+/// What every model call of a routine is told before its prompt (decision
+/// 82): the business's profile, its strategy and what the business
+/// remembers, as the founder keeps them. Empty when there is none.
+pub fn essentials(root: &Path, memory: &[String]) -> Result<String> {
+    let dir = dir(root);
+    let mut out = String::new();
+    if let Some(p) = read_optional(&dir, PROFILE)? {
+        out.push_str(&format!("The business:\n{}\n", capped(&p, PROFILE)));
+    }
+    let strategy = strategy(root)?;
+    if !strategy.is_empty() {
+        out.push_str(&format!(
+            "\nThe owner's strategy, which all work for the business follows:\n{}\n",
+            capped(&strategy, GOAL)
+        ));
+    }
+    if !memory.is_empty() {
+        out.push_str("\nWhat the business remembers, as the owner decided it:\n");
+        for m in memory {
+            out.push_str(&format!("- {m}\n"));
+        }
+    }
+    Ok(out)
+}
+
 /// What a run of the realm is told about its business, or None when the
 /// realm runs none (no profile, no strategy and no archive).
 pub fn briefing(root: &Path, departments: &[String]) -> Result<Option<String>> {

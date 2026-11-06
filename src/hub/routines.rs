@@ -58,9 +58,11 @@ impl Hub {
     ) -> Result<crate::routine::run::Report> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
+        let context = routine_context(realm)?;
         self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
             let dry = crate::routine::run::Dry {
                 root: &root,
+                context: &context,
                 store,
                 io,
                 integrations: &realm.config.integrations,
@@ -84,6 +86,7 @@ impl Hub {
     ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
+        let context = routine_context(realm)?;
         let workspace = Workspace::new(&root)?
             .with_secrets(realm.command_env()?, self.redactions(realm)?)
             .with_network(!realm.config.offline);
@@ -251,6 +254,7 @@ impl Hub {
             |store, io| {
                 let dry = crate::routine::run::Dry {
                     root: &root,
+                    context: &context,
                     store,
                     io,
                     integrations: &realm.config.integrations,
@@ -804,6 +808,13 @@ const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [
 ];
 #[cfg(test)]
 const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO; 2];
+
+/// The business's essentials told to a routine's model calls (decision 82):
+/// read at each run, so what the founder changed reaches the next one.
+fn routine_context(realm: &Realm) -> Result<String> {
+    let memory: Vec<String> = realm.memory().list()?.into_iter().map(|m| m.text).collect();
+    crate::business::essentials(&realm.root()?, &memory)
+}
 
 /// What became of an approved action now.
 enum Approved {

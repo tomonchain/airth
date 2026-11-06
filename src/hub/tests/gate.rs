@@ -313,3 +313,56 @@ fn a_scheduled_routine_that_fails_is_tried_three_times_then_is_an_incident() {
     assert_eq!(beats.len(), 2);
     assert_eq!(beats[1].1.notes, "", "by hand: tried once, {beats:?}");
 }
+
+/// Decision 82: a routine's model call is told the business's strategy and
+/// memory before its prompt, read at each run, and the journal records the
+/// prompt file's version and the essentials' together.
+#[test]
+fn a_routine_is_told_the_strategy_and_memory_the_founder_keeps() {
+    let feed = "https://news.example/essentials.xml";
+    TEST_FEEDS.lock().unwrap().insert(
+        feed.into(),
+        "<rss><channel><item><title>Fed holds rates</title>\
+         <link>https://news.example/fed</link></item></channel></rss>"
+            .into(),
+    );
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/writer.md".to_string(), "Write.".to_string()),
+        ("prompts/post.md".into(), "Draft a post about the item.".into()),
+        ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
+        ("routines/posts.json".into(), json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": [feed], "dedupe": "link"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft"}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    crate::business::set_strategy(&root, "Ten founding firms by 2027.").unwrap();
+    f.realm
+        .memory()
+        .add("No posts on weekends.", "owner")
+        .unwrap();
+    let (hub, _, systems) = make_hub(&f.home, vec![done(r#"{"draft": "Rates held."}"#)]);
+
+    hub.run_routine_by_hand(&f.realm, "posts").unwrap();
+    let system = systems.lock().unwrap().last().cloned().unwrap();
+    assert!(system.contains("Ten founding firms by 2027."), "{system}");
+    assert!(system.contains("- No posts on weekends."), "{system}");
+    let (said, task) = (
+        system.find("No posts on weekends").unwrap(),
+        system.find("Draft a post").unwrap(),
+    );
+    assert!(said < task, "the essentials come before the prompt");
+    let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
+    let file = crate::update::sha256_hex(b"Draft a post about the item.");
+    assert!(
+        calls[0].prompt_version.starts_with(&format!("{file}+")),
+        "{}",
+        calls[0].prompt_version
+    );
+}
