@@ -358,7 +358,8 @@ impl App {
                     ),
                     v => v.as_str().map(str::to_string),
                 };
-                const FIELDS: [&str; 5] = ["title", "department", "integrations", "skills", "repos"];
+                const FIELDS: [&str; 5] =
+                    ["title", "department", "integrations", "skills", "repos"];
                 for key in FIELDS {
                     if let Some(value) = field(key) {
                         crate::business::check_agent_field(key, &value, &own)?;
