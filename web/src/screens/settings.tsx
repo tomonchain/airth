@@ -14,6 +14,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
+import { DriveConnection } from "@/screens/settings-drive"
 import { McpServers } from "@/screens/settings-mcp"
 import { Business, Departments, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
@@ -283,6 +284,7 @@ function Connections({ realm }: { realm: string }) {
     <>
       <Head title="Connections">What the agents can reach. Each key stays with its connection and never reaches a model.</Head>
       <McpServers realm={realm} />
+      <DriveConnection realm={realm} />
       <h3 className="mt-8 mb-2.5 text-sm font-semibold">Connectors</h3>
       {!conn.data ? <Loading /> : (
         <>

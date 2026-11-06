@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 85. Google Drive, read only, one folder
+
+**Accepted.** The founder, 6 November 2026: the agents need the company's documents, which are in Google Drive ("Go pour le connecteur"). It was an open question (Google OAuth for Drive). Integrations were HTTP with a key; Drive needs a Google sign-in.
+
+- The founder connects Drive in Settings → Connections with their own Google OAuth client (a Desktop app client of their Google Cloud project) and the link of one folder. Airth signs in with PKCE through the sign-in remote MCP servers use (`tools::remote::start_known`, the same callback, the same private token file, refreshed when it expires). The scope is `drive.readonly`.
+- Agents read only that folder and what is under it: every file asked for is followed up its parents to the folder, or refused (`Drive::within`); a search keeps only what is inside. They list, search and read: a Doc as Markdown, a Sheet as CSV, Slides as text, a text file as it is; other files are said unreadable for now (PDF included). A document is cut past 100,000 characters, and handed over as data, never instructions.
+- The tool (`google_drive`) is a read, through the runtime like any tool. It is offered once Drive is connected, to the founder's own chats and to an agent whose file names `google-drive` (its Edit form offers it).
+- Nothing is written to Drive.
+
+*Why:* the business's documents live in Drive; copying them into the business folder by hand goes stale. One folder, read only, keeps the rest of the founder's Drive out of reach.
+
+*Cost:* the founder sets up a Google Cloud client once, and publishes it (a Testing app's sign-in ends every 7 days). PDFs in Drive are not read yet. Google's tokens sit in the realm's private files like the remote MCP servers' (encrypting keys at rest is still open).
+
 ## 84. A service whose reads change nothing is read without asking
 
 **Accepted.** The founder, 6 November 2026, after the Developer stopped on every read of GitHub: "il faut qu'il puisse lire". A request through an integration with no declared actions is an action nobody declared, so it commits (CLAUDE.md), and a plain `GET /user/repos` waited for the founder's approval.

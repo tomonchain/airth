@@ -171,7 +171,14 @@ impl App {
                 };
                 return Ok(match result {
                     Ok(name) => page(
-                        &format!("{name} is connected"),
+                        &format!(
+                            "{} is connected",
+                            if name == crate::drive::NAME {
+                                "Google Drive"
+                            } else {
+                                &name
+                            }
+                        ),
                         "Airth can now use it in this realm. You can close this tab.",
                     ),
                     Err(e) => page("The connection did not work", &format!("{e:#}")),
