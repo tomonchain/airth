@@ -13,7 +13,7 @@ type Status = { connected: boolean; folder: string | null; name: string | null; 
 /** Google Drive, read only, one folder (decision 85): connected with the
     founder's own Google OAuth client. Agents reach it when their file names
     google-drive. */
-export function DriveConnection({ realm }: { realm: string }) {
+export function DriveConnection({ realm, heading = true }: { realm: string; heading?: boolean }) {
   const s = usePoll<Status>(() => api(`realms/${enc(realm)}/drive`), 30000, [realm])
   const [form, setForm] = useState({ client_id: "", client_secret: "", folder: "" })
   const [busy, setBusy] = useState(false)
@@ -32,7 +32,7 @@ export function DriveConnection({ realm }: { realm: string }) {
   }
   return (
     <>
-      <h3 className="mt-8 mb-2.5 text-sm font-semibold">Google Drive</h3>
+      {heading && <h3 className="mt-8 mb-2.5 text-sm font-semibold">Google Drive</h3>}
       {!s.data ? <Loading /> : s.data.connected ? (
         <Panel className="flex items-center gap-3 px-4 py-3">
           <FolderOpen className="size-5 shrink-0 text-sky-500" />

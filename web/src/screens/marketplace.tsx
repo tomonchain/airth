@@ -10,6 +10,7 @@ import { usePoll } from "@/hooks/use-poll"
 import { api, enc } from "@/lib/api"
 import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
+import { DriveConnection } from "@/screens/settings-drive"
 
 type Tab = "teams" | "skills" | "connectors" | "agents"
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
@@ -222,6 +223,7 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <h2 className="mb-1 text-sm font-semibold">Official</h2>
       <p className="mb-4 text-xs text-muted-foreground">Published by each company, checked with Airth's sign-in. Connecting opens their sign-in page; the key stays with Airth and never reaches a model.</p>
       <Grid>
+        {(!q || "google drive documents docs sheets".includes(q.toLowerCase())) && <DriveCard realm={realm} />}
         {featured.map((c) => (
           <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
             action={(() => {
@@ -245,6 +247,29 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
         </Grid>
       )}
       <ConnectDialog realm={realm} method={method} onClose={() => setMethod(null)} onConnected={servers.refresh} />
+    </>
+  )
+}
+
+/** Google Drive (decision 85): connected with the founder's own Google
+    client, so its card opens the same form as Settings → Connections. */
+function DriveCard({ realm }: { realm: string }) {
+  const s = usePoll<{ connected: boolean; name: string | null }>(() => api(`realms/${enc(realm)}/drive`), 30000, [realm])
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Card name="Google Drive" title="Google Drive" meta="Documents · read only"
+        description={s.data?.connected ? `Agents given google-drive read the folder ${s.data.name ?? "you shared"}.` : "One folder of your Drive, read by the agents you choose: Docs, Sheets and Slides. Never written to."}
+        action={s.data?.connected ? <Done>Connected</Done> : <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Connect</Button>} />
+      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) s.refresh() }}>
+        <DialogContent className="max-h-[88svh] overflow-y-auto sm:max-w-[620px]">
+          <DialogHeader>
+            <DialogTitle>Connect Google Drive</DialogTitle>
+            <DialogDescription>Read only, one folder. The sign-in stays with Airth and never reaches a model.</DialogDescription>
+          </DialogHeader>
+          <DriveConnection realm={realm} heading={false} />
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
