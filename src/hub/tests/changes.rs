@@ -216,6 +216,12 @@ fn fake_github(pr: Arc<Mutex<serde_json::Value>>) -> (String, Arc<Mutex<Vec<Stri
                     };
                     (200, json!({"total_count": 1, "check_runs": [run]}))
                 }
+                ("GET", u) if u.starts_with("/repos/o/r/pulls/7/reviews") => {
+                    (200, pr.get("reviews").cloned().unwrap_or(json!([])))
+                }
+                ("GET", u) if u.starts_with("/repos/o/r/pulls/7/comments") => {
+                    (200, pr.get("comments").cloned().unwrap_or(json!([])))
+                }
                 ("PUT", "/repos/o/r/pulls/7/merge") => {
                     pr["merged"] = json!(true);
                     (200, json!({"merged": true}))
@@ -347,6 +353,68 @@ fn pull_requests_are_opened_followed_and_merged() {
         hub.follow_pull_request(&realm, &state.id).unwrap(),
         PrEvent::Nothing
     );
+
+    // Decision 87: cubic reviews what was pushed; the chat answers it, once.
+    // A person's review, or one of an older commit, is the founder's.
+    let review = |id: u64, login: &str, commit: &str| json!({"id": id, "user": {"login": login}, "state": "COMMENTED", "body": "2 issues found.", "commit_id": commit});
+    fake.lock().unwrap()["reviews"] = json!([
+        review(1, "alice", &pr.pushed),
+        review(2, "cubic-dev-ai[bot]", "an-older-commit"),
+        review(3, "cubic-dev-ai[bot]", &pr.pushed),
+    ]);
+    fake.lock().unwrap()["comments"] = json!([
+        {"pull_request_review_id": 3, "path": "b.txt", "line": 1, "body": "Say what b is for."},
+        {"pull_request_review_id": 1, "path": "b.txt", "line": 1, "body": "Alice's note."},
+    ]);
+    let PrEvent::Reviewed(text) = hub.follow_pull_request(&realm, &state.id).unwrap() else {
+        panic!("cubic's review is answered")
+    };
+    assert!(
+        text.starts_with("cubic-dev-ai[bot] reviewed pull request #7 (commented)."),
+        "{text}"
+    );
+    assert!(
+        text.contains("2 issues found.") && text.contains("- b.txt:1: Say what b is for."),
+        "{text}"
+    );
+    assert!(!text.contains("Alice"), "{text}");
+    assert_eq!(
+        hub.follow_pull_request(&realm, &state.id).unwrap(),
+        PrEvent::Nothing,
+        "answered once"
+    );
+    assert!(
+        home.inbox()
+            .list()
+            .unwrap()
+            .iter()
+            .any(|n| n.title.contains("#7 was reviewed")),
+        "the founder is told"
+    );
+    let asked = hub.answer_review(&realm, &state.id, &text).unwrap();
+    assert!(format!("{:?}", asked.messages.last()).contains("Say what b is for."));
+    assert_eq!(asked.status, crate::state::Status::Running);
+    // Two rounds at most: a third review waits for the founder.
+    fake.lock().unwrap()["reviews"] = json!([review(4, "cubic-dev-ai[bot]", &pr.pushed)]);
+    fake.lock().unwrap()["comments"] =
+        json!([{"pull_request_review_id": 4, "path": "b.txt", "line": 1, "body": "Again."}]);
+    assert!(matches!(
+        hub.follow_pull_request(&realm, &state.id).unwrap(),
+        PrEvent::Reviewed(_)
+    ));
+    fake.lock().unwrap()["reviews"] = json!([review(5, "cubic-dev-ai[bot]", &pr.pushed)]);
+    fake.lock().unwrap()["comments"] =
+        json!([{"pull_request_review_id": 5, "path": "b.txt", "line": 1, "body": "Once more."}]);
+    assert_eq!(
+        hub.follow_pull_request(&realm, &state.id).unwrap(),
+        PrEvent::Nothing,
+        "the founder's now"
+    );
+    fake.lock().unwrap()["reviews"] = json!([]);
+    // The chat had stopped to answer: back as it was for what follows.
+    let mut back = hub.load_run(&realm, &state.id).unwrap();
+    back.status = crate::state::Status::Completed;
+    back.save().unwrap();
 
     // Someone else's work lands on main: the branch takes it in and is pushed.
     let other = tempfile::tempdir().unwrap();

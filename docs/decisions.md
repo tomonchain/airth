@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 87. An agent answers cubic's review of its pull request
+
+**Accepted.** The founder, 6 November 2026: "j'aimerai bien qu'on intègre cubic.dev pour les reviews". cubic is a GitHub app that reviews each pull request with comments on its lines; it also has an MCP server (OAuth) for coding agents.
+
+- Airth follows the pull requests it opens (every two minutes). When an app it knows as a reviewer (`REVIEWERS`: cubic, by the login it posts as) reviews the commit Airth last pushed, with comments or changes requested, the chat is given the review and goes on: it fixes what is right, says why it leaves the rest, the runtime pushes, and the app looks again. A person's review, an approval with nothing to say, or a review of an older commit is not answered by the chat.
+- Twice at most per pull request (`REVIEW_ROUNDS`); after that the founder decides. Each review is answered once (`PullRequest.answered`). The founder is told in the inbox each time.
+- The review is given as data, a reviewer's opinion and not the founder's instructions, to be checked against the code.
+- cubic is an official connector in the Marketplace (its MCP server), so an agent given it can read its findings and ask for a review. Installing cubic's GitHub app on the repositories is the founder's, on cubic.dev.
+- Merging stays the founder's (CLAUDE.md).
+
+*Why:* a second reader on every change the agents push, whose findings the agent fixes before the founder looks.
+
+*Cost:* each round is a task's model calls; two rounds bound it. cubic is free for public repositories and 20 reviews a month for private ones, then paid. A reviewer that is wrong twice leaves the disagreement to the founder.
+
 ## 86. Word documents and PDFs are read as text, with flate2
 
 **Accepted.** The founder, 6 November 2026, after the Chief of staff could not read the company's documents in Drive: they are PDFs and Word files, which decision 85 said unreadable.

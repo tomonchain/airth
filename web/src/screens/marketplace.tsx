@@ -28,6 +28,8 @@ const FEATURED = [
   ["stripe", "Stripe", "https://mcp.stripe.com", "Payments, customers, invoices and balance.", "Finance"],
   ["vercel", "Vercel", "https://mcp.vercel.com", "Projects, deployments and their logs.", "Development"],
   ["sentry", "Sentry", "https://mcp.sentry.dev/mcp", "Errors and issues across your projects.", "Development"],
+  // Its app reviews the pull requests Airth opens; agents read its findings (decision 87).
+  ["cubic", "cubic", "https://www.cubic.dev/api/mcp", "AI code review: its findings on your pull requests, which the agent fixes.", "Development", "new"],
   ["paypal", "PayPal", "https://mcp.paypal.com/mcp", "Transactions, invoices and disputes.", "Finance"],
   ["canva", "Canva", "https://mcp.canva.com/mcp", "Find, create and export designs.", "Design"],
   ["intercom", "Intercom", "https://mcp.intercom.com/mcp", "Conversations and contacts.", "Support"],

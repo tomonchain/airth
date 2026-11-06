@@ -86,6 +86,19 @@ pub enum Checks {
     Failing,
 }
 
+/// A review left on a pull request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Review {
+    pub id: u64,
+    pub login: String,
+    /// APPROVED, CHANGES_REQUESTED or COMMENTED.
+    pub state: String,
+    pub body: String,
+    /// The commit it reviewed.
+    pub commit: String,
+    pub comments: Vec<String>,
+}
+
 /// Where a pull request stands, for the app.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PrStatus {
@@ -308,6 +321,54 @@ impl GitHub {
         let number = pr["number"].as_u64().context("GitHub gave no number")?;
         let url = pr["html_url"].as_str().unwrap_or_default().to_string();
         Ok((number, url))
+    }
+
+    /// The reviews left on pull request `number`, oldest first, each with
+    /// its comments on lines (`path:line: text`).
+    pub fn reviews(&self, r: &Remote, number: u64) -> Result<Vec<Review>> {
+        let slug = r.slug();
+        let list = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{slug}/pulls/{number}/reviews?per_page=100"),
+            None,
+        )?;
+        let notes = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{slug}/pulls/{number}/comments?per_page=100"),
+            None,
+        )?;
+        let notes = notes.as_array().cloned().unwrap_or_default();
+        Ok(list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| {
+                let id = v["id"].as_u64()?;
+                Some(Review {
+                    id,
+                    login: v["user"]["login"].as_str().unwrap_or_default().to_string(),
+                    state: v["state"].as_str().unwrap_or_default().to_string(),
+                    body: v["body"].as_str().unwrap_or_default().trim().to_string(),
+                    commit: v["commit_id"].as_str().unwrap_or_default().to_string(),
+                    comments: notes
+                        .iter()
+                        .filter(|c| c["pull_request_review_id"].as_u64() == Some(id))
+                        .map(|c| {
+                            let line = c["line"]
+                                .as_u64()
+                                .or(c["original_line"].as_u64())
+                                .map(|l| format!(":{l}"))
+                                .unwrap_or_default();
+                            format!(
+                                "{}{line}: {}",
+                                c["path"].as_str().unwrap_or("?"),
+                                c["body"].as_str().unwrap_or_default().trim()
+                            )
+                        })
+                        .collect(),
+                })
+            })
+            .collect())
     }
 
     pub fn state(&self, r: &Remote, number: u64) -> Result<PrState> {
