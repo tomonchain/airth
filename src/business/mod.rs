@@ -268,10 +268,17 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
         "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
         "title" => {}
         // What its tasks may use (decision 64): names, comma-separated.
-        "integrations" | "skills" | "repos" => {
+        "integrations" | "skills" => {
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
                 crate::realm::validate_name(name)
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;
+            }
+        }
+        // A repository keeps its own name, dots included (hedgen.xyz).
+        "repos" => {
+            for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+                crate::realm::validate_repo_name(name)
+                    .with_context(|| format!("'{name}' is not a repository name"))?;
             }
         }
         "department" => {
@@ -664,6 +671,8 @@ mod tests {
         // What its tasks may use: names, checked one by one.
         set_agent_field(root.path(), "writer", "skills", "vercel, pdf", &[]).unwrap();
         set_agent_field(root.path(), "writer", "integrations", "typefully", &[]).unwrap();
+        set_agent_field(root.path(), "writer", "repos", "hedgen.xyz, site", &[]).unwrap();
+        assert!(set_agent_field(root.path(), "writer", "repos", "../x", &[]).is_err());
         let scope = scope(root.path(), "writer").unwrap();
         assert_eq!(scope.skills, ["vercel", "pdf"]);
         assert_eq!(scope.integrations, ["typefully"]);

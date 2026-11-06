@@ -102,6 +102,20 @@ pub fn detect_checks(dir: &Path) -> Vec<String> {
     }
 }
 
+/// A repository's name: letters, digits, - _ and . (as `hedgen.xyz`).
+pub fn validate_repo_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        || name.starts_with('.')
+    {
+        bail!("a repository name uses letters, digits, - _ and . only");
+    }
+    Ok(())
+}
+
 /// A valid repository name: what it would be called from a URL or folder.
 pub fn repo_name_from(source: &str) -> String {
     let last = source
@@ -288,15 +302,7 @@ impl Realm {
     /// Add a repository (an existing checkout). Its checks are detected.
     pub fn add_repo(&mut self, name: &str, path: &Path, url: Option<String>) -> Result<Repo> {
         let name = name.trim();
-        if name.is_empty()
-            || name.len() > 64
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            || name.starts_with('.')
-        {
-            bail!("a repository name uses letters, digits, - _ and . only");
-        }
+        validate_repo_name(name)?;
         if self.repos().iter().any(|r| r.name == name) {
             bail!("this realm already has a repository named '{name}'");
         }
