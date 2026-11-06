@@ -205,6 +205,14 @@ impl Hub {
                 now.name
             );
         }
+        // Going on, a task uses what its agent may use now: an integration or
+        // skill the founder gave or took since it began counts from here.
+        if let Some(agent) = &state.agent
+            && let Ok(root) = realm.root()
+            && let Ok(scope) = crate::business::scope(&root, agent)
+        {
+            state.tools = Some(scope.integrations.into_iter().chain(scope.skills).collect());
+        }
         state.close_dangling_tool_calls();
         Ok(state)
     }

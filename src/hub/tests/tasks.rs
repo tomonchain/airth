@@ -321,3 +321,33 @@ fn a_task_left_behind_by_its_agents_repository_is_not_gone_on() {
         site.path().canonicalize().unwrap()
     );
 }
+
+/// What the founder gives an agent counts in its open task from the next
+/// message: a task keeps no old copy of what its agent may use.
+#[test]
+fn a_task_goes_on_with_what_its_agent_may_use_now() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(&root, "chief", "");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let task = hub
+        .start_task(&f.realm, "chief", "Read the company documents")
+        .unwrap();
+    assert_eq!(task.tools, Some(Vec::new()));
+    agent(
+        &root,
+        "chief",
+        "integrations: google-drive\nskills: linear\n",
+    );
+    let going_on = hub
+        .follow_up(&f.realm, &task.id, "Now you have the Drive")
+        .unwrap();
+    assert_eq!(
+        going_on.tools,
+        Some(vec!["google-drive".to_string(), "linear".into()])
+    );
+    // Taken away, it is gone too.
+    agent(&root, "chief", "");
+    let state = hub.follow_up(&f.realm, &task.id, "Without it").unwrap();
+    assert_eq!(state.tools, Some(Vec::new()));
+}
