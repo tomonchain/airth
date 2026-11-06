@@ -6,7 +6,6 @@ import { StreamText } from "@/components/beautifui/stream-text"
 import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
-import { Typing } from "@/components/typing"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
@@ -181,10 +180,11 @@ function turns(ps: Part[], live: boolean): Shown[] {
   return out
 }
 
-function Work({ items, live, tail }: { items: Part[]; live: boolean; tail?: React.ReactNode }) {
+function Work({ items, live, saying, tail }: { items: Part[]; live: boolean; saying?: string; tail?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const steps = items.flatMap((p) => (p.kind === "steps" ? p.steps : []))
   const now = (() => {
+    if (saying) return saying.split("\n")[0].slice(0, 80)
     const step = steps.find((x) => !x.done)
     if (step) { const l = stepLine(step); return `${l.verb}${l.arg ? ` ${l.arg.length > 48 ? `${l.arg.slice(0, 48)}…` : l.arg}` : ""}` }
     const said = [...items].reverse().find((p) => p.kind === "agent")
@@ -251,6 +251,12 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
   const shownTurns = useMemo(() => turns(ps, !!view?.live), [ps, view?.live])
+  // What the agent is writing: a sentence is most often a note before its
+  // next step, said on the work line; longer, it is an answer, written out
+  // as a bubble. A note in a bubble would fold away a moment later and the
+  // thread would jump each time.
+  const long = !!draft && (draft.length > 160 || draft.trim().includes("\n"))
+  const short = draft && !long ? draft : undefined
   // The messages the founder just sent, shown by the conversation until the
   // run has them: looked for among its latest words only.
   useEffect(() => {
@@ -303,6 +309,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   async function stop() {
     try { await api(`realms/${enc(realm)}/runs/${enc(id)}/stop`, {}); refresh() } catch (e) { toast.error((e as Error).message) }
   }
+  const timer = <span className="ml-2 inline-flex items-center gap-1.5 align-middle">{working && <Elapsed from={working} />}<StopButton onStop={stop} /></span>
 
   return (
     <div>
@@ -316,8 +323,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         return (
           <div key={t.at} className={cn(isNew && "fade-up")}>
             <Bubble side="left" agent={agent} last={last}>
-              {t.kind === "work" ? <Work items={t.items} live={t.live && !draft}
-                tail={t.live && !draft && !view.pending && working ? <span className="ml-2 inline-flex items-center gap-1.5 align-middle"><Elapsed from={working} /><StopButton onStop={stop} /></span> : undefined} /> : (
+              {t.kind === "work" ? <Work items={t.items} live={t.live && !long} saying={t.live ? short : undefined} tail={t.live && !long && !view.pending ? timer : undefined} /> : (
                 <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
                   <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
                 </div>
@@ -340,7 +346,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           </div>
         </Bubble>
       )}
-      {live && !view.pending && draft && (
+      {live && !view.pending && long && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
           <div className="writing max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
             {/* A list item or a line just begun shows once it has words. */}
@@ -352,13 +358,9 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           </div>
         </Bubble>
       )}
-      {live && !view.pending && !draft && working && shownTurns.at(-1)?.kind !== "work" && (
+      {live && !view.pending && !long && shownTurns.at(-1)?.kind !== "work" && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
-          <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3 fade-up">
-            <Typing />
-            <Elapsed from={working} />
-            <button onClick={stop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
-          </div>
+          <div className="fade-up"><Work items={[]} live saying={short} tail={timer} /></div>
         </Bubble>
       )}
       {view.state.change && (
