@@ -293,12 +293,7 @@ impl Tool for HttpRequest {
         let client = builder.build()?;
 
         let mut headers = HeaderMap::new();
-        let secret = |key: &str| {
-            ws.env()
-                .iter()
-                .find(|(k, v)| k == key && !v.is_empty())
-                .map(|(_, v)| v.clone())
-        };
+        let secret = |key: &str| ws.credential(key);
         let integration_headers = match &p.integration {
             Some(i) => i.resolve_headers(&secret)?,
             None => Vec::new(),
@@ -538,6 +533,38 @@ mod tests {
         let (auth, url) = handle.join().unwrap();
         assert_eq!(auth.as_deref(), Some("Bearer tok-123"));
         assert_eq!(url, "/api/items?x=1");
+    }
+
+    /// An integration's credential reaches its headers though commands never
+    /// get it: GITHUB_TOKEN when Airth pushes the realm's pull requests.
+    #[test]
+    fn an_integrations_credential_is_used_though_commands_do_not_have_it() {
+        let (server, base) = local_server();
+        let handle = std::thread::spawn(move || {
+            let req = server.recv().unwrap();
+            let auth = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.to_string());
+            req.respond(tiny_http::Response::from_string("{}")).unwrap();
+            auth
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path())
+            .unwrap()
+            .with_secrets(vec![("OTHER".into(), "x".into())], vec![])
+            .with_credentials(vec![("SVC_TOKEN".into(), "tok-9".into())]);
+        assert!(
+            ws.env().iter().all(|(k, _)| k != "SVC_TOKEN"),
+            "not for commands"
+        );
+        let input = json!({"integration": "svc", "url": "user"});
+        let out = tool(&base)
+            .execute(&input, &ws, &CancelToken::default())
+            .unwrap();
+        assert!(out.starts_with("HTTP 200"), "{out}");
+        assert_eq!(handle.join().unwrap().as_deref(), Some("Bearer tok-9"));
     }
 
     /// Decision 55: a write sent without an answer may be done; the run

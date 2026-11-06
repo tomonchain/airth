@@ -408,6 +408,7 @@ impl Hub {
         }
         Ok(ws
             .with_secrets(env, self.redactions(realm)?)
+            .with_credentials(realm.integration_credentials()?)
             .with_sandbox(true)
             .with_network(!realm.config.offline)
             // A routine's commands are offline: its network goes through

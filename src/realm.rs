@@ -479,6 +479,22 @@ impl Realm {
             .collect())
     }
 
+    /// The credentials the realm's integrations name in their headers, with
+    /// their values: for those headers only, never for commands.
+    pub fn integration_credentials(&self) -> Result<Vec<(String, String)>> {
+        let names: Vec<String> = self
+            .config
+            .integrations
+            .iter()
+            .flat_map(|i| i.secret_names())
+            .collect();
+        Ok(self
+            .secrets()?
+            .into_iter()
+            .filter(|(k, _)| names.contains(k))
+            .collect())
+    }
+
     /// Add an integration, or replace the one with the same name.
     pub fn set_integration(&mut self, integration: Integration) -> Result<()> {
         integration.validate()?;
@@ -799,6 +815,26 @@ mod tests {
         assert!(!realm.remove_secret("GITHUB_TOKEN").unwrap());
         assert!(realm.set_secret("bad key", "x").is_err());
         assert!(realm.set_secret("K", "a\nb").is_err());
+    }
+
+    /// Only the credentials an integration names are its own; the provider
+    /// keys and anything else are not.
+    #[test]
+    fn integrations_get_only_the_credentials_they_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut realm = realm(dir.path());
+        realm.set_secret("GITHUB_TOKEN", "ghp_z").unwrap();
+        realm.set_secret("ANTHROPIC_API_KEY", "sk-work").unwrap();
+        realm.set_secret("OTHER", "o").unwrap();
+        assert!(realm.integration_credentials().unwrap().is_empty());
+        let github =
+            crate::connectors::integration_for(&crate::connectors::find("github").unwrap())
+                .unwrap();
+        realm.set_integration(github).unwrap();
+        assert_eq!(
+            realm.integration_credentials().unwrap(),
+            vec![("GITHUB_TOKEN".to_string(), "ghp_z".to_string())]
+        );
     }
 
     #[test]

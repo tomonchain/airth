@@ -174,6 +174,11 @@ pub struct Workspace {
     env: Vec<(String, String)>,
     /// Values never shown to the model: replaced in every tool result.
     secrets: Vec<(String, String)>,
+    /// The credentials the realm's integrations name, for their headers
+    /// only (decisions 7 and 10): never given to commands, so a key kept
+    /// from them (GITHUB_TOKEN when Airth pushes) still reaches its
+    /// integration.
+    credentials: Vec<(String, String)>,
     sandboxed: bool,
     /// Whether commands and requests may reach other machines.
     network: bool,
@@ -194,6 +199,7 @@ impl Workspace {
             root,
             env: Vec::new(),
             secrets: Vec::new(),
+            credentials: Vec::new(),
             sandboxed: false,
             network: true,
             command_network: true,
@@ -281,6 +287,22 @@ impl Workspace {
 
     pub fn env(&self) -> &[(String, String)] {
         &self.env
+    }
+
+    /// The credentials of the realm's integrations (see `credentials`).
+    pub fn with_credentials(mut self, credentials: Vec<(String, String)>) -> Self {
+        self.credentials = credentials;
+        self
+    }
+
+    /// An integration's credential `key`: from the integrations' own, else
+    /// the commands' environment. None when empty.
+    pub fn credential(&self, key: &str) -> Option<String> {
+        self.credentials
+            .iter()
+            .chain(&self.env)
+            .find(|(k, v)| k == key && !v.is_empty())
+            .map(|(_, v)| v.clone())
     }
 
     pub fn sandboxed(&self) -> bool {
