@@ -384,7 +384,7 @@ Milestone 7: at least one role handles mail under `CLAUDE.md`'s six rules. IMAP 
 
 ## 69. The routine editor v1: parameters edited in place by the founder, checked before they are written; no graph library yet
 
-**Proposed.**
+**Accepted** (founder, 6 November 2026), with one change: the key order is kept by the page, not by serde_json (below).
 
 Milestone 5 asks for the routine editor v1, without full drag and drop: see and edit each block's parameters, a dry run from the page, and validation errors shown where they are. Decision 57 left the graph library to the editor's own decision. The graph format (decision 49) does not change.
 
@@ -405,8 +405,8 @@ Milestone 5 asks for the routine editor v1, without full drag and drop: see and 
   - **Allowed:** the app writes `routines/<name>.json` in the business folder. Decision 44 forbids runs to write the config, not the founder, as with "Keep this look" (decision 65). The route takes the app's token only; no run and no agent can call it.
   - **The same check as loading:** the edited graph goes through the checks that loading uses (unknown keys, schema keywords, declared actions, and the rule that outside content reaches an `Act` only through an `Approval` unless its level allows it). The graph validation code is not changed: it gains this one caller.
   - **Refused, nothing is written:** each error shows on its block and field, from the block id the check already names.
-  - **Accepted:** written atomically, keys in the file's own order, so `git diff` shows only what changed. This needs serde_json's `preserve_order` feature: `indexmap` is already in the lockfile, so no new crate.
-  - **A file that changed on disk since the page read it** (the founder editing it in another editor) is refused with "changed since you opened it": never overwritten.
+  - **Accepted:** the text the page sent is written as it is, the way Documents saves a file. The page edits the file's own text (a parsed JSON object keeps its keys' order in JavaScript) and writes it back indented by two spaces, as the files are, so `git diff` shows only what changed. serde_json's `preserve_order` is not needed, and no JSON object in Airth changes order.
+  - **A file that changed on disk since the page read it** (the founder editing it in another editor) is refused with "changed since you opened it": never overwritten. The page sends the file's version, as Documents does.
   - **Git:** Airth does not commit. The change shows in git like any edit by hand, and the founder commits it.
 - **Dry run from the page.** The existing dry run (`graphs/<name>/dry-run`), on what is saved: a dry run of unsaved edits would run a graph nobody checked. The page shows each block's state from the run (items in and out, time, what it would ask and do), as the mockup's details do. An edit the founder has not saved disables Dry run until it is saved.
 - **Two fixes from the dress rehearsal come with it:** the graph no longer clips its last blocks, and a routine started from Telegram says so instead of "By hand".
@@ -415,7 +415,6 @@ Milestone 5 asks for the routine editor v1, without full drag and drop: see and 
 
 *Cost:*
 - A form per block type to keep in step with the format; a new key in the format needs its field in the editor.
-- `preserve_order` changes how every JSON object keeps its keys in Airth (insertion order instead of sorted), which tests must not rely on.
 - Edits are not versioned by Airth; git does that, once the founder commits.
 
 ## 68. Finance entered by hand, until a bank is connected
