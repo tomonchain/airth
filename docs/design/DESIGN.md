@@ -48,7 +48,7 @@ Define these once as CSS custom properties and use only them.
 | `--bad` | `#FF9A9A` | At risk, failed, reject |
 | Primary button | `#ECEDEE` on `#0F1011` | One per view at most |
 
-**Light theme** (the founder's choice, 3 November 2026, from the classic interface's palette): the same tokens redefined under `:root[data-theme="light"]`: `--bg` `#F4F4F5`, `--panel` `#FFFFFF`, `--card` `#FAFAFA`, `--line` `#E4E4E7`, `--text` `#09090B`, `--text-3` `#5F5F66`, `--accent` `#3B5BDB`, `--ok` `#15803D`, `--warn` `#B45309`, `--bad` `#DC2626`. The theme follows the system until the founder picks one with the rail's toggle; the choice is kept in the browser and shared with the classic interface (`/theme.js`).
+**Light theme** (the founder's choice, 3 November 2026, from the classic interface's palette): the same tokens redefined under `:root[data-theme="light"]`: `--bg` `#F4F4F5`, `--panel` `#FFFFFF`, `--card` `#FAFAFA`, `--line` `#E4E4E7`, `--text` `#09090B`, `--text-3` `#5F5F66`, `--accent` `#3B5BDB`, `--ok` `#15803D`, `--warn` `#B45309`, `--bad` `#DC2626`. The theme follows the system until the founder picks one with the rail's toggle; the choice is kept in the browser and kept under `airth-theme`.
 
 Agent colours (background, icon stroke): Watcher `#4C8DFF` / `#0B1A33` (eye), Post writer `#F39C4A` / `#2A1404` (pen), Writer `#8B6CF6` / `#170D33` (book), Airth `#4FCB8F` / `#08261A` (spark). A new agent gets a colour from this family, never one of the status colours.
 
@@ -73,7 +73,7 @@ Every page is one of three layouts, with the same page header at the panel's top
 - **Board:** the panel's full width under the header. Team, Calendar, Usage.
 - **Workspace:** under the header, a list (300 px), the work in the middle, its details (320 px), in one bordered block. Needs you, Routines, Documents.
 
-Pages are Preact components (`html` from htm); the header and the layouts are `PageHeader`, `Reading`, `Board` and `Workspace` in `src/ui/next/js/13-ui.js`.
+Pages are React components in `web/src/screens`; the shared frame is `Page`, `Section` and `Panel` in `web/src/components/page.tsx`.
 
 ## Components
 

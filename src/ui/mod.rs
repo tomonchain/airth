@@ -47,6 +47,7 @@ mod general;
 mod graphs;
 mod hq;
 mod http;
+mod library;
 mod live;
 mod orders;
 mod queue;
@@ -63,28 +64,15 @@ pub(crate) use http::random_token;
 pub use server::start;
 pub use server::{open_url, persistent_token, running_url, serve};
 
-const INDEX_HTML: &str = include_str!("index.html");
-// js/ and css/, joined in name order by build.rs.
-const APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
-const APP_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
-const THEME_JS: &str = include_str!("theme.js");
-/// The Documents editor (CodeMirror), built from editor/ by editor/build.sh.
-const EDITOR_JS: &str = include_str!("vendor/editor.js");
-/// Preact, its hooks and htm (decision 72), vendored and joined in the
-/// order they need each other: no build step, nothing fetched.
-const NEXT_VENDOR_JS: &str = concat!(
-    include_str!("vendor/preact/preact-10.29.8.umd.js"),
-    "\n",
-    include_str!("vendor/preact/hooks-10.29.8.umd.js"),
-    "\n",
-    include_str!("vendor/preact/htm-3.1.1.umd.js"),
-    "\n",
-);
-const FAVICON: &str = include_str!("favicon.svg");
-/// The new interface, served at /next next to the current one (decision 57).
-const NEXT_HTML: &str = include_str!("next/index.html");
-const NEXT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.js"));
-const NEXT_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/next.css"));
+/// The interface in web/ (decision 73), embedded by build.rs from web/dist.
+mod web {
+    include!(concat!(env!("OUT_DIR"), "/web.rs"));
+}
+/// The sign-in callback's page stands alone: a few lines of style, light or
+/// dark as the system is.
+const CALLBACK_STYLE: &str = "body{margin:0;min-height:100vh;display:grid;place-items:center;\
+font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:Canvas;color:CanvasText}\
+main{max-width:28rem;padding:2rem;text-align:center}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;opacity:.7}";
 const MAX_BODY: u64 = 1 << 20;
 
 pub struct UiOptions {
@@ -140,40 +128,19 @@ impl App {
         let method = request.method().clone();
 
         match (&method, path) {
-            // One interface, the new one (decision 72); the classic one
-            // stays at `/classic` until its last feature has moved.
-            (Method::Get, "/classic" | "/classic/") => {
-                return Ok(static_response(INDEX_HTML, "text/html; charset=utf-8"));
-            }
-            (Method::Get, "/app.js") => {
-                return Ok(static_response(APP_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/app.css") => {
-                return Ok(static_response(APP_CSS, "text/css; charset=utf-8"));
-            }
-            (Method::Get, "/vendor/editor.js") => {
-                return Ok(static_response(EDITOR_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/theme.js") => {
-                return Ok(static_response(THEME_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/favicon.svg") => {
-                return Ok(static_response(FAVICON, "image/svg+xml"));
-            }
-            (Method::Get, "/" | "/index.html" | "/next" | "/next/") => {
-                return Ok(static_response(NEXT_HTML, "text/html; charset=utf-8"));
-            }
-            (Method::Get, "/next/vendor.js") => {
-                return Ok(static_response(
-                    NEXT_VENDOR_JS,
-                    "text/javascript; charset=utf-8",
-                ));
-            }
-            (Method::Get, "/next/app.js") => {
-                return Ok(static_response(NEXT_JS, "text/javascript; charset=utf-8"));
-            }
-            (Method::Get, "/next/app.css") => {
-                return Ok(static_response(NEXT_CSS, "text/css; charset=utf-8"));
+            // One interface, the one in web/ (decisions 72 and 73).
+            (Method::Get, p) if web_file(p).is_some() => {
+                let (body, kind) = web_file(p).unwrap();
+                let response = static_bytes(body, kind);
+                // Built files carry a hash in their name: a new build is a new name.
+                return Ok(if p.starts_with("/assets/") {
+                    response.with_header(
+                        Header::from_bytes("Cache-Control", "public, max-age=31536000, immutable")
+                            .unwrap(),
+                    )
+                } else {
+                    response.with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
+                });
             }
             // The browser coming back from a connector's sign-in page. It cannot
             // carry the API token; the one-time `state` Airth issued is the proof.
@@ -185,8 +152,9 @@ impl App {
                     static_response(
                         &format!(
                             "<!doctype html><html><head><meta charset=\"utf-8\"><title>Airth</title>\
-                             <script src=\"/theme.js\"></script><link rel=\"stylesheet\" href=\"/app.css\"></head>\
-                             <body><div class=\"center-note\"><span class=\"logo\"></span><h1>{}</h1><p>{}</p></div></body></html>",
+                             <meta name=\"color-scheme\" content=\"light dark\"><style>{}</style></head>\
+                             <body><main><h1>{}</h1><p>{}</p></main></body></html>",
+                            CALLBACK_STYLE,
                             html_escape(title),
                             html_escape(text)
                         ),
@@ -203,7 +171,14 @@ impl App {
                 };
                 return Ok(match result {
                     Ok(name) => page(
-                        &format!("{name} is connected"),
+                        &format!(
+                            "{} is connected",
+                            if name == crate::drive::NAME {
+                                "Google Drive"
+                            } else {
+                                &name
+                            }
+                        ),
                         "Airth can now use it in this realm. You can close this tab.",
                     ),
                     Err(e) => page("The connection did not work", &format!("{e:#}")),
@@ -259,6 +234,9 @@ impl App {
                 [.., "approval"]
                     | [.., "stop"]
                     | ["realms", _, "graphs", _, "dry-run"]
+                    // A routine run by hand lasts minutes, and records its
+                    // run through the store, not the settings.
+                    | ["realms", _, "graphs", _, "run"]
                     | ["realms", _, "orders", "route"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
@@ -275,6 +253,7 @@ impl App {
             Self::calendar_routes,
             Self::hq_routes,
             Self::order_routes,
+            Self::library_routes,
         ];
         for routes in areas {
             if let Some(response) = routes(self, request, &method, &segments, query)? {
@@ -335,6 +314,27 @@ impl App {
             "tools": tools,
         })
     }
+}
+
+/// A file of the interface built in web/dist, by its path in the address,
+/// with its type. Only the built files answer: a path is looked up, never
+/// joined to a folder.
+fn web_file(path: &str) -> Option<(&'static [u8], &'static str)> {
+    let rel = match path {
+        "/" | "/index.html" => "index.html",
+        p => p.strip_prefix('/')?,
+    };
+    let (_, body) = web::FILES.iter().find(|(p, _)| *p == rel)?;
+    let kind = match rel.rsplit('.').next()? {
+        "html" => "text/html; charset=utf-8",
+        "js" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "woff2" => "font/woff2",
+        "png" => "image/png",
+        _ => return None,
+    };
+    Some((body, kind))
 }
 
 #[cfg(test)]
@@ -398,6 +398,8 @@ mod tests {
             cancel: CancelToken::default(),
             version: AtomicU64::new(1),
             watch: Watch::default(),
+            draft: Draft::default(),
+            said: Mutex::new(None),
         });
         app.registry.lock().unwrap().insert(key("r", "run1"), live);
         app.answer("r", "run1", &json!({"approval_id": 1, "approve": true}))
@@ -409,6 +411,88 @@ mod tests {
         assert_eq!(entries[0].activity, time::ANSWER);
         assert_eq!(entries[0].seconds, 5);
         assert_eq!(entries[0].note, "write_file in run run1");
+    }
+
+    /// The page waiting on a run hears the model's words as it writes them,
+    /// and its answer once it is in the run; it waits only while nothing
+    /// changed, and is told when the run is not driven here.
+    #[test]
+    fn a_page_hears_the_words_as_the_model_writes_them() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        assert_eq!(app.next_change(&realm, "run1", "")["here"], false);
+        let live = Arc::new(Live {
+            snapshot: Mutex::new(State::new("x", None)),
+            pending: Mutex::new(None),
+            cancel: CancelToken::default(),
+            version: AtomicU64::new(1),
+            watch: Watch::default(),
+            draft: Draft::default(),
+            said: Mutex::new(None),
+        });
+        app.registry
+            .lock()
+            .unwrap()
+            .insert(key("r", "run1"), live.clone());
+        let mut observer = UiObserver(live.clone());
+        observer.writing("Hel");
+        observer.writing("Hello.");
+        let now = app.next_change(&realm, "run1", "version=1&draft=1");
+        assert_eq!(now["draft"], "Hello.");
+        assert_eq!(now["draft_seq"], 2);
+        // Nothing new: it waits, and hears the next words at once.
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            observer.writing("Hello. Done");
+            observer
+        });
+        let started = std::time::Instant::now();
+        let next = app.next_change(&realm, "run1", "version=1&draft=2");
+        assert_eq!(next["draft"], "Hello. Done");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        // The answer is in the run: the words being written are gone.
+        writer.join().unwrap().changed(&State::new("x", None));
+        let done = app.next_change(&realm, "run1", "version=1&draft=3");
+        assert_eq!(
+            (done["version"].as_u64(), done["draft"].as_str()),
+            (Some(2), Some(""))
+        );
+    }
+
+    #[test]
+    fn the_interface_built_in_web_is_served_and_nothing_else() {
+        let (page, kind) = web_file("/").unwrap();
+        assert!(String::from_utf8_lossy(page).contains("id=\"root\""));
+        assert_eq!(kind, "text/html; charset=utf-8");
+        let script = web::FILES
+            .iter()
+            .find(|(p, _)| p.starts_with("assets/") && p.ends_with(".js"))
+            .unwrap();
+        let (_, kind) = web_file(&format!("/{}", script.0)).unwrap();
+        assert_eq!(kind, "text/javascript; charset=utf-8");
+        for path in [
+            "/assets/nothing.js",
+            "/../Cargo.toml",
+            "/assets/../index.html",
+            "/api/realms",
+            "",
+            // The classic and /next interfaces left once their features moved.
+            "/classic",
+            "/next",
+            "/app.css",
+            "/theme.js",
+        ] {
+            assert!(web_file(path).is_none(), "{path}");
+        }
     }
 
     /// Agents lists each bot with the routines that name it; a bot a
@@ -515,6 +599,52 @@ mod tests {
         );
     }
 
+    /// Decision 79: the founder adds departments in Settings; one an agent
+    /// is in cannot be removed, and the team lists the nine then the own.
+    #[test]
+    fn the_founder_adds_departments_and_keeps_those_in_use() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let app = test_app(home, 0);
+        assert!(
+            app.update_realm("r", &json!({"departments": ["Development"]}))
+                .is_err()
+        );
+        app.update_realm("r", &json!({"departments": ["Events", "events"]}))
+            .unwrap();
+        crate::business::set_job(&realm.root().unwrap(), "host", "Run the events.").unwrap();
+        crate::business::set_agent_field(
+            &realm.root().unwrap(),
+            "host",
+            "department",
+            "events",
+            &["events".into()],
+        )
+        .unwrap();
+        let err = app
+            .update_realm("r", &json!({"departments": []}))
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("host is in events"), "{err:#}");
+        let team = app.team(&app.realm("r").unwrap()).unwrap();
+        let keys: Vec<&str> = team["departments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(keys.len(), 10);
+        assert_eq!((keys[0], keys[9]), ("leadership", "events"));
+        assert_eq!(team["agents"][0]["department"], "events");
+    }
+
     /// Steering shows what waits for the owner in this business only.
     #[test]
     fn steering_lists_this_realms_approvals_and_strategy() {
@@ -550,6 +680,8 @@ mod tests {
                 cancel: CancelToken::default(),
                 version: AtomicU64::new(1),
                 watch: Watch::default(),
+                draft: Draft::default(),
+                said: Mutex::new(None),
             })
         };
         app.registry
@@ -624,6 +756,54 @@ mod tests {
         );
         // The slow connection itself still finishes (with the service's error).
         assert_eq!(pending.join().unwrap().unwrap(), 400);
+    }
+
+    /// The Drive routes answer through the server, under the write lock
+    /// every changing request holds, and leave the app's writes free: one
+    /// took that lock a second time and froze every write after it.
+    #[test]
+    fn connecting_google_drive_does_not_freeze_the_app() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        home.create_realm(NewRealm {
+            name: "r".into(),
+            description: String::new(),
+            root: Some(root.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let app = test_app(home, port);
+        std::thread::spawn(move || serve_requests(server, app));
+        let http = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let send = |method: reqwest::Method, path: &str, body: Value| {
+            http.request(method, format!("http://127.0.0.1:{port}/api/{path}"))
+                .header("X-Airth-Token", "t0k3n")
+                .body(body.to_string())
+                .send()
+                .map(|r| r.status().as_u16())
+                .unwrap_or_else(|e| panic!("{path}: no answer ({e})"))
+        };
+        let bad = json!({"client_id": "c", "client_secret": "s", "folder": "https://drive.google.com/drive/my-drive"});
+        assert_eq!(send(reqwest::Method::POST, "realms/r/drive", bad), 400);
+        assert_eq!(
+            send(reqwest::Method::DELETE, "realms/r/drive", json!({})),
+            200
+        );
+        // The next write still goes.
+        assert_eq!(
+            send(
+                reqwest::Method::POST,
+                "realms/r/memory",
+                json!({"text": "Posts at 09:00"})
+            ),
+            200
+        );
     }
 
     #[test]

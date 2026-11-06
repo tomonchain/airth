@@ -269,9 +269,11 @@ impl App {
             (Method::Post, ["realms", r, "memory"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                realm
-                    .memory()
-                    .add(body["text"].as_str().unwrap_or_default(), "owner")?;
+                let text = body["text"].as_str().unwrap_or_default();
+                match body["replaces"].as_str().filter(|id| !id.is_empty()) {
+                    Some(id) => realm.memory().replace(id, text, "owner")?,
+                    None => realm.memory().add(text, "owner")?,
+                };
                 json_response(200, self.realm_detail(&realm)?)
             }
             (Method::Delete, ["realms", r, "memory", id]) => {
@@ -339,11 +341,36 @@ impl App {
             (Method::Put, ["realms", r, "agents", name]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                crate::business::set_job(
-                    &realm.root()?,
-                    name,
-                    body["job"].as_str().unwrap_or_default(),
-                )?;
+                let (root, own) = (realm.root()?, realm.config.departments.clone());
+                // The job always; its title and department when sent, all
+                // checked before any is written.
+                let job = body["job"].as_str().unwrap_or_default();
+                if job.trim().is_empty() {
+                    bail!("an agent needs a job");
+                }
+                // Lists come as arrays of names, written comma-separated.
+                let field = |key: &str| match &body[key] {
+                    Value::Array(a) => Some(
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    v => v.as_str().map(str::to_string),
+                };
+                const FIELDS: [&str; 5] =
+                    ["title", "department", "integrations", "skills", "repos"];
+                for key in FIELDS {
+                    if let Some(value) = field(key) {
+                        crate::business::check_agent_field(key, &value, &own)?;
+                    }
+                }
+                crate::business::set_job(&root, name, job)?;
+                for key in FIELDS {
+                    if let Some(value) = field(key) {
+                        crate::business::set_agent_field(&root, name, key, &value, &own)?;
+                    }
+                }
                 ok()
             }
             (Method::Delete, ["realms", r, "agents", name]) => {
@@ -423,6 +450,17 @@ impl App {
             }
             (Method::Get, ["realms", r, "repos"]) => {
                 json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
+            }
+            // What the business's GitHub token reaches, to pick from.
+            (Method::Get, ["realms", r, "github", "repos"]) => {
+                match self.hub.github_repos(&self.realm(r)?) {
+                    Ok(Some(repos)) => json_response(200, json!({"token": true, "repos": repos})),
+                    Ok(None) => json_response(200, json!({"token": false, "repos": []})),
+                    Err(e) => json_response(
+                        200,
+                        json!({"token": true, "repos": [], "error": format!("{e:#}")}),
+                    ),
+                }
             }
             (Method::Post, ["realms", r, "repos"]) => {
                 let body = read_json(request)?;
@@ -930,6 +968,7 @@ impl App {
             "github_token": realm.secret(crate::github::TOKEN).is_some(),
             "policy": c.policy,
             "checks": c.checks,
+            "departments": super::company::departments(realm),
             "share_owner_profile": c.share_owner_profile,
             "archived": c.archived,
             "default": self.hub.home().default_realm().as_deref() == Some(realm.name()),
@@ -979,8 +1018,9 @@ impl App {
         Ok(realm)
     }
 
-    fn update_realm(&self, name: &str, body: &Value) -> Result<Realm> {
+    pub(super) fn update_realm(&self, name: &str, body: &Value) -> Result<Realm> {
         let mut realm = self.realm(name)?;
+        let root = realm.root().ok();
         let c = &mut realm.config;
         if let Some(d) = body["description"].as_str() {
             c.description = d.trim().to_string();
@@ -1001,6 +1041,30 @@ impl App {
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
+        }
+        // The founder's own departments (decision 79): one in use by an
+        // agent stays, so no agent is set aside by it.
+        if let Some(list) = body["departments"].as_array() {
+            let mut own = Vec::new();
+            for d in list.iter().filter_map(Value::as_str) {
+                let d = crate::business::config::new_department(d)?;
+                if !own.contains(&d) {
+                    own.push(d);
+                }
+            }
+            if let Some(root) = &root
+                && let Ok(config) = crate::business::config::load(root, &c.departments)
+            {
+                for (name, doc) in &config.agents {
+                    if let Some(d) = doc.text("department")
+                        && c.departments.contains(&d)
+                        && !own.contains(&d)
+                    {
+                        bail!("{name} is in {d}: move it to another department first");
+                    }
+                }
+            }
+            c.departments = own;
         }
         if let Some(share) = body["share_owner_profile"].as_bool() {
             c.share_owner_profile = share;

@@ -57,7 +57,7 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
     let mut f = fixture();
     let root = f.root.path().to_path_buf();
     for (path, text) in [
-        ("agents/post-writer.md".to_string(), "Draft Hedgen's posts.".to_string()),
+        ("agents/post-writer.md".to_string(), "Draft Acme's posts.".to_string()),
         ("prompts/post.md".into(), "Draft a post about the item.".into()),
         ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
         ("routines/posts.json".into(), json!({"agent": "post-writer", "trigger": {"schedule": "every 1h"}, "blocks": [
@@ -73,6 +73,7 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
     }
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base,
@@ -226,4 +227,169 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
             .len(),
         1
     );
+}
+
+/// Run now, from the Routines page: the routine runs as at its time (what
+/// needs the founder waits in the queue) and is recorded the same way,
+/// with no time it was due; a routine that does not load is refused.
+#[test]
+fn a_routine_run_by_hand_runs_and_is_recorded_as_at_its_time() {
+    let feed = "https://news.example/by-hand.xml";
+    TEST_FEEDS.lock().unwrap().insert(
+        feed.into(),
+        "<rss><channel><item><title>Stablecoin supply at a high</title>\
+         <link>https://news.example/supply</link></item></channel></rss>"
+            .into(),
+    );
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        (
+            "agents/watcher.md".to_string(),
+            "Watch the news.".to_string(),
+        ),
+        (
+            "routines/watch.json".into(),
+            json!({"agent": "watcher", "trigger": {"manual": true}, "blocks": [
+                {"id": "news", "type": "read", "source": "rss", "feeds": [feed], "dedupe": "link"},
+                {"id": "ok", "type": "approval", "show": "title"}
+            ]})
+            .to_string(),
+        ),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let store = || Store::of(&f.realm).unwrap();
+
+    hub.run_routine_by_hand(&f.realm, "watch").unwrap();
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 1);
+    assert!(beats[0].0 == "routine:watch" && beats[0].1.ok, "{beats:?}");
+    assert_eq!(beats[0].1.due_at, None, "run by hand, not due");
+    assert_eq!(store().queue(&["pending"]).unwrap().len(), 1);
+
+    assert!(hub.run_routine_by_hand(&f.realm, "ghost").is_err());
+}
+
+/// Decision 81: a routine that fails at its time is tried again before it
+/// becomes an incident, and its heartbeat says how many times; run by hand,
+/// it is tried once.
+#[test]
+fn a_scheduled_routine_that_fails_is_tried_three_times_then_is_an_incident() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/watcher.md".to_string(), "Watch the news.".to_string()),
+        // A feed it may not reach: network requests ask, and nobody answers.
+        ("routines/watch.json".into(), json!({"agent": "watcher", "trigger": {"schedule": "every 1h"}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://news.example/unreachable.xml"]},
+            {"id": "ok", "type": "approval", "show": "title"}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let store = || Store::of(&f.realm).unwrap();
+
+    hub.run_scheduled_routine(&f.realm, "watch", Utc::now());
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 1);
+    assert!(!beats[0].1.ok, "{beats:?}");
+    assert_eq!(beats[0].1.notes, "tried 3 times");
+    let incidents: Vec<_> = store()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == "incident")
+        .collect();
+    assert_eq!(incidents.len(), 1, "one incident, not one a try");
+
+    assert!(hub.run_routine_by_hand(&f.realm, "watch").is_err());
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 2);
+    assert_eq!(beats[1].1.notes, "", "by hand: tried once, {beats:?}");
+}
+
+/// Decision 82: a routine's model call is told the business's strategy and
+/// memory before its prompt, read at each run, and the journal records the
+/// prompt file's version and the essentials' together.
+#[test]
+fn a_routine_is_told_the_strategy_and_memory_the_founder_keeps() {
+    let feed = "https://news.example/essentials.xml";
+    TEST_FEEDS.lock().unwrap().insert(
+        feed.into(),
+        "<rss><channel><item><title>Fed holds rates</title>\
+         <link>https://news.example/fed</link></item></channel></rss>"
+            .into(),
+    );
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/writer.md".to_string(), "Write.".to_string()),
+        ("prompts/post.md".into(), "Draft a post about the item.".into()),
+        ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
+        ("routines/posts.json".into(), json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": [feed], "dedupe": "link"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft"}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    crate::business::set_strategy(&root, "Twelve articles by June.").unwrap();
+    f.realm
+        .memory()
+        .add("No posts on weekends.", "owner")
+        .unwrap();
+    let (hub, _, systems) = make_hub(&f.home, vec![done(r#"{"draft": "Rates held."}"#)]);
+
+    hub.run_routine_by_hand(&f.realm, "posts").unwrap();
+    let system = systems.lock().unwrap().last().cloned().unwrap();
+    assert!(system.contains("Twelve articles by June."), "{system}");
+    assert!(system.contains("- No posts on weekends."), "{system}");
+    let (said, task) = (
+        system.find("No posts on weekends").unwrap(),
+        system.find("Draft a post").unwrap(),
+    );
+    assert!(said < task, "the essentials come before the prompt");
+    let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
+    let file = crate::update::sha256_hex(b"Draft a post about the item.");
+    assert!(
+        calls[0].prompt_version.starts_with(&format!("{file}+")),
+        "{}",
+        calls[0].prompt_version
+    );
+}
+
+/// A task nobody watches files what commits the business under its agent,
+/// so the question shows in that agent's chat (where the founder answers it
+/// and the task goes on), titled by the request it would make.
+#[test]
+fn an_unwatched_tasks_approval_is_filed_under_its_agent() {
+    use crate::runtime::{Authority, Decision};
+    let f = fixture();
+    let mut state = crate::state::State::new("Optimise the landing page", None);
+    state.agent = Some("developer".into());
+    let mut authority = crate::hub::autonomy::FounderAuthority::for_run(&f.realm, &state).unwrap();
+    let decision = authority
+        .decide(
+            "http_request",
+            "github.undeclared",
+            &json!({"integration": "github", "url": "/user/repos"}),
+            "c1",
+            false,
+        )
+        .unwrap();
+    assert!(matches!(decision, Decision::Stop(_)));
+    let items = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].agent.as_deref(), Some("developer"));
+    assert_eq!(items[0].title, "github.undeclared: GET /user/repos");
 }

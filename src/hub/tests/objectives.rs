@@ -282,6 +282,7 @@ fn a_bot_reaches_only_the_integrations_it_was_given() {
     use crate::objective::{Objective, Trigger};
     let mut f = fixture();
     let integration = |name: &str| Integration {
+        free_reads: false,
         name: name.into(),
         description: String::new(),
         base_url: format!("https://{name}.invalid"),

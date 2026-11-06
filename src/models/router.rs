@@ -200,12 +200,13 @@ impl Routed {
     }
 }
 
-impl Model for Routed {
-    fn name(&self) -> String {
-        self.order[self.at.lock().unwrap().0].name()
-    }
-
-    fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
+impl Routed {
+    /// Asks the connection in use, then each next one while they fail.
+    fn each(
+        &self,
+        request: &ModelRequest,
+        call: &mut dyn FnMut(&dyn Model, &ModelRequest) -> Result<ModelResponse>,
+    ) -> Result<ModelResponse> {
         let (start, mut foreign) = *self.at.lock().unwrap();
         let mut failures = Vec::new();
         for (i, model) in self.order.iter().enumerate().skip(start) {
@@ -223,7 +224,7 @@ impl Model for Routed {
             } else {
                 request.clone()
             };
-            match model.complete(&request) {
+            match call(model.as_ref(), &request) {
                 Ok(response) => {
                     if i > start {
                         eprintln!(
@@ -240,6 +241,32 @@ impl Model for Routed {
             }
         }
         anyhow::bail!("every model connection failed: {}", failures.join(" | "))
+    }
+}
+
+impl Model for Routed {
+    fn name(&self) -> String {
+        self.order[self.at.lock().unwrap().0].name()
+    }
+
+    fn complete(&self, request: &ModelRequest) -> Result<ModelResponse> {
+        self.each(request, &mut |model, request| model.complete(request))
+    }
+
+    fn stream(
+        &self,
+        request: &ModelRequest,
+        on_text: &mut dyn FnMut(&str),
+        stopped: &dyn Fn() -> bool,
+    ) -> Result<ModelResponse> {
+        self.each(request, &mut |model, request| {
+            if stopped() {
+                anyhow::bail!("stopped");
+            }
+            // What a connection that failed had written is not the answer.
+            on_text("");
+            model.stream(request, on_text, stopped)
+        })
     }
 
     /// Nothing the model sees now came from another model.

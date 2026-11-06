@@ -66,6 +66,15 @@ impl Hub {
         realm.add_repo(&name, &path, is_url.then(|| source.to_string()))
     }
 
+    /// The GitHub repositories the business's GITHUB_TOKEN reaches, to
+    /// pick one to connect; None without a token.
+    pub fn github_repos(&self, realm: &Realm) -> Result<Option<Vec<crate::github::RepoInfo>>> {
+        match realm.secret(crate::github::TOKEN) {
+            Some(token) => Ok(Some(self.github_client(&token).repos()?)),
+            None => Ok(None),
+        }
+    }
+
     /// Where a cloned repository goes by default: next to the realm's root
     /// when the root is a repository itself, inside it otherwise, and under
     /// ~/Airth/<realm> for a realm without a folder of its own.

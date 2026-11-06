@@ -13,10 +13,18 @@ impl App {
         _request: &mut Request,
         method: &Method,
         segments: &[&str],
-        _query: &str,
+        query: &str,
     ) -> Result<Option<HttpResponse>> {
         Ok(Some(match (method, segments) {
             (Method::Get, ["realms", r, "team"]) => json_response(200, self.team(&self.realm(r)?)?),
+            (Method::Get, ["realms", r, "spend"]) => {
+                let days = param(query, "days").parse().unwrap_or(30);
+                let realm = self.realm(r)?;
+                json_response(
+                    200,
+                    crate::hub::finance::spend(&self.hub, &realm, days, chrono::Utc::now())?,
+                )
+            }
             // "Keep this look" (decision 65): the founder's gesture.
             (Method::Post, ["realms", r, "agents", name, "look"]) => {
                 let seed = crate::business::keep_look(&self.realm(r)?.root()?, name)?;
@@ -31,8 +39,9 @@ impl App {
 
     /// The agents, each with its routines, their last run, what waits for
     /// the founder, and the last 30 days' model cost and founder time.
-    fn team(&self, realm: &Realm) -> Result<Value> {
-        let config = match crate::business::config::load(&realm.root()?) {
+    pub(super) fn team(&self, realm: &Realm) -> Result<Value> {
+        let config = match crate::business::config::load(&realm.root()?, &realm.config.departments)
+        {
             Ok(c) => c,
             Err(e) => return Ok(json!({"error": format!("{e:#}"), "agents": []})),
         };
@@ -115,6 +124,13 @@ impl App {
                 "title": doc.text("title"),
                 "department": doc.text("department"),
                 "job": job(&doc.body),
+                // The whole job, as written, to edit it.
+                "body": doc.body.trim(),
+                // What its tasks may use (decision 64).
+                "integrations": doc.text("integrations").map(|t| split_names(&t)).unwrap_or_default(),
+                "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
+                // The repositories its tasks work in (decision 64).
+                "repos": doc.text("repos").map(|t| split_names(&t)).unwrap_or_default(),
                 "routines": routines,
                 "waiting": waits,
                 "cost_usd": cost,
@@ -122,7 +138,7 @@ impl App {
                 "seconds": seconds.iter().find(|(a, _)| a.as_deref() == Some(name)).map_or(0, |(_, s)| *s),
             }));
         }
-        Ok(json!({"agents": agents}))
+        Ok(json!({"agents": agents, "broken": config.broken, "departments": departments(realm)}))
     }
 
     /// The business's config as it stands, with what is left to fill.
@@ -132,7 +148,8 @@ impl App {
             .iter()
             .map(|r| json!({"name": r.name, "url": r.url}))
             .collect();
-        let config = match crate::business::config::load(&realm.root()?) {
+        let config = match crate::business::config::load(&realm.root()?, &realm.config.departments)
+        {
             Ok(c) => c,
             Err(e) => return Ok(json!({"error": format!("{e:#}"), "repos": repos})),
         };
@@ -142,8 +159,25 @@ impl App {
             "lines": config.lines.iter().map(|(n, d)| json!({"name": n, "fields": fields(d)})).collect::<Vec<_>>(),
             "repos": repos,
             "missing": config.missing,
+            "broken": config.broken,
         }))
     }
+}
+
+/// The business's departments, in the order shown: the nine, then the ones
+/// the founder added (decision 79).
+pub(super) fn departments(realm: &Realm) -> Value {
+    let nine = crate::business::config::DEPARTMENTS
+        .iter()
+        .map(|(key, name)| json!({"key": key, "name": name, "own": false}));
+    let own = realm.config.departments.iter().map(|key| {
+        let mut name = key.replace('-', " ");
+        if let Some(first) = name.get(0..1) {
+            name = first.to_uppercase() + &name[1..];
+        }
+        json!({"key": key, "name": name, "own": true})
+    });
+    Value::Array(nine.chain(own).collect())
 }
 
 /// A config file's front matter as JSON: text, a list, or null when not
@@ -169,6 +203,14 @@ fn job(body: &str) -> Option<&str> {
     body.lines()
         .map(str::trim)
         .find(|l| !l.is_empty() && !l.starts_with('#'))
+}
+
+/// A front-matter list written comma-separated (decision 64).
+fn split_names(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 #[cfg(test)]

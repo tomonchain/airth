@@ -69,3 +69,35 @@ jobs:
           git config --global user.name "Airth CI"
           git config --global user.email "ci@airth.invalid"
           cargo test --locked
+
+  # The interface in web/ (decision 73): it type-checks, it builds, and the
+  # build committed in web/dist (which the binary embeds) is that build.
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: The committed build is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --short -- dist
+            echo "web/dist differs from the build: run npm run build in web/ and commit web/dist."
+            exit 1
+          fi

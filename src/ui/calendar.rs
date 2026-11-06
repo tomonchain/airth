@@ -19,17 +19,32 @@ impl App {
         _request: &mut Request,
         method: &Method,
         segments: &[&str],
-        _query: &str,
+        query: &str,
     ) -> Result<Option<HttpResponse>> {
         Ok(Some(match (method, segments) {
+            // The seven days from today, or `days` (up to six weeks) from
+            // `from`, for the views of the new interface.
             (Method::Get, ["realms", r, "calendar"]) => {
-                json_response(200, self.calendar(&self.realm(r)?, Utc::now())?)
+                let now = Utc::now();
+                let from = chrono::NaiveDate::parse_from_str(&param(query, "from"), "%Y-%m-%d")
+                    .unwrap_or_else(|_| now.with_timezone(&Local).date_naive());
+                let days = param(query, "days")
+                    .parse::<i64>()
+                    .unwrap_or(7)
+                    .clamp(1, 42);
+                json_response(200, self.calendar(&self.realm(r)?, now, from, days)?)
             }
             _ => return Ok(None),
         }))
     }
 
-    fn calendar(&self, realm: &Realm, now: DateTime<Utc>) -> Result<Value> {
+    fn calendar(
+        &self,
+        realm: &Realm,
+        now: DateTime<Utc>,
+        from: chrono::NaiveDate,
+        days: i64,
+    ) -> Result<Value> {
         let store = Store::of(realm)?;
         let mut routines = Vec::new();
         for (name, graph) in self
@@ -58,7 +73,7 @@ impl App {
                 })
             })
             .collect();
-        let mut page = week(&routines, now);
+        let mut page = span(&routines, now, from, days);
         page["late"] = late.into();
         let today = now.with_timezone(&Local).date_naive();
         let legal = deadlines(&realm.root()?, today, &store.filings()?);
@@ -69,7 +84,7 @@ impl App {
             .flatten()
             .enumerate()
         {
-            let date = (today + Duration::days(d as i64)).to_string();
+            let date = (from + Duration::days(d as i64)).to_string();
             let due = legal["items"].as_array().into_iter().flatten();
             day["deadlines"] = due
                 .filter(|i| i["date"] == date.as_str())
@@ -160,13 +175,26 @@ fn local(at: DateTime<Utc>, format: &str) -> String {
 /// Each routine's runs from the start of today to seven days later, by
 /// day: `next` for each routine's next one, `planned` after it; before now,
 /// what became of it: `done`, `late`, `failed`, or `not run`.
+#[cfg(test)]
 fn week(routines: &[(String, String, Schedule, Vec<RunRow>)], now: DateTime<Utc>) -> Value {
+    span(routines, now, now.with_timezone(&Local).date_naive(), 7)
+}
+
+/// The routines' runs over `days` days from `from`; "This week" when that
+/// is the seven days from today.
+fn span(
+    routines: &[(String, String, Schedule, Vec<RunRow>)],
+    now: DateTime<Utc>,
+    from: chrono::NaiveDate,
+    days: i64,
+) -> Value {
     let today = now.with_timezone(&Local).date_naive();
     let start = Local
-        .from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap_or_default())
+        .from_local_datetime(&from.and_hms_opt(0, 0, 0).unwrap_or_default())
         .earliest()
         .map_or(now, |t| t.with_timezone(&Utc));
-    let end = start + Duration::days(7);
+    let end = start + Duration::days(days);
+    let max = MAX_RUNS * (days as usize).div_ceil(7);
     let grace = Duration::minutes(crate::pipeline::schedule::GRACE_MINUTES);
     let mut runs = Vec::new();
     for (name, agent, schedule, done) in routines {
@@ -174,7 +202,7 @@ fn week(routines: &[(String, String, Schedule, Vec<RunRow>)], now: DateTime<Utc>
         let mut next = true;
         loop {
             at = schedule.next_after(at);
-            if at >= end || runs.len() > MAX_RUNS {
+            if at >= end || runs.len() > max {
                 break;
             }
             let ran = done.iter().find(|r| {
@@ -200,10 +228,10 @@ fn week(routines: &[(String, String, Schedule, Vec<RunRow>)], now: DateTime<Utc>
     }
     let total = runs.len();
     runs.sort_by_key(|r| r.0);
-    runs.truncate(MAX_RUNS);
-    let days: Vec<Value> = (0..7)
+    runs.truncate(max);
+    let list: Vec<Value> = (0..days)
         .map(|d| {
-            let date = today + Duration::days(d);
+            let date = from + Duration::days(d);
             let of_day: Vec<Value> = runs
                 .iter()
                 .filter(|r| r.0.with_timezone(&Local).date_naive() == date)
@@ -212,20 +240,22 @@ fn week(routines: &[(String, String, Schedule, Vec<RunRow>)], now: DateTime<Utc>
                 })
                 .collect();
             json!({
+                "date": date.to_string(),
                 "weekday": date.format("%a").to_string(),
                 "day": date.format("%-d").to_string(),
-                "today": d == 0,
+                "today": date == today,
                 "runs": of_day,
             })
         })
         .collect();
     let title = match total {
+        _ if from != today || days != 7 => format!("{total} routine runs."),
         _ if total > MAX_RUNS => format!("This week: more than {MAX_RUNS} routine runs."),
         0 => "No routine runs this week.".to_string(),
         1 => "This week: 1 routine run.".to_string(),
         n => format!("This week: {n} routine runs."),
     };
-    json!({"title": title, "total": total, "days": days})
+    json!({"title": title, "total": total, "days": list})
 }
 
 #[cfg(test)]
@@ -258,7 +288,7 @@ mod tests {
     /// The week from today: each run of each schedule on its day and time;
     /// today's past ones say what became of them (done, late past the
     /// grace, failed, not run); each routine's next one is marked.
-    /// Decision 66 on Calendar: Hedgen's next deadlines over twelve months,
+    /// Decision 66 on Calendar: Acme's next deadlines over twelve months,
     /// as Companies House publishes them; without the dates in the profile,
     /// each rule says which are missing.
     #[test]
@@ -388,6 +418,26 @@ mod tests {
     }
 
     /// A schedule like `every 5m` is cut at the bound, and says how many.
+    /// The views ask for other spans: a later week, a month.
+    #[test]
+    fn any_span_of_days_can_be_shown() {
+        let now = at(0, 12, 0, Utc::now());
+        let today = now.with_timezone(&Local).date_naive();
+        let daily = Schedule::parse("daily 07:00").unwrap();
+        let routines = vec![("watch".into(), "watcher".into(), daily, vec![])];
+        let page = span(&routines, now, today + Duration::days(7), 14);
+        let days = page["days"].as_array().unwrap();
+        assert_eq!(days.len(), 14);
+        assert_eq!(days[0]["date"], (today + Duration::days(7)).to_string());
+        assert!(days.iter().all(|d| d["today"] == false));
+        assert_eq!(days[0]["runs"][0]["state"], "next");
+        assert_eq!(page["total"], 14);
+        assert_eq!(page["title"], "14 routine runs.");
+        let past = span(&routines, now, today - Duration::days(3), 7);
+        assert_eq!(past["days"][3]["today"], true);
+        assert_eq!(past["days"][0]["runs"][0]["state"], "not run");
+    }
+
     #[test]
     fn a_dense_schedule_is_cut_and_counted() {
         let now = at(0, 0, 30, Utc::now());
@@ -459,7 +509,9 @@ mod tests {
             )
             .unwrap();
         let app = super::super::tests::test_app(home, 0);
-        let page = app.calendar(&realm, now).unwrap();
+        let page = app
+            .calendar(&realm, now, now.with_timezone(&Local).date_naive(), 7)
+            .unwrap();
         assert_eq!(page["total"], 7);
         assert_eq!(page["days"][1]["runs"][0]["routine"], "weekly-report");
         assert_eq!(page["days"][1]["runs"][0]["agent"], "chief");

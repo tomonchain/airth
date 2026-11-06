@@ -137,6 +137,43 @@ pub fn shown(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
     })
 }
 
+/// What the business spent each day of the last `days` days, oldest first,
+/// for the Finance page's chart: what the agents' model calls cost (tasks
+/// and routines, in dollars) and, with a bank read in the last day, what
+/// went out of it (in its currency). Figures entered by hand have no days.
+pub fn spend(hub: &Hub, realm: &Realm, days: u32, now: DateTime<Utc>) -> Result<Value> {
+    let days = days.clamp(7, 90);
+    let local = now.with_timezone(&chrono::Local);
+    let report = crate::usage::report(hub, days, local, Some(realm.name()))?;
+    let since = now - Duration::days(i64::from(days));
+    let routines: std::collections::HashMap<String, f64> = Store::of(realm)?
+        .model_cost_by_day(since)?
+        .into_iter()
+        .collect();
+    let bank = match kept(realm) {
+        Some(Kept::Read { finance })
+            if crate::bank::connected(&realm.skills_dir())
+                && now - finance.read_at < Duration::days(1) =>
+        {
+            Some(finance)
+        }
+        _ => None,
+    };
+    let rows: Vec<Value> = report
+        .by_day
+        .iter()
+        .map(|d| {
+            let date = d.date.format("%Y-%m-%d").to_string();
+            let agents = d.tokens.cost.total() + routines.get(&date).copied().unwrap_or(0.0);
+            let out = bank
+                .as_ref()
+                .map(|f| f.out_by_day.get(&date).copied().unwrap_or(0.0));
+            json!({"date": date, "agents": agents, "bank": out})
+        })
+        .collect();
+    Ok(json!({"currency": bank.as_ref().map(|f| f.currency.clone()), "days": rows}))
+}
+
 /// Figures entered by hand are shown for this long after their date, then
 /// as unknown: never stale (decision 68).
 const BY_HAND_DAYS: i64 = 35;

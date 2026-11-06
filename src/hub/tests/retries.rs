@@ -76,6 +76,7 @@ fn proposed(base: &str, keyed: bool) -> Fixture {
     }
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "svc".into(),
             description: String::new(),
             base_url: base.into(),

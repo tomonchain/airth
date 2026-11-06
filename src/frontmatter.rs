@@ -55,6 +55,28 @@ pub fn parse(text: &str) -> Doc {
                 }
                 value = parts.join(" ").trim().to_string();
             }
+            // A list written one item per line, as YAML allows: `- item`.
+            if value.is_empty()
+                && lines
+                    .get(i + 1)
+                    .is_some_and(|l| l.starts_with([' ', '\t']) && l.trim_start().starts_with("- "))
+            {
+                let mut items = Vec::new();
+                while let Some(item) = lines
+                    .get(i + 1)
+                    .filter(|l| l.starts_with([' ', '\t']))
+                    .and_then(|l| l.trim_start().strip_prefix("- "))
+                {
+                    i += 1;
+                    let item = unquote(item);
+                    if !item.is_empty() && item != "TODO" {
+                        items.push(item.to_string());
+                    }
+                }
+                fields.push((key.trim().to_string(), Some(Value::List(items))));
+                i += 1;
+                continue;
+            }
             fields.push((key.trim().to_string(), value_of(&value)));
         }
         i += 1;
@@ -155,19 +177,36 @@ impl Doc {
 mod tests {
     use super::*;
 
+    /// A list written one item per line (`- item`), as YAML allows and as
+    /// agents write it, reads like `[a, b]`; an empty field stays unknown.
+    #[test]
+    fn reads_a_list_written_one_item_per_line() {
+        let doc = parse(
+            "---\ngoal: Be the reference\nmilestones:\n  - 20 calls by 2026-12-31\n  - \"First firm: signed\"\n  - TODO\n\
+             links:\nby: 2027-12-31\n---\nBody\n",
+        );
+        assert_eq!(
+            doc.list("milestones"),
+            vec!["20 calls by 2026-12-31", "First firm: signed"]
+        );
+        assert_eq!(doc.text("by").as_deref(), Some("2027-12-31"));
+        assert_eq!(doc.unknown(&["milestones", "links"]), vec!["links"]);
+        assert_eq!(doc.body, "Body\n");
+    }
+
     #[test]
     fn reads_flat_fields_lists_and_the_body() {
         let doc = parse(
-            "---\nname: Hedgen\nlegal_name: \"Hedgen Ltd\"\nvat_number: TODO\ndomain:\n\
-             links: [https://x.com/hedgen, \"a, b\", TODO]\ndescription: >\n  two\n  lines\n---\n# Hedgen\n\nProse.\n",
+            "---\nname: Acme\nlegal_name: \"Acme Ltd\"\nvat_number: TODO\ndomain:\n\
+             links: [https://x.com/acme, \"a, b\", TODO]\ndescription: >\n  two\n  lines\n---\n# Acme\n\nProse.\n",
         );
-        assert_eq!(doc.text("name").as_deref(), Some("Hedgen"));
-        assert_eq!(doc.text("legal_name").as_deref(), Some("Hedgen Ltd"));
+        assert_eq!(doc.text("name").as_deref(), Some("Acme"));
+        assert_eq!(doc.text("legal_name").as_deref(), Some("Acme Ltd"));
         assert_eq!(doc.text("vat_number"), None);
         assert_eq!(doc.text("domain"), None);
-        assert_eq!(doc.list("links"), vec!["https://x.com/hedgen", "a, b"]);
+        assert_eq!(doc.list("links"), vec!["https://x.com/acme", "a, b"]);
         assert_eq!(doc.text("description").as_deref(), Some("two lines"));
-        assert_eq!(doc.body, "# Hedgen\n\nProse.\n");
+        assert_eq!(doc.body, "# Acme\n\nProse.\n");
         assert_eq!(
             doc.unknown(&["name", "vat_number", "domain", "absent"]),
             vec!["vat_number", "domain", "absent"]
@@ -189,9 +228,9 @@ mod tests {
 
     #[test]
     fn a_file_without_front_matter_is_all_body() {
-        let doc = parse("# Hedgen\nNo fields.");
+        let doc = parse("# Acme\nNo fields.");
         assert!(doc.fields.is_empty());
-        assert_eq!(doc.body, "# Hedgen\nNo fields.");
+        assert_eq!(doc.body, "# Acme\nNo fields.");
         assert_eq!(parse("---\nname: x\n").text("name").as_deref(), Some("x"));
     }
 }

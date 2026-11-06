@@ -132,6 +132,17 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// What the pipelines' model calls cost each day since `since`, by UTC
+    /// date (`YYYY-MM-DD`), oldest first; days without a call are left out.
+    pub fn model_cost_by_day(&self, since: DateTime<Utc>) -> Result<Vec<(String, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT substr(at, 1, 10), COALESCE(SUM(cost_usd), 0)
+             FROM model_calls WHERE at >= ?1 AND dry_run = 0 GROUP BY 1 ORDER BY 1",
+        )?;
+        let rows = stmt.query_map(params![since.to_rfc3339()], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The latest runs of `pipeline`, newest first.
     pub fn pipeline_runs(&self, pipeline: &str, limit: usize) -> Result<Vec<RunRow>> {
         let mut stmt = self.conn.prepare(
@@ -413,6 +424,36 @@ mod tests {
         assert_eq!(runs[0].started_at, "b", "newest first");
         assert_eq!(store.next_run("p").unwrap().as_deref(), Some("tomorrow"));
         assert_eq!(store.next_run("other").unwrap(), None);
+    }
+
+    /// The Finance page's chart: the pipelines' model calls by day, dry runs
+    /// and what is before the window left out.
+    #[test]
+    fn model_costs_add_up_by_day() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        store
+            .write(|tx| {
+                tx.execute_batch(
+                    "INSERT INTO model_calls (at, pipeline, step, prompt, prompt_version, model, input_tokens,
+                        output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, valid, dry_run)
+                     VALUES ('2026-11-03T07:00:00+00:00', 'p', 1, 'x', 'v', 'm', 0, 0, 0, 0, 0.25, 0, 1, 0),
+                            ('2026-11-03T08:00:00+00:00', 'p', 1, 'x', 'v', 'm', 0, 0, 0, 0, 0.5, 0, 1, 0),
+                            ('2026-11-03T09:00:00+00:00', 'p', 1, 'x', 'v', 'm', 0, 0, 0, 0, 9.0, 0, 1, 1),
+                            ('2026-11-04T07:00:00+00:00', 'p', 1, 'x', 'v', 'gpt-x', 0, 0, 0, 0, NULL, 0, 1, 0),
+                            ('2026-10-01T07:00:00+00:00', 'p', 1, 'x', 'v', 'm', 0, 0, 0, 0, 3.0, 0, 1, 0);",
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let since = "2026-11-01T00:00:00Z".parse().unwrap();
+        assert_eq!(
+            store.model_cost_by_day(since).unwrap(),
+            vec![
+                ("2026-11-03".to_string(), 0.75),
+                ("2026-11-04".to_string(), 0.0)
+            ]
+        );
     }
 
     /// The weekly report's figures: answers from the queue's log, time from

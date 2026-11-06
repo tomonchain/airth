@@ -41,6 +41,17 @@ impl App {
                     Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
                 }
             }
+            // Run now, from the app: refused at once when the file does not
+            // hold; otherwise the request waits for the run, as a dry run's.
+            (Method::Post, ["realms", r, "graphs", name, "run"]) => {
+                let realm = self.realm(r)?;
+                self.hub
+                    .with_routine_checks(&realm, |c| crate::routine::load(c, name))?;
+                match self.hub.run_routine_by_hand(&realm, name) {
+                    Ok(report) => json_response(200, json!({"report": report})),
+                    Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
+                }
+            }
             _ => return Ok(None),
         }))
     }

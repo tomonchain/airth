@@ -1,0 +1,58 @@
+{
+  "description": "Morning posts: the three best items of the day, drafted for the founder to approve",
+  "agent": "post-writer",
+  "trigger": {
+    "manual": true
+  },
+  "blocks": [
+    {
+      "id": "news",
+      "type": "read",
+      "source": "rss",
+      "feeds": [
+        "https://example.com/feed.xml"
+      ],
+      "max_age_days": 2,
+      "dedupe": "link"
+    },
+    {
+      "id": "pick",
+      "type": "ai",
+      "prompt": "prompts/pick.md",
+      "over": "list",
+      "model": "fast",
+      "rank": "score",
+      "distinct": [
+        "story"
+      ],
+      "limit": 3
+    },
+    {
+      "id": "draft",
+      "type": "ai",
+      "prompt": "prompts/post.md"
+    },
+    {
+      "id": "check",
+      "type": "ai",
+      "prompt": "prompts/check.md",
+      "as": "check"
+    },
+    {
+      "id": "ok",
+      "type": "approval",
+      "show": "answer.draft",
+      "editable": "answer.draft",
+      "expires_after": 24,
+      "flag": "check"
+    },
+    {
+      "id": "send",
+      "type": "act",
+      "action": "typefully.create_draft",
+      "fields": {
+        "text": "{{answer.draft}}"
+      }
+    }
+  ]
+}

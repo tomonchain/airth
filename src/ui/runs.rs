@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// How long a page waits for a run to change before it asks again: under
+/// the gap after which the founder counts as gone, as a closed page keeps
+/// looking until its last wait ends.
+const NEXT_CHANGE_WAIT: Duration = Duration::from_secs(8);
+
 impl App {
     /// The chats and objectives routes; None when the request is not one of them.
     pub(super) fn runs_routes(
@@ -34,6 +39,9 @@ impl App {
             (Method::Get, ["realms", r, "runs", id]) => {
                 json_response(200, self.run(&self.realm(r)?, id, query)?)
             }
+            (Method::Get, ["realms", r, "runs", id, "live"]) => {
+                json_response(200, self.next_change(&self.realm(r)?, id, query))
+            }
             (Method::Patch, ["realms", r, "runs", id]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
@@ -63,6 +71,14 @@ impl App {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
                 let choice = self.model_choice(&realm, &body)?;
+                // At work: the agent reads it at its next turn.
+                let message = body["message"].as_str().unwrap_or_default().trim();
+                if let Some(live) = self.live(r, id)
+                    && !message.is_empty()
+                    && live.tell(message)
+                {
+                    return Ok(Some(json_response(200, json!({"queued": true}))));
+                }
                 self.ensure_idle(r, id)?;
                 let mut state =
                     self.hub
@@ -200,14 +216,50 @@ impl App {
         Ok(json!(runs))
     }
 
+    /// Waits for a run driven here to change from what the page has: its
+    /// state (`version`) or the words the model is writing (`draft`). The
+    /// page asks again at once, so the founder reads the answer as it comes.
+    pub(super) fn next_change(&self, realm: &Realm, id: &str, query: &str) -> Value {
+        let number = |name: &str| {
+            query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+                .and_then(|v| v.parse::<u64>().ok())
+        };
+        let Some(live) = self.live(realm.name(), id) else {
+            return json!({"here": false});
+        };
+        let started = std::time::Instant::now();
+        loop {
+            // Waiting counts as looking: the founder is on the run's page.
+            live.watch.seen();
+            let version = live.version.load(Ordering::SeqCst);
+            let seq = live.draft.seq.load(Ordering::SeqCst);
+            if number("version") != Some(version)
+                || number("draft") != Some(seq)
+                || started.elapsed() >= NEXT_CHANGE_WAIT
+            {
+                let draft = live.draft.text.lock().unwrap().clone();
+                return json!({"here": true, "version": version, "draft_seq": seq, "draft": draft});
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    }
+
     fn run(&self, realm: &Realm, id: &str, query: &str) -> Result<Value> {
         let since: Option<u64> = query
             .split('&')
             .find_map(|kv| kv.strip_prefix("since="))
             .and_then(|v| v.parse().ok());
+        // How the change reaches its repository decides the review's main
+        // button: open a pull request, or adopt into the checkout.
         let repo = |state: &State| {
             let r = self.hub.repo_of(realm, state);
-            (!r.checks.is_empty(), state.change.as_ref().map(|_| r.name))
+            (
+                !r.checks.is_empty(),
+                state.change.as_ref().map(|_| r.name),
+                r.delivery.as_str(),
+            )
         };
         if let Some(live) = self.live(realm.name(), id) {
             live.watch.seen();
@@ -216,7 +268,7 @@ impl App {
                 return Ok(json!({"unchanged": true, "version": version}));
             }
             let state = live.snapshot.lock().unwrap().clone();
-            let (checks_required, repo_name) = repo(&state);
+            let (checks_required, repo_name, delivery) = repo(&state);
             let pending = live.pending.lock().unwrap().as_ref().map(|p| {
                 json!({
                     "id": p.id,
@@ -237,11 +289,12 @@ impl App {
                 "checks_required": checks_required,
                 "config": config_of(&state),
                 "repo": repo_name,
+                "delivery": delivery,
                 "title": realm.run_titles().get(id),
             }));
         }
         let state = self.hub.load_run(realm, id)?;
-        let (checks_required, repo_name) = repo(&state);
+        let (checks_required, repo_name, delivery) = repo(&state);
         let live_elsewhere = self.hub.is_live(realm, id);
         Ok(json!({
             "version": 0,
@@ -253,6 +306,7 @@ impl App {
             "checks_required": checks_required,
                 "config": config_of(&state),
             "repo": repo_name,
+            "delivery": delivery,
             "title": realm.run_titles().get(id),
         }))
     }
@@ -371,4 +425,32 @@ fn config_of(state: &State) -> crate::business::ConfigChanges {
             .as_ref()
             .map_or(&[][..], |c| c.files.as_slice()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A task's view says how its change would reach the repository, so
+    /// the review offers the right button: adopt, or open a pull request.
+    #[test]
+    fn a_run_says_how_its_change_is_delivered() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let mut state = State::new("fix the header", Some(&realm.runs_dir()));
+        state.status = Status::Completed;
+        state.save().unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let view = app.run(&realm, &state.id, "").unwrap();
+        assert_eq!(view["delivery"], "adopt");
+        assert_eq!(view["repo"], Value::Null, "no change, no repository named");
+    }
 }

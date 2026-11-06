@@ -149,6 +149,11 @@ impl Tool for HttpRequest {
             return Ok((!read).then(|| format!("web.{}", method.to_ascii_lowercase())));
         };
         let integration = self.integration(name)?;
+        // A read of a service the founder declared reads free of (decision
+        // 84) is no action: the realm's network rule decides, as for the web.
+        if integration.free_reads && (method == "GET" || method == "HEAD") {
+            return Ok(None);
+        }
         if integration.actions.is_empty() {
             return Ok(Some(format!("{name}.undeclared")));
         }
@@ -288,12 +293,7 @@ impl Tool for HttpRequest {
         let client = builder.build()?;
 
         let mut headers = HeaderMap::new();
-        let secret = |key: &str| {
-            ws.env()
-                .iter()
-                .find(|(k, v)| k == key && !v.is_empty())
-                .map(|(_, v)| v.clone())
-        };
+        let secret = |key: &str| ws.credential(key);
         let integration_headers = match &p.integration {
             Some(i) => i.resolve_headers(&secret)?,
             None => Vec::new(),
@@ -439,6 +439,7 @@ mod tests {
     fn tool(base: &str) -> HttpRequest {
         HttpRequest {
             integrations: vec![Integration {
+                free_reads: false,
                 name: "svc".into(),
                 description: "A test service".into(),
                 base_url: format!("{base}/api"),
@@ -450,6 +451,49 @@ mod tests {
             }],
             cut: Default::default(),
         }
+    }
+
+    /// Decision 84: through a service the founder declared reads free of, a
+    /// GET or HEAD is no action; anything else still commits, and without
+    /// the declaration a read commits as before.
+    #[test]
+    fn only_the_reads_of_a_service_declared_free_skip_the_founder() {
+        let mut t = tool("https://api.example");
+        let call = |m: &str| json!({"integration": "svc", "url": "/user/repos", "method": m});
+        assert_eq!(
+            t.action(&call("GET")).unwrap().as_deref(),
+            Some("svc.undeclared")
+        );
+        t.integrations[0].free_reads = true;
+        assert_eq!(t.action(&call("GET")).unwrap(), None);
+        assert_eq!(t.action(&call("head")).unwrap(), None);
+        assert_eq!(
+            t.action(&json!({"integration": "svc", "url": "/user"}))
+                .unwrap(),
+            None,
+            "GET by default"
+        );
+        for write in ["POST", "PUT", "PATCH", "DELETE"] {
+            assert_eq!(
+                t.action(&call(write)).unwrap().as_deref(),
+                Some("svc.undeclared"),
+                "{write}"
+            );
+        }
+        // The GitHub connector declares it; another does not.
+        let of = |id: &str| {
+            crate::connectors::integration_for(&crate::connectors::find(id).unwrap()).unwrap()
+        };
+        assert!(of("github").free_reads);
+        assert!(!of("linear").free_reads);
+        // A GitHub connected before reads free too; a look-alike elsewhere does not.
+        let mut old = of("github");
+        old.free_reads = false;
+        let mut elsewhere = old.clone();
+        elsewhere.base_url = "https://github.example.com/api".into();
+        let mut list = [old, elsewhere];
+        crate::connectors::free_reads_of_catalog(&mut list);
+        assert!(list[0].free_reads && !list[1].free_reads);
     }
 
     #[test]
@@ -489,6 +533,38 @@ mod tests {
         let (auth, url) = handle.join().unwrap();
         assert_eq!(auth.as_deref(), Some("Bearer tok-123"));
         assert_eq!(url, "/api/items?x=1");
+    }
+
+    /// An integration's credential reaches its headers though commands never
+    /// get it: GITHUB_TOKEN when Airth pushes the realm's pull requests.
+    #[test]
+    fn an_integrations_credential_is_used_though_commands_do_not_have_it() {
+        let (server, base) = local_server();
+        let handle = std::thread::spawn(move || {
+            let req = server.recv().unwrap();
+            let auth = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.to_string());
+            req.respond(tiny_http::Response::from_string("{}")).unwrap();
+            auth
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(dir.path())
+            .unwrap()
+            .with_secrets(vec![("OTHER".into(), "x".into())], vec![])
+            .with_credentials(vec![("SVC_TOKEN".into(), "tok-9".into())]);
+        assert!(
+            ws.env().iter().all(|(k, _)| k != "SVC_TOKEN"),
+            "not for commands"
+        );
+        let input = json!({"integration": "svc", "url": "user"});
+        let out = tool(&base)
+            .execute(&input, &ws, &CancelToken::default())
+            .unwrap();
+        assert!(out.starts_with("HTTP 200"), "{out}");
+        assert_eq!(handle.join().unwrap().as_deref(), Some("Bearer tok-9"));
     }
 
     /// Decision 55: a write sent without an answer may be done; the run

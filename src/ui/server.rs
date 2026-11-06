@@ -362,6 +362,16 @@ pub(super) fn follow_pull_requests(runner: Runner) {
                         Ok(None) => {}
                         Err(e) => eprintln!("run {} cannot resolve its conflict: {e:#}", run.id),
                     },
+                    // A reviewing app reviewed it (decision 87): the chat answers.
+                    Ok(PrEvent::Reviewed(review)) => {
+                        match runner.hub.answer_review(&realm, &run.id, &review) {
+                            Ok(state) => {
+                                eprintln!("run {} answers a review of its pull request", run.id);
+                                runner.spawn(realm.clone(), state, Job::Alone);
+                            }
+                            Err(e) => eprintln!("run {} cannot answer its review: {e:#}", run.id),
+                        }
+                    }
                     Ok(_) => {}
                     Err(e) => eprintln!("pull request of run {}: {e:#}", run.id),
                 }

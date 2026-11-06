@@ -34,6 +34,7 @@ pub(super) fn business(base: String) -> Fixture {
     };
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "blog".into(),
             description: String::new(),
             base_url: base,
@@ -183,6 +184,7 @@ fn undeclared_calls_are_proposed_and_level_two_waits() {
     let mut f = business(base.clone());
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "stats".into(),
             description: String::new(),
             base_url: base.clone(),
@@ -389,6 +391,7 @@ fn a_mission_cannot_add_to_a_declared_body() {
     draft.validate().unwrap();
     f.realm
         .set_integration(crate::integration::Integration {
+            free_reads: false,
             name: "typefully".into(),
             description: String::new(),
             base_url: base,

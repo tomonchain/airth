@@ -310,6 +310,10 @@ pub struct Finance {
     pub money_out: f64,
     pub runway_months: Option<f64>,
     pub read_at: DateTime<Utc>,
+    /// What went out each day of the last three months, in the main
+    /// currency, by date (`YYYY-MM-DD`): the Finance page's chart.
+    #[serde(default)]
+    pub out_by_day: std::collections::BTreeMap<String, f64>,
 }
 
 /// Read the business's accounts and the last three months' transactions,
@@ -354,6 +358,7 @@ fn compute(accounts: &Value, transactions: &Value, now: DateTime<Utc>) -> Financ
         .unwrap_or_default();
     let month = now.format("%Y-%m").to_string();
     let (mut money_in, mut money_out, mut out_90) = (0.0, 0.0, 0.0);
+    let mut out_by_day = std::collections::BTreeMap::new();
     for t in transactions.as_array().into_iter().flatten() {
         if t["state"] != "completed" || t["type"] == "exchange" {
             continue;
@@ -369,6 +374,9 @@ fn compute(accounts: &Value, transactions: &Value, now: DateTime<Utc>) -> Financ
             let amount = leg["amount"].as_f64().unwrap_or(0.0);
             if amount < 0.0 {
                 out_90 -= amount;
+                if let Some(day) = t["created_at"].as_str().and_then(|c| c.get(..10)) {
+                    *out_by_day.entry(day.to_string()).or_insert(0.0) -= amount;
+                }
             }
             match (this_month, amount < 0.0) {
                 (true, true) => money_out -= amount,
@@ -385,6 +393,7 @@ fn compute(accounts: &Value, transactions: &Value, now: DateTime<Utc>) -> Financ
         money_out,
         runway_months: (monthly_out > 0.0).then(|| cash / monthly_out),
         read_at: now,
+        out_by_day,
     }
 }
 
@@ -432,7 +441,7 @@ mod tests {
         (api, seen)
     }
 
-    const REDIRECT: &str = "https://hedgen.xyz/airth/revolut";
+    const REDIRECT: &str = "https://acme.example/airth/revolut";
 
     /// Base64url without padding, back to bytes.
     fn unbase64url(s: &str) -> Vec<u8> {
@@ -469,15 +478,15 @@ mod tests {
             (param("client_id"), param("response_type")),
             (Some("cid"), Some("code"))
         );
-        assert!(url.contains("redirect_uri=https%3A%2F%2Fhedgen.xyz%2Fairth%2Frevolut"));
+        assert!(url.contains("redirect_uri=https%3A%2F%2Facme.example%2Fairth%2Frevolut"));
         assert_eq!(
             code_from(&format!("{REDIRECT}?code=oa_abc"), REDIRECT).unwrap(),
             "oa_abc"
         );
         for wrong in [
             "https://evil.com/airth/revolut?code=x",
-            "https://hedgen.xyz/other?code=x",
-            "hedgen.xyz?code=x",
+            "https://acme.example/other?code=x",
+            "acme.example?code=x",
         ] {
             assert!(code_from(wrong, REDIRECT).is_err(), "{wrong}");
         }
@@ -506,7 +515,11 @@ mod tests {
                 claims["sub"].as_str(),
                 claims["aud"].as_str()
             ),
-            (Some("hedgen.xyz"), Some("cid"), Some("https://revolut.com"))
+            (
+                Some("acme.example"),
+                Some("cid"),
+                Some("https://revolut.com")
+            )
         );
         let signature = unbase64url(parts[2]);
         aws_lc_rs::signature::UnparsedPublicKey::new(
@@ -666,6 +679,16 @@ mod tests {
         assert_eq!(
             f.runway_months.map(|m| (m * 10.0).round() / 10.0),
             Some(24.6)
+        );
+        // By day: what went out to others, in the main currency, completed.
+        let days: Vec<_> = f.out_by_day.iter().map(|(d, a)| (d.as_str(), *a)).collect();
+        assert_eq!(
+            days,
+            [
+                ("2026-09-10", 300.0),
+                ("2026-10-10", 780.0),
+                ("2026-11-03", 420.0)
+            ]
         );
         let quiet = compute(&accounts, &json!([]), now);
         assert_eq!(quiet.runway_months, None);

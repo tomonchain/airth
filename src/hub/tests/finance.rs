@@ -56,7 +56,7 @@ fn the_banks_figures_are_read_hourly_and_unknown_once_the_consent_is_gone() {
     ]);
     let pair = aws_lc_rs::rsa::KeyPair::generate(aws_lc_rs::rsa::KeySize::Rsa2048).unwrap();
     let key: aws_lc_rs::encoding::Pkcs8V1Der = pair.as_der().unwrap();
-    let redirect = "https://hedgen.xyz/airth/revolut";
+    let redirect = "https://acme.example/airth/revolut";
     crate::bank::connect(
         &f.realm.skills_dir(),
         &api,
@@ -128,7 +128,7 @@ fn another_refusal_is_an_ordinary_incident_with_revolut_s_message() {
     ]);
     let pair = aws_lc_rs::rsa::KeyPair::generate(aws_lc_rs::rsa::KeySize::Rsa2048).unwrap();
     let key: aws_lc_rs::encoding::Pkcs8V1Der = pair.as_der().unwrap();
-    let redirect = "https://hedgen.xyz/airth/revolut";
+    let redirect = "https://acme.example/airth/revolut";
     crate::bank::connect(
         &f.realm.skills_dir(),
         &api,

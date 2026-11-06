@@ -86,6 +86,19 @@ pub enum Checks {
     Failing,
 }
 
+/// A review left on a pull request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Review {
+    pub id: u64,
+    pub login: String,
+    /// APPROVED, CHANGES_REQUESTED or COMMENTED.
+    pub state: String,
+    pub body: String,
+    /// The commit it reviewed.
+    pub commit: String,
+    pub comments: Vec<String>,
+}
+
 /// Where a pull request stands, for the app.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PrStatus {
@@ -100,6 +113,20 @@ pub struct PrStatus {
     pub checks: Checks,
     /// The checks that failed.
     pub failed: Vec<String>,
+}
+
+/// A repository the token reaches, for the founder to pick one to connect.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RepoInfo {
+    pub full_name: String,
+    pub name: String,
+    pub private: bool,
+    pub archived: bool,
+    pub description: Option<String>,
+    /// Its page, also what Airth clones (as `owner/name`).
+    pub url: String,
+    pub default_branch: String,
+    pub pushed_at: Option<String>,
 }
 
 pub struct GitHub {
@@ -234,6 +261,35 @@ impl GitHub {
         Ok(value)
     }
 
+    /// The repositories the token reaches (owned, shared, or its
+    /// organisations'), the latest pushed first; at most 100.
+    pub fn repos(&self) -> Result<Vec<RepoInfo>> {
+        let list = self.call(
+            reqwest::Method::GET,
+            "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member",
+            None,
+        )?;
+        let text = |v: &Value, k: &str| v[k].as_str().map(String::from);
+        Ok(list
+            .as_array()
+            .map(|a| a.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|r| {
+                Some(RepoInfo {
+                    full_name: text(r, "full_name")?,
+                    name: text(r, "name")?,
+                    private: r["private"].as_bool().unwrap_or(true),
+                    archived: r["archived"].as_bool().unwrap_or(false),
+                    description: text(r, "description"),
+                    url: text(r, "html_url")?,
+                    default_branch: text(r, "default_branch").unwrap_or_else(|| "main".into()),
+                    pushed_at: text(r, "pushed_at"),
+                })
+            })
+            .collect())
+    }
+
     /// Open a pull request from `head` into `base`, or find the open one
     /// that already exists. Returns its number and web address.
     pub fn open(
@@ -265,6 +321,54 @@ impl GitHub {
         let number = pr["number"].as_u64().context("GitHub gave no number")?;
         let url = pr["html_url"].as_str().unwrap_or_default().to_string();
         Ok((number, url))
+    }
+
+    /// The reviews left on pull request `number`, oldest first, each with
+    /// its comments on lines (`path:line: text`).
+    pub fn reviews(&self, r: &Remote, number: u64) -> Result<Vec<Review>> {
+        let slug = r.slug();
+        let list = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{slug}/pulls/{number}/reviews?per_page=100"),
+            None,
+        )?;
+        let notes = self.call(
+            reqwest::Method::GET,
+            &format!("/repos/{slug}/pulls/{number}/comments?per_page=100"),
+            None,
+        )?;
+        let notes = notes.as_array().cloned().unwrap_or_default();
+        Ok(list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| {
+                let id = v["id"].as_u64()?;
+                Some(Review {
+                    id,
+                    login: v["user"]["login"].as_str().unwrap_or_default().to_string(),
+                    state: v["state"].as_str().unwrap_or_default().to_string(),
+                    body: v["body"].as_str().unwrap_or_default().trim().to_string(),
+                    commit: v["commit_id"].as_str().unwrap_or_default().to_string(),
+                    comments: notes
+                        .iter()
+                        .filter(|c| c["pull_request_review_id"].as_u64() == Some(id))
+                        .map(|c| {
+                            let line = c["line"]
+                                .as_u64()
+                                .or(c["original_line"].as_u64())
+                                .map(|l| format!(":{l}"))
+                                .unwrap_or_default();
+                            format!(
+                                "{}{line}: {}",
+                                c["path"].as_str().unwrap_or("?"),
+                                c["body"].as_str().unwrap_or_default().trim()
+                            )
+                        })
+                        .collect(),
+                })
+            })
+            .collect())
     }
 
     pub fn state(&self, r: &Remote, number: u64) -> Result<PrState> {
@@ -416,6 +520,44 @@ pub(crate) mod tests {
         ] {
             assert_eq!(Remote::parse(url), None, "{url}");
         }
+    }
+
+    /// The repositories the token reaches, latest first, as the picker
+    /// shows them; the token goes in the header only.
+    #[test]
+    fn lists_the_repositories_the_token_reaches() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let seen = std::thread::spawn(move || {
+            let req = server.recv().unwrap();
+            let auth = req
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.to_string());
+            let url = req.url().to_string();
+            let body = r#"[{"full_name":"o/site","name":"site","private":true,"description":"The site",
+                "html_url":"https://github.com/o/site","clone_url":"https://github.com/o/site.git",
+                "default_branch":"main","pushed_at":"2026-11-04T10:00:00Z","archived":false},
+                {"full_name":"o/old","name":"old","private":false,"description":null,
+                "html_url":"https://github.com/o/old","clone_url":"https://github.com/o/old.git",
+                "default_branch":"master","pushed_at":null,"archived":true}]"#;
+            req.respond(tiny_http::Response::from_string(body)).unwrap();
+            (auth, url)
+        });
+        let gh = GitHub::at("t0k", &format!("http://127.0.0.1:{port}"), "");
+        let repos = gh.repos().unwrap();
+        let (auth, url) = seen.join().unwrap();
+        assert_eq!(auth.as_deref(), Some("Bearer t0k"));
+        assert!(
+            url.starts_with("/user/repos?") && url.contains("sort=pushed"),
+            "{url}"
+        );
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].full_name, "o/site");
+        assert!(repos[0].private);
+        assert_eq!(repos[0].url, "https://github.com/o/site");
+        assert!(repos[1].archived);
     }
 
     #[test]
