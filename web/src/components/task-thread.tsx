@@ -363,7 +363,9 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           <div className="fade-up"><Work items={[]} live saying={short} tail={timer} /></div>
         </Bubble>
       )}
-      {view.state.change && (
+      {/* A task of a business that works in worktrees has a change from its
+          start: shown only once it holds something to review. */}
+      {view.state.change && (view.state.change.files.length > 0 || view.state.change.head !== view.state.change.base || view.state.change.status !== "open") && (
         <ChangePanel realm={realm} id={id} title={view.title ?? view.state.objective} onChange={() => { refresh(); onChange() }}
           r={{ live, change: view.state.change, checks_required: !!view.checks_required, delivery: view.delivery ?? "adopt", config: view.config ?? { files: [], agents: [] } }}
           onAsk={async (text) => { await api(`realms/${enc(realm)}/runs/${enc(id)}/messages`, { message: text }); refresh(); onChange() }} />
