@@ -20,10 +20,15 @@
       }
     },
     {
+      "id": "shape",
+      "type": "ai",
+      "prompt": "prompts/article.md"
+    },
+    {
       "id": "ok",
       "type": "approval",
-      "show": "result.report",
-      "editable": "result.report",
+      "show": "answer.content",
+      "editable": "answer.content",
       "expires_after": 72
     },
     {
@@ -31,7 +36,9 @@
       "type": "act",
       "action": "site.publish_article",
       "fields": {
-        "content": "{{result.report}}"
+        "title": "{{answer.title}}",
+        "excerpt": "{{answer.excerpt}}",
+        "content": "{{answer.content}}"
       }
     }
   ]

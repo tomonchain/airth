@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["title", "excerpt", "content"],
+  "properties": {
+    "title": { "type": "string", "maxLength": 255 },
+    "excerpt": { "type": "string", "maxLength": 2000 },
+    "content": { "type": "string" }
+  }
+}

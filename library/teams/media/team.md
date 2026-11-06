@@ -11,4 +11,4 @@ connectors: []
 - Connect Typefully, where approved posts go as drafts. You publish them; Airth never posts.
 - Give daily-watch and daily-posts a schedule (for example daily 07:00 and daily 07:30).
 - Replies: declare typefully.create_reply (a draft with reply_to_url, never publish_at), then send a post's link to the bot on Telegram.
-- The weekly article: declare your site's API as an integration named site, with an action publish_article that takes content; give weekly-article a schedule (for example fri 09:00).
+- The weekly article: declare your site's API as an integration named site, with an action publish_article that takes title, excerpt and content; give weekly-article a schedule (for example fri 09:00).
