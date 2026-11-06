@@ -14,7 +14,7 @@ use serde_json::Value;
 /// Actions a connector takes alone in 24 hours, and the minutes the founder
 /// has to cancel a delayed one, unless declared otherwise.
 const DAILY_LIMIT: u32 = 20;
-const CANCEL_MINUTES: u32 = 30;
+pub(super) const CANCEL_MINUTES: u32 = 30;
 
 pub struct BusinessAuthority {
     realm: Realm,
