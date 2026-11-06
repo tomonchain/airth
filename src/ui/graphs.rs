@@ -22,7 +22,7 @@ impl App {
     /// Routines' routes; None when the request is not one of them.
     pub(super) fn graph_routes(
         &self,
-        _request: &mut Request,
+        request: &mut Request,
         method: &Method,
         segments: &[&str],
         _query: &str,
@@ -52,8 +52,39 @@ impl App {
                     Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
                 }
             }
+            // The routine editor's save (decision 69): the founder's write,
+            // checked as loading checks it, never over a newer file.
+            (Method::Put, ["realms", r, "graphs", name]) => {
+                let body = read_json(request)?;
+                let str_of = |k: &str| body[k].as_str().unwrap_or_default();
+                match self.save_graph(&self.realm(r)?, name, str_of("text"), str_of("version")) {
+                    Ok(version) => json_response(200, json!({ "version": version })),
+                    Err(crate::documents::SaveError::Changed(version)) => json_response(
+                        409,
+                        json!({ "error": "the routine changed since you opened it", "changed": true, "version": version }),
+                    ),
+                    Err(crate::documents::SaveError::Other(e)) => {
+                        json_response(422, json!({"error": format!("{e:#}")}))
+                    }
+                }
+            }
             _ => return Ok(None),
         }))
+    }
+
+    /// Write a routine the founder edited, once it passes the loader's
+    /// checks; nothing is written otherwise. Returns the file's new version.
+    fn save_graph(
+        &self,
+        realm: &Realm,
+        name: &str,
+        text: &str,
+        version: &str,
+    ) -> Result<String, crate::documents::SaveError> {
+        self.hub
+            .with_routine_checks(realm, |c| crate::routine::check_text(c, name, text))?;
+        let file = crate::routine::file(name)?;
+        crate::documents::save_text(&realm.root()?, &file, text, version)
     }
 
     /// Each routine, loaded or with why not, with its agent, its last runs,
@@ -74,8 +105,14 @@ impl App {
                 .map(|r| json!({"at": r.started_at, "due_at": r.due_at, "ok": r.ok, "error": r.error}))
                 .collect();
             let cost = costs.iter().find(|c| c.pipeline == name);
+            // The file as written, for the editor to change in place. The
+            // version is taken first: a change in between makes it stale.
+            let path = root.join(crate::routine::file(&name)?);
+            let version = crate::documents::version(&path).unwrap_or_default();
             let mut routine = json!({
                 "name": name,
+                "source": std::fs::read_to_string(&path).unwrap_or_default(),
+                "version": version,
                 "runs": runs,
                 "next_at": store.next_run(&key)?,
                 "cost_usd": cost.map_or(0.0, |c| c.cost_usd),
@@ -164,5 +201,83 @@ mod tests {
         assert!(act.contains("Your time: 0 s"), "{act}");
         // Nothing was reported: a dry run only shows its acts.
         assert!(app.hub.home().inbox().list().unwrap().is_empty());
+    }
+
+    /// The routine editor writes only a graph the loader accepts, and
+    /// never over a file that changed since the page read it.
+    #[test]
+    fn the_editor_saves_only_a_checked_routine_over_what_it_read() {
+        use crate::documents::SaveError;
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::create_dir_all(root.join("routines")).unwrap();
+        std::fs::write(root.join("agents/chief.md"), "Report the week.").unwrap();
+        let file = root.join("routines/weekly.json");
+        let graph = |schedule: &str, act: &str| {
+            format!(
+                r#"{{"agent": "chief", "trigger": {{"schedule": "{schedule}"}}, "blocks": [
+                {{"id": "week", "type": "read", "source": "business", "records": "week"}},
+                {{"id": "out", "type": "act", "action": "{act}",
+                 "fields": {{"title": "Week", "text": "{{{{summary}}}}"}}}}]}}"#
+            )
+        };
+        let original = graph("mon 08:00", "airth.report");
+        std::fs::write(&file, &original).unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let page = app.graphs(&realm).unwrap();
+        let listed = &page["routines"][0];
+        assert_eq!(listed["source"], original.as_str());
+        let version = listed["version"].as_str().unwrap().to_string();
+
+        // Refused by the loader's checks: nothing is written.
+        for (text, why) in [
+            (graph("someday", "airth.report"), "schedule"),
+            (graph("mon 08:00", "ghost.send"), "ghost.send"),
+            (original.replace("\"agent\"", "\"secret\": 1, \"agent\""), "unknown field"),
+            // Content from outside, straight to an act: the security rule.
+            (
+                r#"{"agent": "chief", "trigger": {"manual": true}, "blocks": [
+                {"id": "news", "type": "read", "source": "rss", "feeds": ["https://example.com/feed"]},
+                {"id": "go", "type": "act", "action": "airth.launch_mission",
+                 "fields": {"brief": "{{title}}"}}]}"#
+                    .to_string(),
+                "without an approval",
+            ),
+        ] {
+            let Err(SaveError::Other(e)) = app.save_graph(&realm, "weekly", &text, &version) else {
+                panic!("{why}: saved");
+            };
+            assert!(format!("{e:#}").contains(why), "{e:#}");
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+        }
+        let Err(SaveError::Other(_)) = app.save_graph(&realm, "../weekly", &original, &version)
+        else {
+            panic!("a path, not a name, was saved");
+        };
+
+        // Checked: written, with a new version.
+        let edited = graph("fri 09:00", "airth.report");
+        let Ok(new) = app.save_graph(&realm, "weekly", &edited, &version) else {
+            panic!("a checked routine was refused");
+        };
+        assert_ne!(new, version);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), edited);
+
+        // The page's version is now stale: refused, not overwritten.
+        let Err(SaveError::Changed(_)) = app.save_graph(&realm, "weekly", &original, &version)
+        else {
+            panic!("saved over a newer file");
+        };
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), edited);
     }
 }

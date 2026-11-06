@@ -172,8 +172,8 @@ pub struct Checks<'a> {
     pub level: &'a dyn Fn(&str, &str) -> u8,
 }
 
-/// Load and check `routines/<name>.json`.
-pub fn load(cx: &Checks, name: &str) -> Result<Graph> {
+/// The file of the routine `name`, relative to the business folder.
+pub fn file(name: &str) -> Result<String> {
     if name.is_empty()
         || !name
             .chars()
@@ -181,12 +181,24 @@ pub fn load(cx: &Checks, name: &str) -> Result<Graph> {
     {
         bail!("a routine's file name is lowercase letters, digits and dashes");
     }
-    let path = cx.root.join(DIR).join(format!("{name}.json"));
+    Ok(format!("{DIR}/{name}.json"))
+}
+
+/// Load and check `routines/<name>.json`.
+pub fn load(cx: &Checks, name: &str) -> Result<Graph> {
+    let file = file(name)?;
     let text =
-        std::fs::read_to_string(&path).with_context(|| format!("reading {DIR}/{name}.json"))?;
-    let graph: Graph = serde_json::from_str(&text)
-        .with_context(|| format!("{DIR}/{name}.json is not a valid routine"))?;
-    check(cx, &graph).with_context(|| format!("{DIR}/{name}.json"))?;
+        std::fs::read_to_string(cx.root.join(&file)).with_context(|| format!("reading {file}"))?;
+    check_text(cx, name, &text)
+}
+
+/// Check a routine's text exactly as loading does: what the routine editor
+/// sends is checked this way before it is written (decision 69).
+pub fn check_text(cx: &Checks, name: &str, text: &str) -> Result<Graph> {
+    let file = file(name)?;
+    let graph: Graph =
+        serde_json::from_str(text).with_context(|| format!("{file} is not a valid routine"))?;
+    check(cx, &graph).with_context(|| file.clone())?;
     Ok(graph)
 }
 
