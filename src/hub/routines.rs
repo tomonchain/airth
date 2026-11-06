@@ -721,9 +721,36 @@ impl Hub {
         due: Option<DateTime<Utc>>,
     ) -> std::result::Result<String, String> {
         let started = Utc::now();
-        let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
-        let outcome =
-            self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None);
+        let attempt = || {
+            let run = format!("{name}-{}", Utc::now().format("%Y%m%dT%H%M%S"));
+            self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None)
+        };
+        let mut outcome = attempt();
+        // At its time, a run that failed is tried again before it becomes an
+        // incident (decision 81): an act never runs twice for one item, so
+        // what the first try did is not done again. Not a file that does not
+        // load, which a wait does not mend; not a run the founder started,
+        // who sees the error at once.
+        let mut tries = 1;
+        let loads = || {
+            self.with_routine_checks(realm, |c| crate::routine::load(c, name))
+                .is_ok()
+        };
+        if due.is_some() && outcome.is_err() && loads() {
+            for wait in ROUTINE_RETRY_WAITS {
+                std::thread::sleep(wait);
+                tries += 1;
+                outcome = attempt();
+                if outcome.is_ok() {
+                    break;
+                }
+            }
+        }
+        let notes = if tries > 1 {
+            format!("tried {tries} times")
+        } else {
+            String::new()
+        };
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
         let report = outcome.ok().map(|ran| ran.text);
         let beat = crate::business::store::pipelines::Heartbeat {
@@ -734,7 +761,7 @@ impl Hub {
             items_read: 0,
             items_kept: 0,
             report: report.as_deref(),
-            notes: "",
+            notes: &notes,
             error: error.as_deref(),
         };
         let recorded = Store::of(realm).and_then(|mut s| s.record_run(&beat, &[]));
@@ -767,6 +794,16 @@ impl Hub {
         }
     }
 }
+
+/// A scheduled routine that failed is tried again after these waits
+/// (decision 81); none in tests.
+#[cfg(not(test))]
+const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(60),
+    std::time::Duration::from_secs(300),
+];
+#[cfg(test)]
+const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO; 2];
 
 /// What became of an approved action now.
 enum Approved {

@@ -106,6 +106,47 @@ impl<R: std::io::BufRead> std::io::BufRead for Stoppable<'_, R> {
 /// Tries of a streamed request after the first, as the providers' own.
 const MAX_RETRIES: u32 = 3;
 
+/// Whether a failed model call may work if tried again later: the provider
+/// busy or down, the network, an answer cut off (decision 81). A refused
+/// key, no credit or a request the provider refuses will not.
+pub fn transient(error: &str) -> bool {
+    let e = error.to_lowercase();
+    let lasting = [
+        "401",
+        "402",
+        "403",
+        "unauthorized",
+        "forbidden",
+        "api key",
+        "insufficient",
+        "credit",
+        "billing",
+        "invalid_request",
+    ];
+    if lasting.iter().any(|w| e.contains(w)) {
+        return false;
+    }
+    [
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+        "529",
+        "overloaded",
+        "rate limit",
+        "timed out",
+        "timeout",
+        "connection",
+        "error sending request",
+        "broke off",
+        "busy",
+        "temporarily",
+    ]
+    .iter()
+    .any(|w| e.contains(w))
+}
+
 /// Hands each server-sent event's data to `on` until it says the answer is
 /// whole; false when the stream ended first.
 pub(crate) fn events(
@@ -399,6 +440,31 @@ pub fn from_settings(get: &dyn Fn(&str) -> Option<String>) -> Result<Box<dyn Mod
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 81: a busy or unreachable provider is tried again later; a
+    /// refused key, no credit or a refused request is not.
+    #[test]
+    fn a_passing_failure_is_told_from_one_that_lasts() {
+        for passing in [
+            "DeepSeek API error 503 Service Unavailable: overloaded",
+            "Anthropic API error 529: {\"type\": \"overloaded_error\"}",
+            "OpenAI API error 429 Too Many Requests: rate limit reached",
+            "error sending request for url (https://api.deepseek.com/chat/completions)",
+            "operation timed out",
+            "the answer broke off",
+        ] {
+            assert!(transient(passing), "{passing}");
+        }
+        for lasting in [
+            "ollama API error 401 Unauthorized: Authentication Fails, your api key is invalid",
+            "DeepSeek API error 402 Payment Required: Insufficient Balance",
+            "OpenAI API error 400 Bad Request: invalid_request_error: context too long",
+            "Stopped by the user.",
+            "write_file: permission denied",
+        ] {
+            assert!(!transient(lasting), "{lasting}");
+        }
+    }
 
     #[test]
     fn a_chosen_model_only_uses_its_own_providers_key() {

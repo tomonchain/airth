@@ -41,6 +41,36 @@ impl Draft {
 /// until the browser slows it down further.
 const WATCH_GAP: Duration = Duration::from_secs(10);
 
+/// A run that failed on a passing error is tried again after these waits,
+/// then left failed (decision 81).
+const RETRY_WAITS: [Duration; 3] = [
+    Duration::from_secs(30),
+    Duration::from_secs(120),
+    Duration::from_secs(480),
+];
+/// A run that reached its time budget goes on alone this many times more.
+const TIME_BUDGETS_MORE: usize = 2;
+
+/// What a run that ended on `status` with `report` does next on its own:
+/// try again after a wait, go on at once, or nothing (decision 81).
+pub(super) fn next_on_its_own(
+    status: Status,
+    report: Option<&str>,
+    retries: usize,
+    budgets: usize,
+) -> Option<Duration> {
+    let report = report.unwrap_or_default();
+    match status {
+        Status::Failed if crate::models::transient(report) => RETRY_WAITS.get(retries).copied(),
+        Status::Stopped
+            if report.contains("reached its time budget") && budgets < TIME_BUDGETS_MORE =>
+        {
+            Some(Duration::ZERO)
+        }
+        _ => None,
+    }
+}
+
 /// Whether the founder watches a run in the app (decision 56): its page
 /// looks at it again and again. Once they left, they left, for the run.
 #[derive(Default)]
@@ -289,45 +319,90 @@ impl Runner {
                 _ => None,
             };
             match job {
-                Job::Drive | Job::Alone | Job::Unattended { .. } => loop {
-                    let hooks = RunHooks {
-                        approver: Box::new(UiApprover {
-                            live: live.clone(),
-                            next_id: 0,
-                            // Who writes to a run is there to answer it.
-                            away: away.take(),
-                        }),
-                        observer: &mut observer,
-                        cancel: live.cancel.clone(),
-                    };
-                    if let Err(e) =
-                        hub.drive(&realm, &mut state, AgentConfig::new(max_iterations), hooks)
-                        && state.status == Status::Running
-                    {
-                        state.status = Status::Failed;
-                        state.report = Some(format!("{e:#}"));
+                Job::Drive | Job::Alone | Job::Unattended { .. } => {
+                    let (mut retries, mut budgets) = (0, 0);
+                    loop {
+                        let hooks = RunHooks {
+                            approver: Box::new(UiApprover {
+                                live: live.clone(),
+                                next_id: 0,
+                                // Who writes to a run is there to answer it.
+                                away: away.take(),
+                            }),
+                            observer: &mut observer,
+                            cancel: live.cancel.clone(),
+                        };
+                        if let Err(e) =
+                            hub.drive(&realm, &mut state, AgentConfig::new(max_iterations), hooks)
+                            && state.status == Status::Running
+                        {
+                            state.status = Status::Failed;
+                            state.report = Some(format!("{e:#}"));
+                            let _ = state.save();
+                        }
+                        // A passing failure is tried again, a time budget renewed,
+                        // without the founder's go (decision 81).
+                        if !live.cancel.is_cancelled()
+                            && let Some(wait) = next_on_its_own(
+                                state.status,
+                                state.report.as_deref(),
+                                retries,
+                                budgets,
+                            )
+                        {
+                            if state.status == Status::Failed {
+                                retries += 1;
+                                state.report = Some(format!(
+                                    "Trying again in {} ({retries} of {}): {}",
+                                    if wait.as_secs() < 60 {
+                                        format!("{} s", wait.as_secs())
+                                    } else {
+                                        format!("{} min", wait.as_secs() / 60)
+                                    },
+                                    RETRY_WAITS.len(),
+                                    state.report.as_deref().unwrap_or_default()
+                                ));
+                            } else {
+                                budgets += 1;
+                            }
+                            state.status = Status::Running;
+                            let _ = state.save();
+                            observer.changed(&state);
+                            let until = std::time::Instant::now() + wait;
+                            while std::time::Instant::now() < until && !live.cancel.is_cancelled() {
+                                std::thread::sleep(Duration::from_millis(250).min(wait));
+                            }
+                            if live.cancel.is_cancelled() {
+                                state.status = Status::Stopped;
+                                state.report = Some("Stopped by the user.".into());
+                                let _ = state.save();
+                                break;
+                            }
+                            state.report = None;
+                            let _ = state.save();
+                            continue;
+                        }
+                        // Written as the run ended: it goes on with it, as a
+                        // follow-up would. Past this, what is written starts
+                        // the run again the usual way.
+                        let mut said = live.said.lock().unwrap();
+                        let left = said.take().unwrap_or_default();
+                        if left.is_empty()
+                            || live.cancel.is_cancelled()
+                            || state.status == Status::Failed
+                        {
+                            break;
+                        }
+                        *said = Some(Vec::new());
+                        drop(said);
+                        for text in &left {
+                            crate::hub::append_user_text(&mut state.messages, text);
+                        }
+                        state.status = Status::Running;
+                        state.report = None;
                         let _ = state.save();
                     }
-                    // Written as the run ended: it goes on with it, as a
-                    // follow-up would. Past this, what is written starts
-                    // the run again the usual way.
-                    let mut said = live.said.lock().unwrap();
-                    let left = said.take().unwrap_or_default();
-                    if left.is_empty()
-                        || live.cancel.is_cancelled()
-                        || state.status == Status::Failed
-                    {
-                        break;
-                    }
-                    *said = Some(Vec::new());
-                    drop(said);
-                    for text in &left {
-                        crate::hub::append_user_text(&mut state.messages, text);
-                    }
-                    state.status = Status::Running;
-                    state.report = None;
-                    let _ = state.save();
-                },
+                }
                 Job::Check => match hub.check(&realm, &state.id, &mut observer, &live.cancel) {
                     Ok(checked) => state = checked,
                     Err(e) => eprintln!("checks of run {} failed to start: {e:#}", state.id),
@@ -364,6 +439,56 @@ impl Runner {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// Decision 81: a passing failure is tried again three times, later and
+    /// later; a time budget is renewed twice; anything else waits for the
+    /// founder.
+    #[test]
+    fn a_run_goes_on_alone_after_a_passing_failure_or_its_time_budget() {
+        let busy = Some("DeepSeek API error 503: overloaded");
+        let waits: Vec<_> = (0..4)
+            .map(|n| next_on_its_own(Status::Failed, busy, n, 0))
+            .collect();
+        assert_eq!(
+            waits,
+            [
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(120)),
+                Some(Duration::from_secs(480)),
+                None
+            ]
+        );
+        assert_eq!(
+            next_on_its_own(
+                Status::Failed,
+                Some("API error 401: api key is invalid"),
+                0,
+                0
+            ),
+            None
+        );
+        let budget = Some("Stopped: reached its time budget (30 minutes).");
+        assert_eq!(
+            next_on_its_own(Status::Stopped, budget, 0, 0),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(
+            next_on_its_own(Status::Stopped, budget, 0, 1),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(next_on_its_own(Status::Stopped, budget, 0, 2), None);
+        for waits_for_the_founder in [
+            "Stopped: reached its cost budget ($2.00 of $2.00).",
+            "Stopped by the user.",
+            "not done: nobody is watching this task, so the founder is asked in Needs you (item 9)",
+        ] {
+            assert_eq!(
+                next_on_its_own(Status::Stopped, Some(waits_for_the_founder), 0, 0),
+                None
+            );
+        }
+        assert_eq!(next_on_its_own(Status::Completed, None, 0, 0), None);
+    }
 
     fn left(ago: u64) -> Watch {
         Watch(Mutex::new((

@@ -370,6 +370,11 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           r={{ live, change: view.state.change, checks_required: !!view.checks_required, delivery: view.delivery ?? "adopt", config: view.config ?? { files: [], agents: [] } }}
           onAsk={async (text) => { await api(`realms/${enc(realm)}/runs/${enc(id)}/messages`, { message: text }); refresh(); onChange() }} />
       )}
+      {/* A passing failure, about to be tried again (decision 81). */}
+      {live && view.state.report?.startsWith("Trying again") && (() => {
+        const [, when, why] = view.state.report.match(/^(Trying again in [^:]+): ([\s\S]*)$/) ?? []
+        return <p className="mb-4 ml-10 text-xs text-amber-600 dark:text-amber-400">{failure(why ?? null)} {when}.</p>
+      })()}
       {!live && status === "failed" && (
         <div className="mb-4 ml-10 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-red-500">{failure(view.state.report)}</span>
@@ -394,7 +399,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
 export function failure(report: string | null) {
   if (!report) return "It failed."
   if (/^model error/i.test(report)) {
-    if (/\b(429|rate.?limit|overloaded|529)\b/i.test(report)) return "The model is busy right now."
+    if (/\b(429|50[0-4]|rate.?limit|overloaded|529)\b/i.test(report)) return "The model is busy right now."
     if (/\b(401|403|invalid.*key|authentication)\b/i.test(report)) return "The model refused its key: check it in Settings → Keys."
     if (/\b(402|credit|balance|quota)\b/i.test(report)) return "The model's account is out of credit."
     if (/not answering|timed? ?out|connection|broke off/i.test(report)) return "The model stopped answering."
@@ -403,7 +408,6 @@ export function failure(report: string | null) {
   return report.split("\n")[0]
 }
 
-/** What the agent is at, in a few words: its step in progress, else thinking. */
 function StopButton({ onStop }: { onStop: () => void }) {
   return <button onClick={onStop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
 }

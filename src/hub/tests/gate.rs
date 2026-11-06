@@ -272,3 +272,44 @@ fn a_routine_run_by_hand_runs_and_is_recorded_as_at_its_time() {
 
     assert!(hub.run_routine_by_hand(&f.realm, "ghost").is_err());
 }
+
+/// Decision 81: a routine that fails at its time is tried again before it
+/// becomes an incident, and its heartbeat says how many times; run by hand,
+/// it is tried once.
+#[test]
+fn a_scheduled_routine_that_fails_is_tried_three_times_then_is_an_incident() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/watcher.md".to_string(), "Watch the news.".to_string()),
+        // A feed it may not reach: network requests ask, and nobody answers.
+        ("routines/watch.json".into(), json!({"agent": "watcher", "trigger": {"schedule": "every 1h"}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://news.example/unreachable.xml"]},
+            {"id": "ok", "type": "approval", "show": "title"}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let store = || Store::of(&f.realm).unwrap();
+
+    hub.run_scheduled_routine(&f.realm, "watch", Utc::now());
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 1);
+    assert!(!beats[0].1.ok, "{beats:?}");
+    assert_eq!(beats[0].1.notes, "tried 3 times");
+    let incidents: Vec<_> = store()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == "incident")
+        .collect();
+    assert_eq!(incidents.len(), 1, "one incident, not one a try");
+
+    assert!(hub.run_routine_by_hand(&f.realm, "watch").is_err());
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 2);
+    assert_eq!(beats[1].1.notes, "", "by hand: tried once, {beats:?}");
+}

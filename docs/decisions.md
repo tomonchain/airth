@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 81. A task or a routine tries again on its own before it waits for the founder
+
+**Accepted.** The founder, 6 November 2026: "if a run fails, the agents stop and wait for my go; they should try again N times." A task that failed on a busy model stopped with Try again; one that reached its 30-minute budget stopped until the founder said go on; a scheduled routine that failed became an incident at once.
+
+- **A passing failure** (the provider busy or down, the network, an answer cut off: `models::transient`) is tried again three times, after 30 s, 2 min and 8 min, after the few quick retries of each model call. A refused key, no credit or a refused request is not: those need the founder. The thread says "The model is busy right now. Trying again in 2 min (2 of 3)."; Stop still stops.
+- **A time budget reached** is renewed twice: a task works up to three budgets (90 minutes by default) before it stops for the founder. A cost or token budget is never renewed alone.
+- **A routine that fails at its time** is run again after 1 and 5 minutes before it becomes one incident; its heartbeat says "tried 3 times". An act never runs twice for one item (CLAUDE.md), so what a failed try did is not done again. Not a routine whose file does not load, nor one the founder started by hand, who sees the error at once.
+- What waits for a decision (an approval, a question in Needs you) still waits: that is the founder's to answer.
+
+*Why:* most failures seen were the provider's, and pass within minutes; a task that waited for a go until the founder looked lost hours.
+
+*Cost:* a failure the founder would have fixed at once (a provider down for an hour) is said about 10 minutes later. A task may spend up to three time budgets alone.
+
 ## 80. A run in its own worktree writes without asking
 
 **Accepted.** The founder, 6 November 2026: "on vire les confirmations". A task asked before every file it wrote, though it worked in its own git worktree: nothing it writes reaches the founder's files until they adopt the change, after reading the whole diff.
