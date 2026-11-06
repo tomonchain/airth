@@ -1,0 +1,42 @@
+{
+  "description": "Replies: send a post's link to the bot on Telegram, with one line of angle if you like; a reply is drafted for you to approve",
+  "agent": "post-writer",
+  "trigger": {
+    "telegram": "x_post"
+  },
+  "blocks": [
+    {
+      "id": "post",
+      "type": "read",
+      "source": "x_post"
+    },
+    {
+      "id": "reply",
+      "type": "ai",
+      "prompt": "prompts/reply.md"
+    },
+    {
+      "id": "check",
+      "type": "ai",
+      "prompt": "prompts/check.md",
+      "as": "check"
+    },
+    {
+      "id": "ok",
+      "type": "approval",
+      "show": "answer.draft",
+      "editable": "answer.draft",
+      "expires_after": 24,
+      "flag": "check"
+    },
+    {
+      "id": "send",
+      "type": "act",
+      "action": "typefully.create_reply",
+      "fields": {
+        "text": "{{answer.draft}}",
+        "reply_to_url": "{{link}}"
+      }
+    }
+  ]
+}

@@ -113,6 +113,20 @@ pub fn render_plan(plan: &[PlanStep]) -> String {
         .join("\n")
 }
 
+/// Where a routine waits for the mission it launched: its run, the act
+/// that launched it and the item, to go on with the mission's report.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoutineWait {
+    pub routine: String,
+    pub run: String,
+    pub block: String,
+    pub item: serde_json::Map<String, serde_json::Value>,
+    /// Set once the routine went on: a mission resumed later does not
+    /// start it again.
+    #[serde(default)]
+    pub resumed: bool,
+}
+
 /// What started a run that the owner did not start by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Origin {
@@ -224,6 +238,10 @@ pub struct State {
     /// A task the founder allowed to go on: the message it resumes with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<String>,
+    /// A mission a routine launched (decision 49): where the routine waits
+    /// for its report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine: Option<RoutineWait>,
     /// For a bot's run: the realm's extensions it may use (see `RealmTools`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
@@ -278,6 +296,7 @@ impl State {
             origin: None,
             agent: None,
             resume: None,
+            routine: None,
             tools: None,
             tier: None,
             context: None,

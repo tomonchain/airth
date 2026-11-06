@@ -339,3 +339,40 @@ fn a_reply_routine_reads_the_founders_post_and_waits_for_approval() {
     );
     assert!(err(json!({"agent": "writer", "trigger": {"telegram": "x_post", "manual": true}, "blocks": [post, ok]})).contains("one of schedule"));
 }
+
+/// The media team's routines pass the graph check once installed and their
+/// actions declared, each at level 1: the replies and the weekly article
+/// reach Typefully and the site only through the founder's approval.
+#[test]
+fn the_media_teams_routines_pass_the_graph_check() {
+    let root = tempfile::tempdir().unwrap();
+    crate::library::install(root.path(), &crate::library::team("media").unwrap()).unwrap();
+    let actions = [
+        declared("airth.launch_mission", Class::Reversible),
+        declared("airth.report", Class::Read),
+        declared("typefully.create_draft", Class::Reversible),
+        declared("typefully.create_reply", Class::Reversible),
+        declared("site.publish_article", Class::Commits),
+    ];
+    let level = |_: &str, action: &str| if action == "airth.report" { 3 } else { 1 };
+    let checks = Checks {
+        root: root.path(),
+        actions: &actions,
+        level: &level,
+    };
+    let all = load_all(&checks).unwrap();
+    for name in [
+        "daily-watch",
+        "daily-posts",
+        "weekly-report",
+        "replies",
+        "weekly-article",
+    ] {
+        let graph = all.iter().find(|(n, _)| n == name).map(|(_, g)| g);
+        assert!(
+            graph.is_some_and(|g| g.is_ok()),
+            "{name}: {:?}",
+            graph.map(|g| g.as_ref().map(|_| ()).map_err(|e| format!("{e:#}")))
+        );
+    }
+}

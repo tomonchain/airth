@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 88. A routine launches a mission and waits for its report
+
+**Accepted.** The founder, 6 November 2026, on milestone 4: "on avance". Decision 49 named `airth.launch_mission` and said the run waits for the mission; the engine refused it until now. This is how it runs.
+
+- The act launches a task (decision 64) for the routine's agent, with the act's `brief` as its order and the agent's scope and task budget. The app drives it unwatched, like a hand-off (decision 41); what it would commit waits in Needs you as in any task.
+- The launch goes through the agent's level for `airth.launch_mission` (start 1, ceiling 3). Below 3, the founder is asked first, in Needs you and on Telegram; level 0 is asked as 1, since a founder cannot launch a mission by hand. Approved, or past its delay, it launches once per item (its key in the action journal).
+- The item waits at the act. The mission's run keeps where its routine waits (`RoutineWait` in the run's JSON: routine, run, block, item). When the mission completes, the routine goes on after the act, the report as the item's `result.report`. Once: a mission resumed later does not start the routine again. A mission that stops or fails leaves the routine waiting; the founder sees the task, and if it completes later, the routine goes on then.
+- What the mission wrote comes from outside: an approval given before the launch does not cover the acts after it. The graph check already requires an approval between a mission and an act.
+- A launch held for the founder, or one that failed, stops the item there: nothing goes on without the mission's report.
+- The media team gains the Writer (`weekly-article`: the week's records, the mission, the founder's approval, `site.publish_article`) and `replies` (decision 63, drafted to `typefully.create_reply`).
+
+*Why:* milestone 4's Writer is a mission inside a routine. Running it as a task reuses the agent loop, its sandbox, its scope and its retries, with nothing agentic inside a block.
+
+*Cost:* the launch is done by Airth, as `airth.report` is, not through `Runtime::invoke`: the mission's own tool calls go through the runtime as in any task. A routine run now spans the mission's time, possibly days. The site's API is the founder's to declare; until then the article stops at the approval.
+
 ## 87. An agent answers cubic's review of its pull request
 
 **Accepted.** The founder, 6 November 2026: "j'aimerai bien qu'on intègre cubic.dev pour les reviews". cubic is a GitHub app that reviews each pull request with comments on its lines; it also has an MCP server (OAuth) for coding agents.

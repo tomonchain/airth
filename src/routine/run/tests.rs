@@ -203,7 +203,12 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
     };
     let mut store = Store::open(&root.path().join(FILE)).unwrap();
     let mut acted = Vec::new();
-    let mut act = |action: &str, fields: &BTreeMap<String, String>, key: &str, approved: bool| {
+    let mut act = |action: &str,
+                   fields: &BTreeMap<String, String>,
+                   key: &str,
+                   approved: bool,
+                   _: &str,
+                   _: &Item| {
         acted.push(format!("{action} {} {key} {approved}", fields["text"]));
         Ok("done".to_string())
     };
@@ -474,9 +479,13 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
         fast: None,
     };
     let mut store = Store::open(&root.path().join(FILE)).unwrap();
-    let mut act = |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool| -> Result<String> {
-        unreachable!("no act")
-    };
+    let mut act = |_: &str,
+                   _: &BTreeMap<String, String>,
+                   _: &str,
+                   _: bool,
+                   _: &str,
+                   _: &Item|
+     -> Result<String> { unreachable!("no act") };
     let report = run(
         "posts",
         &graph,
@@ -928,9 +937,13 @@ fn what_a_run_drops_reaches_the_founder() {
         };
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(&dir.path().join(FILE)).unwrap();
-        let mut act = |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool| -> Result<String> {
-            unreachable!("no act")
-        };
+        let mut act = |_: &str,
+                       _: &BTreeMap<String, String>,
+                       _: &str,
+                       _: bool,
+                       _: &str,
+                       _: &Item|
+         -> Result<String> { unreachable!("no act") };
         run(
             "posts",
             &graph,

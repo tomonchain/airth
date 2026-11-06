@@ -1,0 +1,38 @@
+{
+  "description": "Weekly article: the Writer writes it as a mission, the founder approves it, then it goes to the site",
+  "agent": "writer",
+  "trigger": {
+    "manual": true
+  },
+  "blocks": [
+    {
+      "id": "week",
+      "type": "read",
+      "source": "business",
+      "records": "week"
+    },
+    {
+      "id": "write",
+      "type": "act",
+      "action": "airth.launch_mission",
+      "fields": {
+        "brief": "Write this week's article ({{week}}), as your job says. Your report is the article, whole."
+      }
+    },
+    {
+      "id": "ok",
+      "type": "approval",
+      "show": "result.report",
+      "editable": "result.report",
+      "expires_after": 72
+    },
+    {
+      "id": "publish",
+      "type": "act",
+      "action": "site.publish_article",
+      "fields": {
+        "content": "{{result.report}}"
+      }
+    }
+  ]
+}

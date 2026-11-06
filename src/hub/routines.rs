@@ -117,11 +117,25 @@ impl Hub {
         let mut act = |action: &str,
                        fields: &BTreeMap<String, String>,
                        key: &str,
-                       approved: bool|
+                       approved: bool,
+                       block: &str,
+                       item: &crate::pipeline::run::Item|
          -> Result<String> {
             if action == "airth.report" {
                 reports.borrow_mut().push((key.to_string(), fields.clone()));
                 return Ok("reported in Needs you".into());
+            }
+            if action == crate::routine::run::LAUNCH_MISSION {
+                let launch = super::missions::Launch {
+                    agent: &graph.agent,
+                    routine: name,
+                    run,
+                    block,
+                    key,
+                    brief: fields.get("brief").map_or("", String::as_str),
+                    item,
+                };
+                return self.launch_for_routine(realm, &launch, approved, &declared);
             }
             let (connector, action_name) = action
                 .split_once('.')
@@ -539,6 +553,9 @@ impl Hub {
         tool: &str,
     ) -> Result<Approved> {
         let action = item.action.as_deref().context("the item names no action")?;
+        if tool == crate::routine::run::LAUNCH_MISSION {
+            return self.launch_approved(realm, item).map(Approved::Done);
+        }
         if tool != "http_request" {
             bail!(
                 "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions only, for now"

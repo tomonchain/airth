@@ -250,6 +250,12 @@ pub(super) fn run_scheduler(runner: Runner) {
         match runner.hub.take_hand_offs() {
             Ok(handed) => {
                 for (realm, state) in handed {
+                    // A mission a routine launched (decision 49).
+                    if state.routine.is_some() {
+                        eprintln!("mission {}/{} started", realm.name(), state.id);
+                        runner.spawn(realm, state, Job::Alone);
+                        continue;
+                    }
                     let Some(routine) = state.origin.as_ref().map(|o| o.objective.clone()) else {
                         continue;
                     };

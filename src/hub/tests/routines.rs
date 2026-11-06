@@ -622,3 +622,78 @@ fn a_post_link_runs_the_reply_routine() {
     );
     assert!(hub.reply_to_post(&f.realm, "no link at all").is_err());
 }
+
+/// Decision 49: a routine hands an item to a mission at its agent's level,
+/// waits, and goes on with the mission's report; an approval given before
+/// the mission does not cover what follows it, and nothing runs twice.
+#[test]
+fn a_routine_launches_a_mission_and_goes_on_with_its_report() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/writer.md".to_string(), "Write articles.".to_string()),
+        ("routines/article.json".into(), json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "week", "type": "read", "source": "business", "records": "week"},
+            {"id": "write", "type": "act", "action": "airth.launch_mission", "fields": {"brief": "Write the article of {{week}}"}},
+            {"id": "ok", "type": "approval", "show": "result.report"}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![done("Flows, the article: drafted.")]);
+    let start = crate::routine::run::Start::Trigger;
+    hub.run_routine(&f.realm, "article", "r1", start, None)
+        .unwrap();
+    // At level 1, the founder is asked before the mission starts.
+    let asked = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert_eq!(asked[0].action.as_deref(), Some("airth.launch_mission"));
+    let brief = asked[0].args["brief"].as_str().unwrap();
+    assert!(brief.starts_with("Write the article of 20"), "{brief}");
+    assert!(hub.take_hand_offs().unwrap().is_empty());
+
+    let (item, _) = hub
+        .answer_item(&f.realm, asked[0].id, None, Answer::Approve, "app", 5)
+        .unwrap();
+    assert_eq!(item.status, "done");
+    let mut handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 1);
+    let (realm, mut mission) = handed.remove(0);
+    assert_eq!(mission.agent.as_deref(), Some("writer"));
+    assert_eq!(mission.routine.as_ref().unwrap().block, "write");
+    // Approved again: launched once.
+    hub.answer_item(&f.realm, asked[0].id, None, Answer::Approve, "app", 5)
+        .unwrap();
+    assert!(hub.take_hand_offs().unwrap().is_empty());
+
+    hub.drive(
+        &realm,
+        &mut mission,
+        config(10),
+        hooks(&mut NoObserver, false),
+    )
+    .unwrap();
+    assert_eq!(mission.status, Status::Completed);
+    assert!(mission.routine.as_ref().unwrap().resumed);
+    let waiting = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(waiting.len(), 1, "{waiting:?}");
+    let article = &waiting[0];
+    assert_eq!(article.source["block"], "ok");
+    assert_eq!(
+        article.args["result"]["report"],
+        "Flows, the article: drafted."
+    );
+    assert_eq!(article.args["result"]["mission"], mission.id.as_str());
+    assert!(
+        article.args.get("approved_by_founder").is_none(),
+        "{:?}",
+        article.args
+    );
+
+    // A mission that ends again does not start the routine again.
+    hub.mission_ended(&realm, &mut mission).unwrap();
+    let after = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(after.len(), 1);
+}

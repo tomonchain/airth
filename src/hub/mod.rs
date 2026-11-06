@@ -36,6 +36,7 @@ mod delivery;
 pub(crate) mod finance;
 pub(crate) mod incidents;
 mod legal;
+mod missions;
 mod models;
 mod objectives;
 pub(crate) mod orders;
@@ -323,6 +324,12 @@ impl Hub {
         }
         if let Err(e) = self.task_ended(realm, state) {
             eprintln!("warning: could not tell how task {} ended: {e:#}", state.id);
+        }
+        if let Err(e) = self.mission_ended(realm, state) {
+            eprintln!(
+                "warning: the routine waiting for mission {} did not go on: {e:#}",
+                state.id
+            );
         }
         if state.origin.is_some()
             && let Err(e) = self.objective_run_ended(realm, state)

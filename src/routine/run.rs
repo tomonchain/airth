@@ -27,6 +27,8 @@ pub(super) const SOURCE: &str = "source_id";
 /// What a post the founder sent starts its routine with (decision 63).
 pub const POST_LINK: &str = "post_link";
 pub const ANGLE: &str = "angle";
+/// The act that hands an item to a mission; the run waits for its report.
+pub const LAUNCH_MISSION: &str = "airth.launch_mission";
 /// Set on an item the founder approved.
 const APPROVED: &str = "approved_by_founder";
 
@@ -215,11 +217,20 @@ pub enum Start {
         block: String,
         item: Item,
     },
+    /// After a mission the act `block` launched, with its report as the
+    /// item's `result`. What the mission wrote comes from outside: an
+    /// approval given before it does not cover what follows.
+    Mission {
+        block: String,
+        item: Item,
+    },
 }
 
 /// What does a real run's acts: it gets the action, its fields, the act's
-/// key and whether the founder approved the item, and says what it did.
-pub type Acts<'a> = dyn FnMut(&str, &BTreeMap<String, String>, &str, bool) -> Result<String> + 'a;
+/// key, whether the founder approved the item, and the act's block and the
+/// item (for a mission to go on from), and says what it did.
+pub type Acts<'a> =
+    dyn FnMut(&str, &BTreeMap<String, String>, &str, bool, &str, &Item) -> Result<String> + 'a;
 
 /// What a real run adds: its id, and what does its acts.
 pub struct Real<'a> {
@@ -289,7 +300,7 @@ pub fn run(
     now: DateTime<Utc>,
 ) -> Result<Report> {
     let mut inbox: Vec<Vec<Item>> = vec![Vec::new(); graph.blocks.len()];
-    let resumed = matches!(start, Start::After { .. });
+    let resumed = matches!(start, Start::After { .. } | Start::Mission { .. });
     match start {
         Start::Trigger => inbox[0].push(Item::new()),
         Start::Event(item) => inbox[0].push(item),
@@ -302,6 +313,18 @@ pub fn run(
             // The founder approved it: what follows is done as approved.
             let mut item = item;
             item.insert(APPROVED.into(), true.into());
+            for j in successors(graph, at)? {
+                inbox[j].push(item.clone());
+            }
+        }
+        Start::Mission { block, item } => {
+            let at = graph
+                .blocks
+                .iter()
+                .position(|b| b.id == block)
+                .ok_or_else(|| anyhow::anyhow!("{name} has no block '{block}' any more"))?;
+            let mut item = item;
+            item.remove(APPROVED);
             for j in successors(graph, at)? {
                 inbox[j].push(item.clone());
             }
@@ -332,6 +355,8 @@ pub fn run(
         let block_at = Utc::now();
         // What the block's record says beyond its counts (a real run only).
         let (mut acts_failed, mut block_cost) = (0usize, None);
+        // Items handed to a mission, waiting for its report.
+        let mut waiting = 0usize;
         let mut block_dropped = Vec::new();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
             Kind::Read { source, .. } if source == "business" => {
@@ -568,7 +593,15 @@ pub fn run(
                             &values,
                             &key,
                             it.get(APPROVED) == Some(&Value::Bool(true)),
+                            &block.id,
+                            &it,
                         ) {
+                            // The item goes on when the mission reports.
+                            Ok(what) if action == LAUNCH_MISSION => {
+                                lines.push(format!("{action} [{key}]: {what}"));
+                                waiting += 1;
+                                continue;
+                            }
                             Ok(what) => {
                                 lines.push(format!("{action} [{key}]: {what}"));
                                 it.insert("result".into(), what.into());
@@ -577,6 +610,10 @@ pub fn run(
                                 acts_failed += 1;
                                 failed.push(format!("{action}: {}", one_line(&format!("{e:#}"))));
                                 notes.push(format!("{action} [{key}] failed: {e:#}"));
+                                // No mission, no report to go on with.
+                                if action == LAUNCH_MISSION {
+                                    continue;
+                                }
                             }
                         },
                     }
@@ -601,6 +638,7 @@ pub fn run(
             let outcome = match &block.kind {
                 Kind::Approval { .. } => "waiting",
                 _ if acts_failed > 0 => "failed",
+                _ if waiting > 0 => "waiting",
                 _ => "ok",
             };
             dry.store.record_block(&BlockRun {
