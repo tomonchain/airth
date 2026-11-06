@@ -702,6 +702,24 @@ impl Hub {
     /// heartbeat with both times, so the next time knows it ended (decision
     /// 34) and the weekly report knows if it started late.
     pub fn run_scheduled_routine(&self, realm: &Realm, name: &str, due: DateTime<Utc>) {
+        let _ = self.run_and_record(realm, name, Some(due));
+    }
+
+    /// Run a routine now because the founder asked, from the app: as it runs
+    /// at its time (its acts within the agent's levels, what needs the
+    /// founder in the queue), recorded the same way. Its report, or why it
+    /// failed.
+    pub fn run_routine_by_hand(&self, realm: &Realm, name: &str) -> Result<String> {
+        self.run_and_record(realm, name, None)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    fn run_and_record(
+        &self,
+        realm: &Realm,
+        name: &str,
+        due: Option<DateTime<Utc>>,
+    ) -> std::result::Result<String, String> {
         let started = Utc::now();
         let run = format!("{name}-{}", started.format("%Y%m%dT%H%M%S"));
         let outcome =
@@ -710,7 +728,7 @@ impl Hub {
         let report = outcome.ok().map(|ran| ran.text);
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
-            due: Some(due),
+            due,
             started,
             finished: Utc::now(),
             items_read: 0,
@@ -726,10 +744,10 @@ impl Hub {
                 realm.name()
             );
         }
-        if let Some(e) = error {
+        if let Some(e) = &error {
             let incident = super::incidents::Incident {
                 title: &format!("{name} failed"),
-                detail: &e,
+                detail: e,
                 agent: None,
                 routine: Some(name),
                 action: None,
@@ -742,6 +760,10 @@ impl Hub {
                     realm.name()
                 );
             }
+        }
+        match error {
+            Some(e) => Err(e),
+            None => Ok(report.unwrap_or_default()),
         }
     }
 }

@@ -87,6 +87,7 @@ function describe(b: GraphBlock): [string, string] {
 
 type Report = { blocks: { id: string; items_in: number; items_out: number; secs: number; lines: string[]; notes: string[] }[]; cost: string; secs: number; failed?: string[] }
 type Dry = { running: boolean; report?: Report; error?: string; at?: string }
+type Ran = { running: boolean; report?: string; error?: string }
 
 /** The business's recurring work, in three kinds: routines made of blocks
     (decision 49), agents given a task on a schedule (decision 37), and the
@@ -97,6 +98,20 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
   const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
   const [open, setOpen] = useState<string | null>(null)
   const [dry, setDry] = useState<Record<string, Dry>>({})
+  const [ran, setRan] = useState<Record<string, Ran>>({})
+
+  // Run now, for real: as at its time. The request waits for the run.
+  async function runNow(name: string) {
+    setRan((d) => ({ ...d, [name]: { running: true } }))
+    try {
+      const out = await api<{ report: string }>(`realms/${enc(realm)}/graphs/${enc(name)}/run`, {}, undefined, 600000)
+      setRan((d) => ({ ...d, [name]: { running: false, report: out.report } }))
+      toast.success(`${name} ran.`)
+    } catch (e) {
+      setRan((d) => ({ ...d, [name]: { running: false, error: (e as Error).message } }))
+    }
+    graphs.refresh()
+  }
   const [form, setForm] = useState<Objective | "new" | null>(null)
 
   async function dryRun(name: string) {
@@ -119,7 +134,7 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
           <div className="space-y-2.5">
             {graphs.data.routines.map((r) => (
               <GraphCard key={r.name} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} open={open === r.name}
-                onOpen={() => setOpen(open === r.name ? null : r.name)} onAgent={onAgent} dry={dry[r.name]} onDry={() => dryRun(r.name)} />
+                onOpen={() => setOpen(open === r.name ? null : r.name)} onAgent={onAgent} dry={dry[r.name]} onDry={() => dryRun(r.name)} ran={ran[r.name]} onRun={() => runNow(r.name)} />
             ))}
           </div>
         ) : <Empty icon={Repeat} title="No routine yet">A routine is a file in routines/ in the business folder: a trigger, then its blocks.</Empty>}
@@ -158,8 +173,8 @@ function Last({ ok, at }: { ok: boolean; at: string }) {
   )
 }
 
-function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry }: {
-  r: Routine; agent?: Agent; open: boolean; onOpen: () => void; onAgent: (name: string) => void; dry?: Dry; onDry: () => void
+function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun }: {
+  r: Routine; agent?: Agent; open: boolean; onOpen: () => void; onAgent: (name: string) => void; dry?: Dry; onDry: () => void; ran?: Ran; onRun: () => void
 }) {
   const [block, setBlock] = useState<string | null>(null)
   const g = r.graph
@@ -224,9 +239,17 @@ function GraphCard({ r, agent, open, onOpen, onAgent, dry, onDry }: {
           ) : <p className="font-mono text-xs break-words text-red-500">{r.error}</p>}
 
           <aside className="space-y-4 text-sm">
-            <Button className="w-full" disabled={!g || dry?.running} onClick={onDry}>
-              {dry?.running ? <><Loader className="animate-spin" /> Running dry…</> : <><FlaskConical /> Dry run</>}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button disabled={!g || ran?.running || dry?.running} onClick={onRun} title="Run it now, for real: as at its time, what needs you waits in Needs you">
+                {ran?.running ? <><Loader className="animate-spin" /> Running…</> : <><Play /> Run now</>}
+              </Button>
+              <Button variant="outline" disabled={!g || dry?.running || ran?.running} onClick={onDry} title="Everything but the acts: nothing is sent">
+                {dry?.running ? <><Loader className="animate-spin" /> Dry…</> : <><FlaskConical /> Dry run</>}
+              </Button>
+            </div>
+            {ran?.running && <p className="text-xs text-muted-foreground">It runs for real: what needs you will wait in Needs you. It can take a minute.</p>}
+            {ran?.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{ran.error}</p>}
+            {ran?.report && <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">{ran.report}</p>}
             {dry?.running && <p className="text-xs text-muted-foreground">The feeds are read and the model asked. It can take a minute.</p>}
             {dry?.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{dry.error}</p>}
             {report && (

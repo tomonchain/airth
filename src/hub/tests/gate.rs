@@ -227,3 +227,48 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
         1
     );
 }
+
+/// Run now, from the Routines page: the routine runs as at its time (what
+/// needs the founder waits in the queue) and is recorded the same way,
+/// with no time it was due; a routine that does not load is refused.
+#[test]
+fn a_routine_run_by_hand_runs_and_is_recorded_as_at_its_time() {
+    let feed = "https://news.example/by-hand.xml";
+    TEST_FEEDS.lock().unwrap().insert(
+        feed.into(),
+        "<rss><channel><item><title>Stablecoin supply at a high</title>\
+         <link>https://news.example/supply</link></item></channel></rss>"
+            .into(),
+    );
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        (
+            "agents/watcher.md".to_string(),
+            "Watch the news.".to_string(),
+        ),
+        (
+            "routines/watch.json".into(),
+            json!({"agent": "watcher", "trigger": {"manual": true}, "blocks": [
+                {"id": "news", "type": "read", "source": "rss", "feeds": [feed], "dedupe": "link"},
+                {"id": "ok", "type": "approval", "show": "title"}
+            ]})
+            .to_string(),
+        ),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let store = || Store::of(&f.realm).unwrap();
+
+    hub.run_routine_by_hand(&f.realm, "watch").unwrap();
+    let beats = store().heartbeats().unwrap();
+    assert_eq!(beats.len(), 1);
+    assert!(beats[0].0 == "routine:watch" && beats[0].1.ok, "{beats:?}");
+    assert_eq!(beats[0].1.due_at, None, "run by hand, not due");
+    assert_eq!(store().queue(&["pending"]).unwrap().len(), 1);
+
+    assert!(hub.run_routine_by_hand(&f.realm, "ghost").is_err());
+}
