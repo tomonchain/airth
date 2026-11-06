@@ -79,7 +79,7 @@ fn a_routine_of_six_blocks_loads() {
     .unwrap();
     assert_eq!(g.blocks.len(), 6);
     assert_eq!(g.blocks[4].next, Some(None));
-    // Hedgen's Writer: a mission, then the founder, then publishing.
+    // Acme's Writer: a mission, then the founder, then publishing.
     try_graph(root.path(), json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
         {"id": "news", "type": "read", "source": "business", "records": "week"},
         {"id": "write", "type": "act", "action": "airth.launch_mission", "fields": {"brief": "Write"}},

@@ -14,7 +14,7 @@ impl Api for Fake {
         let mut calls = self.calls.borrow_mut();
         calls.push((method.to_string(), body.clone()));
         Ok(match method {
-            "getMe" => json!({"username": "hedgen_bot"}),
+            "getMe" => json!({"username": "acme_bot"}),
             _ => json!({"message_id": 100 + calls.len()}),
         })
     }
@@ -31,7 +31,7 @@ impl Fake {
     }
 }
 
-/// A home with the business `hedgen` and the hub over it.
+/// A home with the business `acme` and the hub over it.
 fn business() -> (
     tempfile::TempDir,
     tempfile::TempDir,
@@ -43,7 +43,7 @@ fn business() -> (
     let root = tempfile::tempdir().unwrap();
     let realm = home
         .create_realm(NewRealm {
-            name: "hedgen".into(),
+            name: "acme".into(),
             description: String::new(),
             root: Some(root.path().to_path_buf()),
             isolation: None,
@@ -114,7 +114,7 @@ fn each_item_goes_once_whole_and_failures_follow() {
     let root = tempfile::tempdir().unwrap();
     let realm = home
         .create_realm(NewRealm {
-            name: "hedgen".into(),
+            name: "acme".into(),
             description: String::new(),
             root: Some(root.path().to_path_buf()),
             isolation: None,
@@ -143,7 +143,7 @@ fn each_item_goes_once_whole_and_failures_follow() {
     home.inbox()
         .push(
             crate::notify::Kind::Failed,
-            "hedgen",
+            "acme",
             None,
             "daily-watch failed",
             "no feed",
@@ -161,7 +161,7 @@ fn each_item_goes_once_whole_and_failures_follow() {
         sent[0]["text"]
             .as_str()
             .unwrap()
-            .starts_with("hedgen · Needs you\nA post\n\nETH left the queue.")
+            .starts_with("acme · Needs you\nA post\n\nETH left the queue.")
     );
     // The long one: every character, in pieces, the buttons on the last only.
     let pieces: Vec<&Value> = sent[1..sent.len() - 1].iter().collect();
@@ -179,7 +179,7 @@ fn each_item_goes_once_whole_and_failures_follow() {
             .all(|p| p["reply_markup"].is_null())
     );
     let keys = &pieces.last().unwrap()["reply_markup"]["inline_keyboard"][0];
-    assert_eq!(keys[1]["callback_data"], "e/hedgen/2/1");
+    assert_eq!(keys[1]["callback_data"], "e/acme/2/1");
     assert!(
         sent.last().unwrap()["text"]
             .as_str()
@@ -216,8 +216,8 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
         ..Config::default()
     };
     push(&hub, &api, &mut config).unwrap();
-    let first = config.sent["hedgen/1"].messages[0];
-    let second = config.sent["hedgen/2"].messages[0];
+    let first = config.sent["acme/1"].messages[0];
+    let second = config.sent["acme/2"].messages[0];
     let draft = |id: i64| {
         Store::of(&realm)
             .unwrap()
@@ -231,10 +231,10 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
     };
 
     // Someone else's tap changes nothing.
-    handle(&hub, &api, &mut config, &tap(8, "e/hedgen/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(8, "e/acme/1/1")).unwrap();
     assert_eq!(config.editing, None);
-    handle(&hub, &api, &mut config, &tap(7, "e/hedgen/1/1")).unwrap();
-    assert_eq!(config.editing.as_deref(), Some("hedgen/1"));
+    handle(&hub, &api, &mut config, &tap(7, "e/acme/1/1")).unwrap();
+    assert_eq!(config.editing.as_deref(), Some("acme/1"));
     // A free message, or a reply to the other item: asked again.
     let asked = api.sent().len();
     handle(&hub, &api, &mut config, &message(5, 7, "ETH left. Calmly.")).unwrap();
@@ -252,21 +252,21 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
     handle(&hub, &api, &mut config, &reply(first, "ETH left. Calmly.")).unwrap();
     assert_eq!(draft(1), "ETH left. Calmly.");
     assert_eq!(config.editing, None);
-    assert_eq!(config.sent["hedgen/1"].revision, 2);
+    assert_eq!(config.sent["acme/1"].revision, 2);
     // The old buttons are out of date; the new ones work.
-    handle(&hub, &api, &mut config, &tap(7, "a/hedgen/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/1")).unwrap();
     assert!(
         api.sent().last().unwrap()["text"]
             .as_str()
             .unwrap()
             .starts_with("Not done")
     );
-    handle(&hub, &api, &mut config, &tap(7, "a/hedgen/1/2")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/2")).unwrap();
     assert!(
         api.sent().last().unwrap()["text"]
             .as_str()
             .unwrap()
-            .starts_with("hedgen · approved")
+            .starts_with("acme · approved")
     );
 }
 
@@ -294,7 +294,7 @@ fn a_deadline_is_filed_or_seen_and_overdue_only_filed() {
     }
     let items = store.queue(&["pending"]).unwrap();
     let labels = |item| -> Vec<String> {
-        buttons("hedgen", item)[0]
+        buttons("acme", item)[0]
             .as_array()
             .unwrap()
             .iter()
@@ -303,7 +303,7 @@ fn a_deadline_is_filed_or_seen_and_overdue_only_filed() {
     };
     assert_eq!(labels(&items[0]), ["Filed", "Seen"]);
     assert_eq!(labels(&items[1]), ["Filed"]);
-    assert!(item_text("hedgen", &items[0]).starts_with("hedgen · Legal deadline"));
+    assert!(item_text("acme", &items[0]).starts_with("acme · Legal deadline"));
 }
 
 /// Decision 58: on the phone, a blocked item says why and offers Override,
@@ -333,7 +333,7 @@ fn a_blocked_item_offers_override_not_approve() {
         .unwrap();
     let items = store.queue(&["pending"]).unwrap();
     let labels = |item| -> Vec<String> {
-        buttons("hedgen", item)[0]
+        buttons("acme", item)[0]
             .as_array()
             .unwrap()
             .iter()
@@ -341,9 +341,9 @@ fn a_blocked_item_offers_override_not_approve() {
             .collect()
     };
     assert_eq!(labels(&items[0]), ["Override", "Edit", "Reject"]);
-    assert!(item_text("hedgen", &items[0]).contains("Flagged by the check: a call to buy"));
+    assert!(item_text("acme", &items[0]).contains("Flagged by the check: a call to buy"));
     assert_eq!(labels(&items[1]), ["Approve", "Edit", "Reject"]);
-    assert!(item_text("hedgen", &items[1]).contains("Note from the check: long"));
+    assert!(item_text("acme", &items[1]).contains("Note from the check: long"));
     // What the same run dropped reaches the phone too (decision 61).
     store
         .propose_flagged(
@@ -354,7 +354,7 @@ fn a_blocked_item_offers_override_not_approve() {
         .unwrap();
     let items = store.queue(&["pending"]).unwrap();
     assert!(
-        item_text("hedgen", &items[2])
+        item_text("acme", &items[2])
             .contains(r#"Also in this run: draft: 1 of 3 dropped: "Hack" (too long)"#)
     );
 }
@@ -383,15 +383,15 @@ fn an_approved_item_that_failed_to_send_says_so() {
     item.status = "failed".into();
     assert_eq!(
         answered(
-            "hedgen",
+            "acme",
             &item,
             Some("typefully.create_draft: HTTP 403 Forbidden: v1 is closed")
         ),
-        "hedgen · approved, sending failed: HKMA\ntypefully.create_draft: HTTP 403 Forbidden: v1 is closed"
+        "acme · approved, sending failed: HKMA\ntypefully.create_draft: HTTP 403 Forbidden: v1 is closed"
     );
     let mut done = item.clone();
     done.status = "done".into();
-    assert!(answered("hedgen", &done, None).starts_with("hedgen · done: HKMA"));
+    assert!(answered("acme", &done, None).starts_with("acme · done: HKMA"));
 }
 
 /// Decision 62 on the phone: Retry when nothing was done; "Retry…" first
@@ -441,7 +441,7 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
     assert_eq!(labels(1), ["Retry…", "Seen"]);
     assert_eq!(labels(2), ["Seen"]);
     // "Retry…" asks first; its button is the checked retry.
-    handle(&hub, &api, &mut config, &tap(7, "u/hedgen/2/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "u/acme/2/1")).unwrap();
     let asked = api.sent().last().unwrap().clone();
     assert!(
         asked["text"]
@@ -451,11 +451,11 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
     );
     assert_eq!(
         asked["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
-        "c/hedgen/2/1"
+        "c/acme/2/1"
     );
     // An unknown button answers nothing and leaves the item waiting.
     let before = api.sent().len();
-    handle(&hub, &api, &mut config, &tap(7, "z/hedgen/3/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "z/acme/3/1")).unwrap();
     assert_eq!(api.sent().len(), before);
     assert!(
         Store::of(&realm)
@@ -466,12 +466,12 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
             .any(|i| i.id == 3)
     );
     // Retry is taken; this one belongs to no routine, so it says it failed.
-    handle(&hub, &api, &mut config, &tap(7, "t/hedgen/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "t/acme/1/1")).unwrap();
     let said = api.sent().last().unwrap()["text"]
         .as_str()
         .unwrap()
         .to_string();
-    assert!(said.starts_with("hedgen · retry failed: refused"), "{said}");
+    assert!(said.starts_with("acme · retry failed: refused"), "{said}");
 }
 
 /// Decision 63 on the phone: the founder's message with a post link drafts
@@ -519,7 +519,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         &hub,
         &api,
         &mut config,
-        &message(5, 7, &format!("hedgen {link} push back on the yield claim")),
+        &message(5, 7, &format!("acme {link} push back on the yield claim")),
     )
     .unwrap();
     let said = api.sent().last().unwrap()["text"]
@@ -528,7 +528,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         .to_string();
     assert_eq!(
         said,
-        "hedgen · reply drafted: it comes next, for your approval."
+        "acme · reply drafted: it comes next, for your approval."
     );
     let items = Store::of(&realm).unwrap().queue(&["pending"]).unwrap();
     assert_eq!(items.len(), 1);
@@ -564,7 +564,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         .unwrap()
         .to_string();
     assert!(
-        said.starts_with("hedgen · not drafted: the post is mostly an image or a chart"),
+        said.starts_with("acme · not drafted: the post is mostly an image or a chart"),
         "{said}"
     );
     assert_eq!(

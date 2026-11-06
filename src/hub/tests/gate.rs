@@ -57,7 +57,7 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
     let mut f = fixture();
     let root = f.root.path().to_path_buf();
     for (path, text) in [
-        ("agents/post-writer.md".to_string(), "Draft Hedgen's posts.".to_string()),
+        ("agents/post-writer.md".to_string(), "Draft Acme's posts.".to_string()),
         ("prompts/post.md".into(), "Draft a post about the item.".into()),
         ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
         ("routines/posts.json".into(), json!({"agent": "post-writer", "trigger": {"schedule": "every 1h"}, "blocks": [
@@ -343,7 +343,7 @@ fn a_routine_is_told_the_strategy_and_memory_the_founder_keeps() {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, text).unwrap();
     }
-    crate::business::set_strategy(&root, "Ten founding firms by 2027.").unwrap();
+    crate::business::set_strategy(&root, "Twelve articles by June.").unwrap();
     f.realm
         .memory()
         .add("No posts on weekends.", "owner")
@@ -352,7 +352,7 @@ fn a_routine_is_told_the_strategy_and_memory_the_founder_keeps() {
 
     hub.run_routine_by_hand(&f.realm, "posts").unwrap();
     let system = systems.lock().unwrap().last().cloned().unwrap();
-    assert!(system.contains("Ten founding firms by 2027."), "{system}");
+    assert!(system.contains("Twelve articles by June."), "{system}");
     assert!(system.contains("- No posts on weekends."), "{system}");
     let (said, task) = (
         system.find("No posts on weekends").unwrap(),

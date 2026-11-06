@@ -441,7 +441,7 @@ mod tests {
         (api, seen)
     }
 
-    const REDIRECT: &str = "https://hedgen.xyz/airth/revolut";
+    const REDIRECT: &str = "https://acme.example/airth/revolut";
 
     /// Base64url without padding, back to bytes.
     fn unbase64url(s: &str) -> Vec<u8> {
@@ -478,15 +478,15 @@ mod tests {
             (param("client_id"), param("response_type")),
             (Some("cid"), Some("code"))
         );
-        assert!(url.contains("redirect_uri=https%3A%2F%2Fhedgen.xyz%2Fairth%2Frevolut"));
+        assert!(url.contains("redirect_uri=https%3A%2F%2Facme.example%2Fairth%2Frevolut"));
         assert_eq!(
             code_from(&format!("{REDIRECT}?code=oa_abc"), REDIRECT).unwrap(),
             "oa_abc"
         );
         for wrong in [
             "https://evil.com/airth/revolut?code=x",
-            "https://hedgen.xyz/other?code=x",
-            "hedgen.xyz?code=x",
+            "https://acme.example/other?code=x",
+            "acme.example?code=x",
         ] {
             assert!(code_from(wrong, REDIRECT).is_err(), "{wrong}");
         }
@@ -515,7 +515,11 @@ mod tests {
                 claims["sub"].as_str(),
                 claims["aud"].as_str()
             ),
-            (Some("hedgen.xyz"), Some("cid"), Some("https://revolut.com"))
+            (
+                Some("acme.example"),
+                Some("cid"),
+                Some("https://revolut.com")
+            )
         );
         let signature = unbase64url(parts[2]);
         aws_lc_rs::signature::UnparsedPublicKey::new(

@@ -64,7 +64,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         {"id": "good", "type": "condition", "if": {"field": "answer.score", "op": ">=", "value": 3}, "else": "skip"},
         {"id": "ok", "type": "approval", "show": "answer.draft"},
         {"id": "send", "type": "act", "action": "typefully.create_draft",
-            "fields": {"set": "hedgen", "content": "{{answer.draft}}"}, "next": null},
+            "fields": {"set": "acme", "content": "{{answer.draft}}"}, "next": null},
         {"id": "skip", "type": "act", "action": "airth.report", "fields": {"title": "Left out: {{title}}"}}
     ]}))
     .unwrap();
@@ -131,7 +131,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
         "{report}"
     );
     assert!(
-        report.contains("would typefully.create_draft [posts/https://e.com/1/send]: POST https://api.typefully.com/v1/sets/hedgen/drafts"),
+        report.contains("would typefully.create_draft [posts/https://e.com/1/send]: POST https://api.typefully.com/v1/sets/acme/drafts"),
         "{report}"
     );
     assert!(

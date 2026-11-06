@@ -504,12 +504,12 @@ Decision 43 left the legal calendar's rules to milestone 2: "derived from `count
 
 **Fields: a UK Ltd.** `business/profile.md` already has them (decision 43). Their names stay; the app shows the product words.
 
-| Field | UK meaning | Hedgen, from Companies House |
+| Field | UK meaning | Example |
 | --- | --- | --- |
-| `registration_number` | Company number | 16838911 |
+| `registration_number` | Company number | 01234567 |
 | `incorporated_on` | Incorporation date | 2025-11-07 |
 | `fiscal_year_end` | Accounting reference date, as `MM-DD`; shown as "Accounting reference date" for a GB company | 11-30 |
-| `registered_office` | Registered office | 71-75 Shelton Street, Covent Garden, London, WC2H 9JQ |
+| `registered_office` | Registered office | 1 Example Street, London, EC1A 1AA |
 
 Two new optional fields:
 - `confirmation_date`: the date on the last confirmation statement filed. It is empty before the first one. Filing early moves the next review period, so Airth needs that date. Airth never writes it (decision 44): when the founder answers **Filed** on time, the record in the database is enough, so the field is only needed after an early filing.

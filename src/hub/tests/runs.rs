@@ -556,11 +556,7 @@ fn runs_read_the_business_folder_but_never_change_it() {
     let mut f = fixture();
     let business = f.root.path().join("business");
     std::fs::create_dir_all(business.join("archive")).unwrap();
-    std::fs::write(
-        business.join("profile.md"),
-        "Hedgen: on-chain research on X.",
-    )
-    .unwrap();
+    std::fs::write(business.join("profile.md"), "Acme: on-chain research on X.").unwrap();
     std::fs::write(business.join("archive/post.md"), "an old post").unwrap();
     f.realm.config.policy.write = Rule::Allow;
     f.realm.config.policy.execute = Rule::Allow;
@@ -577,7 +573,7 @@ fn runs_read_the_business_folder_but_never_change_it() {
             call(
                 "2",
                 "write_file",
-                json!({"path": "business/profile.md", "content": "Hedgen sells tokens."}),
+                json!({"path": "business/profile.md", "content": "Acme sells tokens."}),
             ),
             call(
                 "3",
@@ -603,7 +599,7 @@ fn runs_read_the_business_folder_but_never_change_it() {
     assert_eq!(state.status, Status::Completed);
     let system = &systems.lock().unwrap()[0];
     assert!(
-        system.contains("The business this realm runs:\nHedgen: on-chain research on X."),
+        system.contains("The business this realm runs:\nAcme: on-chain research on X."),
         "{system}"
     );
     assert!(system.contains("business/archive/: 1 file"), "{system}");
@@ -620,7 +616,7 @@ fn runs_read_the_business_folder_but_never_change_it() {
     if crate::sandbox::available() {
         assert_eq!(
             std::fs::read_to_string(business.join("profile.md")).unwrap(),
-            "Hedgen: on-chain research on X."
+            "Acme: on-chain research on X."
         );
     }
     assert_eq!(
@@ -900,8 +896,8 @@ fn an_integration_with_declared_actions_takes_nothing_else() {
     let (hub, _, _) = make_hub(
         &f.home,
         vec![
-            request("1", "POST", "drafts/hedgen"),
-            request("2", "DELETE", "drafts/hedgen"),
+            request("1", "POST", "drafts/acme"),
+            request("2", "DELETE", "drafts/acme"),
             request("3", "POST", "admin/users"),
             request("4", "POST", "drafts/a/b"),
             done("done"),
@@ -928,7 +924,7 @@ fn an_integration_with_declared_actions_takes_nothing_else() {
             e.result
         );
     }
-    assert_eq!(*hits.lock().unwrap(), vec!["/v1/drafts/hedgen"]);
+    assert_eq!(*hits.lock().unwrap(), vec!["/v1/drafts/acme"]);
 }
 
 /// Decision 54: the bank's key and tokens are runtime-only. A run in the

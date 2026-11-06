@@ -10,7 +10,7 @@ fn fake_drive() -> String {
         let meta = |id: &str| -> Option<Value> {
             Some(match id {
                 "R" => {
-                    json!({"id": "R", "name": "Hedgen", "mimeType": "application/vnd.google-apps.folder", "parents": ["root"]})
+                    json!({"id": "R", "name": "Acme", "mimeType": "application/vnd.google-apps.folder", "parents": ["root"]})
                 }
                 "D1" => {
                     json!({"id": "D1", "name": "Legal", "mimeType": "application/vnd.google-apps.folder", "parents": ["R"]})

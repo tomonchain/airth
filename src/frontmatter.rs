@@ -197,16 +197,16 @@ mod tests {
     #[test]
     fn reads_flat_fields_lists_and_the_body() {
         let doc = parse(
-            "---\nname: Hedgen\nlegal_name: \"Hedgen Ltd\"\nvat_number: TODO\ndomain:\n\
-             links: [https://x.com/hedgen, \"a, b\", TODO]\ndescription: >\n  two\n  lines\n---\n# Hedgen\n\nProse.\n",
+            "---\nname: Acme\nlegal_name: \"Acme Ltd\"\nvat_number: TODO\ndomain:\n\
+             links: [https://x.com/acme, \"a, b\", TODO]\ndescription: >\n  two\n  lines\n---\n# Acme\n\nProse.\n",
         );
-        assert_eq!(doc.text("name").as_deref(), Some("Hedgen"));
-        assert_eq!(doc.text("legal_name").as_deref(), Some("Hedgen Ltd"));
+        assert_eq!(doc.text("name").as_deref(), Some("Acme"));
+        assert_eq!(doc.text("legal_name").as_deref(), Some("Acme Ltd"));
         assert_eq!(doc.text("vat_number"), None);
         assert_eq!(doc.text("domain"), None);
-        assert_eq!(doc.list("links"), vec!["https://x.com/hedgen", "a, b"]);
+        assert_eq!(doc.list("links"), vec!["https://x.com/acme", "a, b"]);
         assert_eq!(doc.text("description").as_deref(), Some("two lines"));
-        assert_eq!(doc.body, "# Hedgen\n\nProse.\n");
+        assert_eq!(doc.body, "# Acme\n\nProse.\n");
         assert_eq!(
             doc.unknown(&["name", "vat_number", "domain", "absent"]),
             vec!["vat_number", "domain", "absent"]
@@ -228,9 +228,9 @@ mod tests {
 
     #[test]
     fn a_file_without_front_matter_is_all_body() {
-        let doc = parse("# Hedgen\nNo fields.");
+        let doc = parse("# Acme\nNo fields.");
         assert!(doc.fields.is_empty());
-        assert_eq!(doc.body, "# Hedgen\nNo fields.");
+        assert_eq!(doc.body, "# Acme\nNo fields.");
         assert_eq!(parse("---\nname: x\n").text("name").as_deref(), Some("x"));
     }
 }

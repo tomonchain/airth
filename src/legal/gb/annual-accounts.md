@@ -16,4 +16,4 @@ The first accounting reference period runs from incorporation to the accounting 
 
 Months count as the Companies Act says (s443): from the last day of a month, the period ends on the last day of the due month.
 
-Checked against Companies House's record for Hedgen Ltd: first accounts made up to 30 November 2026, due by 7 August 2027.
+Checked against Companies House's record for a company incorporated on 7 November 2025: first accounts made up to 30 November 2026, due by 7 August 2027.

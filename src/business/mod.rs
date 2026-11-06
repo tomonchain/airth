@@ -274,7 +274,7 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;
             }
         }
-        // A repository keeps its own name, dots included (hedgen.xyz).
+        // A repository keeps its own name, dots included (acme.example).
         "repos" => {
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
                 crate::realm::validate_repo_name(name)
@@ -498,11 +498,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let business = dir(root.path());
         std::fs::create_dir_all(business.join("archive/2025")).unwrap();
-        std::fs::write(business.join(PROFILE), "Hedgen: on-chain research on X.\n").unwrap();
+        std::fs::write(business.join(PROFILE), "Acme: on-chain research on X.\n").unwrap();
         std::fs::write(business.join("archive/2025/a.md"), "post").unwrap();
         std::fs::write(business.join("archive/b.md"), "post").unwrap();
         let b = briefing(root.path(), &[]).unwrap().unwrap();
-        assert!(b.starts_with("Hedgen: on-chain research on X."), "{b}");
+        assert!(b.starts_with("Acme: on-chain research on X."), "{b}");
         assert!(b.contains("business/archive/: 2 files"), "{b}");
         assert!(b.contains("not change it"), "{b}");
         assert!(!b.contains("strategy"), "{b}");
@@ -671,7 +671,7 @@ mod tests {
         // What its tasks may use: names, checked one by one.
         set_agent_field(root.path(), "writer", "skills", "vercel, pdf", &[]).unwrap();
         set_agent_field(root.path(), "writer", "integrations", "typefully", &[]).unwrap();
-        set_agent_field(root.path(), "writer", "repos", "hedgen.xyz, site", &[]).unwrap();
+        set_agent_field(root.path(), "writer", "repos", "acme.example, site", &[]).unwrap();
         assert!(set_agent_field(root.path(), "writer", "repos", "../x", &[]).is_err());
         let scope = scope(root.path(), "writer").unwrap();
         assert_eq!(scope.skills, ["vercel", "pdf"]);

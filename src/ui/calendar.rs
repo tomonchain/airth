@@ -288,7 +288,7 @@ mod tests {
     /// The week from today: each run of each schedule on its day and time;
     /// today's past ones say what became of them (done, late past the
     /// grace, failed, not run); each routine's next one is marked.
-    /// Decision 66 on Calendar: Hedgen's next deadlines over twelve months,
+    /// Decision 66 on Calendar: Acme's next deadlines over twelve months,
     /// as Companies House publishes them; without the dates in the profile,
     /// each rule says which are missing.
     #[test]

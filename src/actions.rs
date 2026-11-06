@@ -482,8 +482,8 @@ mod tests {
         };
         let url = |v: &str| a.url(&i, &[("set".to_string(), v.to_string())].into());
         assert_eq!(
-            url("hedgen 2").unwrap().as_str(),
-            "https://api.typefully.com/v1/sets/hedgen%202/drafts"
+            url("acme 2").unwrap().as_str(),
+            "https://api.typefully.com/v1/sets/acme%202/drafts"
         );
         assert_eq!(url("a%2Fb").unwrap().path(), "/v1/sets/a%252Fb/drafts");
         for bad in ["../admin", "..", ".", "a/b", "https://evil.example/x", ""] {

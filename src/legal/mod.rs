@@ -327,33 +327,33 @@ mod tests {
         assert_eq!(rules("GB", "ltd").unwrap().len(), 4);
         assert!(
             rules("FR", "sas").unwrap().is_empty(),
-            "France's rules come with Numirama"
+            "France's rules are not written yet"
         );
     }
 
-    /// Hedgen Ltd, as Companies House publishes it: incorporated 7 November
+    /// A company, as Companies House publishes its dates: incorporated 7 November
     /// 2025, first confirmation statement to 6 November 2026, due by 20
     /// November; first accounts to 30 November 2026, due by 7 August 2027.
     #[test]
-    fn hedgen_matches_companies_house() {
-        let hedgen = company("2025-11-07", (11, 30));
+    fn a_real_company_matches_companies_house() {
+        let acme = company("2025-11-07", (11, 30));
         assert_eq!(
-            due(&hedgen, "confirmation-statement", "2027-11-06"),
+            due(&acme, "confirmation-statement", "2027-11-06"),
             pairs(&[("2026-11-06", "2026-11-20"), ("2027-11-06", "2027-11-20")])
         );
         assert_eq!(
-            due(&hedgen, "annual-accounts", "2027-11-30"),
+            due(&acme, "annual-accounts", "2027-11-30"),
             // From 30 November, the due month's last day (s443).
             pairs(&[("2026-11-30", "2027-08-07"), ("2027-11-30", "2028-08-31")])
         );
         assert_eq!(
-            due(&hedgen, "company-tax-return", "2026-11-30"),
+            due(&acme, "company-tax-return", "2026-11-30"),
             pairs(&[("2026-11-30", "2027-11-30")])
         );
         // Two Corporation Tax periods in the first 12 months and 3 weeks;
         // from 30 November, the earlier reading.
         assert_eq!(
-            due(&hedgen, "corporation-tax-payment", "2026-11-30"),
+            due(&acme, "corporation-tax-payment", "2026-11-30"),
             pairs(&[("2026-11-06", "2027-08-07"), ("2026-11-30", "2027-08-31")])
         );
     }

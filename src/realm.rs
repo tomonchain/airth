@@ -102,7 +102,7 @@ pub fn detect_checks(dir: &Path) -> Vec<String> {
     }
 }
 
-/// A repository's name: letters, digits, - _ and . (as `hedgen.xyz`).
+/// A repository's name: letters, digits, - _ and . (as `acme.example`).
 pub fn validate_repo_name(name: &str) -> Result<()> {
     if name.is_empty()
         || name.len() > 64

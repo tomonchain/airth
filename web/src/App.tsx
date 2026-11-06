@@ -36,7 +36,7 @@ function route(): string | null {
 }
 
 // The page and agent open, after the business in the address
-// (#/b/hedgen/agents/writer): a reload comes back to them, and a link opens them.
+// (#/b/acme/agents/writer): a reload comes back to them, and a link opens them.
 function opened(): { page: Page; agent: string | null } {
   const m = location.hash.match(/^#\/b\/[^/?&]+\/([a-z]+)(?:\/([^/?&]+))?/)
   const page = PAGES.find((p) => p === m?.[1]) ?? "home"
