@@ -9,7 +9,8 @@
 use anyhow::{Result, bail};
 
 /// Pages read at most: a company document, not a book.
-pub const MAX_PAGES: usize = 20;
+#[cfg(target_os = "macos")]
+const MAX_PAGES: usize = 20;
 
 /// What is read.
 #[derive(Clone, Copy, Debug, PartialEq)]
