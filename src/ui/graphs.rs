@@ -90,10 +90,26 @@ impl App {
     /// Each routine, loaded or with why not, with its agent, its last runs,
     /// its next time and what its model calls cost this week.
     fn graphs(&self, realm: &Realm) -> Result<Value> {
-        let all = self
-            .hub
-            .with_routine_checks(realm, crate::routine::load_all)?;
+        // What the editor offers: the declared actions and the prompts.
+        let (all, actions) = self.hub.with_routine_checks(realm, |c| {
+            let actions: Vec<Value> = c
+                .actions
+                .iter()
+                .map(|a| json!({"id": a.id, "class": a.class, "ceiling": a.ceiling}))
+                .collect();
+            Ok((crate::routine::load_all(c)?, actions))
+        })?;
         let root = realm.root()?;
+        let mut prompts: Vec<String> = std::fs::read_dir(root.join("prompts"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                name.ends_with(".md").then(|| format!("prompts/{name}"))
+            })
+            .collect();
+        prompts.sort();
         let store = Store::of(realm)?;
         let costs = store.pipeline_costs(chrono::Utc::now() - chrono::Duration::days(7))?;
         let mut routines = Vec::new();
@@ -132,7 +148,7 @@ impl App {
             }
             routines.push(routine);
         }
-        Ok(json!({"routines": routines}))
+        Ok(json!({"routines": routines, "actions": actions, "prompts": prompts}))
     }
 }
 
@@ -185,6 +201,14 @@ mod tests {
         assert_eq!(weekly["graph"]["blocks"][0]["records"], "week");
         assert_eq!(weekly["graph"]["blocks"][1]["action"], "airth.report");
         assert_eq!(weekly["runs"], json!([]));
+        assert!(
+            page["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == "airth.report")
+        );
+        assert_eq!(page["prompts"], json!([]));
 
         let report = app
             .hub
