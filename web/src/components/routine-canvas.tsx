@@ -4,11 +4,12 @@ import {
   type Connection, type Edge, type EdgeChange, type Node, type NodeChange, type NodeProps,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { ArrowLeft, BookOpen, FlaskConical, GitBranch, Hand, Loader, Play, Save, Sparkles, Trash2, Undo2, Zap, type LucideIcon } from "lucide-react"
+import { ArrowLeft, Plus, BookOpen, FlaskConical, GitBranch, Hand, Loader, Play, Save, Sparkles, Trash2, Undo2, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { BlockFields, TriggerFields, type Declared, type Draft } from "@/components/routine-editor"
 import { TRIGGER, autoLayout, compose, linksOf, problems, type Links, type Report } from "@/lib/routine-graph"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -123,12 +124,13 @@ const NEW: Record<string, (d: { prompts: string[]; actions: Declared[] }) => Omi
     their outputs, and sets each one's parameters; saving writes the same
     file, checked as loading checks it. */
 export function RoutineCanvas(props: CanvasProps) {
-  // A file that is not JSON cannot be drawn: drawing over it would lose it.
+  // A file that is not a routine's shape cannot be drawn: drawing over it
+  // would lose it.
   if (props.routine && !parse(props.routine.source)) {
     return (
       <div className="space-y-3 rounded-xl border bg-card p-4 text-sm">
         <Button size="sm" variant="ghost" onClick={props.onClose}><ArrowLeft /> Routines</Button>
-        <p>routines/{props.routine.name}.json is not JSON, so it cannot be drawn. Fix it in Documents first.</p>
+        <p>routines/{props.routine.name}.json is not a routine's JSON (an agent, a trigger and a list of blocks), so it cannot be drawn. Fix it in Documents first.</p>
         {props.routine.error && <p className="font-mono text-xs break-words text-red-500">{props.routine.error}</p>}
       </div>
     )
@@ -142,13 +144,21 @@ type CanvasProps = {
 }
 
 function parse(source: string): Draft | null {
-  try { return JSON.parse(source) as Draft } catch { return null }
+  try {
+    const d = JSON.parse(source) as Draft
+    const ok = d && typeof d === "object" && typeof d.trigger === "object" && d.trigger !== null && Array.isArray(d.blocks)
+      && d.blocks.every((b) => b && typeof b === "object" && typeof b.id === "string" && typeof b.type === "string")
+    return ok ? d : null
+  } catch { return null }
 }
 
 function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: CanvasProps) {
   const { theme } = useTheme()
   const flow = useReactFlow()
-  const saved = routine ? parse(routine.source) : null
+  // The file the draft was read from, and its version: a save is checked
+  // against it, so a change made elsewhere meanwhile is refused, not lost.
+  const [base, setBase] = useState(() => ({ draft: routine ? parse(routine.source) : null, version: routine?.version ?? "" }))
+  const saved = base.draft
   const [name, setName] = useState(routine?.name ?? "")
   const [draft, setDraft] = useState<Draft>(() => saved ?? { description: "", agent: agents[0]?.name ?? "", trigger: { manual: true }, blocks: [] })
   const [links, setLinks] = useState<Links>(() => linksOf(draft))
@@ -161,6 +171,14 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
 
   const composed = useMemo(() => compose(draft, links, entry), [draft, links, entry])
   const dirty = !routine || !saved || JSON.stringify(composed) !== JSON.stringify(saved)
+  // A newer file replaces the canvas's copy, unless the founder changed it.
+  if (routine && routine.version !== base.version && !dirty) {
+    const fresh = parse(routine.source)
+    if (fresh) {
+      setBase({ draft: fresh, version: routine.version })
+      setDraft(fresh); setLinks(linksOf(fresh)); setEntry(fresh.blocks[0]?.id ?? null)
+    }
+  }
   const issues = problems(draft, links, entry)
   const report = dirty ? undefined : dry.report
   const at = useMemo(() => ({ ...autoLayout(draft, links, entry), ...((draft.layout as Record<string, [number, number]> | undefined) ?? {}) }), [draft, links, entry])
@@ -246,7 +264,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
   }
 
   function rename(from: string, to: string) {
-    if (!to || to === from || draft.blocks.some((b) => b.id === to)) return
+    if (!to || to === from || to === TRIGGER || draft.blocks.some((b) => b.id === to)) return
     const layout = Object.fromEntries(Object.entries((draft.layout as Record<string, [number, number]>) ?? {}).map(([k, v]) => [k === from ? to : k, v]))
     edit({ ...draft, blocks: draft.blocks.map((b) => (b.id === from ? { ...b, id: to } : b)), layout: draft.layout ? layout : undefined })
     setLinks((ls) => Object.fromEntries(Object.entries(ls).map(([k, l]) => [k === from ? to : k, Object.fromEntries(Object.entries(l).map(([h, t]) => [h, t === from ? to : t]))])))
@@ -285,8 +303,10 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
     try {
       // Indented as the files are, so git shows only what changed.
       const text = JSON.stringify(composed, null, 2) + (!routine || routine.source.endsWith("\n") ? "\n" : "")
-      if (routine) await api(`realms/${enc(realm)}/graphs/${enc(routine.name)}`, { text, version: routine.version }, "PUT")
-      else await api(`realms/${enc(realm)}/graphs`, { name, text })
+      const done = routine
+        ? await api<{ version: string }>(`realms/${enc(realm)}/graphs/${enc(routine.name)}`, { text, version: base.version }, "PUT")
+        : await api<{ version: string }>(`realms/${enc(realm)}/graphs`, { name, text })
+      setBase({ draft: composed, version: done.version })
       toast.success(`${name} saved. Commit it in the business folder to keep it in git.`)
       setRefused(null)
       await onSaved(name)
@@ -320,6 +340,13 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
         {routine ? <span className="font-mono text-sm font-medium">{routine.name}</span>
           : <Input value={name} autoFocus placeholder="routine-name" spellCheck={false} className="h-8 w-48 font-mono text-[13px]" aria-label="Routine name"
               onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} />}
+        {/* On a narrow screen the palette is hidden: blocks are added from here. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="sm" variant="outline" className="md:hidden" />}><Plus /> Block</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {KINDS.map((k) => <DropdownMenuItem key={k.type} onClick={() => add(k.type)}><k.icon /> {k.label}</DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {dirty && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-600 dark:text-amber-300">{routine ? "Not saved" : "New"}</span>}
         <span className="flex-1" />
         {routine && dirty && <Button size="sm" variant="ghost" disabled={saving} onClick={discard}><Undo2 /> Discard</Button>}
@@ -332,8 +359,8 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
         </Button>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-44 shrink-0 space-y-1.5 overflow-y-auto border-r p-2.5 sm:block" aria-label="Blocks">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <aside className="hidden w-44 shrink-0 space-y-1.5 overflow-y-auto border-r p-2.5 md:block" aria-label="Blocks">
           <p className="px-1 pb-1 text-[11px] text-muted-foreground">Drag a block in, or click to add it.</p>
           {KINDS.map((k) => (
             <button key={k.type} type="button" draggable onClick={() => add(k.type)}
@@ -345,7 +372,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
           ))}
         </aside>
 
-        <div className="min-w-0 flex-1" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move" }} onDrop={onDrop}>
+        <div className="min-h-[300px] min-w-0 flex-1" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move" }} onDrop={onDrop}>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
             onPaneClick={() => setSelected(null)} colorMode={theme === "dark" ? "dark" : "light"} fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             deleteKeyCode={["Backspace", "Delete"]} proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep" }}>
@@ -355,7 +382,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
           </ReactFlow>
         </div>
 
-        <aside className="w-80 shrink-0 space-y-4 overflow-y-auto border-l p-3.5 text-sm" aria-label="Details">
+        <aside className="max-h-[45%] w-full shrink-0 space-y-4 overflow-y-auto border-t p-3.5 text-sm md:max-h-none md:w-80 md:border-t-0 md:border-l" aria-label="Details">
           {refused && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{refused.text}
             {refused.block && selected !== refused.block && <button className="mt-1 block underline" onClick={() => setSelected(refused.block!)}>Show {refused.block}</button>}</p>}
           {block ? (

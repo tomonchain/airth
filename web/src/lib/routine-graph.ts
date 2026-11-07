@@ -14,6 +14,8 @@ export function put<T extends Record<string, unknown>>(o: T, key: string, value:
   return out as T
 }
 
+/** The trigger's node: outside the block ids, which the check keeps from
+    being "trigger", the trigger's key in the file's layout. */
 export const TRIGGER = "trigger"
 
 /** Where each block's outputs lead, explicitly: what the file leaves
@@ -71,22 +73,23 @@ export function problems(d: Draft, links: Links, entry: string | null): string[]
 
 /** Left to right by depth from the trigger, when the file places nothing. */
 export function autoLayout(d: Draft, links: Links, entry: string | null): Record<string, [number, number]> {
-  const depth: Record<string, number> = { [TRIGGER]: 0 }
+  // A Map: a block may be called "constructor".
+  const depth = new Map<string, number>([[TRIGGER, 0]])
   const queue: string[] = []
-  if (entry) { depth[entry] = 1; queue.push(entry) }
+  if (entry) { depth.set(entry, 1); queue.push(entry) }
   while (queue.length) {
     const id = queue.shift()!
-    const l = links[id] ?? {}
+    const l = Object.hasOwn(links, id) ? links[id] : {}
     for (const t of [l.out, l.then, l.else]) {
-      if (t && depth[t] === undefined && d.blocks.some((b) => b.id === t)) { depth[t] = depth[id] + 1; queue.push(t) }
+      if (t && !depth.has(t) && d.blocks.some((b) => b.id === t)) { depth.set(t, depth.get(id)! + 1); queue.push(t) }
     }
   }
-  const rows: Record<number, number> = {}
-  const at: Record<string, [number, number]> = {}
+  const rows = new Map<number, number>()
+  const at: Record<string, [number, number]> = Object.create(null)
   for (const id of [TRIGGER, ...d.blocks.map((b) => b.id)]) {
-    const x = depth[id] ?? Math.max(1, ...Object.values(depth)) + 1
-    const y = rows[x] ?? 0
-    rows[x] = y + 1
+    const x = depth.get(id) ?? Math.max(1, ...depth.values()) + 1
+    const y = rows.get(x) ?? 0
+    rows.set(x, y + 1)
     at[id] = [x * 260, y * 140]
   }
   return at

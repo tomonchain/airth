@@ -13,7 +13,9 @@ export type Declared = { id: string; class: string; ceiling: number }
 export { put, type Draft }
 
 const OPS = ["==", "!=", "<", "<=", ">", ">=", "exists"]
-const SOURCES: [string, string][] = [["business", "Business records"], ["rss", "News feeds"], ["web", "A web page"], ["connector", "A connector's read"], ["x_post", "The post you send on Telegram"]]
+// The sources the runner reads today (routine/run.rs); web and connector
+// pass the check but are not run yet, so they are not offered.
+const SOURCES: [string, string][] = [["business", "Business records"], ["rss", "News feeds"], ["x_post", "The post you send on Telegram"]]
 
 /** A read block switched to another source: only that source's fields. */
 function source(block: GraphBlock, to: string): GraphBlock {
@@ -21,8 +23,6 @@ function source(block: GraphBlock, to: string): GraphBlock {
   b = put(b, "source", to)
   if (to === "business") b = put(b, "records", "week")
   if (to === "rss") b = put(b, "feeds", [])
-  if (to === "web") b = put(b, "url", "")
-  if (to === "connector") b = put(b, "action", "")
   return b
 }
 const CLASS: Record<string, string> = { read: "Read", reversible: "Reversible", commits: "Commits" }
@@ -90,12 +90,6 @@ export function BlockFields({ block, onChange, actions, prompts }: {
             <Choice value={String(block.source ?? "")} options={SOURCES} onChange={(v) => onChange(source(block, v))} />
           </Field>
           {block.source === "business" && <Field label="Records"><Choice value={String(block.records ?? "week")} options={[["week", "How the last 7 days went"]]} onChange={set("records")} /></Field>}
-          {block.source === "web" && <Field label="Address"><Text value={block.url} onChange={(v) => set("url")(v ?? "")} placeholder="https://" /></Field>}
-          {block.source === "connector" && (
-            <Field label="Read action" hint="An action classed as a read.">
-              <Choice value={String(block.action ?? "")} options={actions.filter((a) => a.class === "read").map((a) => [a.id, a.id])} onChange={set("action")} />
-            </Field>
-          )}
           {feeds && (
             <div className="sm:col-span-2">
               <Field label="Feeds" hint="One address per line.">
