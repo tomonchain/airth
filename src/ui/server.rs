@@ -321,6 +321,11 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
             Err(e) => eprintln!("finance: {e:#}"),
         }
+        // The businesses' own vitals, at most once an hour (decision 90).
+        match runner.hub.refresh_vitals(chrono::Utc::now()) {
+            Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
+            Err(e) => eprintln!("vitals: {e:#}"),
+        }
         // Legal deadlines: their reminders, then overdue (decision 66).
         match runner.hub.remind_deadlines(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
