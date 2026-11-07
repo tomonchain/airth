@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 97. Airth fits a phone, and a paired phone keeps the key
+
+**Accepted** (founder, 7 November 2026: "can we work on a mobile version? I'd like Airth on my phone", choosing to keep the key on the phone over scanning again each time). Extends decision 37, which brought the app to the phone through Tailscale.
+
+- **One column on a phone.** Below 768 pixels the rail becomes a bar at the bottom (Home, Agents, Needs you, Tasks, More), and a page with a list and what is open in it shows one, then the other, with a way back. The same interface, not a second one: nothing is removed, and the Mac's layout does not change.
+- **The key stays on the paired phone.** On a tailnet name (`*.ts.net`) the key from the pairing link is kept in the browser's storage; on the Mac's own address it still lasts the tab. Added to the home screen, Airth opens as an app; that app's storage is apart from the browser's, so on its first opening it asks for the pairing link, which the paired browser copies (Settings, Phone).
+- **Unchanged:** the server still checks the key on every call and answers only loopback and the names the owner allowed. The key is never in a URL the server or a third party sees: the pairing link carries it in the fragment.
+
+*Why:* the founder wants to run the businesses from the phone, beyond the approvals Telegram brings. A key lasting the tab meant scanning the Mac's screen again each time the phone's browser closed it, so the phone was usable only beside the Mac.
+
+*Cost:* whoever holds the unlocked phone controls Airth until the key changes; Forget this name stops the phone reaching the app, but the key itself only changes when `~/.airth/ui-token` is replaced and Airth restarted. A button for a new key is the next step. Pages are checked at phone width by hand, not by tests.
+
 ## 96. Reads and reversible writes start at their ceiling; what commits starts at 1
 
 **Accepted** (founder, 7 November 2026: "if it is part of its job, it should be approved by default, except contact with the outside, price changes, new products…", choosing "reads and reversible" over "only Airth's own" and "keep level 1"). Replaces "new actions start at level 1" (decision 45, `CLAUDE.md`).

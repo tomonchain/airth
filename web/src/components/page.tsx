@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
-import { Search } from "lucide-react"
+import { ChevronLeft, Search } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -9,8 +10,8 @@ export function Page({ eyebrow, title, lede, actions, children, wide }: {
 }) {
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className={cn("mx-auto px-8 pt-9 pb-16", wide ? "max-w-5xl" : "max-w-3xl")}>
-        <header className="flex items-end gap-4">
+      <div className={cn("mx-auto px-4 pt-6 pb-16 md:px-8 md:pt-9", wide ? "max-w-5xl" : "max-w-3xl")}>
+        <header className="flex items-end gap-4 max-md:flex-col max-md:items-start max-md:gap-3">
           <div className="min-w-0 flex-1">
             {eyebrow && <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{eyebrow}</p>}
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
@@ -99,4 +100,10 @@ export function Seg<T extends string | number>({ label, value, options, onPick }
       ))}
     </div>
   )
+}
+
+/** On a phone, a list and what is open in it take the screen in turn:
+    this goes back to the list. Hidden where both fit side by side. */
+export function Back({ onClick, label = "Back" }: { onClick: () => void; label?: string }) {
+  return <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0 md:hidden" aria-label={label} onClick={onClick}><ChevronLeft /></Button>
 }

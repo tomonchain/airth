@@ -3,16 +3,39 @@
 
 const KEY = "airth-token"
 
-// The key, from the link Airth gives (`/#token=…`), kept for this tab.
+// Where the key is kept. On the Mac it lasts the tab. On the phone, reached
+// by its tailnet name (decision 37), it stays once paired, so Airth opens
+// from the home screen as an app; whoever holds the unlocked phone holds it.
+export const onPhone = location.hostname.endsWith(".ts.net")
+function store(): Storage | null {
+  try { return onPhone ? localStorage : sessionStorage } catch { return null }
+}
+
+// The key, from the link Airth gives (`/#token=…`).
 function token(): string {
   const m = location.hash.match(/token=([0-9a-f]+)/)
   if (m) {
-    sessionStorage.setItem(KEY, m[1])
+    store()?.setItem(KEY, m[1])
     history.replaceState(null, "", location.pathname + location.hash.replace(/[#&]?token=[0-9a-f]+/, ""))
     return m[1]
   }
-  return sessionStorage.getItem(KEY) ?? ""
+  return store()?.getItem(KEY) ?? ""
 }
+
+/** Whether this page has a key: a phone opened from its home screen starts
+    without one, its storage apart from the browser's. */
+export const paired = () => !!token()
+
+/** Pair with a pairing link pasted in. Whether it held a key. */
+export function pair(link: string): boolean {
+  const m = link.match(/token=([0-9a-f]{32,})/)
+  if (!m) return false
+  store()?.setItem(KEY, m[1])
+  return true
+}
+
+/** This page's pairing link, to pair the home-screen app from the browser. */
+export const pairingLink = () => `${location.origin}/#token=${token()}`
 
 export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number): Promise<T> {
   const verb = method ?? (body === undefined ? "GET" : "POST")

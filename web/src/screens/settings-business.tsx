@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, raw, type Department } from "@/lib/api"
+import { api, enc, onPhone, pairingLink, raw, type Department } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -395,6 +395,13 @@ export function Phone() {
           <Button disabled={!host.trim()} onClick={allow}>Allow</Button>
         </div>
       </Panel>
+      {onPhone && (
+        <Panel className="mt-2.5 space-y-2 p-4 text-sm">
+          <p className="font-medium">This phone is paired.</p>
+          <p className="text-muted-foreground">To open Airth as an app: Share, then Add to Home Screen. On its first opening it asks for the pairing link: copy it here, then paste it there.</p>
+          <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(pairingLink()).then(() => toast.success("Pairing link copied. Keep it to yourself."), () => toast.error("Could not copy."))}>Copy the pairing link</Button>
+        </Panel>
+      )}
       {!data ? <Loading /> : data.hosts.map((x) => (
         <Panel key={x.host} className="mt-2.5 flex gap-5 p-4">
           <Qr qr={x.qr} label={`Pairing code for ${x.host}`} />

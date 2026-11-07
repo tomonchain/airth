@@ -38,7 +38,7 @@ export function AgentList({ realm, agents, departments, broken, items, last, sel
     { label: "No department", list: shown.filter((a) => !pins.includes(a.name) && !keys.includes(a.department ?? "")) },
   ].filter((g) => g.list.length)
   return (
-    <div className="flex w-(--side) shrink-0 flex-col border-r">
+    <div className="flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0">
       <SideHead title="Agents" note={agents.length} />
       <SideSearch value={q} onChange={setQ} />
       <div className="flex-1 overflow-y-auto px-2 pb-3">

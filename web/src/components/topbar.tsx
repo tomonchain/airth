@@ -17,10 +17,10 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   const closed = agents.filter((a) => !tabs.includes(a.name))
   return (
-    <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none">
+    <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none max-md:pl-3">
       {/* Room for the Mac window's buttons, then the tabs from the column's edge. */}
-      <div className="w-[calc(var(--side)+56px)] shrink-0" />
-      <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <div className="w-[calc(var(--side)+56px)] shrink-0 max-md:hidden" />
+      <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto max-md:invisible">
         {onAgents && tabs.map((t) => {
           const a = agents.find((x) => x.name === t)
           if (!a) return null
@@ -51,7 +51,7 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
         )}
       </nav>
       <UpdateNotice working={agents.filter((a) => a.state === "working").length} />
-      {onAgents && <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground", details && "bg-accent text-foreground")} aria-label="Details" title="Details" onClick={onDetails}><PanelRight /></Button>}
+      {onAgents && <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground max-md:hidden", details && "bg-accent text-foreground")} aria-label="Details" title="Details" onClick={onDetails}><PanelRight /></Button>}
       <DropdownMenu>
         <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg border bg-background/60 pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>
           <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
