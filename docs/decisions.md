@@ -78,7 +78,7 @@ Airth counts stable weeks in a row, from the last complete week back (eight week
 
 **Accepted** (founder, 7 November 2026). Closes decision 53's open point on the `get_vitals` schema, and changes how it is called.
 
-- **Where:** the business's own remote MCP server (Hedgen: `https://admin.hedgen.xyz/api/agent/mcp`, connected with a token, decision 89). Airth uses the first enabled server, by name, that has a `get_vitals` tool **the founder classed as a read** (`airth actions class <server>.get_vitals read`), for the schema they saw. Unclassed, classed otherwise, or with a changed schema, it is never called.
+- **Where:** the business's own remote MCP server (Hedgen: `https://world.hedgen.xyz/api/agent/mcp`, connected with a token, decision 89). Airth uses the first enabled server, by name, that has a `get_vitals` tool **the founder classed as a read** (`airth actions class <server>.get_vitals read`), for the schema they saw. Unclassed, classed otherwise, or with a changed schema, it is never called.
 - **The answer**, as the tool's text, checked in code and refused whole when anything is off:
 
   ```json
