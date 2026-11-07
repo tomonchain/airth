@@ -3,7 +3,7 @@ import { Activity as ActivityIcon, ChevronRight, CircleAlert, CircleCheck, Circl
 import { Character } from "@/components/character"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePoll } from "@/hooks/use-poll"
-import { api, departmentName, enc, type Activity, type Agent, type AgentState, type Business, type Item } from "@/lib/api"
+import { api, departmentName, enc, named, type Activity, type Agent, type AgentState, type Business, type Item } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -29,7 +29,7 @@ export function Home({ realm, agents, items, business, at, error, onAgent, onNee
       <div className="mx-auto max-w-3xl px-8 pt-9 pb-16">
         <header>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{b?.description ?? realm}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight capitalize">{realm}</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{named(realm, business?.title)}</h1>
           {b ? <p className="mt-1.5 text-base text-foreground/80">{b.headline}</p> : <Skeleton className="mt-3 h-5 w-72" />}
         </header>
 
