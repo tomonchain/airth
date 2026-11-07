@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 91. The routine editor draws and links blocks on a canvas, with React Flow
+
+**Accepted** (founder, 7 November 2026: "a drag and drop panel where I can link events together, like n8n or Make"). Extends decision 69, which kept the shape in the file, and takes full drag and drop out of `CLAUDE.md`'s "out of the beta" list.
+
+- **The canvas:** the trigger and the blocks as nodes, their links as edges. The founder drags a block type from a palette (Read, AI, Condition, Approval, Act), links an output to an input, moves, deletes and selects blocks; a selected block's parameters are decision 69's form, plus its id. A condition has two outputs, *then* and *else*. A new routine starts from a name, an agent and a trigger.
+- **The library:** `@xyflow/react` (React Flow) 12.12.0, MIT, the canvas library n8n-like editors are built on. Drawing pan, zoom, handles and edges by hand is weeks of work for a worse result. One npm dependency, as decision 73 requires a decision for; it is loaded only by the Routines page's chunk.
+- **The format does not change its meaning (decision 49).** The canvas writes what the file already says: the trigger's link sets the first block; a link to the block that follows in the list is left implicit, any other is `next`, and an output linked nowhere is `"next": null`. A condition writes `then` and `else`. Blocks are written in the order a walk from the first one meets them.
+- **One new optional field, `layout`:** `{"trigger": [x, y], "<block id>": [x, y]}`, where the editor draws each node. The engine never reads it; the check refuses a position for a block that does not exist, or one that is not a number. Without it, the editor lays the graph out from left to right by depth.
+- **Saving and creating** go through the checks loading uses, as decision 69's save does. A new routine is `POST realms/<r>/graphs`, refused over an existing file. A graph the check refuses is not written, and the refusal shows on its block.
+
+*Why:* the founder builds routines by seeing them, as in the tools they know; editing links in JSON is the friction that remains after decision 69. Writing the same format keeps the engine and its checks unchanged: the canvas is only another way to write the file, and cannot write a graph Airth would refuse to load.
+
+*Cost:* React Flow is about 50 KB gzipped in the Routines chunk. Positions add a few lines to each routine's file, and moving a block shows in `git diff`.
+
 ## 90. A business's vitals: one read-only `get_vitals` on its own MCP server, read hourly by Airth for the HQ
 
 **Accepted** (founder, 7 November 2026). Closes decision 53's open point on the `get_vitals` schema, and changes how it is called.

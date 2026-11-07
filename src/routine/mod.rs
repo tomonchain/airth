@@ -28,6 +28,10 @@ pub struct Graph {
     pub agent: String,
     pub trigger: Trigger,
     pub blocks: Vec<Block>,
+    /// Where the editor draws the trigger and each block, by id (decision
+    /// 91). The engine never reads it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub layout: BTreeMap<String, [f64; 2]>,
 }
 
 /// What starts the routine: exactly one of these.
@@ -294,6 +298,14 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
         }
         check_block(cx, b, graph.trigger.telegram.as_deref())
             .with_context(|| format!("block '{}'", b.id))?;
+    }
+    for (id, [x, y]) in &graph.layout {
+        if id != "trigger" && !graph.blocks.iter().any(|b| &b.id == id) {
+            bail!("the layout places '{id}', which is not a block");
+        }
+        if !(x.is_finite() && y.is_finite()) {
+            bail!("the layout places '{id}' at a position that is not a number");
+        }
     }
     // No cycle, and every block reachable from the first.
     let edges: Vec<Vec<usize>> = (0..graph.blocks.len())
