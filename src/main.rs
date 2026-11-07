@@ -25,6 +25,7 @@ mod memory;
 mod models;
 mod notify;
 mod objective;
+mod ocr;
 mod owner;
 mod permissions;
 mod phone;
