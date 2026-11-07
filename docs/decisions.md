@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 99. An AI block remembers the stories it kept, for a few days
+
+**Accepted** (founder, 7 November 2026: "can you move forward on things?", on the backlog's first line, same-event grouping, which helps the watch and the posts). Extends decisions 60 and 61.
+
+- **`"recent": <days>`** on an AI block with `distinct` and `"over": "list"`, from 1 to 30 days. A real run remembers the values of its `distinct` fields for the items the block kept (in `pipeline_seen`, under `<block>.<field>:<value>`, as the read block remembers links). The next runs within those days:
+  - show the model those values beside the list, as data, with "an item about one of these is the same event; give it the same wording";
+  - set aside, by code, an item whose value is one of them (`distinct`'s rule, across runs), counted under "by distinct".
+- **The prompt decides what a new event is:** a story that comes back with a fact that changes the picture gets a new wording ("Binance hack: funds frozen"), and goes on. The code never matches words loosely.
+- A dry run reads the memory but adds nothing to it. The routine editor shows the field ("Not again within").
+
+*Why:* Hedgen's post drafts covered the Binance hack five days in a row and Coinbase's cold storage twice (items 1 to 22 in Needs you, 2 to 7 November). `distinct` grouped a day's items only; the read block's memory knows links, not events.
+
+*Cost:* the model must reuse the wording it is shown; when it does not, the story comes back once, which the founder rejects. An item is remembered when the block keeps it, before the founder answers: a rejected story is not proposed again within those days either.
+
 ## 98. A new key unpairs every phone, and is made on the Mac only
 
 **Accepted** (founder, 7 November 2026, with decision 97: "keep it on the phone", with a button for a new key). Closes decision 97's cost.

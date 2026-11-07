@@ -250,6 +250,19 @@ fn a_wrong_graph_is_refused_naming_what_is_wrong() {
             posts(json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "over": "all"}])),
             "unknown variant",
         ),
+        // Decision 99: what was covered is shown beside a list, by `distinct`.
+        (
+            posts(
+                json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "distinct": "story", "recent": 3}]),
+            ),
+            "'recent' needs",
+        ),
+        (
+            posts(
+                json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "distinct": "story", "over": "list", "recent": 90}]),
+            ),
+            "between 1 and 30",
+        ),
         (
             posts(
                 json!([{"id": "a", "type": "ai", "prompt": "prompts/watch.md", "model": "deepseek-flash"}]),

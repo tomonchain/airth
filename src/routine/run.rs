@@ -442,6 +442,7 @@ pub fn run(
                 keep,
                 rank,
                 distinct,
+                recent,
                 limit,
                 into,
                 over,
@@ -449,6 +450,17 @@ pub fn run(
             } => {
                 let p = prompt(dry.root, path, dry.context)?;
                 let into = into.as_deref().unwrap_or("answer");
+                // What this block kept in its last days' runs (decision 99).
+                let mut covered = Vec::new();
+                if let Some(days) = recent {
+                    let since = now - chrono::Duration::days(i64::from(*days));
+                    for f in distinct {
+                        let prefix = format!("{}.{f}:", block.id);
+                        for v in dry.store.seen_since(name, &prefix, since)? {
+                            covered.push((f.clone(), v));
+                        }
+                    }
+                }
                 let asking = Asking {
                     name,
                     step: i + 1,
@@ -457,16 +469,31 @@ pub fn run(
                     into,
                     list: over.is_some(),
                     fast: *model == Some(super::Tier::Fast),
+                    covered: &covered,
                 };
                 let filters = Filters {
                     keep: keep.as_deref(),
                     rank: rank.as_deref(),
                     distinct,
+                    covered: &covered,
                     limit: *limit,
                 };
                 let (kept, mut stats) =
                     judge_all(&asking, items, &filters, dry.store, dry.io, &mut notes)
                         .with_context(|| format!("{} failed", block.id))?;
+                // A real run remembers what it kept, for the next days' runs.
+                if recent.is_some() && real.is_some() {
+                    let mut keys = Vec::new();
+                    for it in &kept {
+                        for f in distinct {
+                            let v = field_text(it, &format!("{into}.{f}"));
+                            if !v.trim().is_empty() {
+                                keys.push(format!("{}.{f}:{}", block.id, v.trim().to_lowercase()));
+                            }
+                        }
+                    }
+                    dry.store.mark_seen(name, &keys)?;
+                }
                 let shown: Vec<&str> = rank.iter().chain(distinct).map(String::as_str).collect();
                 for it in &kept {
                     let values: Vec<String> = shown
