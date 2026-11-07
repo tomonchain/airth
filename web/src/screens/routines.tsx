@@ -28,6 +28,9 @@ const BLOCK: Record<string, { icon: LucideIcon; label: string }> = {
   act: { icon: Zap, label: "Act" },
 }
 
+// Not a routine name: those are lowercase letters, digits and dashes.
+const NEW = " new"
+
 const clock = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 
 /** The business's recurring work, in three kinds: routines made of blocks
@@ -39,14 +42,14 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/routines`), 15000, [realm])
   const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
   const [form, setForm] = useState<Objective | "new" | null>(null)
-  // The routine open on the canvas, "new" for one being drawn.
+  // The routine open on the canvas, NEW for one being drawn.
   const [canvas, setCanvas] = useState<string | null>(null)
 
   if (canvas && graphs.data) {
-    const routine = graphs.data.routines.find((r) => r.name === canvas) ?? null
+    const routine = canvas === NEW ? null : graphs.data.routines.find((r) => r.name === canvas) ?? null
     return (
       <div className="min-w-0 flex-1 p-3">
-        <RoutineCanvas key={routine ? `${routine.name}:${routine.version}` : "new"} realm={realm} routine={routine} agents={agents}
+        <RoutineCanvas key={routine?.name ?? NEW} realm={realm} routine={routine} agents={agents}
           actions={graphs.data.actions} prompts={graphs.data.prompts} onClose={() => setCanvas(null)}
           onSaved={async (name) => { await graphs.refresh(); setCanvas(name) }} />
       </div>
@@ -57,7 +60,7 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
   return (
     <Page wide title="Routines" lede={graphs.data && tasks.data ? `${count} routine${count === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
       actions={<div className="flex gap-2">
-        <Button size="sm" disabled={!graphs.data || !agents.length} onClick={() => setCanvas("new")} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
+        <Button size="sm" disabled={!graphs.data || !agents.length} onClick={() => setCanvas(NEW)} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
         <Button size="sm" variant="outline" onClick={() => setForm("new")}><Plus /> New agent routine</Button>
       </div>}>
       <Section title="Routines" note="Files in routines/, in the business folder">

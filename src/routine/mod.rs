@@ -293,6 +293,10 @@ fn check(cx: &Checks, graph: &Graph) -> Result<()> {
     for (i, b) in graph.blocks.iter().enumerate() {
         crate::realm::validate_name(&b.id)
             .with_context(|| format!("block {}: invalid id", i + 1))?;
+        // The layout and the editor name the trigger so (decision 91).
+        if b.id == "trigger" {
+            bail!("block id 'trigger' is kept for the trigger: choose another");
+        }
         if graph.blocks[..i].iter().any(|o| o.id == b.id) {
             bail!("block id '{}' is used twice", b.id);
         }

@@ -335,6 +335,9 @@ mod tests {
             app.create_graph(&realm, "weekly", &edited).is_err(),
             "over an existing file"
         );
+        let named = edited.replace(r#""id": "week""#, r#""id": "trigger""#);
+        let e = app.create_graph(&realm, "drawn", &named).unwrap_err();
+        assert!(format!("{e:#}").contains("kept for the trigger"), "{e:#}");
         let e = app
             .create_graph(&realm, "drawn", &laid("ghost"))
             .unwrap_err();
