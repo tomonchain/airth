@@ -30,7 +30,9 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 /** One agent's work as a conversation: its runs, what it sent up, the
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
-export function Conversation({ realm, agent, tasks: list, onDone }: { realm: string; agent: Agent; tasks: Tasks | null; onDone: () => void }) {
+export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone }: {
+  realm: string; agent: Agent; agents?: Agent[]; onAgent?: (name: string) => void; tasks: Tasks | null; onDone: () => void
+}) {
   const { prefs } = usePrefs()
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
   // The app's list, refreshed every few seconds: not asked again here.
@@ -169,6 +171,7 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
           </button>
         )}
         <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running}
+          tools={[...(agent.integrations ?? []), ...(agent.skills ?? [])]} others={agents.filter((a) => a.name !== agent.name)} onOther={onAgent}
           onSending={(text, task) => {
             if (task) mine.add(task)
             setOutbox((o) => [...o, { text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
