@@ -238,6 +238,10 @@ pub struct State {
     /// A task the founder allowed to go on: the message it resumes with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<String>,
+    /// How many times the run was sent back to correct its change to the
+    /// business config (decision 93).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub config_fixes: u32,
     /// A mission a routine launched (decision 49): where the routine waits
     /// for its report.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -296,6 +300,7 @@ impl State {
             origin: None,
             agent: None,
             resume: None,
+            config_fixes: 0,
             routine: None,
             tools: None,
             tier: None,
@@ -400,6 +405,10 @@ impl State {
         }
         Ok(())
     }
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 #[cfg(test)]

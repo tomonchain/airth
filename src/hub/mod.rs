@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) mod autonomy;
 mod changes;
+mod config_check;
 mod delegation;
 mod delivery;
 pub(crate) mod finance;
@@ -306,6 +307,12 @@ impl Hub {
             }
             state.save()?;
             observer.changed(state);
+        }
+        // A change that breaks the business config goes back to the run
+        // before anyone reviews it (decision 93).
+        if state.status == Status::Completed && self.send_back_config(realm, state)? {
+            observer.changed(state);
+            return result;
         }
         let wants_checks = state.status == Status::Completed
             && state.change.as_ref().is_some_and(|c| c.has_changes())

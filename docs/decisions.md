@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 93. A run's change to the business config is checked before the founder reviews it, and goes back to the run when it does not hold
+
+**Accepted** (founder, 7 November 2026). From the backlog: the Chief of staff hired a Developer in a department that did not exist, and nothing told it (#169, #170).
+
+- **When:** a run completes with a change in its own worktree of the business folder that touches `business/`, `agents/`, `routines/` or `prompts/`.
+- **What:** the worktree's config is loaded as the app loads it (the profile, goal and lines refused whole, an agent file set aside, decision 43) and its routines as the scheduler loads them (decision 49). Only what the checkout did not already have wrong counts: a run is not sent back for the founder's own unfinished config.
+- **Sent back:** the run stops with a message saying what does not hold, and the scheduler resumes it with that message, as a task the founder allowed to go on (decision 64). Twice at most (`config_fixes` in the run state); after that the run completes, and its report says what still does not hold, for the founder's review.
+- Nothing else changes: the founder still adopts the change, and a run still never writes the checkout's config (decision 44).
+
+*Why:* a wrong file is cheapest to fix by the agent that wrote it, while it still has its context; the founder should review a change that holds, not debug one.
+
+*Cost:* one more field in the run state. Each send-back costs another turn of the model. A run driven from the command line, without the app's scheduler, is not resumed: it stays stopped with the reason.
+
 ## 92. A stable week, and the four in a row the beta needs
 
 **Accepted** (founder, 7 November 2026). Milestone 6's gate: Hedgen runs on its own for 4 consecutive weeks, its founder time well below the baseline.

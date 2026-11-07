@@ -30,7 +30,18 @@ impl Hub {
         realm: &Realm,
         f: impl FnOnce(&Checks) -> Result<T>,
     ) -> Result<T> {
-        let root = realm.root()?;
+        self.with_routine_checks_at(realm, &realm.root()?, f)
+    }
+
+    /// The same checks on another copy of the business folder: a run's
+    /// worktree, before its change is reviewed (decision 93).
+    pub(super) fn with_routine_checks_at<T>(
+        &self,
+        realm: &Realm,
+        root: &Path,
+        f: impl FnOnce(&Checks) -> Result<T>,
+    ) -> Result<T> {
+        let root = root.to_path_buf();
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let actions = crate::actions::all(&realm.config.integrations, &servers);
         let store = Store::of(realm)?;
