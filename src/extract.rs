@@ -1,7 +1,8 @@
 //! The text of a Word document or a PDF (decision 86), for an agent to read
 //! a company document. A .docx is a zip of XML; a PDF made by software
 //! keeps its text in compressed streams, mapped to characters by its fonts'
-//! ToUnicode tables. A scanned PDF has no text: that is said, not guessed.
+//! ToUnicode tables. A scanned PDF has no text of its own: it is read as a
+//! scan (decision 95), and said to be one.
 
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
@@ -10,20 +11,38 @@ use std::io::Read;
 /// The most a compressed part may grow to: a document, not a zip bomb.
 const MAX_INFLATED: u64 = 50 * 1024 * 1024;
 
-/// The text of `bytes`, by its media type: Word (.docx) or PDF.
+/// Images a document may be scanned or photographed as (decision 95).
+pub const SCANS: &[&str] = &["image/png", "image/jpeg", "image/heic", "image/tiff"];
+
+/// Said before what was read from a scan: recognition makes mistakes.
+const FROM_SCAN: &str =
+    "(Read from a scan by text recognition: names and figures may hold mistakes.)";
+
+/// The text of `bytes`, by its media type: Word (.docx), PDF, or a scan.
+/// A PDF without text of its own is read as a scan (decision 95).
 pub fn text(bytes: &[u8], mime: &str) -> Result<String> {
     let text = match mime {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => docx(bytes)?,
-        "application/pdf" => pdf(bytes),
+        "application/pdf" => match pdf(bytes).trim() {
+            "" => scanned(bytes, crate::ocr::Kind::Pdf)?,
+            t => t.to_string(),
+        },
+        m if SCANS.contains(&m) => scanned(bytes, crate::ocr::Kind::Image)?,
         other => bail!("a {other} file has no text Airth can read"),
     };
     let text = text.trim().to_string();
     if text.is_empty() {
-        bail!(
-            "no text found in it: most likely a scan (an image of the pages), which Airth cannot read yet"
-        );
+        bail!("no text found in it, even read as a scan");
     }
     Ok(text)
+}
+
+fn scanned(bytes: &[u8], kind: crate::ocr::Kind) -> Result<String> {
+    let text = crate::ocr::text(bytes, kind)?;
+    if text.trim().is_empty() {
+        return Ok(String::new());
+    }
+    Ok(format!("{FROM_SCAN}\n\n{text}"))
 }
 
 // ---- Word ----

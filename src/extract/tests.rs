@@ -119,9 +119,14 @@ fn a_pdf_with_mapped_fonts_reads_through_its_tables() {
     assert_eq!(text(&pdf, "application/pdf").unwrap(), "Téab");
 }
 
+/// A PDF without text of its own is read as a scan (decision 95); one with
+/// nothing readable even so says it was tried as a scan.
 #[test]
 fn a_scan_is_said_to_be_one() {
     let pdf = pdf_of(&[("/Subtype /Image", &[0xFF, 0xD8, 0xFF, 0xE0], false)]);
     let err = format!("{:#}", text(&pdf, "application/pdf").unwrap_err());
-    assert!(err.contains("a scan"), "{err}");
+    assert!(
+        err.contains("as a scan") || err.contains("like a scan"),
+        "{err}"
+    );
 }
