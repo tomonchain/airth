@@ -777,3 +777,64 @@ fn the_repository_picker_needs_the_business_token() {
     let (hub, _, _) = make_hub(&home, vec![]);
     assert!(hub.github_repos(&realm).unwrap().is_none());
 }
+
+/// Decision 93: a change that breaks the business config goes back to the
+/// run with why, twice at most, before the founder reviews it; a change
+/// the config accepts goes on as before.
+#[test]
+fn a_config_change_that_breaks_the_config_goes_back_to_the_run() {
+    let home_dir = tempfile::tempdir().unwrap();
+    let home = Home::at(home_dir.path()).unwrap();
+    let repo = crate::isolation::tests::repo();
+    let realm = home
+        .create_realm(NewRealm {
+            name: "biz".into(),
+            description: String::new(),
+            root: Some(repo.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    let hire = |department: &str| json!({"path": "agents/dev.md", "content": format!("---\ntitle: Developer\ndepartment: {department}\n---\nBuild the site.")});
+    let (hub, seen, _) = make_hub(
+        &home,
+        vec![
+            call("1", "write_file", hire("Astrology")),
+            done("Hired a developer."),
+            call("2", "write_file", hire("tech")),
+            done("Hired a developer, in Product & tech."),
+        ],
+    );
+    let mut state = hub
+        .dispatch(
+            &realm,
+            "hire a developer",
+            config(10),
+            hooks(&mut NoObserver, true),
+        )
+        .unwrap();
+    assert_eq!(state.status, Status::Stopped);
+    assert_eq!(state.config_fixes, 1);
+    let report = state.report.clone().unwrap();
+    assert!(report.contains("does not hold"), "{report}");
+    assert!(report.contains("Astrology"), "{report}");
+    let resume = state.resume.clone().unwrap();
+    assert!(resume.contains("Correct your change"), "{resume}");
+
+    // The scheduler resumes it with that message; this time it holds.
+    let ready = hub.tasks_to_resume().unwrap();
+    assert_eq!(ready.len(), 1);
+    state = ready.into_iter().next().unwrap().1;
+    hub.drive(&realm, &mut state, config(10), hooks(&mut NoObserver, true))
+        .unwrap();
+    assert_eq!(state.status, Status::Completed, "{:?}", state.report);
+    assert_eq!(state.config_fixes, 1);
+    // The model read why before it corrected the file.
+    let asked = seen.lock().unwrap();
+    assert!(
+        asked.iter().any(|m| {
+            let m = format!("{m:?}");
+            m.contains("does not hold") && m.contains("Astrology")
+        }),
+        "the run was not told why"
+    );
+}
