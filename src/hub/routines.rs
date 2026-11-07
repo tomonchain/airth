@@ -573,9 +573,12 @@ impl Hub {
         if tool == crate::routine::run::LAUNCH_MISSION {
             return self.launch_approved(realm, item).map(Approved::Done);
         }
+        if tool.starts_with("mcp__") {
+            return self.do_approved_mcp(realm, item, action, tool);
+        }
         if tool != "http_request" {
             bail!(
-                "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions only, for now"
+                "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions and MCP tools only"
             );
         }
         let key = format!("item/{}", item.id);
@@ -634,6 +637,88 @@ impl Hub {
             ))),
             None => bail!("{}", event.result),
         }
+    }
+
+    /// Call the MCP tool the founder approved in item `item`, with the
+    /// arguments proposed, once (decision 103). Journaled like an HTTP
+    /// action; a failure is an incident and is never tried again by Airth,
+    /// since nothing tells whether the server did it.
+    fn do_approved_mcp(
+        &self,
+        realm: &Realm,
+        item: &crate::business::store::queue::Item,
+        action: &str,
+        tool: &str,
+    ) -> Result<Approved> {
+        // The tool as the server offers it now: one gone is not called.
+        let tools: Vec<Box<dyn crate::tools::Tool>> =
+            crate::tools::mcp::tools_of(&realm.skills_dir(), |_| true)
+                .into_iter()
+                .filter(|t| t.spec().name == tool)
+                .collect();
+        if tools.is_empty() {
+            bail!("{action}: its MCP server is not connected any more, so nothing was done");
+        }
+        let key = format!("item/{}", item.id);
+        let args = item.args.clone();
+        let mut store = Store::of(realm)?;
+        let begin = store.begin_action(&crate::business::store::autonomy::NewAction {
+            key: &key,
+            action,
+            connector: action.split('.').next().unwrap_or(action),
+            agent: item.agent.as_deref(),
+            routine: item.routine.as_deref(),
+            run: item.run.as_deref(),
+            item: Some(item.id),
+            level: 1,
+            approved: true,
+            args: &args.to_string(),
+            daily_limit: u32::MAX,
+        })?;
+        let crate::business::store::autonomy::Begin::Started(journal) = begin else {
+            bail!("not done again: item {} was already acted on", item.id);
+        };
+        let root = realm.root()?;
+        let workspace = Workspace::new(&root)?
+            .with_secrets(realm.command_env()?, self.redactions(realm)?)
+            .with_network(!realm.config.offline);
+        // The realm's rules still decide; where they ask, this call alone is
+        // the one the founder approved.
+        let mut runtime = Runtime::new(
+            tools,
+            PermissionGate::new(
+                realm.config.policy.clone(),
+                Box::new(ApprovedCall(tool.to_string())),
+            ),
+            workspace,
+            CancelToken::default(),
+        );
+        let event = runtime.invoke(&key, tool, &args);
+        if event.status == crate::state::EventStatus::Ok {
+            store.finish_action(journal, "confirmed", None)?;
+            return Ok(Approved::Done(format!(
+                "{action}: {}",
+                event.result.lines().next().unwrap_or_default()
+            )));
+        }
+        store.finish_action(journal, "failed", Some(&event.result))?;
+        drop(store);
+        super::incidents::record(
+            realm,
+            &super::incidents::Incident {
+                title: &format!("{action} failed"),
+                detail: &format!(
+                    "{action}, approved in item {}, failed: {}\n\nNot tried again: whether the server did part of it is unknown. Check, then ask the agent again.",
+                    item.id, event.result
+                ),
+                agent: item.agent.as_deref(),
+                routine: item.routine.as_deref(),
+                action: Some(action),
+                demote: false,
+                retry: None,
+            },
+        )?;
+        bail!("{}", event.result)
     }
 
     /// Reports not seen within a week leave Needs you, across realms; how
@@ -894,4 +979,21 @@ fn report(
         });
     }
     Ok(lines.join("\n"))
+}
+
+/// The approver of a call the founder already approved in Needs you: it
+/// says yes to that tool, and no to anything else.
+struct ApprovedCall(String);
+
+impl crate::permissions::Approver for ApprovedCall {
+    fn ask(
+        &mut self,
+        request: &crate::permissions::PermissionRequest,
+    ) -> Result<crate::permissions::Answer> {
+        Ok(if request.tool == self.0 {
+            crate::permissions::Answer::Yes
+        } else {
+            crate::permissions::Answer::No("only the approved call is done".into())
+        })
+    }
 }
