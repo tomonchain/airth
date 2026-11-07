@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Try a pull request, a branch or main on a copy of your Airth, before it
+# merges (decision 100). Your real Airth keeps running and is not touched.
+#
+#   scripts/try 219        a pull request, by number
+#   scripts/try my-branch  a branch of origin
+#   scripts/try            origin/main
+#   scripts/try 219 --no-open   more options go to `airth ui`
+#
+# The copy is your home without its update builds, served as a preview:
+# nothing runs on its own (no schedule, no Telegram, no updates). Pages that
+# call a model or a service still do so for real, with your keys. Ctrl-C
+# stops it and deletes the copy, which holds your secrets.
+set -euo pipefail
+
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+real="${AIRTH_HOME:-$HOME/.airth}"
+place="$HOME/.airth-try"
+port="${PORT:-7480}"
+what="${1:-main}"
+
+if [[ "$what" =~ ^[0-9]+$ ]]; then
+  ref="refs/try/pr-$what"
+  git -C "$repo" fetch --quiet origin "+pull/$what/head:$ref"
+  label="pull request #$what"
+else
+  ref="origin/$what"
+  git -C "$repo" fetch --quiet origin "$what"
+  label="$what"
+fi
+
+mkdir -p "$place" && chmod 700 "$place"
+src="$place/src"
+git -C "$repo" worktree remove --force "$src" 2>/dev/null || rm -rf "$src"
+git -C "$repo" worktree add --quiet --detach "$src" "$ref"
+home="$place/home"
+cleanup() {
+  rm -rf "$home"
+  git -C "$repo" worktree remove --force "$src" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+echo "Building $label ($(git -C "$src" rev-parse --short HEAD))…"
+# The checkout's own build folder: only what changed is built again, and
+# no second copy of the dependencies fills the disk.
+CARGO_TARGET_DIR="$repo/target" cargo build --quiet --manifest-path "$src/Cargo.toml"
+
+echo "Copying your home…"
+rm -rf "$home" && mkdir -p "$home"
+rsync -a --exclude update --exclude server.json "$real/" "$home/"
+
+echo "Open the link below. Ctrl-C stops the copy and deletes it."
+AIRTH_HOME="$home" "$repo/target/debug/airth" ui --preview --port "$port" "${@:2}"
