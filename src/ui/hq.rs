@@ -1,8 +1,8 @@
 //! The HQ in the new interface (decision 53): one section per business,
 //! never a total across them. Health, vitals, finance and latest activity
 //! are put into words by code from what Airth already records, never by a
-//! model. Vitals from a business's own MCP (`get_vitals`) and finance from
-//! its bank (decision 54) come later; until then they say so.
+//! model. A business's own vitals come from its MCP server's `get_vitals`
+//! (decision 90), its finance from its bank (decision 54).
 
 use super::*;
 use crate::business::store::queue::Item as QueueItem;
@@ -146,7 +146,7 @@ impl App {
             })),
             // A business with no routine has nothing Airth measures yet.
             "finance": finance,
-            "vitals": if graphs.is_empty() { Vec::new() } else { vitals(&graphs, &week, &pending) },
+            "vitals": shown_vitals(realm, now, &graphs, &week, &pending),
             "time": crate::business::store::time::human(week.founder_seconds as u64),
             "cost_usd": week.cost_usd,
             "activity": activity,
@@ -251,6 +251,23 @@ fn health(
         _ => "watch",
     };
     (state, format!("{held_text}{runway_text} {unknown}"))
+}
+
+/// The business's own vitals first, from its server (decision 90), then
+/// Airth's in the places left: four at most.
+fn shown_vitals(
+    realm: &Realm,
+    now: DateTime<Utc>,
+    graphs: &BTreeMap<String, Graph>,
+    week: &RoutinesWeek,
+    pending: &[QueueItem],
+) -> Vec<Value> {
+    let mut out = crate::hub::vitals::shown(realm, now).unwrap_or_default();
+    if !graphs.is_empty() {
+        out.extend(vitals(graphs, week, pending));
+    }
+    out.truncate(4);
+    out
 }
 
 /// At most four vitals from what Airth records: what the founder approved

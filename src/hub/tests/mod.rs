@@ -23,6 +23,7 @@ mod retries;
 mod routines;
 mod runs;
 mod tasks;
+mod vitals;
 
 #[derive(Default)]
 struct Scripted {

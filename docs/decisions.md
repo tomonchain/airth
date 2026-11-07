@@ -2,6 +2,27 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 90. A business's vitals: one read-only `get_vitals` on its own MCP server, read hourly by Airth for the HQ
+
+**Accepted** (founder, 7 November 2026). Closes decision 53's open point on the `get_vitals` schema, and changes how it is called.
+
+- **Where:** the business's own remote MCP server (Hedgen: `https://admin.hedgen.xyz/api/agent/mcp`, connected with a token, decision 89). Airth uses the first enabled server, by name, that has a `get_vitals` tool **the founder classed as a read** (`airth actions class <server>.get_vitals read`), for the schema they saw. Unclassed, classed otherwise, or with a changed schema, it is never called.
+- **The answer**, as the tool's text, checked in code and refused whole when anything is off:
+
+  ```json
+  {"measured_at": "2026-11-07T10:00:00Z",
+   "vitals": [{"key": "mrr", "label": "MRR", "value": 4501, "unit": "USD", "note": "3 paying clients", "range": [3000, 100000]}]}
+  ```
+
+  1 to 4 vitals; `key` and `label` up to 40 characters, `unit` 12, `note` 80; `value` and `range` finite numbers; no other field. `measured_at`, `unit`, `note` and `range` are optional. Out of `range`, the HQ highlights the vital.
+- **Read by Airth, like the bank (decision 54), not by a run:** the scheduler calls it at most once an hour and keeps the answer in the realm's Airth home (`vitals.json`, mode 600). No model and no agent sees it, it holds only numbers and short words, and it takes no argument, so it does not go through `runtime.rs` as decision 53 said: the runtime decides what a run's tool call may do, and there is no run here. The founder's read class is the permission.
+- **A failed read** (server down, refused token, wrong answer) keeps the last figures until they are a day old, then the HQ shows Airth's own vitals instead. No incident: the HQ simply stops showing figures it cannot vouch for.
+- **On the HQ:** the business's vitals first, then Airth's own from its routines in the places left, four in all.
+
+*Why:* each business measures different things, and the figures live in its own systems; one tool with a fixed, checked shape keeps Airth free of any business's code. Reading on a schedule keeps the HQ fast and a slow server from holding it.
+
+*Cost:* each business writes and keeps its `get_vitals`. A server with several businesses' vitals is not supported: one server per business, as the legal boundary wants.
+
 ## 89. A remote MCP server can be connected with a token instead of a sign-in
 
 **Accepted** (founder, 7 November 2026). Security code: `tools/remote.rs`.

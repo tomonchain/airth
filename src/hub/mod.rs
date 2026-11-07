@@ -49,6 +49,7 @@ mod routines;
 mod runs;
 mod skills;
 mod tasks;
+pub mod vitals;
 
 pub use changes::Adoption;
 pub use delivery::PrEvent;
