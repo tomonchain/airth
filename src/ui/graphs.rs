@@ -52,6 +52,16 @@ impl App {
                     Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
                 }
             }
+            // A new routine from the editor (decision 91): checked as a
+            // save is, and never over an existing file.
+            (Method::Post, ["realms", r, "graphs"]) => {
+                let body = read_json(request)?;
+                let str_of = |k: &str| body[k].as_str().unwrap_or_default();
+                match self.create_graph(&self.realm(r)?, str_of("name"), str_of("text")) {
+                    Ok(version) => json_response(200, json!({ "version": version })),
+                    Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
+                }
+            }
             // The routine editor's save (decision 69): the founder's write,
             // checked as loading checks it, never over a newer file.
             (Method::Put, ["realms", r, "graphs", name]) => {
@@ -70,6 +80,20 @@ impl App {
             }
             _ => return Ok(None),
         }))
+    }
+
+    /// Write a new routine the founder drew, once it passes the loader's
+    /// checks. Returns the file's version.
+    fn create_graph(&self, realm: &Realm, name: &str, text: &str) -> Result<String> {
+        let file = crate::routine::file(name)?;
+        let path = realm.root()?.join(&file);
+        if path.exists() {
+            bail!("{file} already exists: choose another name");
+        }
+        self.hub
+            .with_routine_checks(realm, |c| crate::routine::check_text(c, name, text))?;
+        crate::realm::write_atomic(&path, text)?;
+        crate::documents::version(&path)
     }
 
     /// Write a routine the founder edited, once it passes the loader's
@@ -296,6 +320,28 @@ mod tests {
         };
         assert_ne!(new, version);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), edited);
+
+        // A new routine: checked the same way, never over an existing one,
+        // and the editor's layout must place real blocks.
+        let new = root.join("routines/drawn.json");
+        let laid = |at: &str| {
+            edited.replacen(
+                r#"{"agent""#,
+                &format!(r#"{{"layout": {{"trigger": [0, 0], "{at}": [240, 0]}}, "agent""#),
+                1,
+            )
+        };
+        assert!(
+            app.create_graph(&realm, "weekly", &edited).is_err(),
+            "over an existing file"
+        );
+        let e = app
+            .create_graph(&realm, "drawn", &laid("ghost"))
+            .unwrap_err();
+        assert!(format!("{e:#}").contains("not a block"), "{e:#}");
+        assert!(!new.exists());
+        app.create_graph(&realm, "drawn", &laid("week")).unwrap();
+        assert_eq!(std::fs::read_to_string(&new).unwrap(), laid("week"));
 
         // The page's version is now stale: refused, not overwritten.
         let Err(SaveError::Changed(_)) = app.save_graph(&realm, "weekly", &original, &version)
