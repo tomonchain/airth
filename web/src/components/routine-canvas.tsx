@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useTheme } from "@/hooks/use-theme"
-import { api, enc, type Agent, type GraphBlock, type Routine } from "@/lib/api"
+import { api, called, enc, type Agent, type GraphBlock, type Routine } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 // The five blocks the founder drags in (CLAUDE.md); the trigger is always there.
@@ -185,7 +185,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
 
   const nodes: Node<NodeData>[] = useMemo(() => [
     { id: TRIGGER, type: "block", position: { x: at[TRIGGER][0], y: at[TRIGGER][1] }, deletable: false, selected: selected === TRIGGER,
-      data: { kind: TRIGGER, title: triggerText(draft.trigger), sub: agents.find((a) => a.name === draft.agent)?.title ?? draft.agent, wrong: false } },
+      data: { kind: TRIGGER, title: triggerText(draft.trigger), sub: ((x) => (x ? called(x) : draft.agent))(agents.find((a) => a.name === draft.agent)), wrong: false } },
     ...draft.blocks.map((b) => {
       const [title, sub] = describe(b)
       const r = report?.blocks.find((x) => x.id === b.id)
@@ -409,8 +409,8 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
               <div className="space-y-1.5">
                 <Label className="text-xs">Agent</Label>
                 <Select value={draft.agent} onValueChange={(v) => edit({ ...draft, agent: String(v) })}>
-                  <SelectTrigger className="w-full"><SelectValue>{(v: string) => agents.find((a) => a.name === v)?.title ?? v}</SelectValue></SelectTrigger>
-                  <SelectContent>{agents.map((a) => <SelectItem key={a.name} value={a.name}>{a.title}</SelectItem>)}</SelectContent>
+                  <SelectTrigger className="w-full"><SelectValue>{(v: string) => ((x) => (x ? called(x) : v))(agents.find((a) => a.name === v))}</SelectValue></SelectTrigger>
+                  <SelectContent>{agents.map((a) => <SelectItem key={a.name} value={a.name}>{called(a)}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <TriggerFields draft={draft} onChange={edit} when={schedule} />

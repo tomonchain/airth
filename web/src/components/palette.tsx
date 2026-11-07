@@ -4,7 +4,7 @@ import { Character } from "@/components/character"
 import type { Page } from "@/components/rail"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useTheme } from "@/hooks/use-theme"
-import { api, enc, type Agent, type Realm } from "@/lib/api"
+import { api, called, enc, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 type Entry = { group: string; label: string; icon?: LucideIcon; agent?: Agent; keys?: string; run: () => void }
@@ -40,7 +40,7 @@ export function Palette({ open, onOpenChange, realm, realms, agents, onPage, onA
     { group: "Actions", label: "Show or hide the details", icon: PanelRight, run: onDetails },
     ...PAGES.map(([p, label, icon]) => ({ group: "Go to", label, icon, run: () => onPage(p) })),
     { group: "Go to", label: "The welcome guide", icon: Sparkles, run: () => { location.hash = "#/welcome" } },
-    ...agents.map((a) => ({ group: "Agents", label: a.title, agent: a, run: () => onAgent(a.name) })),
+    ...agents.map((a) => ({ group: "Agents", label: called(a), agent: a, run: () => onAgent(a.name) })),
     ...runs.map((r) => ({ group: `Tasks in ${realm}`, label: r.title || r.objective.split("\n")[0] || r.id, icon: ListChecks, run: () => onTask(r.id) })),
     ...realms.filter((r) => !r.archived && r.name !== realm).map((r) => ({ group: "Switch business", label: r.name, icon: Building2, run: () => { location.hash = `#/b/${encodeURIComponent(r.name)}` } })),
   ], [agents, runs, realms, realm, theme, onAsk, onDetails, onPage, onAgent, onTask, setTheme])

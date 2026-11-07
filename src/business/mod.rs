@@ -152,6 +152,15 @@ pub struct Job {
     pub version: String,
 }
 
+/// The agent `name`'s first name, when it has one (decision 94).
+pub fn first_name(root: &Path, name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(AGENTS).join(format!("{name}.md"))).ok()?;
+    crate::frontmatter::parse(&text)
+        .text("first_name")
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+}
+
 /// The job of the agent `name`.
 pub fn job(root: &Path, name: &str) -> Result<Job> {
     crate::realm::validate_name(name).context("invalid agent name")?;
@@ -267,6 +276,19 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
     match key {
         "title" if value.is_empty() => anyhow::bail!("an agent needs a title"),
         "title" => {}
+        // A first name, besides the title: "Ada, Chief of staff". Empty
+        // removes it.
+        "first_name" if value.chars().count() > 30 => {
+            anyhow::bail!("a first name is at most 30 characters")
+        }
+        "first_name"
+            if !value
+                .chars()
+                .all(|c| c.is_alphabetic() || " -'.".contains(c)) =>
+        {
+            anyhow::bail!("a first name is letters, spaces, dashes and apostrophes")
+        }
+        "first_name" => {}
         // What its tasks may use (decision 64): names, comma-separated.
         "integrations" | "skills" => {
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
@@ -679,6 +701,19 @@ mod tests {
         set_agent_field(root.path(), "writer", "skills", "", &[]).unwrap();
         assert!(scope_of(root.path(), "writer").skills.is_empty());
         assert!(set_agent_field(root.path(), "writer", "skills", "../x", &[]).is_err());
+        // A first name besides the title (decision 94); empty removes it.
+        assert_eq!(first_name(root.path(), "writer"), None);
+        set_agent_field(root.path(), "writer", "first_name", "Anne-Marie", &[]).unwrap();
+        assert_eq!(
+            first_name(root.path(), "writer").as_deref(),
+            Some("Anne-Marie")
+        );
+        assert!(set_agent_field(root.path(), "writer", "first_name", "Ada; rm", &[]).is_err());
+        assert!(
+            set_agent_field(root.path(), "writer", "first_name", &"A".repeat(31), &[]).is_err()
+        );
+        set_agent_field(root.path(), "writer", "first_name", "", &[]).unwrap();
+        assert_eq!(first_name(root.path(), "writer"), None);
         remove_job(root.path(), "analyst").unwrap();
         assert!(remove_job(root.path(), "analyst").is_err());
         assert_eq!(bots(root.path()).unwrap().len(), 1);

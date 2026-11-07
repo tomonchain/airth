@@ -3,7 +3,7 @@ import { Pin, PinOff, Plus, TriangleAlert } from "lucide-react"
 import { SideHead, SideSearch } from "@/components/page"
 import { Character } from "@/components/character"
 import { HireAgent } from "@/components/hire-agent"
-import { type Agent, type Department, type Item } from "@/lib/api"
+import { called, type Agent, type Department, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -27,7 +27,7 @@ export function AgentList({ realm, agents, departments, broken, items, last, sel
   })
   const waiting = (a: Agent) => items.filter((i) => i.agent === a.name).length
   const shown = agents
-    .filter((a) => !q || `${a.title} ${a.department} ${a.job}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((a) => !q || `${a.first_name ?? ""} ${a.title} ${a.department} ${a.job}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => Number(waiting(b) > 0) - Number(waiting(a) > 0) || (last[b.name]?.at ?? "").localeCompare(last[a.name]?.at ?? ""))
   // By department, in the business's order (the nine, then the founder's
   // own); pinned agents on top.
@@ -58,7 +58,7 @@ export function AgentList({ realm, agents, departments, broken, items, last, sel
                       <Character agent={a} size={36} still={selected !== a.name && a.state !== "working"} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="truncate text-[13.5px] font-medium">{a.title}</span>
+                          <span className="truncate text-[13.5px] font-medium">{called(a)}</span>
                           {pins.includes(a.name) && <Pin className="size-3 shrink-0 text-muted-foreground" />}
                           <span className="ml-auto shrink-0 text-xs text-muted-foreground">{stamp(l?.at)}</span>
                         </div>

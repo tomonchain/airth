@@ -5,7 +5,7 @@ import { Character } from "@/components/character"
 import { EditAgent } from "@/components/edit-agent"
 import { Button } from "@/components/ui/button"
 import { LOGOS } from "@/lib/logos"
-import { api, departmentName, enc, type Agent, type Department } from "@/lib/api"
+import { api, departmentName, called, enc, type Agent, type Department } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -22,7 +22,7 @@ export function Details({ realm, agent, departments, onSaved, onGone }: { realm:
       <EditAgent key={agent.name} realm={realm} agent={agent} departments={departments} open={editing} onOpenChange={setEditing} onSaved={onSaved} onGone={onGone} />
       <div className="flex flex-col items-center text-center">
         <Character agent={agent} size={84} />
-        <h2 className="mt-4 text-lg font-semibold">{agent.title}</h2>
+        <h2 className="mt-4 text-lg font-semibold">{called(agent)}</h2>
         <p className="text-sm text-muted-foreground">{departmentName(agent.department)}</p>
         <span className="mt-2 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">{STATE[agent.state]}</span>
         {/* Decision 65: a look comes from the name until the founder keeps it. */}

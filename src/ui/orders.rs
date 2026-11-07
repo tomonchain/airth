@@ -19,7 +19,19 @@ impl App {
                 let realm = self.realm(r)?;
                 let text = body["text"].as_str().unwrap_or_default();
                 let agents = self.agent_names(&realm)?;
-                let routed = match crate::hub::orders::named(text, &agents) {
+                // Named by its file name, or by its first name (decision 94).
+                let root = realm.root()?;
+                let by_first = text.split_once(':').and_then(|(head, rest)| {
+                    let head = head.trim().to_lowercase();
+                    agents
+                        .iter()
+                        .find(|a| {
+                            crate::business::first_name(&root, a)
+                                .is_some_and(|n| n.to_lowercase() == head)
+                        })
+                        .map(|a| (a.clone(), rest.trim()))
+                });
+                let routed = match crate::hub::orders::named(text, &agents).or(by_first) {
                     Some((agent, order)) => {
                         Ok(json!({"agent": agent, "why": "you named it", "order": order}))
                     }

@@ -122,6 +122,7 @@ impl App {
                 "accessory": accessory,
                 "state": state,
                 "title": doc.text("title"),
+                "first_name": doc.text("first_name").map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
                 "department": doc.text("department"),
                 "job": job(&doc.body),
                 // The whole job, as written, to edit it.

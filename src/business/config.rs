@@ -39,7 +39,7 @@ const FINANCE: &[&str] = &["cash", "spent", "as_of", "currency"];
 const LINE: &[&str] = &["title", "kind", "status"];
 #[rustfmt::skip]
 const AGENT: &[&str] = &[
-    "title", "department", "reports_to", "lines", "mailbox",
+    "title", "first_name", "department", "reports_to", "lines", "mailbox",
     // What its tasks may use (decision 64), and its character (decision 65).
     "integrations", "skills", "repos", "look", "accessory",
 ];
