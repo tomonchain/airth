@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 90. A business's vitals: one read-only `get_vitals` on its own MCP server, read hourly by Airth for the HQ
 
-**Proposed.** The founder chose the server and the figures (7 November 2026); reading it outside the runtime, as below, waits for their answer. Closes decision 53's open point on the `get_vitals` schema, and changes how it is called.
+**Accepted** (founder, 7 November 2026). Closes decision 53's open point on the `get_vitals` schema, and changes how it is called.
 
 - **Where:** the business's own remote MCP server (Hedgen: `https://admin.hedgen.xyz/api/agent/mcp`, connected with a token, decision 89). Airth uses the first enabled server, by name, that has a `get_vitals` tool **the founder classed as a read** (`airth actions class <server>.get_vitals read`), for the schema they saw. Unclassed, classed otherwise, or with a changed schema, it is never called.
 - **The answer**, as the tool's text, checked in code and refused whole when anything is off:
