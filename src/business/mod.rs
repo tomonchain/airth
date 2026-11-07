@@ -15,7 +15,7 @@ pub mod store;
 // The access layer's areas, under the names the rest of Airth uses.
 pub use store::{drafts, time};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 /// The business folder, under the realm's root.
@@ -137,11 +137,68 @@ pub fn set_strategy(root: &Path, text: &str) -> Result<()> {
     write_body(&dir(root).join(GOAL), text)
 }
 
-/// Write what the business is (only the owner does).
+/// Write what the business is (only the owner does), keeping its fields.
 pub fn set_profile(root: &Path, text: &str) -> Result<()> {
-    let dir = dir(root);
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    crate::realm::write_atomic(&dir.join(PROFILE), &format!("{}\n", text.trim()))
+    write_body(&dir(root).join(PROFILE), text)
+}
+
+/// The fields the first launch asks for, by file (decision 101).
+const FIRST_FIELDS: &[(&str, &[&str])] = &[
+    ("profile", &["name", "country", "legal_form"]),
+    ("goal", &["goal", "target", "by"]),
+];
+
+/// Set one field of the business's profile or goal, keeping the rest of the
+/// file: what the first launch asks (only the owner does).
+pub fn set_field(root: &Path, file: &str, key: &str, value: &str) -> Result<()> {
+    let known = FIRST_FIELDS
+        .iter()
+        .find(|(f, keys)| *f == file && keys.contains(&key))
+        .with_context(|| format!("{file}: {key} is not set here"))?;
+    let value = value.trim();
+    if value.is_empty() || value.len() > 300 || value.contains('\n') {
+        bail!("{key}: one line, 300 characters at most");
+    }
+    // A flat front matter: a value never opens a list, a map or a quote.
+    if value.starts_with(['[', '{', '"', '\'', '-', '#', '|', '>']) {
+        bail!("{key}: start with a letter or a digit");
+    }
+    match key {
+        "country" if !(value.len() == 2 && value.bytes().all(|b| b.is_ascii_uppercase())) => {
+            bail!("country: two capital letters, like GB or FR")
+        }
+        "by" => {
+            chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                .with_context(|| format!("by '{value}' is not a date like 2027-11-30"))?;
+        }
+        _ => {}
+    }
+    let name = if known.0 == "profile" { PROFILE } else { GOAL };
+    put_front(&dir(root).join(name), key, value)
+}
+
+/// Set `key: value` in the front matter of the file at `path`, creating
+/// either when missing, and keep the body.
+fn put_front(path: &Path, key: &str, value: &str) -> Result<()> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let (front, body) = split(&text);
+    let line = format!("{key}: {value}");
+    let mut lines: Vec<String> = front
+        .lines()
+        .filter(|l| *l != "---")
+        .map(str::to_string)
+        .collect();
+    match lines
+        .iter_mut()
+        .find(|l| l.split(':').next().map(str::trim) == Some(key))
+    {
+        Some(l) => *l = line,
+        None => lines.push(line),
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    crate::realm::write_atomic(path, &format!("---\n{}\n---\n{body}", lines.join("\n")))
 }
 
 /// An agent's job, as the owner wrote it: the body of `agents/<name>.md`.
@@ -331,22 +388,10 @@ pub fn set_agent_field(
         .transpose()?;
     let value = department.as_deref().unwrap_or(value.trim());
     let path = root.join(AGENTS).join(format!("{name}.md"));
-    let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
-    let (front, body) = split(&text);
-    let line = format!("{key}: {value}");
-    let mut lines: Vec<String> = front
-        .lines()
-        .filter(|l| *l != "---")
-        .map(str::to_string)
-        .collect();
-    match lines
-        .iter_mut()
-        .find(|l| l.split(':').next().map(str::trim) == Some(key))
-    {
-        Some(l) => *l = line,
-        None => lines.push(line),
+    if !path.exists() {
+        bail!("no agent {name}");
     }
-    crate::realm::write_atomic(&path, &format!("---\n{}\n---\n{body}", lines.join("\n")))
+    put_front(&path, key, value)
 }
 
 /// An agent's look (decision 65): the seed in its file's `look`, else
@@ -500,6 +545,49 @@ fn count_files(dir: &Path) -> usize {
 
 #[cfg(test)]
 mod tests {
+
+    /// Decision 101: the first launch sets known fields one by one, keeping
+    /// what the files hold; a wrong value or another field is refused.
+    #[test]
+    fn the_first_launch_sets_profile_and_goal_fields_and_keeps_the_rest() {
+        let root = tempfile::tempdir().unwrap();
+        set_profile(root.path(), "A media on X.").unwrap();
+        set_field(root.path(), "profile", "country", "GB").unwrap();
+        set_field(root.path(), "profile", "name", "Northwind").unwrap();
+        set_field(root.path(), "profile", "country", "FR").unwrap();
+        set_field(root.path(), "goal", "goal", "Reach 10 paying firms").unwrap();
+        set_field(root.path(), "goal", "by", "2027-11-30").unwrap();
+        let profile = std::fs::read_to_string(root.path().join("business/profile.md")).unwrap();
+        assert_eq!(
+            profile,
+            "---\ncountry: FR\nname: Northwind\n---\nA media on X.\n"
+        );
+        // Writing the text again keeps the fields.
+        set_profile(root.path(), "A media on X and a blog.").unwrap();
+        let profile = std::fs::read_to_string(root.path().join("business/profile.md")).unwrap();
+        assert!(
+            profile.starts_with("---\ncountry: FR\n") && profile.ends_with("a blog.\n"),
+            "{profile}"
+        );
+        let c = config::load(root.path(), &[]).unwrap();
+        assert_eq!(c.goal.text("by").as_deref(), Some("2027-11-30"));
+        assert_eq!(c.profile.text("country").as_deref(), Some("FR"));
+        for (file, key, value) in [
+            ("profile", "bank", "Revolut"),
+            ("goal", "baseline_minutes", "10"),
+            ("profile", "country", "France"),
+            ("goal", "by", "next year"),
+            ("goal", "goal", "[a, b]"),
+            ("goal", "goal", "two\nlines"),
+            ("secrets", "goal", "x"),
+        ] {
+            assert!(
+                set_field(root.path(), file, key, value).is_err(),
+                "{file} {key} {value}"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

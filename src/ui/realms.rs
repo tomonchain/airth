@@ -395,6 +395,19 @@ impl App {
                 )?;
                 ok()
             }
+            // The first launch's answers: {"profile": {"country": "GB"},
+            // "goal": {"goal": "…", "by": "2027-11-30"}} (decision 101).
+            (Method::Patch, ["realms", r, "business"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                for file in ["profile", "goal"] {
+                    for (key, value) in body[file].as_object().into_iter().flatten() {
+                        let value = value.as_str().context("a field's value is text")?;
+                        crate::business::set_field(&root, file, key, value)?;
+                    }
+                }
+                ok()
+            }
             (Method::Put, ["realms", r, "strategy"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

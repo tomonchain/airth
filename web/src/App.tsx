@@ -188,10 +188,13 @@ export default function App() {
 
   // The first launch, with no business yet, starts with the welcome guide.
   const none = !!realms.data && !realms.data.some((r) => !r.archived)
+  // Begun on the first launch, the guide stays until it is done, though the
+  // business it creates comes into the list meanwhile.
+  if (none && !welcome) setWelcome(true)
   if (welcome || none) {
     return (
       <Suspense fallback={null}>
-        <Welcome realms={realms.data ?? []} onDone={(r) => { realms.refresh(); location.hash = r ? `#/b/${encodeURIComponent(r)}` : "" }} />
+        <Welcome realms={realms.data ?? []} onDone={(r) => { setWelcome(false); realms.refresh(); location.hash = r ? `#/b/${encodeURIComponent(r)}` : "" }} />
       </Suspense>
     )
   }
