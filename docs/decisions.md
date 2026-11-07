@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 98. A new key unpairs every phone, and is made on the Mac only
+
+**Accepted** (founder, 7 November 2026, with decision 97: "keep it on the phone", with a button for a new key). Closes decision 97's cost.
+
+- **Settings, Phone, New key:** Airth makes a new API key, keeps it for the next start (`ui-token`), writes it where `airth ui` and the Mac app find the running app (`server.json`), and checks it from the next request on. Every phone and page holding the old key is refused; the page that asked keeps working with the new one.
+- **On the Mac only:** the request must come through loopback. A phone, even with the key, is refused, so a lost phone cannot lock the owner out with a key of its own. A test proves both.
+- The key is now held behind a lock in the app, read on each request.
+
+*Why:* a paired phone keeps the key (decision 97); losing it must not mean controlling Airth until the next reinstall.
+
+*Cost:* other windows on the Mac need Airth opened again. Pairing again means scanning the new code.
+
 ## 97. Airth fits a phone, and a paired phone keeps the key
 
 **Accepted** (founder, 7 November 2026: "can we work on a mobile version? I'd like Airth on my phone", choosing to keep the key on the phone over scanning again each time). Extends decision 37, which brought the app to the phone through Tailscale.
@@ -12,7 +24,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Why:* the founder wants to run the businesses from the phone, beyond the approvals Telegram brings. A key lasting the tab meant scanning the Mac's screen again each time the phone's browser closed it, so the phone was usable only beside the Mac.
 
-*Cost:* whoever holds the unlocked phone controls Airth until the key changes; Forget this name stops the phone reaching the app, but the key itself only changes when `~/.airth/ui-token` is replaced and Airth restarted. A button for a new key is the next step. Pages are checked at phone width by hand, not by tests.
+*Cost:* whoever holds the unlocked phone controls Airth until the key changes; Forget this name stops the phone reaching the app, but the key itself changes only with a new key (decision 98). Pages are checked at phone width by hand, not by tests.
 
 ## 96. Reads and reversible writes start at their ceiling; what commits starts at 1
 

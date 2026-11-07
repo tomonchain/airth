@@ -34,6 +34,9 @@ export function pair(link: string): boolean {
   return true
 }
 
+/** Keep the key Airth just made, so this page goes on working. */
+export const rekey = (key: string) => { store()?.setItem(KEY, key) }
+
 /** This page's pairing link, to pair the home-screen app from the browser. */
 export const pairingLink = () => `${location.origin}/#token=${token()}`
 

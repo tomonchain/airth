@@ -83,13 +83,25 @@ impl App {
                 let links = crate::phone::hosts(self.hub.home().dir())?
                     .into_iter()
                     .map(|host| {
-                        let link = crate::phone::pairing_link(&host, &self.token);
+                        let link = crate::phone::pairing_link(&host, &self.token());
                         let (width, cells) = crate::phone::qr(&link)?;
                         let cells: String = cells.iter().map(|c| if *c { '1' } else { '0' }).collect();
                         Ok(json!({"host": host, "link": link, "qr": {"width": width, "cells": cells}}))
                     })
                     .collect::<Result<Vec<_>>>()?;
                 json_response(200, json!({"hosts": links}))
+            }
+            // A new key, from the Mac only: a lost phone could otherwise
+            // lock the owner out with a key of its own (decision 98).
+            (Method::Post, ["phone", "new-key"]) => {
+                let host = header(request, "Host").unwrap_or_default();
+                if !crate::phone::host_allowed(&host, self.port, &[]) {
+                    return Ok(Some(json_response(
+                        403,
+                        json!({"error": "a new key is made on the Mac, not from a phone"}),
+                    )));
+                }
+                json_response(200, json!({"token": self.new_key()?}))
             }
             (Method::Post, ["phone", "hosts"]) => {
                 let body = read_json(request)?;
