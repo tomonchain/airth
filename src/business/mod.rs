@@ -211,6 +211,16 @@ pub fn scope(root: &Path, name: &str) -> Result<Scope> {
     })
 }
 
+/// The business's name as the founder writes it (`name` in its profile),
+/// for the interface; its folder name stays its id.
+pub fn title(root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(DIR).join(PROFILE)).ok()?;
+    crate::frontmatter::parse(&text)
+        .text("name")
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty() && n != "TODO")
+}
+
 /// A task's budget (decision 64): minutes and model cost in dollars, from
 /// `business/profile.md` (`task_max_minutes`, `task_max_cost_usd`), else
 /// 30 minutes and $1.
@@ -500,6 +510,25 @@ fn count_files(dir: &Path) -> usize {
 
 #[cfg(test)]
 mod tests {
+
+    /// The interface shows the profile's name; none, or one left to fill,
+    /// is no name.
+    #[test]
+    fn a_business_is_shown_by_its_profiles_name() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(title(root.path()), None);
+        let dir = root.path().join(DIR);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(PROFILE), "---\nname: TODO\n---\nA media.\n").unwrap();
+        assert_eq!(title(root.path()), None);
+        std::fs::write(
+            dir.join(PROFILE),
+            "---\nname: Northwind Research\n---\nA media.\n",
+        )
+        .unwrap();
+        assert_eq!(title(root.path()).as_deref(), Some("Northwind Research"));
+    }
+
     use super::*;
 
     #[test]
