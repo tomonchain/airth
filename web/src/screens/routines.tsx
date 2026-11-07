@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react"
-import { Bot, BookOpen, Check, ChevronDown, FlaskConical, GitBranch, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Save, Sparkles, Undo2, X, Zap, type LucideIcon } from "lucide-react"
+import { useState } from "react"
+import { Bot, BookOpen, Check, GitBranch, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
-import { BlockFields, TriggerFields, type Declared, type Draft } from "@/components/routine-editor"
+import { RoutineCanvas, schedule, triggerText } from "@/components/routine-canvas"
+import type { Declared } from "@/components/routine-editor"
 import { Empty, Loading, Page, Panel, Section } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type GraphBlock, type Routine } from "@/lib/api"
+import { api, enc, type Agent, type Routine } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -27,119 +28,46 @@ const BLOCK: Record<string, { icon: LucideIcon; label: string }> = {
   act: { icon: Zap, label: "Act" },
 }
 
-const DAYS: Record<string, string> = { mon: "Mondays", tue: "Tuesdays", wed: "Wednesdays", thu: "Thursdays", fri: "Fridays", sat: "Saturdays", sun: "Sundays" }
-
-/** A schedule as the founder reads it: "weekdays 09:00" → "Weekdays at 09:00". */
-function schedule(every: string): string {
-  const t = every.trim().toLowerCase()
-  const m = t.match(/^every (\d+)\s*(m|min|mins|h|hr|hrs|d|day|days)$/)
-  if (m) {
-    const n = Number(m[1])
-    const unit = m[2][0] === "m" ? "min" : m[2][0] === "h" ? (n === 1 ? "hour" : "hours") : (n === 1 ? "day" : "days")
-    return n === 1 && unit !== "min" ? `Every ${unit}` : `Every ${n} ${unit}`
-  }
-  const at = t.match(/^(\S+) (\d{1,2}:\d{2})$/)
-  if (!at) return every
-  const days = ({ daily: "Every day", weekdays: "Weekdays", weekends: "Weekends" } as Record<string, string>)[at[1]]
-    ?? at[1].split(",").map((d) => DAYS[d] ?? d).join(", ")
-  return `${days} at ${at[2]}`
-}
-
 const clock = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 
-function trigger(t: NonNullable<Routine["graph"]>["trigger"]) {
-  if (t.schedule) return schedule(t.schedule)
-  // Decision 63: a post link the founder sends the bot.
-  if (t.telegram) return t.telegram === "x_post" ? "When you send a post link on Telegram" : `On Telegram: ${t.telegram}`
-  if (t.webhook) return `On a webhook: ${t.webhook}`
-  return "By hand"
-}
-
-/** A block's title and one line on what it does, from its file. */
-function describe(b: GraphBlock): [string, string] {
-  const s = (k: string) => (typeof b[k] === "string" ? (b[k] as string) : "")
-  const n = (k: string) => (typeof b[k] === "number" ? (b[k] as number) : null)
-  const list = (k: string) => (Array.isArray(b[k]) ? (b[k] as string[]) : [])
-  const join = (xs: unknown[]) => xs.filter(Boolean).join(" · ")
-  switch (b.type) {
-    case "read":
-      if (s("source") === "business") return ["Business records", s("records") === "week" ? "How the last 7 days went" : s("records")]
-      if (s("source") === "rss") {
-        const feeds = list("feeds").length
-        return [`${feeds} news feed${feeds === 1 ? "" : "s"}`, join([n("max_age_days") && `last ${n("max_age_days")} days`, s("dedupe") && "no repeats", n("max") && `at most ${n("max")}`])]
-      }
-      if (s("source") === "x_post") return ["The post you sent", ""]
-      return [s("source"), s("action") || s("url")]
-    case "ai":
-      return [b.id, join([s("prompt").replace(/^prompts\//, ""), b.over === "list" && "all at once", b.model === "fast" && "fast model",
-        s("keep") && `keeps ${s("keep")}`, n("limit") && `best ${n("limit")}`, list("distinct").length > 0 && `one per ${list("distinct").join(" and ")}`])]
-    case "condition": {
-      const c = ((b.if as object | undefined) ?? {}) as { field?: string; op?: string; value?: unknown }
-      return [b.id, `if ${c.field ?? ""} ${c.op ?? ""}${c.value === undefined ? "" : ` ${JSON.stringify(c.value)}`}`]
-    }
-    case "approval":
-      return ["You, in Needs you", join([b.editable ? "you may edit" : "approve or reject", n("expires_after") && `expires after ${n("expires_after")} h`])]
-    case "act":
-      return [s("action"), b.id]
-    default:
-      return [b.id, ""]
-  }
-}
-
-type Report = { blocks: { id: string; items_in: number; items_out: number; secs: number; lines: string[]; notes: string[] }[]; cost: string; secs: number; failed?: string[] }
-type Dry = { running: boolean; report?: Report; error?: string; at?: string }
-type Ran = { running: boolean; report?: string; error?: string }
-
 /** The business's recurring work, in three kinds: routines made of blocks
-    (decision 49), agents given a task on a schedule (decision 37), and the
-    fixed sequences of business/pipelines/ (decision 30). */
+    (decision 49), drawn on a canvas (decision 91); agents given a task on a
+    schedule (decision 37); and the fixed sequences of business/pipelines/
+    (decision 30). */
 export function Routines({ realm, agents, onAgent }: { realm: string; agents: Agent[]; onAgent: (name: string) => void }) {
   const graphs = usePoll<{ routines: Routine[]; actions: Declared[]; prompts: string[] }>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/routines`), 15000, [realm])
   const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
-  const [open, setOpen] = useState<string | null>(null)
-  const [dry, setDry] = useState<Record<string, Dry>>({})
-  const [ran, setRan] = useState<Record<string, Ran>>({})
-
-  // Run now, for real: as at its time. The request waits for the run.
-  async function runNow(name: string) {
-    setRan((d) => ({ ...d, [name]: { running: true } }))
-    try {
-      const out = await api<{ report: string }>(`realms/${enc(realm)}/graphs/${enc(name)}/run`, {}, undefined, 600000)
-      setRan((d) => ({ ...d, [name]: { running: false, report: out.report } }))
-      toast.success(`${name} ran.`)
-    } catch (e) {
-      setRan((d) => ({ ...d, [name]: { running: false, error: (e as Error).message } }))
-    }
-    graphs.refresh()
-  }
   const [form, setForm] = useState<Objective | "new" | null>(null)
+  // The routine open on the canvas, "new" for one being drawn.
+  const [canvas, setCanvas] = useState<string | null>(null)
 
-  async function dryRun(name: string) {
-    setDry((d) => ({ ...d, [name]: { running: true } }))
-    try {
-      // The feeds are read and the model asked for real: it can take minutes.
-      const report = await api<Report>(`realms/${enc(realm)}/graphs/${enc(name)}/dry-run`, {}, undefined, 600000)
-      setDry((d) => ({ ...d, [name]: { running: false, report, at: new Date().toISOString() } }))
-    } catch (e) {
-      setDry((d) => ({ ...d, [name]: { running: false, error: (e as Error).message } }))
-    }
+  if (canvas && graphs.data) {
+    const routine = graphs.data.routines.find((r) => r.name === canvas) ?? null
+    return (
+      <div className="min-w-0 flex-1 p-3">
+        <RoutineCanvas key={routine ? `${routine.name}:${routine.version}` : "new"} realm={realm} routine={routine} agents={agents}
+          actions={graphs.data.actions} prompts={graphs.data.prompts} onClose={() => setCanvas(null)}
+          onSaved={async (name) => { await graphs.refresh(); setCanvas(name) }} />
+      </div>
+    )
   }
 
   const count = (graphs.data?.routines.length ?? 0) + (tasks.data?.routines.length ?? 0) + (fixed.data?.pipelines.length ?? 0)
   return (
     <Page wide title="Routines" lede={graphs.data && tasks.data ? `${count} routine${count === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
-      actions={<Button size="sm" variant="outline" onClick={() => setForm("new")}><Plus /> New agent routine</Button>}>
+      actions={<div className="flex gap-2">
+        <Button size="sm" disabled={!graphs.data || !agents.length} onClick={() => setCanvas("new")} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
+        <Button size="sm" variant="outline" onClick={() => setForm("new")}><Plus /> New agent routine</Button>
+      </div>}>
       <Section title="Routines" note="Files in routines/, in the business folder">
         {!graphs.data ? <Loading /> : graphs.data.routines.length ? (
           <div className="space-y-2.5">
             {graphs.data.routines.map((r) => (
-              <GraphCard key={r.name} realm={realm} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} open={open === r.name}
-                onOpen={() => setOpen(open === r.name ? null : r.name)} onAgent={onAgent} dry={dry[r.name]} onDry={() => dryRun(r.name)} ran={ran[r.name]} onRun={() => runNow(r.name)}
-                actions={graphs.data!.actions} prompts={graphs.data!.prompts} onSaved={graphs.refresh} />
+              <GraphCard key={r.name} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} onOpen={() => setCanvas(r.name)} onAgent={onAgent} />
             ))}
           </div>
-        ) : <Empty icon={Repeat} title="No routine yet">A routine is a file in routines/ in the business folder: a trigger, then its blocks.</Empty>}
+        ) : <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link.</Empty>}
       </Section>
 
       <Section title="Agent routines" note="An agent, a task, a time">
@@ -175,66 +103,28 @@ function Last({ ok, at }: { ok: boolean; at: string }) {
   )
 }
 
-/** The routine's file, parsed; null when it does not parse. */
-function parse(source: string): Draft | null {
-  try { return JSON.parse(source) as Draft } catch { return null }
-}
-
-function GraphCard({ realm, r, agent, open, onOpen, onAgent, dry, onDry, ran, onRun, actions, prompts, onSaved }: {
-  realm: string; r: Routine; agent?: Agent; open: boolean; onOpen: () => void; onAgent: (name: string) => void; dry?: Dry; onDry: () => void; ran?: Ran; onRun: () => void
-  actions: Declared[]; prompts: string[]; onSaved: () => Promise<void>
-}) {
-  const [block, setBlock] = useState<string | null>(null)
-  // The founder's edits (decision 69), on the file as it was read.
-  const [draft, setDraft] = useState<Draft | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [refused, setRefused] = useState<{ text: string; block?: string; changed?: boolean } | null>(null)
-  const saved = r.graph ? parse(r.source) : null
-  const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved)
-  // A newer file replaces the page's copy, unless the founder is editing it.
-  useEffect(() => { if (!dirty) setDraft(r.graph ? parse(r.source) : null) }, [r.version])
-  const g = r.graph && draft ? { ...r.graph, ...draft, trigger: { ...r.graph.trigger, ...draft.trigger } } : r.graph
+/** A routine in the list: who, when, its chain of blocks; it opens on the canvas. */
+function GraphCard({ r, agent, onOpen, onAgent }: { r: Routine; agent?: Agent; onOpen: () => void; onAgent: (name: string) => void }) {
+  const g = r.graph
   const last = r.runs[0]
-  const report = dirty ? undefined : dry?.report
-
-  function edit(d: Draft) { setDraft(d); setRefused(null) }
-  function discard() { setDraft(saved); setRefused(null) }
-  async function save() {
-    if (!draft) return
-    setSaving(true)
-    try {
-      // Indented as the files are, so git shows only what changed.
-      const text = JSON.stringify(draft, null, 2) + (r.source.endsWith("\n") ? "\n" : "")
-      await api(`realms/${enc(realm)}/graphs/${enc(r.name)}`, { text, version: r.version }, "PUT")
-      toast.success(`${r.name} saved. Commit it in the business folder to keep it in git.`)
-      setRefused(null)
-      await onSaved()
-    } catch (e) {
-      const text = (e as Error).message
-      setRefused({ text, block: text.match(/block '([^']+)'/)?.[1], changed: /changed since you opened it/.test(text) })
-    } finally { setSaving(false) }
-  }
-  const selected = draft?.blocks.find((b) => b.id === block)
-
   return (
-    <Panel className={cn("transition-colors", open && "bg-bubble/70")}>
+    <Panel className="transition-colors hover:bg-bubble/50">
       <div className="flex items-center gap-3 px-4 py-3.5">
         {agent ? <button onClick={() => onAgent(agent.name)} aria-label={agent.title}><Character agent={agent} size={30} still /></button> : <Bot className="size-6 text-muted-foreground" />}
-        <button className="min-w-0 flex-1 text-left" onClick={onOpen} aria-expanded={open}>
-          <div className="flex items-center gap-2 font-mono text-[13px] font-medium">{r.name}{dirty && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[11px] text-amber-600 dark:text-amber-300">Not saved</span>}</div>
+        <button className="min-w-0 flex-1 text-left" onClick={onOpen}>
+          <div className="font-mono text-[13px] font-medium">{r.name}</div>
           <div className="truncate text-xs text-muted-foreground">
-            {g ? <>{r.agent_title ?? g.agent} · {trigger(g.trigger)}{r.next_at ? ` · next ${clock(r.next_at)}` : ""}</> : <span className="text-red-500">This file does not hold</span>}
+            {g ? <>{r.agent_title ?? g.agent} · {triggerText(g.trigger)}{r.next_at ? ` · next ${clock(r.next_at)}` : ""}{late(last) && <span className="text-amber-500"> · last run {late(last)} late</span>}</> : <span className="text-red-500">This file does not hold</span>}
           </div>
         </button>
         <div className="text-right text-xs text-muted-foreground">
           {last ? <Last ok={last.ok} at={last.at} /> : "Never ran"}
-          <div className="tabular-nums">{usd(r.cost_usd) || "$0"} this week</div>
+          <div className="tabular-nums">{usd(r.cost_usd) || "$0"} this week{r.unpriced ? ` + ${r.unpriced} unpriced` : ""}</div>
         </div>
-        <Button size="icon-sm" variant="ghost" onClick={onOpen} aria-label={open ? "Close" : "Open"}><ChevronDown className={cn("transition-transform", open && "rotate-180")} /></Button>
+        <Button size="sm" variant="outline" onClick={onOpen}><Workflow /> Open</Button>
       </div>
-
-      {!open && g && (
-        <div className="-mt-1 flex flex-wrap items-center gap-1 px-4 pb-3.5">
+      {g && (
+        <button className="-mt-1 flex w-full flex-wrap items-center gap-1 px-4 pb-3.5 text-left" onClick={onOpen}>
           {g.blocks.map((b, i) => {
             const k = BLOCK[b.type] ?? BLOCK.act
             return (
@@ -246,157 +136,20 @@ function GraphCard({ realm, r, agent, open, onOpen, onAgent, dry, onDry, ran, on
               </span>
             )
           })}
-        </div>
+        </button>
       )}
-      {!open && !g && r.error && <p className="-mt-1 px-4 pb-3.5 font-mono text-[11px] break-words text-red-500">{r.error}</p>}
-      {!open && last?.error && <p className="-mt-1 line-clamp-2 px-4 pb-3.5 font-mono text-[11px] text-red-500">{last.error}</p>}
-
-      {open && (
-        <div className="grid gap-6 border-t px-4 py-4 md:grid-cols-[1fr_17rem]">
-          {g && draft ? (
-            <div className="min-w-0">
-              {g.description && <p className="mb-3 text-sm text-foreground/80">{g.description}</p>}
-              <ol className="relative space-y-1.5 before:absolute before:top-4 before:bottom-4 before:left-[15px] before:w-px before:bg-border">
-                <Node icon={Play} type="Trigger" title={trigger(g.trigger)} sub={r.next_at ? `next ${clock(r.next_at)}` : ""}
-                  current={block === TRIGGER} onClick={() => setBlock(block === TRIGGER ? null : TRIGGER)} />
-                {g.blocks.map((b) => {
-                  const k = BLOCK[b.type] ?? BLOCK.act
-                  const [title, sub] = describe(b)
-                  const ran = report?.blocks.find((x) => x.id === b.id)
-                  return (
-                    <Node key={b.id} icon={k.icon} type={k.label} title={title} sub={sub} warn={b.type === "approval"} wrong={refused?.block === b.id}
-                      current={block === b.id} onClick={() => setBlock(block === b.id ? null : b.id)}
-                      out={report && (ran ? { ok: !ran.notes.length, text: `${ran.items_in} → ${ran.items_out} · ${ran.secs.toFixed(1)} s` } : { ok: null, text: "not reached" })} />
-                  )
-                })}
-              </ol>
-              {block && (
-                <section className="mt-3 space-y-3 rounded-lg border bg-surface p-3" aria-label={`Change ${block === TRIGGER ? "the trigger" : block}`}>
-                  <h3 className="text-xs font-medium">{block === TRIGGER ? "The routine" : <>Change <span className="font-mono">{block}</span></>}</h3>
-                  {refused && (refused.block === block || (!refused.block && block === TRIGGER)) && <Refused text={refused.text} />}
-                  {block === TRIGGER
-                    ? <TriggerFields draft={draft} onChange={edit} when={schedule} />
-                    : selected && <BlockFields block={selected} actions={actions} prompts={prompts}
-                        onChange={(nb) => edit({ ...draft, blocks: draft.blocks.map((x) => (x.id === nb.id ? nb : x)) })} />}
-                </section>
-              )}
-              {report && block && block !== TRIGGER && <BlockReport report={report} open={block} />}
-              {!block && <p className="mt-3 text-xs text-muted-foreground">Choose a block to change it{report ? " or see what it did" : ""}. Adding, removing or linking blocks is done in the file.</p>}
-              <p className="mt-4 text-xs text-muted-foreground">A dry run reads and asks the model for real, takes every approval as given, and only shows what each act would do. Nothing is sent.</p>
-            </div>
-          ) : <p className="font-mono text-xs break-words text-red-500">{r.error}</p>}
-
-          <aside className="space-y-4 text-sm">
-            {dirty ? (
-              <div className="space-y-2 rounded-lg border border-amber-400/40 bg-amber-500/5 p-3">
-                <p className="text-xs">Your changes are not saved. Airth checks the routine as when it loads it: nothing is written if it would be refused.</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button size="sm" disabled={saving} onClick={save}>{saving ? <><Loader className="animate-spin" /> Saving…</> : <><Save /> Save</>}</Button>
-                  <Button size="sm" variant="outline" disabled={saving} onClick={discard}><Undo2 /> Discard</Button>
-                </div>
-                {refused && !refused.block && block !== TRIGGER && <Refused text={refused.text} />}
-                {refused?.block && block !== refused.block && <button className="text-left text-xs text-red-600 hover:underline dark:text-red-300" onClick={() => setBlock(refused.block!)}>Refused at {refused.block}: see why</button>}
-                {refused?.changed && <p className="text-xs text-muted-foreground">Someone changed the file since you opened it. Discard to see their version, then make your change again.</p>}
-              </div>
-            ) : null}
-            <div className="grid grid-cols-2 gap-2">
-              <Button disabled={!g || dirty || ran?.running || dry?.running} onClick={onRun} title={dirty ? "Save your changes first" : "Run it now, for real: as at its time, what needs you waits in Needs you"}>
-                {ran?.running ? <><Loader className="animate-spin" /> Running…</> : <><Play /> Run now</>}
-              </Button>
-              <Button variant="outline" disabled={!g || dirty || dry?.running || ran?.running} onClick={onDry} title={dirty ? "Save your changes first: a dry run runs what is saved" : "Everything but the acts: nothing is sent"}>
-                {dry?.running ? <><Loader className="animate-spin" /> Dry…</> : <><FlaskConical /> Dry run</>}
-              </Button>
-            </div>
-            {ran?.running && <p className="text-xs text-muted-foreground">It runs for real: what needs you will wait in Needs you. It can take a minute.</p>}
-            {ran?.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{ran.error}</p>}
-            {ran?.report && <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">{ran.report}</p>}
-            {dry?.running && <p className="text-xs text-muted-foreground">The feeds are read and the model asked. It can take a minute.</p>}
-            {dry?.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{dry.error}</p>}
-            {report && (
-              <div className="space-y-1.5">
-                <div className="flex items-baseline justify-between text-xs">
-                  <span className="font-medium">Dry run{dry?.at ? ` · ${new Date(dry.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
-                  <span className="text-muted-foreground">{report.cost.replace(/^cost: /, "")}</span>
-                </div>
-                {report.failed?.map((f) => <p key={f} className="text-xs text-red-500">{f}</p>)}
-              </div>
-            )}
-            <div>
-              <div className="mb-1.5 text-xs font-medium">Last runs</div>
-              {r.runs.length ? (
-                <div className="space-y-1">
-                  {r.runs.map((x) => (
-                    <div key={x.at} className="flex items-center justify-between gap-2 text-xs" title={x.error ?? undefined}>
-                      <span className="text-muted-foreground">{clock(x.at)}{late(x) && <span className="text-amber-500"> · {late(x)} late</span>}</span>
-                      <span className={x.ok ? "text-emerald-500" : "text-red-500"}>{x.ok ? "Done" : "Failed"}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="text-xs text-muted-foreground">No run yet. Each run shows here once it ends.</p>}
-            </div>
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="text-muted-foreground">Model cost, last 7 days</span>
-              <span className="tabular-nums">{usd(r.cost_usd) || "$0"}{r.unpriced ? ` + ${r.unpriced} unpriced` : ""}</span>
-            </div>
-          </aside>
-        </div>
-      )}
+      {!g && r.error && <p className="-mt-1 px-4 pb-3.5 font-mono text-[11px] break-words text-red-500">{r.error}</p>}
+      {last?.error && <p className="-mt-1 line-clamp-2 px-4 pb-3.5 font-mono text-[11px] text-red-500">{last.error}</p>}
     </Panel>
   )
 }
 
-// The trigger's row, selectable like a block's.
-const TRIGGER = "\u0000trigger"
-
-function Refused({ text }: { text: string }) {
-  return <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{text}</p>
-}
-
 /** How late a scheduled run started, past the 15 minutes of grace. */
-function late(run: { at: string; due_at?: string | null }): string | null {
-  if (!run.due_at) return null
+function late(run?: { at: string; due_at?: string | null }): string | null {
+  if (!run?.due_at) return null
   const min = Math.round((Date.parse(run.at) - Date.parse(run.due_at)) / 60000)
   if (min <= 15) return null
   return min < 120 ? `${min} min` : `${Math.round(min / 60)} h`
-}
-
-function Node({ icon: Icon, type, title, sub, warn, wrong, current, onClick, out }: {
-  icon: LucideIcon; type: string; title: string; sub: string; warn?: boolean; wrong?: boolean; current?: boolean; onClick?: () => void
-  out?: { ok: boolean | null; text: string }
-}) {
-  const body = (
-    <>
-      <span className={cn("relative z-10 grid size-[31px] shrink-0 place-items-center rounded-lg border bg-surface", warn && "border-amber-400/50 text-amber-600 dark:text-amber-300", wrong && "border-red-500 text-red-500")}><Icon className="size-4" /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[11px] text-muted-foreground">{type}</span>
-        <span className="block truncate text-sm font-medium">{title}</span>
-        {sub && <span className="block truncate text-xs text-muted-foreground">{sub}</span>}
-      </span>
-      {out && <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px]", out.ok === null ? "text-muted-foreground" : out.ok ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400")}>{out.ok === false ? "! " : out.ok ? "✓ " : ""}{out.text}</span>}
-    </>
-  )
-  return (
-    <li>
-      {onClick
-        ? <button type="button" onClick={onClick} aria-pressed={current} className={cn("flex w-full items-center gap-3 rounded-lg px-0.5 py-1 text-left hover:bg-muted/50", current && "bg-muted/70")}>{body}</button>
-        : <div className="flex items-center gap-3 px-0.5 py-1">{body}</div>}
-    </li>
-  )
-}
-
-/** What the chosen block did in the last dry run. */
-function BlockReport({ report, open }: { report: Report; open: string | null }) {
-  if (!open) return <p className="mt-3 text-xs text-muted-foreground">Choose a block to see what it did.</p>
-  const ran = report.blocks.find((b) => b.id === open)
-  if (!ran) return <p className="mt-3 text-xs text-muted-foreground">{open} was not reached in this dry run.</p>
-  return (
-    <section className="mt-3 space-y-1 rounded-lg border bg-surface p-3" aria-label={`What ${ran.id} did`}>
-      <h3 className="mb-1.5 text-xs font-medium">What {ran.id} did</h3>
-      {ran.lines.map((l, i) => <pre key={`l${i}`} className="font-mono text-[11.5px] whitespace-pre-wrap">{l}</pre>)}
-      {ran.notes.map((l, i) => <pre key={`n${i}`} className="font-mono text-[11.5px] whitespace-pre-wrap text-amber-600 dark:text-amber-400">{l}</pre>)}
-      {!ran.lines.length && !ran.notes.length && <p className="text-xs text-muted-foreground">Nothing to say: its items went on.</p>}
-    </section>
-  )
 }
 
 type Objective = {
