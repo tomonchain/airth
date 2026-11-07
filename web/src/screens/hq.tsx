@@ -1,7 +1,7 @@
 import { ChevronRight, CircleDollarSign, Clock3, Hand } from "lucide-react"
 import { Loading, Page, Panel } from "@/components/page"
 import { usePoll } from "@/hooks/use-poll"
-import { api, type Business } from "@/lib/api"
+import { api, named, type Business } from "@/lib/api"
 import { usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -33,7 +33,7 @@ export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
                 <div className="flex items-center gap-3">
                   <span className={cn("size-2.5 shrink-0 rounded-full", HEALTH[b.health.state] ?? "bg-zinc-400")} title={b.health.state} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2"><span className="text-base font-semibold capitalize">{b.name}</span><span className="truncate text-xs text-muted-foreground">{b.description}</span></div>
+                    <div className="flex items-baseline gap-2"><span className="text-base font-semibold">{named(b.name, b.title)}</span><span className="truncate text-xs text-muted-foreground">{b.description}</span></div>
                     <div className="text-sm text-foreground/80">{b.headline}</div>
                   </div>
                   <div className="text-right text-xs text-muted-foreground">

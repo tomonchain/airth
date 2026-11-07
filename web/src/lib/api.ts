@@ -58,6 +58,10 @@ export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PAT
 
 export const enc = encodeURIComponent
 
+/** A business as the founder calls it: its profile's name, else its
+    folder name with a capital. */
+export const named = (name: string, title?: string | null) => title?.trim() || name.charAt(0).toUpperCase() + name.slice(1)
+
 /** An agent as the founder calls it: "Ada, Chief of staff", else its title. */
 export const called = (a: { title: string; first_name?: string | null }) => (a.first_name ? `${a.first_name}, ${a.title}` : a.title)
 
@@ -70,7 +74,7 @@ export async function raw(path: string, init: RequestInit = {}): Promise<Respons
   return r
 }
 
-export type Realm = { name: string; description: string | null; archived: boolean; default: boolean; live: number; needs_approval: number }
+export type Realm = { name: string; title?: string | null; description: string | null; archived: boolean; default: boolean; live: number; needs_approval: number }
 
 export type AgentState = "needs" | "incident" | "working" | "idle" | "asleep"
 
@@ -100,6 +104,8 @@ export type Activity = { agent: string; agent_title: string; routine: string; se
 
 export type Business = {
   name: string
+  /** Its name as the founder wrote it (its profile's), when there is one. */
+  title?: string | null
   description: string | null
   headline: string
   needs: number
