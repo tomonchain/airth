@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 100. The founder's Airth follows main, and a pull request is tried on a copy
+
+**Accepted** (founder, 7 November 2026: "I'd like a fluid test and deployment workflow").
+
+- **Updates follow `main`.** A build from the checkout offers the tip of `main`, or of `origin/main` when that is ahead, whatever branch the checkout is on. Before, it followed the checked-out branch, so work on a branch in the founder's checkout could be offered as an update, and the merged work was not, until a manual reinstall. The rest is unchanged: the update is built and tested in the home, and installed when the founder clicks Restart.
+- **The flow:** a pull request is checked by CI; the founder tries it with `scripts/try <number>`, a debug build of it on a copy of their home, as a preview (nothing runs on its own), deleted at Ctrl-C; it merges; within half an hour Airth says "Update ready", and one click installs it.
+- **Development happens in worktrees**, never by switching the founder's checkout.
+
+*Why:* every change so far ended with "reinstall Airth", and the founder could only see a change on their real Airth once merged. The updater existed; it followed the wrong branch.
+
+*Cost:* a checkout build kept on a branch on purpose is now offered `main`'s next commit. `scripts/try` copies the home with its secrets into `~/.airth-try` while it runs, and pages that call a model or a service in the copy do so for real.
+
 ## 99. An AI block remembers the stories it kept, for a few days
 
 **Accepted** (founder, 7 November 2026: "can you move forward on things?", on the backlog's first line, same-event grouping, which helps the watch and the posts). Extends decisions 60 and 61.

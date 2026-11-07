@@ -53,7 +53,19 @@ release files (or the network) can neither serve a modified app, nor pass an
 older signed app off as a newer one.
 
 A build from a git checkout (`cargo install`, `airth service install`) keeps
-updating from its checkout: build, test, install.
+updating from its checkout's `main` (or `origin/main` when ahead), whatever
+branch is checked out (decision 100): build, test, install on Restart.
+
+## Trying a pull request before it merges
+
+```sh
+scripts/try 219        # a pull request, by number
+scripts/try my-branch  # a branch of origin
+```
+
+It builds the change in a worktree, copies your home (without its update
+builds) to `~/.airth-try`, and opens it as a preview: nothing runs on its
+own. Ctrl-C stops it and deletes the copy.
 
 ## Secrets
 

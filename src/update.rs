@@ -1,8 +1,8 @@
 //! Controlled updates of Airth itself.
 //!
 //! Airth is built from a git checkout (recorded at build time). A newer
-//! version is the tip of that checkout's branch, or of its upstream when the
-//! upstream is ahead: changes the owner committed or adopted, or pulled. An
+//! version is the tip of that checkout's `main`, or of its upstream when the
+//! upstream is ahead: what was merged, whatever branch the checkout is on. An
 //! update is prepared away from the owner's checkout: a detached worktree at
 //! the new commit in Airth's home, built and tested there (`cargo build
 //! --release`, `cargo test --release`). Only a version whose tests pass is
@@ -124,24 +124,40 @@ fn check_source(fetch: bool) -> Result<Option<Available>> {
     let (Some(current), Some(repo)) = (COMMIT, source()) else {
         bail!("this Airth was not built from a git checkout, so it cannot update itself");
     };
-    let branch = git(&repo, &["symbolic-ref", "--short", "-q", "HEAD"])
-        .context("the source checkout is not on a branch")?;
-    let mut target = (git(&repo, &["rev-parse", &branch])?, branch.clone());
+    newer_in(&repo, current, fetch)
+}
+
+/// The branch a checkout build follows: `main`, whatever branch the checkout
+/// is on, so work on another branch is never offered as an update; only
+/// what was merged is (decision 100).
+const FOLLOW: &str = "main";
+
+/// The newest commit of `main` in `repo`, or of its upstream when that is
+/// ahead, if it descends from `current`.
+fn newer_in(repo: &Path, current: &str, fetch: bool) -> Result<Option<Available>> {
+    let mut target = (
+        git(
+            repo,
+            &["rev-parse", "--verify", &format!("refs/heads/{FOLLOW}")],
+        )
+        .with_context(|| format!("the source checkout has no {FOLLOW} branch"))?,
+        FOLLOW.to_string(),
+    );
     if let Ok(upstream) = git(
-        &repo,
+        repo,
         &[
             "rev-parse",
             "--abbrev-ref",
-            &format!("{branch}@{{upstream}}"),
+            &format!("{FOLLOW}@{{upstream}}"),
         ],
     ) {
         if fetch {
             let remote = upstream.split('/').next().unwrap_or("origin");
-            let _ = git(&repo, &["fetch", "--quiet", remote]);
+            let _ = git(repo, &["fetch", "--quiet", remote]);
         }
-        if let Ok(up) = git(&repo, &["rev-parse", &upstream])
+        if let Ok(up) = git(repo, &["rev-parse", &upstream])
             && up != target.0
-            && git(&repo, &["merge-base", "--is-ancestor", &target.0, &up]).is_ok()
+            && git(repo, &["merge-base", "--is-ancestor", &target.0, &up]).is_ok()
         {
             target = (up, upstream);
         }
@@ -150,11 +166,11 @@ fn check_source(fetch: bool) -> Result<Option<Available>> {
         return Ok(None);
     }
     // Only forward: a branch reset to an older commit is not an update.
-    if git(&repo, &["merge-base", "--is-ancestor", current, &target.0]).is_err() {
+    if git(repo, &["merge-base", "--is-ancestor", current, &target.0]).is_err() {
         return Ok(None);
     }
     let log = git(
-        &repo,
+        repo,
         &["log", "--format=%s", &format!("{current}..{}", target.0)],
     )?;
     let changes: Vec<String> = log.lines().map(String::from).collect();
@@ -527,6 +543,58 @@ fn rollback_bundle() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Decision 100: the checkout being on another branch changes nothing;
+    /// what `main` and its upstream hold is the update, forward only.
+    #[test]
+    fn a_checkout_build_follows_main_whatever_branch_is_checked_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let (origin, repo) = (dir.path().join("origin"), dir.path().join("repo"));
+        let run = |at: &Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "init.defaultBranch=main",
+                ])
+                .args(args)
+                .current_dir(at)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        std::fs::create_dir_all(&origin).unwrap();
+        run(&origin, &["init", "-q"]);
+        run(&origin, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        let first = run(&origin, &["rev-parse", "HEAD"]);
+        run(
+            dir.path(),
+            &["clone", "-q", origin.to_str().unwrap(), "repo"],
+        );
+        // Work on a branch in the checkout: not an update.
+        run(&repo, &["checkout", "-q", "-b", "feature"]);
+        run(&repo, &["commit", "-q", "--allow-empty", "-m", "unmerged"]);
+        assert!(newer_in(&repo, &first, false).unwrap().is_none());
+        // Merged upstream: offered, from origin/main, once fetched.
+        run(&origin, &["commit", "-q", "--allow-empty", "-m", "merged"]);
+        let merged = run(&origin, &["rev-parse", "HEAD"]);
+        let found = newer_in(&repo, &first, true).unwrap().unwrap();
+        assert_eq!(
+            (found.commit.as_str(), found.from.as_str()),
+            (merged.as_str(), "origin/main")
+        );
+        assert_eq!(found.changes, ["merged"]);
+        // Built from that commit already: nothing newer.
+        assert!(newer_in(&repo, &merged, false).unwrap().is_none());
+    }
 
     #[test]
     fn version_names_the_commit() {
