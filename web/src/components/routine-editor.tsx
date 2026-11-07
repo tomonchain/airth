@@ -6,21 +6,25 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type { GraphBlock } from "@/lib/api"
+import { put, type Draft } from "@/lib/routine-graph"
 
-/** A routine's file as the page edits it: the parsed JSON, whose keys keep
-    the file's order, so writing it back changes only what was edited. */
-export type Draft = { description?: string; agent: string; trigger: Record<string, unknown>; blocks: GraphBlock[]; [key: string]: unknown }
 export type Declared = { id: string; class: string; ceiling: number }
 
-/** A copy of `o` with `key` set, or removed when `value` is undefined. */
-export function put<T extends Record<string, unknown>>(o: T, key: string, value: unknown): T {
-  const out: Record<string, unknown> = { ...o }
-  if (value === undefined) delete out[key]
-  else out[key] = value
-  return out as T
-}
+export { put, type Draft }
 
 const OPS = ["==", "!=", "<", "<=", ">", ">=", "exists"]
+const SOURCES: [string, string][] = [["business", "Business records"], ["rss", "News feeds"], ["web", "A web page"], ["connector", "A connector's read"], ["x_post", "The post you send on Telegram"]]
+
+/** A read block switched to another source: only that source's fields. */
+function source(block: GraphBlock, to: string): GraphBlock {
+  let b = put(put(put(put(block, "records", undefined), "feeds", undefined), "url", undefined), "action", undefined)
+  b = put(b, "source", to)
+  if (to === "business") b = put(b, "records", "week")
+  if (to === "rss") b = put(b, "feeds", [])
+  if (to === "web") b = put(b, "url", "")
+  if (to === "connector") b = put(b, "action", "")
+  return b
+}
 const CLASS: Record<string, string> = { read: "Read", reversible: "Reversible", commits: "Commits" }
 
 function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
@@ -82,8 +86,16 @@ export function BlockFields({ block, onChange, actions, prompts }: {
       const feeds = Array.isArray(block.feeds) ? (block.feeds as string[]) : null
       return (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Source"><Input value={String(block.source ?? "")} disabled className="font-mono text-[13px]" /></Field>
-          {block.source === "business" && <Field label="Records"><Text value={block.records} onChange={set("records")} placeholder="week" /></Field>}
+          <Field label="Source">
+            <Choice value={String(block.source ?? "")} options={SOURCES} onChange={(v) => onChange(source(block, v))} />
+          </Field>
+          {block.source === "business" && <Field label="Records"><Choice value={String(block.records ?? "week")} options={[["week", "How the last 7 days went"]]} onChange={set("records")} /></Field>}
+          {block.source === "web" && <Field label="Address"><Text value={block.url} onChange={(v) => set("url")(v ?? "")} placeholder="https://" /></Field>}
+          {block.source === "connector" && (
+            <Field label="Read action" hint="An action classed as a read.">
+              <Choice value={String(block.action ?? "")} options={actions.filter((a) => a.class === "read").map((a) => [a.id, a.id])} onChange={set("action")} />
+            </Field>
+          )}
           {feeds && (
             <div className="sm:col-span-2">
               <Field label="Feeds" hint="One address per line.">
