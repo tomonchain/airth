@@ -2,6 +2,17 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 102. An incident closes itself when its action works again
+
+**Accepted** (founder, 7 November 2026: "avance", on the first of the options proposed for milestone 6).
+
+- When an action is confirmed (a 2xx answer, through a routine, an approval or a retry), the incidents still open on the same action in the same routine are closed, by Airth, with "resolved: <action> worked again at <time>" in their log. This happens in the same transaction as the confirmation.
+- **An incident that took the agent down a level stays open:** its args say `demoted`, and the founder must learn the level fell. Incidents with no action (a routine that did not run on time) are not touched.
+
+*Why:* an incident left open over 24 hours makes the week unstable (decision 92), and one whose cause is gone asks the founder for a click that changes nothing. Hedgen's Typefully incident of 2 November stayed open five days after the integration was fixed.
+
+*Cost:* the founder may not see an incident that closed itself before they opened Needs you; it stays in the item's history and on Telegram. A week still counts it as slow when the action worked again more than 24 hours after it failed.
+
 ## 100. The founder's Airth follows main, and a pull request is tried on a copy
 
 **Accepted** (founder, 7 November 2026: "I'd like a fluid test and deployment workflow").

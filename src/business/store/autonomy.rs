@@ -181,6 +181,9 @@ impl Store {
                 "INSERT INTO action_log (action, at, status, detail) VALUES (?1, ?2, ?3, ?4)",
                 params![id, now, status, error.unwrap_or_default()],
             )?;
+            if status == "confirmed" {
+                close_resolved(tx, id, &now)?;
+            }
             Ok(())
         })
     }
@@ -231,6 +234,40 @@ impl Store {
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
+}
+
+/// The action `id` worked: the incidents still open on the same action in
+/// the same routine are over, said in their log (decision 102). One that
+/// took the agent down a level stays, so the founder learns of the level.
+fn close_resolved(tx: &rusqlite::Transaction, id: i64, now: &str) -> Result<()> {
+    let (action, routine): (String, Option<String>) = tx.query_row(
+        "SELECT action, routine FROM actions WHERE id = ?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let open: Vec<i64> = tx
+        .prepare(
+            "SELECT id FROM queue WHERE kind = 'incident' AND status = 'pending'
+             AND action = ?1 AND routine IS ?2 AND created_at <= ?3
+             AND COALESCE(json_extract(args, '$.demoted'), 0) = 0",
+        )?
+        .query_map(params![action, routine, now], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for item in open {
+        tx.execute(
+            "UPDATE queue SET status = 'done', revision = revision + 1 WHERE id = ?1",
+            params![item],
+        )?;
+        super::queue::log(
+            tx,
+            item,
+            "done",
+            "airth",
+            None,
+            &format!("resolved: {action} worked again at {now}"),
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -314,6 +351,59 @@ mod tests {
             history,
             vec![(None, 3, "founder".into()), (Some(3), 2, "incident".into())]
         );
+    }
+
+    /// Decision 102: an action that works again closes the incidents still
+    /// open on it in the same routine; one that demoted the agent, or of
+    /// another routine, stays.
+    #[test]
+    fn an_action_that_works_again_closes_its_open_incidents() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+        let incident = |s: &mut Store, routine: &str, args: &str| {
+            s.propose(&NewItem {
+                kind: "incident",
+                title: "typefully.create_draft failed",
+                agent: Some("writer"),
+                routine: Some(routine),
+                run: None,
+                action: Some("typefully.create_draft"),
+                args,
+                execute_at: None,
+                source: "{}",
+                model_call: None,
+            })
+            .unwrap()
+        };
+        let refused = incident(&mut s, "posts", r#"{"retry": "clear", "demoted": false}"#);
+        let demoted = incident(&mut s, "posts", r#"{"demoted": true}"#);
+        let elsewhere = incident(&mut s, "replies", "{}");
+        let mut a = action("posts/link/send", 3, false);
+        a.routine = Some("posts");
+        let Begin::Started(id) = s.begin_action(&a).unwrap() else {
+            panic!("not started")
+        };
+        s.finish_action(id, "confirmed", None).unwrap();
+        let status = |s: &Store, id: i64| {
+            s.queue(&["pending", "done"])
+                .unwrap()
+                .into_iter()
+                .find(|i| i.id == id)
+                .unwrap()
+                .status
+        };
+        assert_eq!(status(&s, refused), "done");
+        assert_eq!(status(&s, demoted), "pending");
+        assert_eq!(status(&s, elsewhere), "pending");
+        assert_eq!(s.queue_log(refused).unwrap().last().unwrap().0, "done");
+        // A failed action closes nothing.
+        let mut b = action("posts/link2/send", 3, false);
+        b.routine = Some("replies");
+        let Begin::Started(id) = s.begin_action(&b).unwrap() else {
+            panic!("not started")
+        };
+        s.finish_action(id, "failed", Some("HTTP 500")).unwrap();
+        assert_eq!(status(&s, elsewhere), "pending");
     }
 
     #[test]

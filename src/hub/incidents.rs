@@ -34,6 +34,7 @@ pub fn succeeded(result: &str) -> bool {
 pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
     let mut store = Store::of(realm)?;
     let mut detail = incident.detail.to_string();
+    let mut demoted = false;
     if let (true, Some(agent), Some(action)) = (incident.demote, incident.agent, incident.action) {
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let declared = crate::actions::all(&realm.config.integrations, &servers);
@@ -43,6 +44,7 @@ pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
             .map_or((1, 1), |d| (d.ceiling, d.start));
         let (from, to) = store.demote(agent, action, ceiling, start, incident.title)?;
         if to < from {
+            demoted = true;
             detail.push_str(&format!("\n\n{agent} now takes {action} at level {to} (was {from}): raise it again with airth actions level."));
         }
     }
@@ -57,6 +59,8 @@ pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
             "detail": detail,
             "key": incident.retry.map(|r| r.0),
             "retry": incident.retry.map(|r| r.1),
+            // It stays until the founder has seen it (decision 102).
+            "demoted": demoted,
         })
         .to_string(),
         execute_at: None,
