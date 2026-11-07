@@ -77,6 +77,8 @@ export type Business = {
   activity: Activity[]
   health: { state: string; sentence: string }
   vitals: { label: string; value: string; note: string; out: boolean }[]
+  /** Stable weeks in a row toward the beta (decision 92); none without routines. */
+  proof: { in_a_row: number; of: number; last_week: string; last_stable: boolean; why: string[]; sentence: string } | null
   finance: Finance
 }
 

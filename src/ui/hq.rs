@@ -147,6 +147,11 @@ impl App {
             // A business with no routine has nothing Airth measures yet.
             "finance": finance,
             "vitals": shown_vitals(realm, now, &graphs, &week, &pending),
+            // The beta's proof (decision 92), once the business has routines.
+            "proof": if graphs.is_empty() { None } else {
+                let baseline = root.as_deref().and_then(crate::routine::week::baseline);
+                Some(crate::routine::week::proof(&store, baseline, now)?)
+            },
             "time": crate::business::store::time::human(week.founder_seconds as u64),
             "cost_usd": week.cost_usd,
             "activity": activity,

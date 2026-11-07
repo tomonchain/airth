@@ -43,6 +43,12 @@ export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
                   <ChevronRight className="size-4 text-muted-foreground" />
                 </div>
                 <p className="mt-2 pl-5.5 text-xs text-muted-foreground"><span className="capitalize">{b.health.state}</span>. {b.health.sentence}</p>
+                {b.proof && (
+                  <p className="mt-1 flex items-center gap-2 pl-5.5 text-xs" title={b.proof.sentence}>
+                    <span className="flex gap-0.5" aria-hidden>{Array.from({ length: b.proof.of }, (_, i) => <span key={i} className={cn("h-1.5 w-4 rounded-full", i < b.proof!.in_a_row ? "bg-emerald-500" : "bg-muted")} />)}</span>
+                    <span className="text-muted-foreground">On its own: {b.proof.sentence}</span>
+                  </p>
+                )}
                 {b.first && <p className="mt-1 truncate pl-5.5 text-xs">First for you: <span className="text-foreground/80">{b.first.title}</span></p>}
                 {b.vitals.length > 0 && (
                   <div className="mt-3 grid grid-cols-2 gap-2 pl-5.5 sm:grid-cols-4">
