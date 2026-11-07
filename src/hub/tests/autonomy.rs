@@ -450,3 +450,111 @@ fn an_unrecorded_outcome_is_an_incident() {
         ("incident", "An action's outcome was not recorded")
     );
 }
+
+/// Decision 103: a call of an MCP tool the founder approved in Needs you is
+/// done by Airth, once, with the arguments proposed; one that fails is an
+/// incident, never tried again.
+#[test]
+fn an_approved_mcp_call_is_done_once_and_a_failed_one_is_not_retried() {
+    let f = fixture();
+    let root = f.realm.root().unwrap();
+    // A stdio server that answers initialize and tools/call, and notes each
+    // call it gets in calls.txt.
+    std::fs::write(
+        root.join("server.sh"),
+        r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"blog","version":"1"}}}\n' "$id" ;;
+    *'"method":"tools/call"'*'"fail"'*)
+      echo call >> calls.txt
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"isError":true,"content":[{"type":"text","text":"refused"}]}}\n' "$id" ;;
+    *'"method":"tools/call"'*)
+      echo call >> calls.txt
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"published"}]}}\n' "$id" ;;
+  esac
+done
+"#,
+    )
+    .unwrap();
+    let mcp = crate::tools::mcp::McpStore::new(&f.realm.skills_dir());
+    mcp.save("blog", "sh server.sh", "").unwrap();
+    mcp.update("blog", |s| {
+        s.tools = vec![crate::tools::mcp::McpToolSpec {
+            name: "publish".into(),
+            description: "Publish".into(),
+            input_schema: json!({"type": "object"}),
+        }];
+    })
+    .unwrap();
+    let propose = |text: &str| {
+        Store::of(&f.realm)
+            .unwrap()
+            .propose(&crate::business::store::autonomy::NewItem {
+                kind: "approval",
+                title: "writer: blog.publish",
+                agent: Some("writer"),
+                routine: None,
+                run: Some("r1"),
+                action: Some("blog.publish"),
+                args: &json!({"text": text}).to_string(),
+                execute_at: None,
+                source: r#"{"tool": "mcp__blog__publish"}"#,
+                model_call: None,
+            })
+            .unwrap()
+    };
+    let calls = || {
+        std::fs::read_to_string(root.join("calls.txt"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    };
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let approve = |id: i64| {
+        hub.answer_item(
+            &f.realm,
+            id,
+            None,
+            crate::business::store::queue::Answer::Approve,
+            "app",
+            5,
+        )
+        .unwrap()
+    };
+
+    let ok = propose("Hello");
+    let (item, report) = approve(ok);
+    assert_eq!(item.status, "done", "{report:?}");
+    assert!(report.unwrap().contains("blog.publish: published"));
+    assert_eq!(calls(), 1);
+    let (item, again) = approve(ok);
+    assert_eq!((item.status.as_str(), again), ("done", None));
+    assert_eq!(calls(), 1, "done once");
+
+    let bad = propose("fail");
+    let (item, _) = approve(bad);
+    assert_eq!(item.status, "failed");
+    assert_eq!(calls(), 2);
+    let incidents: Vec<_> = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == "incident")
+        .collect();
+    assert_eq!(incidents.len(), 1);
+    assert_eq!(
+        incidents[0].args["retry"],
+        serde_json::Value::Null,
+        "never retried"
+    );
+    assert!(
+        Store::of(&f.realm)
+            .unwrap()
+            .due_retries(chrono::Utc::now() + chrono::Duration::days(1))
+            .unwrap()
+            .is_empty()
+    );
+}
