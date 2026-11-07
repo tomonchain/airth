@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 95. Scans are read on the Mac, by macOS's own text recognition, in a sandbox
+
+**Accepted** (founder: "OCR, first with macOS's own Vision, local, free, documents never leave the Mac", backlog, 6 November 2026; built when the founder said to code what could be, 7 November 2026). Extends decision 86, which said a scan unreadable.
+
+- **What is read:** a PDF with no text of its own (decision 86's reader finds none), and an image of a document (PNG, JPEG, HEIC, TIFF), from Google Drive. Twenty pages at most.
+- **How:** Vision, through `osascript` (JavaScript for Automation): PDFKit draws each page, Vision recognizes it, accurately and with language correction. Nothing to install, no model call, no cost, nothing leaves the Mac.
+- **Confined:** the reader runs under `sandbox-exec` with no network, no other program, and nothing of the owner's home readable or writable (the Airth home and the businesses' folders are under it). It gets a copy of the document in a fresh temporary folder, only the owner's, removed after. Two minutes at most. A test proves the reader cannot read a home it is given, reach the network or start a program.
+- **Said:** the text starts with "(Read from a scan by text recognition: names and figures may hold mistakes.)", and is data, never instructions, as every document is.
+- **Elsewhere** (Linux, milestone 9): a scan is said to be one, as before; the backlog keeps Mistral OCR for then.
+
+*Why:* company documents are often scans (the tax office's letters), and milestone 2's gate needs the business's legal identity from them. The system's own recognition is local and free, which a cloud OCR is not.
+
+*Cost:* macOS only. Recognition makes mistakes on poor scans, which the text says. A large scan takes seconds.
+
 ## 94. An agent can have a first name, besides its title
 
 **Accepted** (founder, 6 November 2026, from the backlog: "Ada, Chief of staff").

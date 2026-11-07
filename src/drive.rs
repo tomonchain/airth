@@ -288,9 +288,12 @@ impl Drive {
                     &[("alt", "media"), ("supportsAllDrives", "true")],
                 )?
                 .text()?,
-            // A Word document or a PDF: its text, read here (decision 86).
-            "application/pdf"
-            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            // A Word document, a PDF or a scan: its text, read here
+            // (decisions 86 and 95).
+            m if m == "application/pdf"
+                || m == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                || crate::extract::SCANS.contains(&m) =>
+            {
                 let bytes = self
                     .get(
                         &format!("/files/{id}"),
