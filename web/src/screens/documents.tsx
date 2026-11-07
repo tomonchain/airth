@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { AppWindow, ChevronRight, Eye, File, FileImage, FilePlus, FileText, Folder, FolderOpen, FolderPlus, Pencil, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
-import { SideHead } from "@/components/page"
+import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { selection } from "@/lib/editor-selection"
 import { Rich } from "@/components/rich"
@@ -228,7 +228,7 @@ export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text
   const root = dirs[""]
   return (
     <div className="flex min-w-0 flex-1">
-      <aside className="flex w-(--side) shrink-0 flex-col border-r">
+      <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", tab && "max-md:hidden")}>
         <SideHead title="Documents">
           <Button size="icon-sm" variant="ghost" title="Go to a file (⌘P)" aria-label="Go to a file" onClick={() => setQuick(true)}><Search /></Button>
           <Button size="icon-sm" variant="ghost" title="New file" aria-label="New file" onClick={() => setMaking("file")}><FilePlus /></Button>
@@ -245,9 +245,10 @@ export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className={cn("flex min-w-0 flex-1 flex-col", !tab && "max-md:hidden")}>
         {tabs.length > 0 && (
           <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 pt-1.5">
+            <Back label="All documents" onClick={() => setActive(null)} />
             {tabs.map((t) => (
               <div key={t.path} className={cn("group flex h-8 shrink-0 items-center gap-1.5 rounded-t-lg border border-b-0 pr-1 pl-2.5 text-[13px]", t.path === active ? "bg-surface text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
                 <button onClick={() => open(t.path)} title={t.path} className="flex items-center gap-1.5"><Icon name={t.path} /> {base(t.path)}{t.text !== t.saved && <span className="size-1.5 rounded-full bg-amber-500" aria-label="Not saved" />}</button>

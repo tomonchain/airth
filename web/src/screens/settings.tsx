@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
-import { Loading, Panel, SideHead } from "@/components/page"
+import { Back, Loading, Panel, SideHead } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -53,22 +53,28 @@ type Owner = { name: string; about: string; avatar: string | null; preferences: 
     keys, permissions, repositories and phone. */
 export function Settings({ realm, start }: { realm: string; start?: { section: Section; at: number } | null }) {
   const [section, setSection] = useState<Section>(start?.section ?? "account")
-  useEffect(() => { if (start) setSection(start.section) }, [start])
+  // On a phone the sections come first, and one opens when picked.
+  const [picked, setPicked] = useState(!!start)
+  useEffect(() => { if (start) { setSection(start.section); setPicked(true) } }, [start])
   return (
     <>
-      <nav className="w-(--side) shrink-0 border-r pb-3">
+      <nav className={cn("w-(--side) shrink-0 border-r pb-3 max-md:w-full max-md:border-r-0", picked && "max-md:hidden")}>
         <SideHead title="Settings" />
         <div className="px-3">
         {SECTIONS.map((s) => (
-          <button key={s.id} onClick={() => setSection(s.id)}
+          <button key={s.id} onClick={() => { setSection(s.id); setPicked(true) }}
             className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground", section === s.id && "bg-accent text-foreground")}>
             <s.icon className="size-4" /> {s.label}
           </button>
         ))}
         </div>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <div key={section} className="mx-auto max-w-2xl px-8 py-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
+      <div className={cn("min-w-0 flex-1 overflow-y-auto", !picked && "max-md:hidden")}>
+        <div className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
+          <Back label="All settings" onClick={() => setPicked(false)} />
+          <span className="text-[15px] font-semibold">{SECTIONS.find((s) => s.id === section)?.label}</span>
+        </div>
+        <div key={section} className="mx-auto max-w-2xl px-4 py-6 duration-200 animate-in fade-in slide-in-from-bottom-1 md:px-8 md:py-8">
           {section === "account" ? <Account />
             : section === "business" ? <Business realm={realm} onChanged={() => {}} />
             : section === "departments" ? <Departments realm={realm} />

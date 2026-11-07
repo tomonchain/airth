@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare } from "lucide-react"
-import { SideHead, SideSearch } from "@/components/page"
+import { Back, SideHead, SideSearch } from "@/components/page"
 import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { toast } from "sonner"
+import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { ago, stamp } from "@/lib/time"
@@ -42,7 +43,9 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
   )
   const [sel, setSel] = useState<number | null>(null)
   const pos = sorted.findIndex((i) => i.id === sel)
-  const open = pos >= 0 ? sorted[pos] : sorted[0] ?? null
+  // On a phone the list comes first, and an item opens when picked.
+  const narrow = useNarrow()
+  const open = pos >= 0 ? sorted[pos] : narrow ? null : sorted[0] ?? null
   const at = open ? sorted.indexOf(open) : -1
   // Where to go once the open item is answered: the next one, else the one before.
   const [after, setAfter] = useState<number | null>(null)
@@ -84,11 +87,12 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
 
   return (
     <>
-      <div className="flex w-(--side) shrink-0 flex-col border-r">
+      <div className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", open && "max-md:hidden")}>
         <SideHead title="Needs you" note={items.length} />
         <SideSearch value={q} onChange={setQ} />
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           <Drafts realm={realm} />
+          {narrow && !sorted.length && <p className="px-2.5 py-8 text-center text-sm text-muted-foreground">All clear: nothing waits for you.</p>}
           {SECTIONS.map((s) => {
             const list = sorted.filter((i) => s.ranks.includes(rank(i)))
             if (!list.length) return null
@@ -128,14 +132,15 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
       </div>
 
       {!open ? (
-        <div className="flex flex-1 flex-col items-center justify-center text-center">
+        <div className="flex flex-1 flex-col items-center justify-center text-center max-md:hidden">
           <CircleCheckBig className="size-10 text-emerald-500/80" />
           <p className="mt-4 text-base font-medium">All clear</p>
           <p className="mt-1 text-sm text-muted-foreground">Nothing waits for you. What the team sends up lands here.</p>
         </div>
       ) : (
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4">
+          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4 max-md:px-3">
+            <Back label="All items" onClick={() => setSel(null)} />
             <Button variant="ghost" size="icon-sm" disabled={at <= 0} onClick={() => setSel(sorted[at - 1].id)} aria-label="Previous (K)"><ChevronUp /></Button>
             <Button variant="ghost" size="icon-sm" disabled={at >= sorted.length - 1} onClick={() => setSel(sorted[at + 1].id)} aria-label="Next (J)"><ChevronDown /></Button>
             <span className="ml-1 text-xs text-muted-foreground tabular-nums">{at + 1} of {sorted.length}</span>
@@ -150,7 +155,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                 className={cn("pointer-events-none absolute inset-0 overflow-hidden bg-surface duration-300 ease-in-out animate-out fill-mode-forwards",
                   leaving.dir === "down" ? "slide-out-to-top-full" : "slide-out-to-bottom-full")}
               >
-                <div className="mx-auto max-w-2xl px-8 py-7">
+                <div className="mx-auto max-w-2xl px-4 py-5 md:px-8 md:py-7">
                   <Header it={leaving.item} agent={agent(leaving.item.agent)} onAgent={onAgent} onTask={onTask} />
                   <NeedCard realm={realm} it={leaving.item} page onDone={() => {}} still />
                 </div>
@@ -161,7 +166,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
               className={cn("absolute inset-0 overflow-y-auto bg-surface",
                 dir && "duration-300 ease-in-out animate-in", dir === "down" && "slide-in-from-bottom-full", dir === "up" && "slide-in-from-top-full")}
             >
-              <div className="mx-auto max-w-2xl px-8 py-7">
+              <div className="mx-auto max-w-2xl px-4 py-5 md:px-8 md:py-7">
                 <Header it={open} agent={agent(open.agent)} onAgent={onAgent} onTask={onTask} />
                 <NeedCard
                   key={`${open.id}-${open.revision}`} realm={realm} it={open} page

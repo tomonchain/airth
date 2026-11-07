@@ -1,17 +1,23 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { PanelRight } from "lucide-react"
 import { AgentList, type Last } from "@/components/agent-list"
 import { Details } from "@/components/details"
-import { Rail, type Page } from "@/components/rail"
+import { Rail, TabBar, type Page } from "@/components/rail"
 import { TopBar } from "@/components/topbar"
+import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
+import { api, called, enc, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Inbox } from "@/screens/inbox"
 import type { Section as SettingsSection } from "@/screens/settings"
 import { PageBoundary } from "@/components/error-boundary"
+import { Back } from "@/components/page"
+import { Character } from "@/components/character"
+import { Button } from "@/components/ui/button"
 import { NewBusiness } from "@/components/new-business"
+import { Pair } from "@/components/pair"
 import { Palette } from "@/components/palette"
 
 // The pages opened now and then load when first opened, so the first
@@ -46,6 +52,7 @@ function opened(): { page: Page; agent: string | null } {
 type Data = { agents: Agent[]; departments: Department[]; broken: string[]; items: Item[]; tasks: Tasks | null }
 
 export default function App() {
+  const narrow = useNarrow()
   const [hash, setHash] = useState(route)
   const [welcome, setWelcome] = useState(() => location.hash === "#/welcome")
   const [founding, setFounding] = useState(false)
@@ -111,7 +118,8 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => opened().page)
   const [current, setCurrent] = useState<string | null>(() => opened().agent)
   const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
-  const [details, setDetails] = useState(true)
+  // On a phone the card takes the conversation's place: closed at first.
+  const [details, setDetails] = useState(!narrow)
   const agents = data.data?.agents ?? []
   const items = data.data?.items ?? []
 
@@ -129,11 +137,12 @@ export default function App() {
     if (location.hash !== at && route() === realm) history.replaceState(null, "", at)
   }, [realm, page, current])
   useEffect(() => {
-    if (page !== "agents" || current || !agents.length) return
+    // On a phone the list comes first: the founder picks.
+    if (narrow || page !== "agents" || current || !agents.length) return
     const first = agents.find((a) => a.waiting > 0) ?? agents[0]
     open(first.name)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents.length, current, page])
+  }, [agents.length, current, page, narrow])
 
   function open(name: string) {
     setPage("agents")
@@ -175,6 +184,8 @@ export default function App() {
 
   const agent = agents.find((a) => a.name === current) ?? null
 
+  if (onPhone && !paired()) return <Pair />
+
   // The first launch, with no business yet, starts with the welcome guide.
   const none = !!realms.data && !realms.data.some((r) => !r.archived)
   if (welcome || none) {
@@ -190,7 +201,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background">
+    <div className="flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
       <TopBar
         realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
         onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
@@ -199,8 +210,8 @@ export default function App() {
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
       <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
-        <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />
-        <main className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-xl border bg-surface shadow-sm">
+        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
+        <main className="flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm">
           <PageBoundary page={page}>
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
@@ -223,13 +234,26 @@ export default function App() {
             <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} />
           ) : (
           <>
-          <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
+          {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}
           {agent ? (
             <>
-              <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />
-              {details && <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
+              {narrow ? (
+                // One column: a head to go back to the list or see the card.
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+                    <Back label="All agents" onClick={() => { setCurrent(null); setDetails(false) }} />
+                    <Character agent={agent} size={24} still />
+                    <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{called(agent)}</span>
+                    <Button variant="ghost" size="icon-sm" className={details ? "bg-accent" : "text-muted-foreground"} aria-label="Details" onClick={() => setDetails(!details)}><PanelRight /></Button>
+                  </div>
+                  {details
+                    ? <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />
+                    : <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />}
+                </div>
+              ) : <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />}
+              {!narrow && details && <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
             </>
-          ) : (
+          ) : !narrow && (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
           )}
           </>
@@ -240,6 +264,7 @@ export default function App() {
           </PageBoundary>
         </main>
       </div>
+      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
     </div>
   )
 }

@@ -1,4 +1,6 @@
-import { Bot, Building2, CalendarClock, ChartColumn, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
+import { useState } from "react"
+import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
@@ -61,6 +63,52 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
         <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
       </div>
+    </nav>
+  )
+}
+
+// On a phone, the bar holds what the founder opens most; the rest is under More.
+const MAIN: [Page, string, LucideIcon][] = [["home", "Home", House], ["agents", "Agents", Bot], ["needs", "Needs you", Inbox], ["tasks", "Tasks", ListChecks]]
+const MORE: [Page, string, LucideIcon][] = [
+  ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
+  ["usage", "Usage", ChartColumn], ["company", "Company", Building2], ["marketplace", "Marketplace", Store], ["settings", "Settings", Settings],
+]
+
+/** The rail on a phone: a bar at the bottom, within the thumb's reach. */
+export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) => void; needs: number }) {
+  const { theme, setTheme } = useTheme()
+  const [more, setMore] = useState(false)
+  const tab = (icon: LucideIcon, label: string, active: boolean, onClick: () => void, badge = 0) => {
+    const Icon = icon
+    return (
+      <button key={label} onClick={onClick} aria-current={active ? "page" : undefined}
+        className={cn("relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1 text-[10.5px] text-muted-foreground", active && "text-foreground")}>
+        <Icon className="size-[22px]" strokeWidth={active ? 2.1 : 1.8} />
+        {label}
+        {badge > 0 && <span className="absolute top-1 left-[calc(50%+4px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white ring-2 ring-background">{badge}</span>}
+      </button>
+    )
+  }
+  return (
+    <nav className="flex shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
+      {MAIN.map(([p, label, icon]) => tab(icon, label, page === p, () => onPage(p), p === "needs" ? needs : 0))}
+      {tab(Ellipsis, "More", MORE.some(([p]) => p === page), () => setMore(true))}
+      <Sheet open={more} onOpenChange={setMore}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+          <SheetTitle className="px-2">More</SheetTitle>
+          <div className="grid grid-cols-4 gap-1">
+            {MORE.map(([p, label, Icon]) => (
+              <button key={p} onClick={() => { onPage(p); setMore(false) }}
+                className={cn("flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
+                <Icon className="size-[22px]" strokeWidth={1.8} /> {label}
+              </button>
+            ))}
+            <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
+              {theme === "dark" ? <Sun className="size-[22px]" strokeWidth={1.8} /> : <Moon className="size-[22px]" strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </nav>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
-import { SideHead } from "@/components/page"
+import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { MicButton } from "@/components/mic"
@@ -57,7 +57,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
 
   return (
     <div className="flex min-w-0 flex-1">
-      <aside className="flex w-(--side) shrink-0 flex-col border-r">
+      <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", current && "max-md:hidden")}>
         <SideHead title="Tasks" />
         <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
         <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
@@ -91,10 +91,10 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
         </div>
       </aside>
       {current ? (
-        <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items}
+        <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
           onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
       ) : (
-        <div className="grid flex-1 place-items-center p-8 text-center">
+        <div className="grid flex-1 place-items-center p-8 text-center max-md:hidden">
           <div>
             <ListChecks className="mx-auto size-8 text-muted-foreground/50" />
             <p className="mt-3 text-sm font-medium">Choose a task, or ask the team for something.</p>
@@ -204,8 +204,8 @@ type Full = {
   }
 }
 
-function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
-  realm: string; run: Run; agent: Agent; items: Item[]; onChange: () => void; onGone: () => void; onAgent: (name: string) => void
+function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent }: {
+  realm: string; run: Run; agent: Agent; items: Item[]; onBack: () => void; onChange: () => void; onGone: () => void; onAgent: (name: string) => void
 }) {
   const { view } = useRun(realm, run.id, run.live)
   const full = view as unknown as Full | null
@@ -252,7 +252,8 @@ function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
   return (
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
+        <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:px-3">
+          <Back label="All tasks" onClick={onBack} />
           {renaming !== null ? (
             <>
               <Input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") setRenaming(null) }} className="h-8" aria-label="Task name" />
@@ -262,7 +263,7 @@ function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
           ) : (
             <>
               <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" title={run.objective}>{name(run)}</h2>
-              {agent !== AIRTH && <Button size="sm" variant="ghost" onClick={() => onAgent(agent.name)}>Open {agent.title}</Button>}
+              {agent !== AIRTH && <Button size="sm" variant="ghost" className="max-md:hidden" onClick={() => onAgent(agent.name)}>Open {agent.title}</Button>}
               <Button size="icon-sm" variant="ghost" title="Rename" aria-label="Rename" onClick={() => setRenaming(name(run))}><Pencil /></Button>
               <Button size="icon-sm" variant="ghost" disabled={run.live} title={run.archived ? "Back to the open tasks" : "Archive"} aria-label={run.archived ? "Unarchive" : "Archive"} onClick={archive}>{run.archived ? <ArchiveRestore /> : <Archive />}</Button>
               {sure ? <Button size="sm" variant="destructive" onClick={remove}>Delete for good?</Button>
@@ -271,11 +272,11 @@ function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
           )}
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-6 pt-6 pb-4">
+          <div className="mx-auto max-w-3xl px-4 pt-5 pb-4 md:px-6 md:pt-6">
             <TaskThread realm={realm} id={run.id} agent={agent} items={items} fresh={false} onChange={onChange} />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
           <div className="flex items-end gap-2 rounded-2xl border bg-surface px-3 py-2">
             <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={1} placeholder={run.live ? "Add to what it is doing…" : "Go on with this task…"} aria-label="Follow up"
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); follow() } }}
@@ -284,7 +285,7 @@ function TaskView({ realm, run, agent, items, onChange, onGone, onAgent }: {
           </div>
         </div>
       </div>
-      <aside className="w-(--side) shrink-0 overflow-y-auto border-l p-4 text-sm">
+      <aside className="w-(--side) shrink-0 overflow-y-auto border-l p-4 text-sm max-md:hidden">
         <h3 className="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase">Plan{plan.length > 0 && <span className="font-normal normal-case">{closed}/{plan.length}</span>}</h3>
         {plan.length ? (
           <>

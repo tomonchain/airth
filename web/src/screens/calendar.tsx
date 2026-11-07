@@ -3,6 +3,7 @@ import { CalendarClock, Check, ChevronLeft, ChevronRight, X } from "lucide-react
 import { Character } from "@/components/character"
 import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
+import { isNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Calendar as Data } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -47,7 +48,7 @@ const STATE: Record<string, { cls: string; label: string }> = {
 /** The routines' runs and the legal deadlines, by day, week, month or as an
     agenda; each run opens its agent. */
 export function Calendar({ realm, agents, onAgent }: { realm: string; agents: Agent[]; onAgent: (name: string) => void }) {
-  const [view, setView] = useState<View>(() => (localStorage.getItem("airth-cal-view") as View) || "week")
+  const [view, setView] = useState<View>(() => (localStorage.getItem("airth-cal-view") as View) || (isNarrow() ? "agenda" : "week"))
   const [anchor, setAnchor] = useState(() => new Date())
   useEffect(() => { try { localStorage.setItem("airth-cal-view", view) } catch { /* private window */ } }, [view])
   const r = range(view, anchor)
