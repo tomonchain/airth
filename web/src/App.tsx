@@ -226,7 +226,7 @@ export default function App() {
           <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />
           {agent ? (
             <>
-              <Conversation key={agent.name} realm={realm} agent={agent} tasks={data.data?.tasks ?? null} onDone={data.refresh} />
+              <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />
               {details && <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
             </>
           ) : (
