@@ -63,7 +63,7 @@ Delegation is earned per action class, never wholesale.
 | 2 · Act with delay | Acts after a cancellation window | Cancels if needed |
 | 3 · Act | Acts, then reports | Reads the report |
 
-- New actions start at level 1.
+- An action starts at its ceiling: reads and reversible writes at 3, what commits or was never classed at 1 (decision 96). Content from outside still needs an approval unless the founder raised the level.
 - Every action declares a **risk class**: read, reversible write, or commits money or a contract. The class sets a ceiling. An action with no declared class is treated as committing.
 - Fixed ceilings: replies on X stay at level 0 (platform rules). Payments, refunds, contracts, emails that commit money, a deadline or a legal obligation, merging code and deploying to production never exceed level 1.
 - Airth may **propose** a promotion when the data supports it; only the founder promotes. An incident demotes the action class one level, automatically.

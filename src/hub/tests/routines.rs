@@ -643,10 +643,15 @@ fn a_routine_launches_a_mission_and_goes_on_with_its_report() {
         std::fs::write(p, text).unwrap();
     }
     let (hub, _, _) = make_hub(&f.home, vec![done("Flows, the article: drafted.")]);
+    // At level 1 (the founder lowered it from 3), the founder is asked
+    // before the mission starts.
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("writer", "airth.launch_mission", 1, 3, "founder", "")
+        .unwrap();
     let start = crate::routine::run::Start::Trigger;
     hub.run_routine(&f.realm, "article", "r1", start, None)
         .unwrap();
-    // At level 1, the founder is asked before the mission starts.
     let asked = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
     assert_eq!(asked.len(), 1, "{asked:?}");
     assert_eq!(asked[0].action.as_deref(), Some("airth.launch_mission"));
@@ -698,4 +703,38 @@ fn a_routine_launches_a_mission_and_goes_on_with_its_report() {
     hub.mission_ended(&realm, &mut mission).unwrap();
     let after = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
     assert_eq!(after.len(), 1);
+}
+
+/// Decision 96: a reversible action starts at level 3, yet content from
+/// outside still needs an approval on the way to it until the founder raises
+/// the level.
+#[test]
+fn content_from_outside_needs_an_approval_until_the_founder_raises_the_level() {
+    let mut f = fixture();
+    declare(&mut f, "https://drafts.example", "/v1/drafts", "reversible");
+    let root = f.root.path();
+    for dir in ["agents", "routines"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    std::fs::write(root.join("agents/post-writer.md"), "Draft posts.").unwrap();
+    std::fs::write(
+        root.join("routines/posts.json"),
+        json!({"agent": "post-writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["https://news.example/feed"]},
+            {"id": "send", "type": "act", "action": "typefully.create_draft", "fields": {"text": "{{title}}"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let load = || hub.with_routine_checks(&f.realm, |c| crate::routine::load(c, "posts"));
+
+    let e = format!("{:#}", load().unwrap_err());
+    assert!(e.contains("without an approval"), "{e}");
+
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("post-writer", "typefully.create_draft", 3, 3, "founder", "")
+        .unwrap();
+    assert!(load().is_ok());
 }
