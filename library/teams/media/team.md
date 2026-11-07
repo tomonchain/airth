@@ -5,10 +5,10 @@ skills: []
 connectors: []
 ---
 
-- Write your business profile: what you publish, for whom, your editorial pillars and your voice.
-- Put your news sources in routines/daily-watch.json and routines/daily-posts.json (their RSS feeds).
-- Write your pillars and your voice in prompts/watch.md, prompts/pick.md, prompts/post.md and prompts/reply.md, where the square brackets are.
-- Connect Typefully, where approved posts go as drafts. You publish them; Airth never posts.
-- Give daily-watch and daily-posts a schedule (for example daily 07:00 and daily 07:30).
-- Replies: declare typefully.create_reply (a draft with reply_to_url, never publish_at), then send a post's link to the bot on Telegram.
-- The weekly article: declare your site's API as an integration named site, with an action publish_article that takes title, excerpt, content and kicker (a short line above the title, for a site that draws its covers); give weekly-article a schedule (for example fri 09:00).
+- Describe your media on the Company page: what you publish, for whom, your editorial pillars and your voice.
+- Give the watch and the posts your news sources: on the Routines page, open daily-watch and daily-posts, and add your sources' RSS feeds to their Read block.
+- Give the prompts your pillars and your voice: in Documents, the files in prompts/ have square brackets where your words go.
+- Connect Typefully, in Settings, Connections: approved posts go there as drafts. You publish them; Airth never posts.
+- Set when the watch and the posts run, on the Routines page: every morning, for example at 07:00 and 07:30.
+- For replies: in Settings, Connections, add Typefully's reply draft to its actions, then send a post's link to Airth's bot on Telegram.
+- For the weekly article: connect your site's API in Settings, Connections (an action that publishes an article with its title, excerpt, text and kicker), then give weekly-article a day, for example Friday at 09:00.
