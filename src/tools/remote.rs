@@ -61,6 +61,26 @@ fn save_auth(skills_dir: &Path, name: &str, auth: &Auth) -> Result<()> {
     crate::realm::write_private(&path, &serde_json::to_string_pretty(auth)?)
 }
 
+/// Connect with a token the service gave the founder instead of signing in
+/// (decision 89). Kept where signed-in tokens are, private to the owner:
+/// never in `secrets.env`, a command's environment or the model's view.
+/// Without an expiry or a refresh token, a refused token says to connect
+/// again.
+pub fn save_token(skills_dir: &Path, name: &str, token: &str) -> Result<()> {
+    let token = token.trim();
+    if token.is_empty() || token.chars().any(char::is_whitespace) {
+        bail!("a token is one word, without spaces");
+    }
+    save_auth(
+        skills_dir,
+        name,
+        &Auth {
+            access_token: Some(token.to_string()),
+            ..Auth::default()
+        },
+    )
+}
+
 pub fn forget_auth(skills_dir: &Path, name: &str) {
     let _ = std::fs::remove_file(auth_path(skills_dir, name));
 }
@@ -842,6 +862,59 @@ mod tests {
             }
         });
         base
+    }
+
+    /// Decision 89: a service that gives a token instead of a sign-in is
+    /// called with it, from a private file; a refused token is not retried
+    /// forever, and the token is never in the server's saved description
+    /// nor in an error.
+    #[test]
+    fn a_token_connects_without_signing_in_and_stays_private() {
+        let base = fake_service();
+        let dir = tempfile::tempdir().unwrap();
+        let store = McpStore::new(dir.path());
+        let url = format!("{base}/mcp");
+        store.save_remote("svc", &url, "").unwrap();
+        assert!(save_token(dir.path(), "svc", "two words").is_err());
+        save_token(dir.path(), "svc", " new ").unwrap();
+        refresh_tools(dir.path(), "svc").unwrap();
+        let server = store.get("svc").unwrap();
+        assert_eq!(server.tools[0].name, "search", "{:?}", server.error);
+        let out = call(
+            dir.path(),
+            "svc",
+            &url,
+            "search",
+            &json!({}),
+            &CancelToken::default(),
+        );
+        assert_eq!(out.unwrap(), "found it");
+        let listed = std::fs::read_to_string(dir.path().join("mcp.json")).unwrap();
+        assert!(!listed.contains("new\""), "{listed}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(auth_path(dir.path(), "svc"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o077, 0, "the token is private");
+        }
+
+        // A token the service refuses: an error that says what to do, once.
+        save_token(dir.path(), "svc", "revoked").unwrap();
+        let e = call(
+            dir.path(),
+            "svc",
+            &url,
+            "search",
+            &json!({}),
+            &CancelToken::default(),
+        )
+        .unwrap_err();
+        let e = format!("{e:#}");
+        assert!(e.contains("connect again"), "{e}");
+        assert!(!e.contains("revoked"), "{e}");
     }
 
     #[test]

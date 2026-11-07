@@ -153,6 +153,12 @@ impl App {
                         body["description"].as_str().unwrap_or_default(),
                     )?;
                 }
+                // A token the service gave instead of a sign-in (decision 89).
+                if let Some(token) = body["token"].as_str().filter(|t| !t.trim().is_empty()) {
+                    crate::tools::remote::save_token(&dir, &name, token)?;
+                    self.mcp_connect(&realm, &name)?;
+                    return Ok(Some(json_response(200, json!({"open": true}))));
+                }
                 let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
                 match crate::tools::remote::start(&dir, &name, &redirect) {
                     Ok(crate::tools::remote::Started::SignIn(url)) => {

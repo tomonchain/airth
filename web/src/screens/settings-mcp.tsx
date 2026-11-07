@@ -25,7 +25,7 @@ const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9_-]/g, "-")
 export function McpServers({ realm }: { realm: string }) {
   const { data, refresh } = usePoll<Server[]>(() => api(`realms/${enc(realm)}/mcp`), 600000, [realm])
   const [adding, setAdding] = useState<"url" | "command" | null>(null)
-  const [f, setF] = useState({ name: "", url: "", command: "", description: "" })
+  const [f, setF] = useState({ name: "", url: "", command: "", description: "", token: "" })
   const [method, setMethod] = useState<Method | null>(null)
   const [busy, setBusy] = useState(false)
   const path = `realms/${enc(realm)}/mcp`
@@ -43,11 +43,21 @@ export function McpServers({ realm }: { realm: string }) {
   }
   async function addCommand() {
     setBusy(true)
-    try { await api(path, { name: f.name, command: f.command.trim(), description: f.description.trim() }, undefined, 120000); toast.success(`${f.name} added.`); setAdding(null); setF({ name: "", url: "", command: "", description: "" }); refresh() }
+    try { await api(path, { name: f.name, command: f.command.trim(), description: f.description.trim() }, undefined, 120000); toast.success(`${f.name} added.`); setAdding(null); setF({ name: "", url: "", command: "", description: "", token: "" }); refresh() }
     catch (e) { toast.error((e as Error).message) }
     finally { setBusy(false) }
   }
-  function addUrl() {
+  async function addUrl() {
+    // A token the service gave (decision 89): no sign-in page.
+    if (f.token.trim()) {
+      setBusy(true)
+      try {
+        await api(`realms/${enc(realm)}/connect`, { name: f.name, url: f.url.trim(), description: f.description.trim(), token: f.token.trim() }, undefined, 120000)
+        toast.success(`${f.name} added.`); setAdding(null); setF({ name: "", url: "", command: "", description: "", token: "" }); refresh()
+      } catch (e) { toast.error((e as Error).message) }
+      finally { setBusy(false) }
+      return
+    }
     // The connect dialog does the rest, as from the Marketplace: not checked
     // by Airth, so it says so.
     setMethod({ kind: "sign-in", name: f.name, title: f.name, url: f.url.trim(), description: f.description.trim(), checked: false, tried: false })
@@ -69,8 +79,9 @@ export function McpServers({ realm }: { realm: string }) {
               : <Input value={f.command} onChange={(e) => setF({ ...f, command: e.target.value })} placeholder="npx -y @modelcontextprotocol/server-memory" spellCheck={false} className="font-mono" aria-label="Command" />}
           </div>
           <Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="What it is for (optional)" aria-label="What it is for" />
+          {adding === "url" && <Input type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} placeholder="Access token, if the service gave you one (optional)" autoComplete="off" spellCheck={false} aria-label="Access token" />}
           <p className="text-xs text-muted-foreground">{adding === "url"
-            ? "A remote MCP server (Streamable HTTP). If it asks to sign in, its page opens; the access stays in this business."
+            ? "A remote MCP server (Streamable HTTP). With a token, Airth sends it to this server only; without, its sign-in page opens if it has one. The access stays in this business, out of the agents' reach."
             : "Started on this Mac, in the sandbox, each time a task needs it. Only add a command you trust."}</p>
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={() => setAdding(null)}>Cancel</Button>
@@ -83,7 +94,7 @@ export function McpServers({ realm }: { realm: string }) {
       {!data ? <Loading /> : data.length ? (
         <Panel className="divide-y">{data.map((s) => <ServerRow key={s.name} s={s} path={`${path}/${enc(s.name)}`} call={call} />)}</Panel>
       ) : <Panel className="px-4 py-3 text-sm text-muted-foreground">None yet. Connect services from the Marketplace, or add a server here.</Panel>}
-      <ConnectDialog realm={realm} method={method} onClose={() => { setMethod(null); refresh() }} onConnected={() => { setAdding(null); setF({ name: "", url: "", command: "", description: "" }); refresh() }} />
+      <ConnectDialog realm={realm} method={method} onClose={() => { setMethod(null); refresh() }} onConnected={() => { setAdding(null); setF({ name: "", url: "", command: "", description: "", token: "" }); refresh() }} />
     </>
   )
 }
