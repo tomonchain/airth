@@ -1096,3 +1096,115 @@ fn a_reply_run_reads_the_post_and_stops_on_a_thin_one() {
         }
     }
 }
+
+/// Decision 99: a block with `recent` shows the model what it kept in its
+/// runs of the last days, and sets aside an item of the same story, as
+/// `distinct` does within a run; past those days, the story may come back.
+#[test]
+fn a_story_covered_in_the_last_days_is_not_covered_again() {
+    let root = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("prompts/pick.md", "Pick the best."),
+        (
+            "prompts/pick.schema.json",
+            r#"{"type": "object", "required": ["story"], "properties": {"story": {"type": "string"}}}"#,
+        ),
+    ] {
+        let p = root.path().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let graph: Graph = serde_json::from_value(json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+        {"id": "news", "type": "read", "source": "rss", "feeds": ["https://e.com/feed"], "dedupe": "link"},
+        {"id": "pick", "type": "ai", "prompt": "prompts/pick.md", "distinct": "story", "over": "list", "recent": 3},
+        {"id": "ok", "type": "approval", "show": "title"}
+    ]}))
+    .unwrap();
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    // One day's run: its feed, the model's answer, and what the model was sent.
+    let mut day = |titles: &[&str], answer: Value, now: DateTime<Utc>| -> (String, String) {
+        let body = format!(
+            "<rss><channel>{}</channel></rss>",
+            titles
+                .iter()
+                .map(|t| format!("<item><title>{t}</title><link>https://e.com/{t}</link></item>"))
+                .collect::<String>()
+        );
+        let mut fetch = |_: &str| {
+            Ok(crate::pipeline::run::Fetched {
+                body: body.clone(),
+                truncated: false,
+            })
+        };
+        let mut asked = String::new();
+        let mut ask = |req: &crate::models::ModelRequest| -> Result<ModelResponse> {
+            asked = format!("{req:?}");
+            Ok(ModelResponse {
+                content: vec![ContentBlock::Text {
+                    text: answer.to_string(),
+                }],
+                stop_reason: StopReason::EndTurn,
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            })
+        };
+        let mut io = Io {
+            fetch: &mut fetch,
+            ask: &mut ask,
+            prices: Prices::default(),
+            fast: None,
+        };
+        let mut act =
+            |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool, _: &str, _: &Item| {
+                Ok("done".to_string())
+            };
+        let report = run(
+            "posts",
+            &graph,
+            Dry {
+                root: root.path(),
+                context: "",
+                store: &mut store,
+                io: &mut io,
+                integrations: &[],
+            },
+            Some(Real {
+                run: "r",
+                act: &mut act,
+            }),
+            Start::Trigger,
+            now,
+        )
+        .unwrap()
+        .to_string();
+        drop(io);
+        (report, asked)
+    };
+
+    let today = Utc::now();
+    let (report, asked) = day(
+        &["A"],
+        json!({"items": [{"n": 1, "story": "Binance hack"}]}),
+        today,
+    );
+    assert!(report.contains("asked the founder (item 1): A"), "{report}");
+    assert!(!asked.contains("<covered>"), "nothing covered yet: {asked}");
+
+    // The next day: the model is told, and the same story is set aside.
+    let answer = json!({"items": [{"n": 1, "story": "binance hack "}, {"n": 2, "story": "ETF"}]});
+    let (report, asked) = day(&["B", "C"], answer, today + chrono::Duration::days(1));
+    assert!(asked.contains("<covered>"), "{asked}");
+    assert!(asked.contains("binance hack"), "{asked}");
+    assert!(report.contains("asked the founder (item 2): C"), "{report}");
+    assert!(!report.contains(": B"), "{report}");
+    assert!(report.contains("1 by distinct story"), "{report}");
+
+    // Past the three days, the story may come back.
+    let answer = json!({"items": [{"n": 1, "story": "Binance hack"}]});
+    let (report, asked) = day(&["D"], answer, today + chrono::Duration::days(5));
+    assert!(!asked.contains("<covered>"), "{asked}");
+    assert!(report.contains("asked the founder (item 3): D"), "{report}");
+}

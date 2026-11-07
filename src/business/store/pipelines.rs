@@ -135,6 +135,30 @@ impl Store {
         Ok(out)
     }
 
+    /// The keys starting with `prefix` that `pipeline` kept since `since`,
+    /// without the prefix, oldest first.
+    pub fn seen_since(
+        &self,
+        pipeline: &str,
+        prefix: &str,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key FROM pipeline_seen
+             WHERE pipeline = ?1 AND substr(key, 1, length(?2)) = ?2 AND first_seen >= ?3
+             ORDER BY first_seen, key",
+        )?;
+        let keys = stmt
+            .query_map(params![pipeline, prefix, since.to_rfc3339()], |r| {
+                r.get::<_, String>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(keys
+            .into_iter()
+            .filter_map(|k| k.strip_prefix(prefix).map(str::to_string))
+            .collect())
+    }
+
     /// Remember `keys` as kept by `pipeline`, so later runs skip them.
     pub fn mark_seen(&mut self, pipeline: &str, keys: &[String]) -> Result<()> {
         let now = Utc::now().to_rfc3339();

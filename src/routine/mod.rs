@@ -117,6 +117,11 @@ pub enum Kind {
         /// One field, or several: only the best item of each value goes on.
         #[serde(default, deserialize_with = "one_or_many")]
         distinct: Vec<String>,
+        /// Days: the `distinct` values this block kept in its runs of the
+        /// last days are shown to the model, and an item with one of them
+        /// is set aside, so an event is not covered again (decision 99).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recent: Option<u32>,
         limit: Option<usize>,
         /// Where the answer goes: `answer` when absent, another name to keep
         /// an earlier block's, as a check does (decision 58).
@@ -432,11 +437,22 @@ fn check_block(cx: &Checks, block: &Block, telegram: Option<&str>) -> Result<()>
             limit,
             into,
             over,
+            recent,
             ..
         } => {
             // A check judges each draft alone: one cannot sway another's.
             if over.is_some() && into.is_some() {
                 bail!("a block with 'as' judges each item alone: no 'over'");
+            }
+            if let Some(days) = recent {
+                if distinct.is_empty() || over.is_none() {
+                    bail!(
+                        "'recent' needs 'distinct' and 'over: list': the model sees what was covered beside the list"
+                    );
+                }
+                if !(1..=30).contains(days) {
+                    bail!("recent {days}: between 1 and 30 days");
+                }
             }
             for p in [keep, rank].into_iter().flatten().chain(distinct) {
                 path(p)?;

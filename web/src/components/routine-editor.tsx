@@ -123,6 +123,7 @@ export function BlockFields({ block, onChange, actions, prompts }: {
               set("distinct")(v.length === 0 ? undefined : v.length === 1 ? v[0] : v)
             }} />
           </Field>
+          <Field label="Not again within" hint="Days: what earlier runs kept, by One per, is not kept again. All at once only."><Count value={block.recent} onChange={set("recent")} placeholder="no memory" /></Field>
           <Field label="Keep if"><Text value={block.keep} onChange={set("keep")} placeholder="keep" /></Field>
           <Field label="Rank by"><Text value={block.rank} onChange={set("rank")} placeholder="score" /></Field>
           <Field label="Answer saved as" hint="Empty: answer. A check's answer has its own name."><Text value={block.as} onChange={set("as")} placeholder="answer" /></Field>
