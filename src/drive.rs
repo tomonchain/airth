@@ -1,8 +1,9 @@
-//! Google Drive, read only, one folder (decision 85). The founder connects
-//! it with their own Google OAuth client: Airth signs in with PKCE (the
-//! remote MCP sign-in, `tools::remote`), keeps the tokens in the realm's
-//! private files, and reads only inside the folder the founder named: every
-//! file asked for is checked to be the folder or under it.
+//! Google Drive, read only, one folder (decision 85). The founder's own
+//! Google OAuth client is entered once for every business (decision 104);
+//! each business signs in with PKCE (the remote MCP sign-in,
+//! `tools::remote`), keeps its tokens in the realm's private files, and the
+//! founder picks its folder from a list. Agents read only inside that
+//! folder: every file asked for is checked to be the folder or under it.
 
 use crate::tools::remote::{self, Auth};
 use anyhow::{Context, Result, bail};
@@ -23,6 +24,37 @@ const SCOPE: &str = "https://www.googleapis.com/auth/drive.readonly";
 const MAX_TEXT: usize = 100_000;
 /// How far up a file's parents are followed to find the folder.
 const MAX_LOOKUPS: usize = 25;
+
+/// The founder's Google OAuth client, kept in the Airth home for every
+/// business: agents never reach it (decision 104).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OAuthClient {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+fn client_path(home: &Path) -> PathBuf {
+    home.join("google-client.json")
+}
+
+pub fn client(home: &Path) -> Option<OAuthClient> {
+    let text = std::fs::read_to_string(client_path(home)).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn save_client(home: &Path, client_id: &str, client_secret: &str) -> Result<()> {
+    let (client_id, client_secret) = (client_id.trim(), client_secret.trim());
+    if !client_id.ends_with(".apps.googleusercontent.com") || client_secret.is_empty() {
+        bail!("give the client's ID (it ends with .apps.googleusercontent.com) and its secret");
+    }
+    crate::realm::write_private(
+        &client_path(home),
+        &serde_json::to_string_pretty(&OAuthClient {
+            client_id: client_id.into(),
+            client_secret: client_secret.into(),
+        })?,
+    )
+}
 
 /// The folder the founder shares with the business's agents.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -49,11 +81,15 @@ fn save_folder(skills_dir: &Path, folder: &Folder) -> Result<()> {
     )
 }
 
-/// A folder named and signed in to.
+/// Signed in to Google, with a folder chosen or not yet.
+pub fn signed_in(skills_dir: &Path) -> bool {
+    remote::load_auth(skills_dir, NAME)
+        .is_some_and(|a| a.refresh_token.is_some() || a.access_token.is_some())
+}
+
+/// A folder chosen and signed in to.
 pub fn connected(skills_dir: &Path) -> bool {
-    folder(skills_dir).is_some()
-        && remote::load_auth(skills_dir, NAME)
-            .is_some_and(|a| a.refresh_token.is_some() || a.access_token.is_some())
+    folder(skills_dir).is_some() && signed_in(skills_dir)
 }
 
 /// The folder's id in a link the founder pastes (`…/folders/<id>`,
@@ -76,31 +112,30 @@ pub fn folder_id(link: &str) -> Result<String> {
     Ok(id)
 }
 
-/// Name the folder and begin signing in: the page to open. The client is
-/// the founder's own (Google Cloud, a "Desktop app" OAuth client); Google
-/// sends the browser back to Airth's callback.
+/// Begin signing in: the page to open. The client is the founder's own
+/// (Google Cloud, a "Desktop app" OAuth client); Google sends the browser
+/// back to Airth's callback. A folder link given is the folder; otherwise
+/// the founder picks one once signed in.
 pub fn start(
     skills_dir: &Path,
-    client_id: &str,
-    client_secret: &str,
-    folder_link: &str,
+    client: &OAuthClient,
+    folder_link: Option<&str>,
     redirect_uri: &str,
 ) -> Result<String> {
-    let (client_id, client_secret) = (client_id.trim(), client_secret.trim());
-    if client_id.is_empty() || client_secret.is_empty() {
-        bail!("the OAuth client's ID and secret are both needed");
+    // Another account may come with this sign-in: its folder is chosen again.
+    let _ = std::fs::remove_file(folder_path(skills_dir));
+    if let Some(link) = folder_link.filter(|l| !l.trim().is_empty()) {
+        save_folder(
+            skills_dir,
+            &Folder {
+                id: folder_id(link)?,
+                name: String::new(),
+            },
+        )?;
     }
-    let id = folder_id(folder_link)?;
-    save_folder(
-        skills_dir,
-        &Folder {
-            id,
-            name: String::new(),
-        },
-    )?;
     let auth = Auth {
-        client_id: client_id.to_string(),
-        client_secret: Some(client_secret.to_string()),
+        client_id: client.client_id.clone(),
+        client_secret: Some(client.client_secret.clone()),
         redirect_uri: redirect_uri.to_string(),
         authorization_endpoint: AUTHORIZE.to_string(),
         token_endpoint: TOKEN.to_string(),
@@ -121,6 +156,33 @@ pub fn disconnect(skills_dir: &Path) {
     remote::forget_auth(skills_dir, NAME);
     let _ = std::fs::remove_file(folder_path(skills_dir));
 }
+
+/// The folders in `parent` (`root`: My Drive; `shared`: those shared with
+/// the account), for the founder to pick the business's from. Only the
+/// founder's page asks this; no agent reaches it.
+pub fn folders(skills_dir: &Path, parent: &str) -> Result<Vec<Value>> {
+    let token =
+        remote::access_token(skills_dir, NAME, false)?.context("sign in to Google first")?;
+    Drive::at(API, &token, "")?.folders(parent)
+}
+
+/// Make `id` the business's folder: it must be a folder the account reads.
+pub fn choose(skills_dir: &Path, id: &str) -> Result<Folder> {
+    let token =
+        remote::access_token(skills_dir, NAME, false)?.context("sign in to Google first")?;
+    let meta = Drive::at(API, &token, "")?.meta(id)?;
+    if meta["mimeType"] != FOLDER {
+        bail!("{} is not a folder", meta["name"].as_str().unwrap_or(id));
+    }
+    let folder = Folder {
+        id: id.to_string(),
+        name: meta["name"].as_str().unwrap_or_default().to_string(),
+    };
+    save_folder(skills_dir, &folder)?;
+    Ok(folder)
+}
+
+const FOLDER: &str = "application/vnd.google-apps.folder";
 
 /// The folder's name, from Drive, kept once known.
 pub fn folder_name(skills_dir: &Path) -> Result<String> {
@@ -219,6 +281,33 @@ impl Drive {
             "{} is not in the folder shared with the business",
             file["name"].as_str().unwrap_or(id)
         )
+    }
+
+    /// The folders in `parent`, by name, for the founder to choose from.
+    fn folders(&self, parent: &str) -> Result<Vec<Value>> {
+        let q = match parent {
+            "shared" => {
+                format!("sharedWithMe = true and mimeType = '{FOLDER}' and trashed = false")
+            }
+            p => format!(
+                "'{}' in parents and mimeType = '{FOLDER}' and trashed = false",
+                quoted(p)
+            ),
+        };
+        let body: Value = self
+            .get(
+                "/files",
+                &[
+                    ("q", q.as_str()),
+                    ("fields", "files(id,name)"),
+                    ("pageSize", "200"),
+                    ("orderBy", "name"),
+                    ("supportsAllDrives", "true"),
+                    ("includeItemsFromAllDrives", "true"),
+                ],
+            )?
+            .json()?;
+        Ok(body["files"].as_array().cloned().unwrap_or_default())
     }
 
     /// The files of `folder` (the shared folder by default), folders first.

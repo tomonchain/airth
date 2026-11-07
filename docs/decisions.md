@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 104. Google Drive: the client once for every business, then one click and a folder from a list
+
+**Accepted** (founder, 7 November 2026: "go", on the backlog's line "Google Drive in one click"). Amends decision 85's setup.
+
+- **The founder's Google OAuth client** (a Desktop app client) is given once, kept in the Airth home (`google-client.json`, mode 600), never in a business and never reachable by an agent. Every business uses it.
+- **Each business connects in one click:** Connect opens Google's sign-in; nothing to paste.
+- **The folder is picked from a list** once signed in: My Drive and Shared with me, folder by folder. Only the founder's page lists the account's folders; agents still read only the folder chosen and what is under it (`Drive::within`, unchanged). A new sign-in forgets the folder chosen before, since it may be another account.
+- A folder link can still be given instead of picking.
+
+*Why:* decision 85's setup was five steps in Google Cloud for every business, then a link to paste; the founder never finished it, so the legal agent could not read the company's documents.
+
+*Cost:* the Google Cloud client is still the founder's to create, once: true one click needs Airth's own verified Google app, which stays in the backlog. The page that picks the folder sees the names of the account's folders, as the founder does.
 ## 103. Airth calls an MCP tool the founder approved, once
 
 **Accepted** (founder, 7 November 2026: "go", on the backlog's line). Extends decision 56, which left an approved MCP call to the founder.

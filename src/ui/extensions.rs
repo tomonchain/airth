@@ -97,20 +97,28 @@ impl App {
                 }
                 json_response(200, self.connectors(&realm, None))
             }
-            // Google Drive, read only, one folder (decision 85): the founder's
-            // OAuth client and the folder, then Google's sign-in page.
+            // Google Drive, read only, one folder (decisions 85 and 104): the
+            // founder's OAuth client, given once for every business, then
+            // Google's sign-in page; the folder is picked after.
             (Method::Post, ["realms", r, "drive"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
+                let home = self.hub.home().dir();
                 let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
+                if !text("client_id").is_empty() {
+                    crate::drive::save_client(home, &text("client_id"), &text("client_secret"))?;
+                }
+                let client = crate::drive::client(home).context(
+                    "give your Google OAuth client first: it is asked once, for every business",
+                )?;
                 let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
                 // Under the write lock every changing request already holds
                 // (`handle`): taking it again here would wait forever.
+                let folder = text("folder");
                 let url = crate::drive::start(
                     &realm.skills_dir(),
-                    &text("client_id"),
-                    &text("client_secret"),
-                    &text("folder"),
+                    &client,
+                    Some(folder.as_str()),
                     &redirect,
                 )?;
                 let open = url.clone();
@@ -131,8 +139,35 @@ impl App {
                 };
                 json_response(
                     200,
-                    json!({"connected": connected, "folder": folder.map(|f| f.id), "name": name, "error": error}),
+                    json!({
+                        "connected": connected,
+                        "signed_in": crate::drive::signed_in(&dir),
+                        // Whether the founder's client is known: then one click.
+                        "client": crate::drive::client(self.hub.home().dir()).is_some(),
+                        "folder": folder.map(|f| f.id),
+                        "name": name,
+                        "error": error,
+                    }),
                 )
+            }
+            // The founder picks the business's folder, once signed in.
+            (Method::Get, ["realms", r, "drive", "folders"]) => {
+                let dir = self.realm(r)?.skills_dir();
+                let parent = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("in="))
+                    .map(percent_decode)
+                    .unwrap_or_else(|| "root".into());
+                json_response(
+                    200,
+                    json!({"folders": crate::drive::folders(&dir, &parent)?}),
+                )
+            }
+            (Method::Post, ["realms", r, "drive", "folder"]) => {
+                let body = read_json(request)?;
+                let dir = self.realm(r)?.skills_dir();
+                let id = body["id"].as_str().context("which folder?")?;
+                json_response(200, json!({"folder": crate::drive::choose(&dir, id)?}))
             }
             (Method::Delete, ["realms", r, "drive"]) => {
                 let dir = self.realm(r)?.skills_dir();
