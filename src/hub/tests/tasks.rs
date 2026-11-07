@@ -67,6 +67,11 @@ fn a_task_works_as_its_agent_within_its_scope_and_budget() {
         (Some(30), Some(1.0))
     );
     assert!(hub.start_task(&f.realm, "ghost", "Do it").is_err());
+    // Its first name, when it has one, is how it is told who it is.
+    agent(&root, "writer", "first_name: Ada\n");
+    let state = hub.start_task(&f.realm, "writer", "Again").unwrap();
+    let first = format!("{:?}", state.messages[0]);
+    assert!(first.contains("You are Ada (the agent writer)"), "{first}");
 }
 
 /// An agent that declares nothing has nothing beyond read-only web: no

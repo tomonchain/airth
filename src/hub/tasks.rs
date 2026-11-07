@@ -15,8 +15,11 @@ impl Hub {
         // One repository per task: the first its agent declares.
         let repo = scope.repos.first().map(String::as_str);
         let mut state = self.create_run_in(realm, order, repo)?;
+        // Its first name, when the founder gave it one (decision 94).
+        let who = crate::business::first_name(&root, agent)
+            .map_or(agent.to_string(), |n| format!("{n} (the agent {agent})"));
         state.messages = vec![Message::user_text(format!(
-            "You are {agent}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\nThe founder's order:\n{}",
+            "You are {who}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\nThe founder's order:\n{}",
             job.text.trim(),
             order.trim()
         ))];

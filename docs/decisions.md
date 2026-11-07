@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 94. An agent can have a first name, besides its title
+
+**Accepted** (founder, 6 November 2026, from the backlog: "Ada, Chief of staff").
+
+- **Where:** `first_name` in the agent's front matter, optional, set in the agent's Edit dialog. Letters, spaces, dashes and apostrophes, 30 at most; empty removes it.
+- **Shown** as "Ada, Chief of staff" wherever the interface names the agent (the agent list, its page, the details, ⌘K, Tasks, the routine canvas). Without one, the title, as before.
+- **The agent knows it:** a task starts with "You are Ada (the agent chief_of_staff)".
+- **An order can name it:** "Ada: outline the week" goes to that agent, as "chief_of_staff: …" does (decision 64), case not counting.
+- The file name stays the agent's identity: routines, tasks, mail and statistics still name it by file.
+
+*Why:* the founder works with the team every day and speaks to people, not roles.
+
+*Cost:* one more optional field. Two agents may share a first name; an order naming it goes to the first by file name, and the founder then names the file.
+
 ## 93. A run's change to the business config is checked before the founder reviews it, and goes back to the run when it does not hold
 
 **Accepted** (founder, 7 November 2026). From the backlog: the Chief of staff hired a Developer in a department that did not exist, and nothing told it (#169, #170).

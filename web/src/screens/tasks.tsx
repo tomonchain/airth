@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Item, type Tasks as TasksData } from "@/lib/api"
+import { api, called, enc, type Agent, type Item, type Tasks as TasksData } from "@/lib/api"
 import { ago, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -138,7 +138,7 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
         const r = await api<Route>(`realms/${enc(realm)}/orders/route`, { text: t })
         if (!r.agent) { setWho(NOBODY); setWhy(r.error ?? "No agent fits: choose one, or let Airth do it."); return }
         agent = r.agent
-        setWhy(`${agents.find((a) => a.name === r.agent)?.title ?? r.agent}: ${r.why}`)
+        setWhy(`${((x) => (x ? called(x) : r.agent))(agents.find((a) => a.name === r.agent))}: ${r.why}`)
       }
       const out = agent === NOBODY
         ? await api<{ id: string }>(`realms/${enc(realm)}/runs`, { objective: t, model, repo: repo || null })

@@ -10,7 +10,7 @@ import { RunTimeline } from "@/components/run-timeline"
 import { startOf, TaskThread } from "@/components/task-thread"
 import { usePoll } from "@/hooks/use-poll"
 import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
-import { api, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
+import { api, called, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -168,7 +168,7 @@ export function Conversation({ realm, agent, tasks: list, onDone }: { realm: str
             <ArrowDown className="size-4" />
           </button>
         )}
-        <OrderBox realm={realm} agent={agent.name} title={agent.title} task={closed ? undefined : latest} closed={closed} working={running}
+        <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running}
           onSending={(text, task) => {
             if (task) mine.add(task)
             setOutbox((o) => [...o, { text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
@@ -202,7 +202,7 @@ function Empty({ agent }: { agent: Agent }) {
   return (
     <div className="flex flex-col items-center py-24 text-center">
       <Character agent={agent} size={96} />
-      <h2 className="mt-5 text-lg font-semibold">{agent.title}</h2>
+      <h2 className="mt-5 text-lg font-semibold">{called(agent)}</h2>
       <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">{agent.job ?? "No job written yet."}</p>
       <p className="mt-4 text-sm text-muted-foreground">Nothing yet. Give it an order below.</p>
     </div>

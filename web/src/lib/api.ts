@@ -32,6 +32,9 @@ export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PAT
 
 export const enc = encodeURIComponent
 
+/** An agent as the founder calls it: "Ada, Chief of staff", else its title. */
+export const called = (a: { title: string; first_name?: string | null }) => (a.first_name ? `${a.first_name}, ${a.title}` : a.title)
+
 /** A request whose body or answer is not JSON (a document's bytes), with
     the same key; an error answer still says why, as JSON. */
 export async function raw(path: string, init: RequestInit = {}): Promise<Response> {
@@ -48,6 +51,8 @@ export type AgentState = "needs" | "incident" | "working" | "idle" | "asleep"
 export type Agent = {
   name: string
   title: string
+  /** Its first name, besides its title (decision 94). */
+  first_name?: string | null
   department: string | null
   job: string | null
   body: string
