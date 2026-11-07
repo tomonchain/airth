@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 89. A remote MCP server can be connected with a token instead of a sign-in
+
+**Accepted** (founder, 7 November 2026). Security code: `tools/remote.rs`.
+
+Hedgen's admin (hedgen.xyz) will serve its own MCP server, starting with `get_vitals` for the HQ (decision 53). It gives tokens from its Settings → Connections, not an OAuth sign-in, and Airth connected remote MCP servers only through OAuth.
+
+- **The founder pastes the token** when adding the server by address (Settings → MCP servers). Airth calls the server with it as `Authorization: Bearer`, to that server's URL only.
+- **Kept where signed-in tokens are:** `skills/mcp-auth/<name>.json` in the realm's Airth home, mode 600, with no expiry and no refresh token. Never in `secrets.env`, a command's environment, the server's saved description, an error message, or what the model sees. The existing test that a command cannot read `mcp-auth` (`hub/tests/runs.rs`) covers this file's exact shape.
+- **A refused token** (401) is not retried with anything else: the error says to connect again, without the token.
+- **Nothing else changes:** a server without a token signs in as before; its tools are actions with the classes the founder gives them (decision 49), read through the runtime like any MCP tool.
+
+*Why:* the business's own services hand out tokens; asking each to become an OAuth server would add authentication code to every one of them. Keeping the token where OAuth tokens already live reuses their protection and their test, instead of a second way.
+
+*Cost:* a token without expiry lives until the founder revokes it in the service. Airth cannot renew it; the founder pastes a new one.
+
 ## 88. A routine launches a mission and waits for its report
 
 **Accepted.** The founder, 6 November 2026, on milestone 4: "on avance". Decision 49 named `airth.launch_mission` and said the run waits for the mission; the engine refused it until now. This is how it runs.
