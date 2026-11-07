@@ -90,7 +90,9 @@ struct App {
     hub: Arc<Hub>,
     registry: Registry,
     runner: Runner,
-    token: String,
+    /// The API key. The owner can replace it (Settings, Phone), which
+    /// unpairs every phone at once (decision 98).
+    token: std::sync::RwLock<String>,
     port: u16,
     options: UiOptions,
     update: Arc<Mutex<UpdateState>>,
@@ -103,6 +105,10 @@ struct App {
 }
 
 impl App {
+    fn token(&self) -> String {
+        self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn write_lock(&self) -> std::sync::MutexGuard<'_, ()> {
         self.writes.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -271,7 +277,7 @@ impl App {
     }
 
     fn token_valid(&self, request: &Request) -> bool {
-        header(request, "X-Airth-Token").is_some_and(|t| constant_time_eq(&t, &self.token))
+        header(request, "X-Airth-Token").is_some_and(|t| constant_time_eq(&t, &self.token()))
     }
 
     fn realm(&self, name: &str) -> Result<Realm> {
@@ -352,7 +358,7 @@ mod tests {
             },
             hub,
             registry,
-            token: "t0k3n".into(),
+            token: std::sync::RwLock::new("t0k3n".into()),
             port,
             options: UiOptions {
                 port,
@@ -804,6 +810,60 @@ mod tests {
             ),
             200
         );
+    }
+
+    /// A new key shuts out every holder of the old one, phones included,
+    /// and is made only from the Mac: a phone asking is refused, and its key
+    /// still works after (decision 98).
+    #[test]
+    fn a_new_key_unpairs_every_phone_and_is_made_on_the_mac_only() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        crate::phone::allow(home_dir.path(), "mac.tail1234.ts.net").unwrap();
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let app = test_app(home, port);
+        std::thread::spawn(move || serve_requests(server, app));
+        let http = reqwest::blocking::Client::new();
+        let call = |path: &str, host: &str, token: &str, post: bool| {
+            let url = format!("http://127.0.0.1:{port}/api/{path}");
+            let req = if post {
+                http.post(url).body("{}")
+            } else {
+                http.get(url)
+            };
+            let r = req
+                .header("Host", host)
+                .header("X-Airth-Token", token)
+                .send()
+                .unwrap();
+            let status = r.status().as_u16();
+            (status, r.json::<Value>().unwrap_or_default())
+        };
+        let mac = format!("127.0.0.1:{port}");
+        let phone = "mac.tail1234.ts.net";
+
+        // The phone, with the key, reaches the app but cannot change the key.
+        assert_eq!(call("phone", phone, "t0k3n", false).0, 200);
+        assert_eq!(call("phone/new-key", phone, "t0k3n", true).0, 403);
+        assert_eq!(call("phone", phone, "t0k3n", false).0, 200);
+        // Without the key, nobody makes a new one.
+        assert_eq!(call("phone/new-key", &mac, "wrong", true).0, 401);
+
+        let (status, body) = call("phone/new-key", &mac, "t0k3n", true);
+        assert_eq!(status, 200);
+        let new = body["token"].as_str().unwrap().to_string();
+        assert!(new.len() >= 32 && new != "t0k3n");
+        // The old key is refused everywhere; the new one works, and is the
+        // one kept for the next start.
+        assert_eq!(call("phone", phone, "t0k3n", false).0, 401);
+        assert_eq!(call("phone", &mac, "t0k3n", false).0, 401);
+        assert_eq!(call("phone", phone, &new, false).0, 200);
+        let kept = std::fs::read_to_string(home_dir.path().join("ui-token")).unwrap();
+        assert_eq!(kept.trim(), new);
+        // The pairing codes carry the new key.
+        let (_, links) = call("phone", &mac, &new, false);
+        assert!(links["hosts"][0]["link"].as_str().unwrap().ends_with(&new));
     }
 
     #[test]

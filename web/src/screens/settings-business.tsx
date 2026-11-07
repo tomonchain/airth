@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, onPhone, pairingLink, raw, type Department } from "@/lib/api"
+import { api, enc, onPhone, pairingLink, raw, rekey, type Department } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -402,6 +402,7 @@ export function Phone() {
           <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(pairingLink()).then(() => toast.success("Pairing link copied. Keep it to yourself."), () => toast.error("Could not copy."))}>Copy the pairing link</Button>
         </Panel>
       )}
+      {!onPhone && <NewKey onDone={refresh} />}
       {!data ? <Loading /> : data.hosts.map((x) => (
         <Panel key={x.host} className="mt-2.5 flex gap-5 p-4">
           <Qr qr={x.qr} label={`Pairing code for ${x.host}`} />
@@ -415,6 +416,30 @@ export function Phone() {
         </Panel>
       ))}
     </>
+  )
+}
+
+/** Unpair every phone at once: a new key, made on the Mac only. */
+function NewKey({ onDone }: { onDone: () => void }) {
+  const [sure, setSure] = useState(false)
+  async function go() {
+    try {
+      const { token } = await api<{ token: string }>("phone/new-key", {})
+      rekey(token)
+      toast.success("New key made. Every phone is unpaired: scan the new code to pair one again.")
+      setSure(false); onDone()
+    } catch (e) { toast.error((e as Error).message) }
+  }
+  return (
+    <Panel className="mt-2.5 flex items-center gap-4 p-4">
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-medium">A lost phone?</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">A new key unpairs every phone at once. Other windows on this Mac need Airth opened again.</p>
+      </div>
+      {sure
+        ? <Button size="sm" variant="destructive" onClick={go}>Unpair every phone</Button>
+        : <Button size="sm" variant="outline" onClick={() => { setSure(true); setTimeout(() => setSure(false), 4000) }}>New key</Button>}
+    </Panel>
   )
 }
 

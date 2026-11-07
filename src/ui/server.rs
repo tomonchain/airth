@@ -113,6 +113,27 @@ pub fn persistent_token(hub: &Hub) -> Result<String> {
     Ok(token)
 }
 
+impl App {
+    /// Replace the API key: kept for the next start, written where `airth ui`
+    /// and the Mac app find the running app, and checked from the next
+    /// request on. Every page and phone holding the old one is shut out.
+    pub(super) fn new_key(&self) -> Result<String> {
+        let token = random_token()?;
+        let home = self.hub.home().dir();
+        crate::realm::write_private(&home.join("ui-token"), &token)?;
+        let info = server_file(&self.hub);
+        if let Ok(text) = std::fs::read_to_string(&info)
+            && let Ok(mut running) = serde_json::from_str::<ServerInfo>(&text)
+            && running.port == self.port
+        {
+            running.token = token.clone();
+            crate::realm::write_private(&info, &serde_json::to_string(&running)?)?;
+        }
+        *self.token.write().unwrap_or_else(|e| e.into_inner()) = token.clone();
+        Ok(token)
+    }
+}
+
 /// Stop the runs, then come back as the new binary: launchd restarts the
 /// service when it exits; otherwise the process replaces itself.
 pub(super) fn restart(
@@ -491,7 +512,7 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         hub,
         registry,
         runner,
-        token: persistent_token(&token_hub)?,
+        token: std::sync::RwLock::new(persistent_token(&token_hub)?),
         port,
         options,
         update: Arc::new(Mutex::new(UpdateState {
@@ -507,11 +528,11 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         &serde_json::to_string(&ServerInfo {
             pid: std::process::id() as i32,
             port,
-            token: app.token.clone(),
+            token: app.token(),
         })?,
     )?;
 
-    let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
+    let url = format!("http://127.0.0.1:{port}/#token={}", app.token());
     if app.options.open_browser {
         open_in_browser(&url);
     }
