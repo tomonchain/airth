@@ -7,7 +7,8 @@ use anyhow::{Result, bail};
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::{OptionalExtension, params};
 
-/// A new action's level before the founder sets one.
+/// The level the founder has not raised: where content from outside stops
+/// (decision 96). An action's own starting level is its ceiling.
 pub const DEFAULT_LEVEL: u8 = 1;
 
 /// One action about to be taken.

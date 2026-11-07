@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::business::store::Store;
+use crate::business::store::autonomy::DEFAULT_LEVEL;
 use crate::pipeline::schedule::{Tick, tick};
 use crate::routine::{Checks, Graph};
 use serde_json::{Value, json};
@@ -45,12 +46,17 @@ impl Hub {
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let actions = crate::actions::all(&realm.config.integrations, &servers);
         let store = Store::of(realm)?;
+        // Only a level the founder set lets content from outside reach an act
+        // without an approval: an action's starting level does not
+        // (decision 96).
         let level = |agent: &str, action: &str| {
-            let (ceiling, start) = actions
+            let ceiling = actions
                 .iter()
                 .find(|a| a.id == action)
-                .map_or((1, 1), |a| (a.ceiling, a.start));
-            store.level(agent, action, ceiling, start).unwrap_or(1)
+                .map_or(1, |a| a.ceiling);
+            store
+                .level(agent, action, ceiling, DEFAULT_LEVEL)
+                .unwrap_or(1)
         };
         f(&Checks {
             root: &root,

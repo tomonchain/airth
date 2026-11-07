@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 96. Reads and reversible writes start at their ceiling; what commits starts at 1
+
+**Accepted** (founder, 7 November 2026: "if it is part of its job, it should be approved by default, except contact with the outside, price changes, new products…", choosing "reads and reversible" over "only Airth's own" and "keep level 1"). Replaces "new actions start at level 1" (decision 45, `CLAUDE.md`).
+
+- **Start:** an action the founder has not set a level for starts at its ceiling. A read or a reversible write (launching a mission, a draft, a chart, a task) is at level 3: the agent acts, then reports. What commits (outside contact, prices, products, payments, publishing, merging) and anything never classed stay at 1. A ceiling below that (replies on X, at 0) still holds.
+- **Content from outside is not freed by it:** the graph check (decision 49) lets outside content reach an act without an approval only when the founder set that action's level to 2 or more. A starting level does not count. A test proves it.
+- **Unchanged:** the founder lowers or raises any level (`airth actions level`); an incident demotes one level; the daily limit per connector (20 actions alone in 24 hours by default) still caps what runs without the founder.
+
+*Why:* Hedgen's weekly article stopped at its first step for an approval to start writing, which the routine the founder wrote already said to do. A level 1 on what can be undone costs the founder time without protecting anything; the class the founder gives an action is where the risk is decided.
+
+*Cost:* the class given to an action matters more: classed reversible by mistake, it acts alone. Reversible actions act without being seen first, up to the daily limit.
+
 ## 95. Scans are read on the Mac, by macOS's own text recognition, in a sandbox
 
 **Accepted** (founder: "OCR, first with macOS's own Vision, local, free, documents never leave the Mac", backlog, 6 November 2026; built when the founder said to code what could be, 7 November 2026). Extends decision 86, which said a scan unreadable.

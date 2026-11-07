@@ -531,7 +531,8 @@ fn check_flags(graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
 
 /// Content from outside (a read of rss, web or a connector, a mission's
 /// result, a webhook's body) reaches no `act` without an `approval` on the
-/// way, unless the agent's level for that action is at least 2.
+/// way, unless the founder set the agent's level for that action to at least
+/// 2 (decision 96).
 fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
     let mut seen = HashSet::new();
     let mut todo = vec![(0usize, graph.trigger.webhook.is_some())];
@@ -543,10 +544,12 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
             Kind::Read { source, .. } => outside || source != "business",
             Kind::Approval { .. } => false,
             Kind::Act { action, fields } => {
-                // A task for the founder is the founder's to judge; one for
-                // an agent becomes its instructions, so it is checked.
-                let for_founder = action == "airth.create_task"
-                    && fields.get("assignee").map(String::as_str) == Some("founder");
+                // A report, or a task for the founder, is the founder's to
+                // judge; a task for an agent becomes its instructions, so it
+                // is checked.
+                let for_founder = action == "airth.report"
+                    || action == "airth.create_task"
+                        && fields.get("assignee").map(String::as_str) == Some("founder");
                 if outside && !for_founder && (cx.level)(&graph.agent, action) < 2 {
                     bail!(
                         "block '{}': content from outside reaches {action} without an approval, and {} may not take it alone (level {})",

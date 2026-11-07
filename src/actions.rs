@@ -340,13 +340,12 @@ pub fn schema_hash(schema: &Value) -> String {
 
 /// Airth's own actions (decision 49), with their class and the level they
 /// start at.
-const AIRTH: &[(&str, Class, u8)] = &[
-    ("launch_mission", Class::Reversible, 1),
-    // A report goes to the founder and changes nothing: free by default.
-    ("report", Class::Read, 3),
-    ("create_task", Class::Reversible, 1),
+const AIRTH: &[(&str, Class)] = &[
+    ("launch_mission", Class::Reversible),
+    ("report", Class::Read),
+    ("create_task", Class::Reversible),
     // Merging code never goes above 1 (`CLAUDE.md`).
-    ("adopt_change", Class::Commits, 1),
+    ("adopt_change", Class::Commits),
 ];
 
 /// An action as the engine sees it.
@@ -358,7 +357,7 @@ pub struct Declared {
     pub ceiling: u8,
     /// Whether the founder classed it (always, for Airth's own).
     pub confirmed: bool,
-    /// Its level before the founder sets one (decision 45).
+    /// Its level before the founder sets one: its ceiling (decision 96).
     pub start: u8,
 }
 
@@ -371,7 +370,10 @@ fn declared(id: String, class: Option<Class>, max_level: Option<u8>) -> Declared
         class,
         ceiling,
         confirmed,
-        start: crate::business::store::autonomy::DEFAULT_LEVEL.min(ceiling),
+        // Reads and reversible writes are the agent's job: it acts, then
+        // reports. What commits, or was never classed, waits for the founder
+        // (decision 96).
+        start: ceiling,
     }
 }
 
@@ -379,10 +381,7 @@ fn declared(id: String, class: Option<Class>, max_level: Option<u8>) -> Declared
 pub fn all(integrations: &[Integration], servers: &[McpServer]) -> Vec<Declared> {
     let mut out: Vec<Declared> = AIRTH
         .iter()
-        .map(|(name, class, start)| Declared {
-            start: (*start).min(class.ceiling()),
-            ..declared(format!("airth.{name}"), Some(*class), None)
-        })
+        .map(|(name, class)| declared(format!("airth.{name}"), Some(*class), None))
         .collect();
     for i in integrations {
         for a in &i.actions {
@@ -603,23 +602,26 @@ mod tests {
         assert_eq!(find(&all1, "airth.adopt_change").ceiling, 1);
         let report = find(&all1, "airth.report");
         assert_eq!((report.class, report.start), (Class::Read, 3));
-        assert_eq!(find(&all1, "airth.create_task").start, 1);
+        assert_eq!(find(&all1, "airth.create_task").start, 3);
+        assert_eq!(find(&all1, "airth.adopt_change").start, 1);
         assert_eq!(find(&all1, "airth.launch_mission").ceiling, 3);
         let p = find(&all1, "typefully.publish");
         assert_eq!(
-            (p.class, p.ceiling, p.confirmed),
-            (Class::Commits, 1, false)
+            (p.class, p.ceiling, p.confirmed, p.start),
+            (Class::Commits, 1, false, 1)
         );
-        assert_eq!(find(&all1, "typefully.create_draft").ceiling, 3);
-        assert_eq!(find(&all1, "typefully.reply").ceiling, 0);
+        let d = find(&all1, "typefully.create_draft");
+        assert_eq!((d.ceiling, d.start), (3, 3));
+        let reply = find(&all1, "typefully.reply");
+        assert_eq!((reply.ceiling, reply.start), (0, 0));
         assert_eq!(find(&all1, "stripe.refund").class, Class::Read);
         // The server widens the tool: the founder's class no longer holds.
         server.tools[0].input_schema =
             json!({"type": "object", "properties": {"q": {}, "amount": {}}});
         let r = find(&all(&[integration], &[server]), "stripe.refund");
         assert_eq!(
-            (r.class, r.ceiling, r.confirmed),
-            (Class::Commits, 1, false)
+            (r.class, r.ceiling, r.confirmed, r.start),
+            (Class::Commits, 1, false, 1)
         );
     }
 }
