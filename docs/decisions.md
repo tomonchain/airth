@@ -2,6 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 92. A stable week, and the four in a row the beta needs
+
+**Accepted** (founder, 7 November 2026). Milestone 6's gate: Hedgen runs on its own for 4 consecutive weeks, its founder time well below the baseline.
+
+A week is a complete one, Monday 00:00 to Monday 00:00 UTC. It is **stable** when all of these hold:
+
+1. at least one scheduled routine ran in it (a week with nothing scheduled proves nothing);
+2. every scheduled run started within the grace after its time, and none was missed (a missed run is the "did not run on time" incident);
+3. no incident opened in it stayed open more than 24 hours, judged when the proof is read;
+4. the founder's time in the ledger is at most **half** the baseline (`baseline_minutes` in `business/goal.md`; Hedgen: 35 hours, so 17.5 hours). No baseline, no stable week.
+
+Airth counts stable weeks in a row, from the last complete week back (eight weeks at most), and says why the last one was not stable. The count is in the weekly report ("On its own") and on the HQ, as four marks. It is computed from `business.db` each time, by code, never stored and never by a model.
+
+*Why:* "runs on its own" must be a fact Airth can check, not a feeling; these are the three ways a week shows it did not (a routine that did not run, an incident left waiting, the founder doing the work) plus the time the beta is about. Half the baseline is the founder's "well below".
+
+*Cost:* the founder's time outside Airth counts only when they record it (`airth time add`), so a week can look better than it was. A missed run is known only by its incident's title.
+
 ## 91. The routine editor draws and links blocks on a canvas, with React Flow
 
 **Accepted** (founder, 7 November 2026: "a drag and drop panel where I can link events together, like n8n or Make"). Extends decision 69, which kept the shape in the file, and takes full drag and drop out of `CLAUDE.md`'s "out of the beta" list.

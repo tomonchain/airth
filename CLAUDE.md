@@ -174,7 +174,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 
 **Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media and e-commerce (decision 74), automatic autonomy promotion, the iOS app, multiple human users, a hosted offer, semantic search.
 
-**Current milestone: 3.** Milestone 1 is closed: its decisions are 42 to 49. Exception, decided by the founder: milestone 2's code is done, but its gate (Hedgen Ltd fully described in config) stays open until the founder fills the config; milestone 3 goes ahead in parallel because it does not depend on that config technically. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
+**Current milestone: 6.** Milestones 3 to 5 are built. Two gates stay open by the founder's choice, while work goes on: milestone 2's (Hedgen Ltd fully described in config) and milestone 4's (the replies and the weekly article tried on the real Airth). Milestone 6's stable week is decision 92. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
 ## Non-negotiable checks
 
