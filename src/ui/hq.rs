@@ -136,6 +136,7 @@ impl App {
         let approved: i64 = week.routines.iter().map(|r| r.approved).sum();
         Ok(json!({
             "name": realm.name(),
+            "title": realm.root().ok().and_then(|root| crate::business::title(&root)),
             "description": realm.config.description,
             "needs": pending.len(),
             "health": {"state": state, "sentence": why},

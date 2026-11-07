@@ -6,7 +6,7 @@ import { Rail, TabBar, type Page } from "@/components/rail"
 import { TopBar } from "@/components/topbar"
 import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
-import { api, called, enc, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
+import { api, called, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
@@ -94,7 +94,7 @@ export default function App() {
 
   // The tab says how many things wait for the founder, in every business.
   const waiting = (realms.data ?? []).reduce((n, r) => n + (r.archived ? 0 : r.needs_approval || 0), 0)
-  useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${realm.charAt(0).toUpperCase()}${realm.slice(1)} · ` : ""}Airth` }, [waiting, realm])
+  useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${named(realm, realms.data?.find((r) => r.name === realm)?.title)} · ` : ""}Airth` }, [waiting, realm, realms.data])
 
   const data = usePoll<Data>(
     realm

@@ -543,6 +543,7 @@ impl App {
                     .collect();
                 json!({
                     "name": r.name(),
+                    "title": r.root().ok().and_then(|root| crate::business::title(&root)),
                     "description": r.config.description,
                     "archived": r.config.archived,
                     "default": default.as_deref() == Some(r.name()),

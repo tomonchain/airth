@@ -4,7 +4,7 @@ import { UpdateNotice } from "@/components/update-notice"
 import { titleBar } from "@/lib/shell"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import type { Agent, Realm } from "@/lib/api"
+import { named, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 /** The window's top: the open conversations as tabs (on the Agents page),
@@ -55,7 +55,7 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
       <DropdownMenu>
         <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg border bg-background/60 pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>
           <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
-          <span className="capitalize">{realm}</span>
+          <span>{named(realm, realms.find((r) => r.name === realm)?.title)}</span>
           {/* Another business waits for the founder: said here, wherever they are. */}
           {others > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white" title={`${others} waiting in your other businesses`}>{others}</span>}
           <ChevronsUpDown className="size-3.5 text-muted-foreground" />
@@ -65,8 +65,8 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
           <DropdownMenuGroup>
           <DropdownMenuLabel>Businesses</DropdownMenuLabel>
           {realms.filter((r) => !r.archived).map((r) => (
-            <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)} className="capitalize">
-              <span className="flex-1">{r.name}</span>
+            <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
+              <span className="flex-1">{named(r.name, r.title)}</span>
               {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
               {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
             </DropdownMenuItem>
