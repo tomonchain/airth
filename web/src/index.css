@@ -165,10 +165,11 @@
   --dept-none: #9BA1A9; --dept-none-dark: #6F767F;
 }
 
-/* The faces' life: they blink; a working one looks around. */
+/* The faces' life: they blink; a working one hops and looks around; an asleep one fades. */
 .ch .eyes { transform-box: fill-box; transform-origin: center; animation: ch-blink 5s infinite; }
 .st-working .body { transform-box: fill-box; transform-origin: center bottom; animation: ch-bob 1.2s ease-in-out infinite; }
-.st-working .pupils.look { animation: ch-look 2.4s ease-in-out infinite; }
+.st-working .look { animation: ch-look 2.4s ease-in-out infinite; }
+.st-asleep .body { filter: saturate(0.5); opacity: 0.85; }
 @keyframes ch-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
 @keyframes ch-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes ch-look { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
