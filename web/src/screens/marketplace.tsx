@@ -81,21 +81,21 @@ export function Marketplace({ realm }: { realm: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       {/* The same column as the content below, as on the other pages. */}
-      <header className="border-b pt-9 pb-0">
-        <div className="mx-auto flex max-w-5xl items-end gap-4 px-8">
-          <div className="flex-1">
+      <header className="border-b pt-6 pb-0 md:pt-9">
+        <div className="mx-auto flex max-w-5xl items-end gap-4 px-4 max-md:flex-col max-md:items-stretch max-md:gap-3 md:px-8">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>
             <p className="mt-1.5 text-base text-foreground/80">Teams, skills, connectors and agents to add to <span className="capitalize">{realm}</span>.</p>
           </div>
-          <label className="mb-1 flex h-9 w-72 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
+          <label className="mb-1 flex h-9 w-72 items-center max-md:w-full gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
             <Search className="size-4" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${tab}`} className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
           </label>
         </div>
-        <nav className="mx-auto mt-5 flex max-w-5xl gap-1 px-5">
+        <nav className="mx-auto mt-5 flex max-w-5xl gap-1 overflow-x-auto px-1 [scrollbar-width:none] md:px-5">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={cn("relative flex items-center gap-1.5 px-3 pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground", tab === t.id && "text-foreground")}>
+              className={cn("relative flex shrink-0 items-center gap-1.5 px-3 pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground", tab === t.id && "text-foreground")}>
               <t.icon className="size-4" /> {t.label}
               {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground" />}
             </button>
@@ -103,7 +103,7 @@ export function Marketplace({ realm }: { realm: string }) {
         </nav>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div key={tab} className="mx-auto max-w-5xl px-8 py-6 duration-200 animate-in fade-in slide-in-from-bottom-1">
+        <div key={tab} className="mx-auto max-w-5xl px-4 py-6 md:px-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
           {tab === "teams" ? <Teams realm={realm} q={q} onConnectors={() => setTab("connectors")} /> : tab === "skills" ? <Skills realm={realm} q={q} /> : tab === "connectors" ? <Connectors realm={realm} q={q} /> : <Agents />}
         </div>
       </div>

@@ -78,23 +78,32 @@ const MORE: [Page, string, LucideIcon][] = [
 export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) => void; needs: number }) {
   const { theme, setTheme } = useTheme()
   const [more, setMore] = useState(false)
-  const tab = (icon: LucideIcon, label: string, active: boolean, onClick: () => void, badge = 0) => {
-    const Icon = icon
-    return (
-      <button key={label} onClick={onClick} aria-current={active ? "page" : undefined}
-        className={cn("relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1 text-[10.5px] text-muted-foreground", active && "text-foreground")}>
-        <Icon className="size-[22px]" strokeWidth={active ? 2.1 : 1.8} />
-        {label}
-        {badge > 0 && <span className="absolute top-1 left-[calc(50%+4px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white ring-2 ring-background">{badge}</span>}
-      </button>
-    )
-  }
+  const tabs: [Page | "more", string, LucideIcon][] = [...MAIN, ["more", "More", Ellipsis]]
+  // The tab the page is under: its own, or More; none for the HQ.
+  const at = MAIN.findIndex(([p]) => p === page)
+  const open = at >= 0 ? at : MORE.some(([p]) => p === page) ? tabs.length - 1 : -1
+  const known = open >= 0
   return (
-    <nav className="flex shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
-      {MAIN.map(([p, label, icon]) => tab(icon, label, page === p, () => onPage(p), p === "needs" ? needs : 0))}
-      {tab(Ellipsis, "More", MORE.some(([p]) => p === page), () => setMore(true))}
+    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),10px)]">
+      <div className="glass pointer-events-auto relative mx-auto grid h-[62px] max-w-md grid-cols-5 rounded-[31px] p-1">
+        {/* One fifth of the bar, moved under the open tab. */}
+        <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/5)] rounded-[27px]", !known && "opacity-0")}
+          style={{ transform: `translateX(${open * 100}%)` }} />
+        {tabs.map(([p, label, Icon], i) => {
+          const active = known && i === open
+          const badge = p === "needs" ? needs : 0
+          return (
+            <button key={label} onClick={() => p === "more" ? setMore(true) : onPage(p)} aria-current={active ? "page" : undefined}
+              className={cn("relative flex flex-col items-center justify-center gap-0.5 rounded-[27px] text-[10px] font-medium text-foreground/60 transition-colors active:scale-95", active && "text-foreground")}>
+              <Icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
+              {label}
+              {badge > 0 && <span className="absolute top-1 left-[calc(50%+5px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{badge}</span>}
+            </button>
+          )
+        })}
+      </div>
       <Sheet open={more} onOpenChange={setMore}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+        <SheetContent side="bottom" className="glass rounded-[28px] border px-3 pt-4 pb-3 data-[side=bottom]:inset-x-3 data-[side=bottom]:bottom-[max(env(safe-area-inset-bottom),10px)]">
           <SheetTitle className="px-2">More</SheetTitle>
           <div className="grid grid-cols-4 gap-1">
             {MORE.map(([p, label, Icon]) => (
