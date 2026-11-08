@@ -547,6 +547,8 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         std::thread::spawn(move || crate::telegram::run((*hub).clone()));
         let (hub, update) = (app.hub.clone(), app.update.clone());
         std::thread::spawn(move || run_updater(hub, update));
+        let home = app.hub.home().clone();
+        std::thread::spawn(move || crate::backup::run(home));
     }
 
     let registry = app.registry.clone();

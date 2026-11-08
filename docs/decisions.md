@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 106. Airth moves to the founder's VPS now, without waiting for milestone 6's proof
+
+**Accepted** (founder, 8 November 2026: "Ça fait que de sauter… Est-ce qu'on peut voir pour un VPS ? J'en ai déjà un", then "fais ce que tu préfères"). Brings decision 29's move forward; milestone 9's other items stay where they are.
+
+- **Why now.** Milestone 6 needs weeks where every scheduled routine runs on time (decision 92). On the Mac they do not: the Mac sleeps, the phone loses Tailscale, and today an update got the service killed three times (`Code Signature Invalid`). A server that stays on is part of the proof, not a reward after it.
+- **The gate holds already.** Decision 29 asks for a Linux sandbox and the security scenarios passing on Linux before a VPS hosts a realm. Bubblewrap is built (decision 67), CI runs the tests on Ubuntu 24.04, and `airth scenarios` passes S-01 to S-07 on Linux.
+- **Kept running by systemd.** On Linux, `airth service install` writes a user unit (`~/.config/systemd/user/airth.service`): started at boot, started again five seconds after any stop (an update's restart included), logs in `~/.airth/logs/serve.log`. It asks for lingering, so the service runs with nobody logged in.
+- **A realm can move.** `airth realm root <path>` points a realm at its folder's new place, under the same rules as a new realm's folder.
+- **A backup each day.** The service copies the Airth home once a day into `~/.airth/backups/`, keeping the last seven: each database whole and consistent (SQLite's `VACUUM INTO`, through the store), settings, secrets and run history; not update builds, logs, worktrees or caches. The folder is the owner's only (0700). `airth backup` makes one now.
+- **Reached as before.** The app stays on loopback; the founder reaches it through Tailscale (`tailscale serve`, `airth phone allow`, decision 37), never an open port.
+
+*Why:* the founder could not reach Airth from the phone, and a business cannot prove it runs on its own on a laptop that sleeps.
+
+*Cost:*
+- Scans are no longer read: OCR uses macOS (decision 95). The Mac app's window and menu bar icon stay on the Mac; the founder uses the browser.
+- A new sign-in that comes back to `127.0.0.1` (Google Drive, an MCP server's OAuth) needs an SSH tunnel from the founder's computer. Connections made before move with the home.
+- The backups live on the same disk as the home: they protect against a mistake or a broken database, not against losing the server. The host's snapshots, or a copy elsewhere, cover that. A business's own folder is not in them: its git remote is its copy.
+- If the server is down, Airth cannot say so: Telegram goes through it. An outside check would.
+
 ## 105. The Workshop: the founder asks for a change to Airth, a run makes it as a pull request
 
 **Proposed.** Does not bring back decision 14: Airth does not decide what to change in itself, and it builds no skills for itself. The founder asks; a run writes the code; the founder merges.

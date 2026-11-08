@@ -1,5 +1,6 @@
 mod actions;
 mod agent;
+mod backup;
 mod bank;
 mod business;
 mod cancel;
@@ -271,6 +272,9 @@ enum Cmd {
     Tools,
     /// Check that the environment is ready
     Doctor,
+    /// Copy the Airth home now (the service does it once a day; the last
+    /// seven are kept in its backups/ folder)
+    Backup,
     /// Run the security scenarios (decision 67): each attempt made by a
     /// scripted agent in a throwaway business, through the full path
     Scenarios {
@@ -507,6 +511,11 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Bank { command }) => cli::bank(ctx, command),
         Some(Cmd::Tools) => skills(ctx),
         Some(Cmd::Doctor) => doctor(ctx),
+        Some(Cmd::Backup) => {
+            let path = backup::make(ctx.home(), chrono::Local::now())?;
+            eprintln!("\x1b[32m✓\x1b[0m backed up to {}", path.display());
+            Ok(true)
+        }
         Some(Cmd::Scenarios { only }) => scenarios(ctx, &only),
         None => prompt_objective().and_then(|objective| {
             run(

@@ -163,6 +163,9 @@ fn write_icon(icns: &std::path::Path) -> Result<()> {
 /// Restart the login service if it is loaded (to pick up a new binary).
 /// True if it was.
 pub fn restart_if_running() -> bool {
+    if cfg!(target_os = "linux") {
+        return systemd::restart_if_running();
+    }
     if !cfg!(target_os = "macos") {
         return false;
     }
@@ -226,9 +229,12 @@ fn plist_text(exe: &str, home: &str, path: &str, log: &str) -> String {
 }
 
 pub fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
+    if cfg!(target_os = "linux") {
+        return systemd::run(ctx, command);
+    }
     if !cfg!(target_os = "macos") {
         bail!(
-            "`airth service` supports macOS only; elsewhere, run `airth serve` under your init system (e.g. a systemd user unit)"
+            "`airth service` supports macOS and Linux only; elsewhere, run `airth serve` under your init system"
         );
     }
     let plist = plist_path()?;
@@ -369,9 +375,186 @@ pub fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
     Ok(true)
 }
 
+/// Linux (decision 106): a systemd user service, started at boot and again
+/// whenever it stops, as launchd keeps the Mac's alive.
+mod systemd {
+    use super::*;
+
+    const UNIT: &str = "airth.service";
+
+    fn unit_path() -> Result<PathBuf> {
+        let config = match std::env::var_os("XDG_CONFIG_HOME") {
+            Some(dir) => PathBuf::from(dir),
+            None => {
+                PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".config")
+            }
+        };
+        Ok(config.join("systemd/user").join(UNIT))
+    }
+
+    /// A value in a unit file: quoted, with systemd's `%` specifiers kept
+    /// literal.
+    fn quote(s: &str) -> String {
+        format!(
+            "\"{}\"",
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('%', "%%")
+        )
+    }
+
+    pub(super) fn unit_text(exe: &str, home: &str, path: &str, log: &str) -> String {
+        format!(
+            "[Unit]\n\
+             Description=Airth: the businesses' agents, their routines and the app\n\
+             After=network-online.target\n\
+             Wants=network-online.target\n\
+             \n\
+             [Service]\n\
+             ExecStart={} serve --wait\n\
+             Environment={}\n\
+             Environment={}\n\
+             Environment={}\n\
+             Restart=always\n\
+             RestartSec=5\n\
+             StandardOutput=append:{log}\n\
+             StandardError=append:{log}\n\
+             \n\
+             [Install]\n\
+             WantedBy=default.target\n",
+            quote(exe),
+            quote(&format!("AIRTH_HOME={home}")),
+            quote("AIRTH_SERVICE=1"),
+            quote(&format!("PATH={path}")),
+            log = log.replace('%', "%%"),
+        )
+    }
+
+    fn systemctl(args: &[&str]) -> Result<std::process::Output> {
+        Command::new("systemctl")
+            .arg("--user")
+            .args(args)
+            .output()
+            .context("cannot run systemctl (is this a systemd system?)")
+    }
+
+    fn active() -> bool {
+        systemctl(&["is-active", "--quiet", UNIT]).is_ok_and(|o| o.status.success())
+    }
+
+    pub(super) fn restart_if_running() -> bool {
+        if !active() {
+            return false;
+        }
+        let _ = systemctl(&["restart", UNIT]);
+        eprintln!("restarted the Airth service");
+        true
+    }
+
+    pub(super) fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
+        let unit = unit_path()?;
+        match command {
+            ServiceCmd::Install => {
+                let exe = std::env::current_exe()?.canonicalize()?;
+                let home = ctx.home().dir();
+                let logs = home.join("logs");
+                std::fs::create_dir_all(&logs)?;
+                let log = logs.join("serve.log");
+                let text = unit_text(
+                    &exe.display().to_string(),
+                    &home.display().to_string(),
+                    &std::env::var("PATH").unwrap_or_default(),
+                    &log.display().to_string(),
+                );
+                if let Some(dir) = unit.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::write(&unit, text)?;
+                for args in [
+                    &["daemon-reload"][..],
+                    &["enable", UNIT],
+                    &["restart", UNIT],
+                ] {
+                    let out = systemctl(args)?;
+                    if !out.status.success() {
+                        bail!(
+                            "systemctl --user {} failed: {}",
+                            args.join(" "),
+                            String::from_utf8_lossy(&out.stderr).trim()
+                        );
+                    }
+                }
+                eprintln!(
+                    "\x1b[32m✓\x1b[0m Airth runs in the background, and again after a stop or a reboot"
+                );
+                eprintln!("  binary {}", exe.display());
+                eprintln!("  logs   {}", log.display());
+                // A user's services stop when they log out, unless systemd
+                // keeps their manager running ("lingering").
+                let user = std::env::var("USER").unwrap_or_default();
+                let lingers = Command::new("loginctl")
+                    .args(["show-user", &user, "--property=Linger"])
+                    .output()
+                    .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("Linger=yes"));
+                let enabled = lingers
+                    || Command::new("loginctl")
+                        .args(["enable-linger", &user])
+                        .output()
+                        .is_ok_and(|o| o.status.success());
+                if !enabled {
+                    eprintln!(
+                        "\x1b[33m!\x1b[0m to keep Airth running when you log out and after a reboot, run once: sudo loginctl enable-linger {user}"
+                    );
+                }
+            }
+            ServiceCmd::Uninstall => {
+                let _ = systemctl(&["disable", "--now", UNIT]);
+                if unit.exists() {
+                    std::fs::remove_file(&unit)?;
+                    let _ = systemctl(&["daemon-reload"]);
+                    eprintln!("removed the Airth service");
+                } else {
+                    eprintln!("the Airth service was not installed");
+                }
+            }
+            ServiceCmd::Status => {
+                println!(
+                    "service  {}",
+                    match (unit.exists(), active()) {
+                        (true, true) => "installed, running",
+                        (true, false) => "installed, not running",
+                        _ => "not installed",
+                    }
+                );
+                match crate::ui::running_url(&ctx.hub()) {
+                    Some(url) => println!("app      running → {url}"),
+                    None => println!("app      not running"),
+                }
+            }
+        }
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_systemd_unit_quotes_paths_and_restarts_airth() {
+        let text = systemd::unit_text(
+            "/home/me/my apps/airth",
+            "/home/me/.airth",
+            "/usr/bin:/bin",
+            "/home/me/.airth/logs/100%.log",
+        );
+        assert!(text.contains("ExecStart=\"/home/me/my apps/airth\" serve --wait\n"));
+        assert!(text.contains("Environment=\"AIRTH_HOME=/home/me/.airth\"\n"));
+        assert!(text.contains("Environment=\"AIRTH_SERVICE=1\"\n"));
+        assert!(text.contains("Restart=always\n"));
+        assert!(text.contains("StandardError=append:/home/me/.airth/logs/100%%.log\n"));
+        assert!(text.contains("WantedBy=default.target"));
+    }
 
     #[test]
     fn plist_is_valid() {

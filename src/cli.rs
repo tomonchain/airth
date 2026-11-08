@@ -92,6 +92,9 @@ pub enum RealmCmd {
     },
     /// Describe the realm (the agent sees this)
     Describe { description: String },
+    /// Point the realm at its folder's new place, after moving Airth or the
+    /// folder (e.g. to a server)
+    Root { path: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -1169,6 +1172,20 @@ pub fn realm(ctx: &Ctx, command: RealmCmd) -> Result<bool> {
             let mut realm = ctx.realm()?;
             realm.config.description = description.trim().to_string();
             realm.save()?;
+        }
+        RealmCmd::Root { path } => {
+            let name = ctx.realm()?.name().to_string();
+            let realm = ctx.home().move_realm_root(&name, &path)?;
+            eprintln!(
+                "realm {}: works in {}",
+                realm.name(),
+                realm.root()?.display()
+            );
+            if !realm.config.repos.is_empty() {
+                eprintln!(
+                    "  its other repositories keep their paths: `airth realm repo` changes them"
+                );
+            }
         }
     }
     Ok(true)
