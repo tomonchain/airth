@@ -289,3 +289,14 @@
 }
 .dark .glass-lens { background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14); }
 @media (prefers-reduced-motion: reduce) { .glass-lens { transition: none; } }
+
+/* Safari on iPhone and iPad zooms the page into any field whose text is under
+   16px, and stays zoomed. Fields there take 16px: no zoom, and pinching to
+   zoom still works, which a viewport's maximum-scale would take away. Only
+   iOS matches this test. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea, select, [contenteditable="true"], .cm-content {
+    font-size: 16px;
+  }
+}
