@@ -226,7 +226,7 @@ function Models({ realm, onKeys }: { realm: string; onKeys: () => void }) {
               return (
                 <div key={t.id} className="flex items-center gap-3 px-4 py-3 max-md:flex-wrap max-md:gap-2">
                   <div className="min-w-0 flex-1 max-md:basis-full">
-                    <div className="flex items-center gap-2 text-sm font-medium">{t.label}{cur.source && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground" title="Where this setting comes from">{SOURCES[cur.source] ?? cur.source}</span>}</div>
+                    <div className="flex items-center gap-2 text-sm font-medium">{t.label}{cur.source && <span className="rounded-md bg-surface px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground" title="Where this setting comes from">{SOURCES[cur.source] ?? cur.source}</span>}</div>
                     <div className="text-xs text-muted-foreground">{t.hint}</div>
                   </div>
                   <Select value={choice} onValueChange={(v) => set(t.id, String(v), cur.effort ?? "")}>
@@ -305,7 +305,7 @@ function Connections({ realm }: { realm: string }) {
           )}
           <div className="grid grid-cols-2 gap-2">
             {available.map((c) => (
-              <div key={c.connector.id} className="rounded-xl border bg-bubble/40 px-3.5 py-2.5">
+              <div key={c.connector.id} className="rounded-xl bg-bubble px-3.5 py-2.5">
                 <div className="flex items-center gap-2 text-sm font-medium"><Bot className="size-3.5 text-muted-foreground" /> {c.connector.name}<span className="ml-auto text-[11px] text-muted-foreground">{c.connector.category}</span></div>
                 <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{c.connector.description}</p>
               </div>
