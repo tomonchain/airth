@@ -57,7 +57,7 @@ export function Home({ realm, agents, items, business, at, error, onAgent, onNee
                   <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     {g.label} <span className="tabular-nums opacity-60">{list.length}</span>
                   </h3>
-                  <ul className="overflow-hidden rounded-xl border bg-bubble/40">
+                  <ul className="overflow-hidden rounded-xl bg-bubble">
                     {list.map((a) => (
                       <AgentRow key={a.name} agent={a} activity={b?.activity.find((x) => x.agent === a.name)} onOpen={() => onAgent(a.name)} />
                     ))}
@@ -151,7 +151,7 @@ function Stat({ icon: Icon, label, value, tone, spin, onClick }: {
 }) {
   const Tag = onClick ? "button" : "div"
   return (
-    <Tag onClick={onClick} className={cn("rounded-xl border bg-bubble/40 px-3.5 py-3 text-left transition-colors", onClick && "hover:border-foreground/20")}>
+    <Tag onClick={onClick} className={cn("rounded-xl bg-bubble px-3.5 py-3 text-left transition-colors", onClick && "hover:bg-accent/70")}>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className={cn("size-3.5", tone === "amber" && "text-amber-500", tone === "emerald" && "text-emerald-500", spin && "animate-spin [animation-duration:2.5s]")} />
         {label}

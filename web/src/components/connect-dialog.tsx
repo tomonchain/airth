@@ -184,7 +184,7 @@ export function ConnectDialog({ realm, method, onClose, onConnected }: { realm: 
             <p className="mt-4 rounded-xl bg-red-500/10 px-3 py-2.5 text-left font-mono text-xs leading-relaxed break-words text-red-700 dark:text-red-300">{error}</p>
           )}
           {step === "done" && (tools.length > 0 || note) && (
-            <div className="mt-5 rounded-xl border bg-bubble/40 p-3 text-left duration-300 animate-in fade-in slide-in-from-bottom-1">
+            <div className="mt-5 rounded-xl bg-bubble p-3 text-left duration-300 animate-in fade-in slide-in-from-bottom-1">
               {note && <p className="text-[13px] text-muted-foreground">{note}</p>}
               {tools.length > 0 && (
                 <>

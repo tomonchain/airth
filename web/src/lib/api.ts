@@ -34,6 +34,15 @@ export function pair(link: string): boolean {
   return true
 }
 
+// A phone whose key Airth refuses (a new key was made since it paired)
+// forgets it and shows the pairing screen again, instead of an error with no
+// way out. Only a key it sent: with none, the pairing screen is already up.
+function refused(r: Response, sent: string) {
+  if (r.status !== 401 || !onPhone || !sent) return
+  store()?.removeItem(KEY)
+  location.reload()
+}
+
 /** Keep the key Airth just made, so this page goes on working. */
 export const rekey = (key: string) => { store()?.setItem(KEY, key) }
 
@@ -45,12 +54,14 @@ export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PAT
   // A request that never answers would hold its page's refresh for good: a
   // read gives up after 20 s, a change (which may call a service) after 60,
   // unless the caller knows it takes longer.
+  const key = token()
   const r = await fetch(`/api/${path}`, {
     method: verb,
-    headers: { "X-Airth-Token": token(), "Content-Type": "application/json" },
+    headers: { "X-Airth-Token": key, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)),
   }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
+  refused(r, key)
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
   return data as T
@@ -68,8 +79,10 @@ export const called = (a: { title: string; first_name?: string | null }) => (a.f
 /** A request whose body or answer is not JSON (a document's bytes), with
     the same key; an error answer still says why, as JSON. */
 export async function raw(path: string, init: RequestInit = {}): Promise<Response> {
-  const r = await fetch(`/api/${path}`, { ...init, headers: { "X-Airth-Token": token() } })
+  const key = token()
+  const r = await fetch(`/api/${path}`, { ...init, headers: { "X-Airth-Token": key } })
     .catch(() => { throw new Error("Airth is not answering.") })
+  refused(r, key)
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status} ${r.statusText}`)
   return r
 }

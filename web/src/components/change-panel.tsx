@@ -103,7 +103,7 @@ export function ChangePanel({ realm, id, title, r, onChange, onAsk }: {
   const ready = !!g && g.state === "open" && g.checks === "passing" && pushed && g.head === c.head && !["dirty", "behind"].includes(g.merge_state)
 
   return (
-    <div className="mb-5 ml-10 max-w-[85%] rounded-2xl border bg-bubble/60 fade-up">
+    <div className="mb-5 ml-10 max-w-[85%] rounded-2xl bg-bubble fade-up">
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ export function ChangePanel({ realm, id, title, r, onChange, onAsk }: {
         ) : open && changed && r.checks_required && !r.live ? <p className="text-xs text-muted-foreground">Checks have not run on this change.</p> : null}
 
         {open && !resolving && !conflicts.length && c.pull_request && (
-          <div className="rounded-xl border bg-surface p-3">
+          <div className="rounded-xl bg-surface p-3">
             <div className="flex items-center gap-2">
               <GitPullRequest className="size-4 shrink-0 text-muted-foreground" />
               <a href={c.pull_request.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm hover:underline">

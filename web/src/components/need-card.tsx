@@ -74,7 +74,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
     addEventListener("keydown", on)
     return () => removeEventListener("keydown", on)
   })
-  const hint = (k: string) => (page ? <Kbd className="ml-1 h-4 min-w-4 bg-current/10 px-1 text-[10px] font-normal text-current opacity-50 shadow-none">{k}</Kbd> : null)
+  const hint = (k: string) => (page ? <Kbd className="ml-1 h-4 min-w-4 bg-current/10 max-md:hidden px-1 text-[10px] font-normal text-current opacity-50 shadow-none">{k}</Kbd> : null)
 
   const main =
     it.retry === "clear" ? <Button size="sm" disabled={busy} onClick={() => answer("retry")}><RotateCcw /> Retry</Button>
@@ -113,13 +113,13 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
         </div>
       ) : it.text && it.kind === "approval" ? (
         page ? (
-          <div className="mt-4 rounded-xl border bg-bubble/60 px-4 py-3.5">
+          <div className="mt-4 rounded-xl bg-bubble px-4 py-3.5">
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
             <p className="mt-2 text-right text-xs tabular-nums text-muted-foreground">{it.text.length} characters</p>
           </div>
         ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : page && it.text && it.text !== it.title ? (
-        <pre className="mt-4 max-h-96 overflow-auto rounded-xl border bg-bubble/60 px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
+        <pre className="mt-4 max-h-96 overflow-auto rounded-xl bg-bubble px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
       ) : null}

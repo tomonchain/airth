@@ -29,14 +29,18 @@ export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
           </div>
           <div className="space-y-2.5">
             {data.businesses.map((b) => (
-              <button key={b.name} onClick={() => onOpen(b.name)} className="block w-full rounded-xl border bg-bubble/40 p-4 text-left transition-colors hover:bg-accent/50">
+              <button key={b.name} onClick={() => onOpen(b.name)} className="block w-full rounded-xl bg-bubble p-4 text-left transition-colors hover:bg-accent/50">
                 <div className="flex items-center gap-3">
                   <span className={cn("size-2.5 shrink-0 rounded-full", HEALTH[b.health.state] ?? "bg-zinc-400")} title={b.health.state} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2"><span className="text-base font-semibold">{named(b.name, b.title)}</span><span className="truncate text-xs text-muted-foreground">{b.description}</span></div>
                     <div className="text-sm text-foreground/80">{b.headline}</div>
+                    {/* On a phone, what the right column says goes under the headline. */}
+                    <div className="mt-0.5 text-xs text-muted-foreground md:hidden">
+                      {b.needs > 0 ? <span className="font-medium text-amber-500">{b.needs} need you</span> : "Nothing for you"} · {[b.time, usd(b.cost_usd) || "$0"].filter(Boolean).join(" · ")} this week
+                    </div>
                   </div>
-                  <div className="text-right text-xs text-muted-foreground">
+                  <div className="text-right text-xs text-muted-foreground max-md:hidden">
                     {b.needs > 0 ? <div className="font-medium text-amber-500">{b.needs} need you</div> : <div>Nothing for you</div>}
                     <div>{[b.time, usd(b.cost_usd) || "$0"].filter(Boolean).join(" · ")} this week</div>
                   </div>
@@ -44,8 +48,8 @@ export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
                 </div>
                 <p className="mt-2 pl-5.5 text-xs text-muted-foreground"><span className="capitalize">{b.health.state}</span>. {b.health.sentence}</p>
                 {b.proof && (
-                  <p className="mt-1 flex items-center gap-2 pl-5.5 text-xs" title={b.proof.sentence}>
-                    <span className="flex gap-0.5" aria-hidden>{Array.from({ length: b.proof.of }, (_, i) => <span key={i} className={cn("h-1.5 w-4 rounded-full", i < b.proof!.in_a_row ? "bg-emerald-500" : "bg-muted")} />)}</span>
+                  <p className="mt-1 flex items-start gap-2 pl-5.5 text-xs" title={b.proof.sentence}>
+                    <span className="mt-1.5 flex shrink-0 gap-0.5" aria-hidden>{Array.from({ length: b.proof.of }, (_, i) => <span key={i} className={cn("h-1.5 w-4 rounded-full", i < b.proof!.in_a_row ? "bg-emerald-500" : "bg-foreground/12")} />)}</span>
                     <span className="text-muted-foreground">On its own: {b.proof.sentence}</span>
                   </p>
                 )}
@@ -53,7 +57,7 @@ export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
                 {b.vitals.length > 0 && (
                   <div className="mt-3 grid grid-cols-2 gap-2 pl-5.5 sm:grid-cols-4">
                     {b.vitals.map((v) => (
-                      <div key={v.label} className="rounded-lg border bg-surface px-2.5 py-1.5" title={v.note}>
+                      <div key={v.label} className="rounded-lg bg-surface px-2.5 py-1.5" title={v.note}>
                         <div className="truncate text-[11px] text-muted-foreground">{v.label}</div>
                         <div className={cn("text-sm font-medium", v.out && "text-amber-500")}>{v.value}</div>
                       </div>

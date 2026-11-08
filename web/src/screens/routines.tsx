@@ -392,7 +392,7 @@ function PipelineCard({ realm, p }: { realm: string; p: Pipeline }) {
       {last?.report && (
         <div className="mt-2">
           <button className="text-xs text-sky-500 hover:underline" onClick={() => setReport(!report)}>{report ? "Hide the last report" : "The last report"}</button>
-          {report && <div className="mt-2 max-h-80 overflow-auto rounded-lg border bg-surface p-3 text-sm"><Rich text={last.report} /></div>}
+          {report && <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-surface p-3 text-sm"><Rich text={last.report} /></div>}
         </div>
       )}
     </Panel>

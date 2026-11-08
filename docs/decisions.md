@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 105. The Workshop: the founder asks for a change to Airth, a run makes it as a pull request
+
+**Proposed.** Does not bring back decision 14: Airth does not decide what to change in itself, and it builds no skills for itself. The founder asks; a run writes the code; the founder merges.
+
+- **The Workshop page**, pinned at the bottom of the rail (decision 72's Reading layout), opens with one box: *Improve Airth*. The founder describes a change; it becomes a run on Airth's own repository. Below the box, the Workshop's runs, as Tasks lists them, with their pull requests. The scenarios join this page later; nothing else does.
+- **Where the runs live:** a realm named `workshop`, made by Airth the first time the box is used. It is a place to develop Airth, not a business. The HQ, Team, the business menu and the founder-time ledger leave it out, so it never counts in a stable week (decision 92).
+- **Its one repository is the checkout Airth was built from** (`update::source()`, decision 100). Isolation by worktree, delivery by pull request (`airth/<run>`). A build with no checkout, a release build, shows the box disabled, with why.
+- **Its checks are `CLAUDE.md`'s:** `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. Not the defaults `detect_checks` gives a Cargo repository.
+- **Nothing new under the hood.** The run, the checks, the pull request, answering cubic (decision 87), following the pull request and the merge button are the ones every realm's repository has. The `GITHUB_TOKEN` is the workshop realm's secret and never reaches commands.
+- **Merging stays the founder's click, at level 1.** The change panel says how to try it first: `scripts/try <number>`. After the merge, the updater offers it within half an hour, as for any merge (decision 100).
+- **Security code still asks.** Writes to the files in `permissions.rs`'s `SECURITY_CRITICAL` are asked, even in the worktree (decision 80). That list is brought up to date in the same change: `src/hub.rs`, `src/skill.rs`, `src/tools/skill.rs` and `src/tools/mac.rs` no longer exist; the files under `src/hub/` and `src/business/store/` (the database access layer), `src/tools/remote.rs`, `src/github.rs` and `src/actions.rs` are added. A directory in the list covers what is under it.
+
+*Why:* each fix to Airth today goes through a terminal session outside Airth. The machinery to code in a worktree, check, open and follow a pull request already exists for businesses' repositories. Pointed at Airth's own checkout, it lets the founder fix what the Hedgen weeks show from the app.
+
+*Cost:*
+- A realm that is not a business. It is filtered out where businesses are listed, and that filter must be kept up to date.
+- The run's commands follow decision 51's rule: offline. Cargo works from the founder's `~/.cargo` cache (decision 50). A change to `web/` cannot run `npm` in a fresh worktree, so its `npm run check` and its build are left to CI, and the pull request says so. Network for development missions stays in the backlog.
+- Code reviews are not yet a kind of item in Needs you. A Workshop pull request waits in Tasks, under To review, as a business's does today.
+- Trying a pull request stays a terminal command.
+
 ## 103. Airth calls an MCP tool the founder approved, once
 
 **Accepted** (founder, 7 November 2026: "go", on the backlog's line). Extends decision 56, which left an approved MCP call to the founder.
@@ -443,7 +463,7 @@ The founder, 3 November 2026, after #135 to #137: the new interface does not loo
 
 ## 72. One interface, the new one, built from three page layouts; the classic one leaves once its features have moved
 
-**Proposed.** Replaces decision 71.
+**Accepted** (founder, 3 November 2026, pull request #128). Replaces decision 71. Decision 73 replaces its part 2 and changes its parts 1 and 3.
 
 The founder, after using decision 71's mix: remove the classic interface, work cleanly on the new one, and stop the layout changing from one page to the next. Today it changes four ways:
 

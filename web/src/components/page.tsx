@@ -38,12 +38,12 @@ export function Section({ title, note, children }: { title: string; note?: React
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("rounded-xl border bg-bubble/40", className)}>{children}</div>
+  return <div className={cn("rounded-xl bg-bubble", className)}>{children}</div>
 }
 
 export function Figure({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: "bad" | "warn" | "ok" }) {
   return (
-    <div className="rounded-xl border bg-bubble/40 px-3.5 py-3">
+    <div className="rounded-xl bg-bubble px-3.5 py-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={cn("mt-1 text-xl font-semibold tracking-tight tabular-nums",
         tone === "bad" && "text-red-500", tone === "warn" && "text-amber-500", tone === "ok" && "text-emerald-500")}>{value}</div>
