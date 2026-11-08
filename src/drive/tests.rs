@@ -59,7 +59,11 @@ fn fake_drive() -> String {
                 (403, json!({"error": {"message": "Sorting is not supported for queries with fullText terms."}}).to_string())
             } else if path.is_empty() {
                 let query = q.get("q").cloned().unwrap_or_default();
-                let files: Vec<Value> = if query.contains("'R' in parents") {
+                let files: Vec<Value> = if query.contains("'root' in parents") {
+                    ["R", "X"].iter().map(|i| meta(i).unwrap()).collect()
+                } else if query.contains("sharedWithMe") {
+                    vec![]
+                } else if query.contains("'R' in parents") {
                     ["D1", "sheet"].iter().map(|i| meta(i).unwrap()).collect()
                 } else if query.contains("'D1' in parents") {
                     vec![meta("doc").unwrap()]
@@ -160,4 +164,44 @@ fn a_long_document_is_cut_and_says_so() {
         "[cut: the document goes on past {MAX_TEXT} characters]"
     )));
     assert_eq!(cut("short".into()), "short");
+}
+
+/// Decision 104: the founder's client is kept once for every business; a
+/// sign-in without a folder link leaves the folder to be picked, and only
+/// a folder can be picked.
+#[test]
+fn the_client_is_given_once_and_the_folder_is_picked_from_a_list() {
+    let home = tempfile::tempdir().unwrap();
+    assert!(client(home.path()).is_none());
+    assert!(save_client(home.path(), "abc", "s").is_err());
+    save_client(home.path(), " 1-x.apps.googleusercontent.com ", "secret").unwrap();
+    let c = client(home.path()).unwrap();
+    assert_eq!(c.client_id, "1-x.apps.googleusercontent.com");
+
+    let skills = tempfile::tempdir().unwrap();
+    save_folder(
+        skills.path(),
+        &Folder {
+            id: "old".into(),
+            name: "Old".into(),
+        },
+    )
+    .unwrap();
+    let page = start(skills.path(), &c, None, "http://127.0.0.1:1/oauth/callback").unwrap();
+    assert!(
+        page.contains("client_id=1-x.apps.googleusercontent.com"),
+        "{page}"
+    );
+    assert!(
+        folder(skills.path()).is_none(),
+        "a new sign-in picks its folder again"
+    );
+
+    let drive = Drive::at(&fake_drive(), "tok", "").unwrap();
+    let listed = drive.folders("root").unwrap();
+    let listed: Vec<&str> = listed.iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(listed, ["Acme", "Personal"]);
+    assert!(drive.folders("shared").unwrap().is_empty());
+    assert_eq!(drive.meta("R").unwrap()["mimeType"], FOLDER);
+    assert_ne!(drive.meta("doc").unwrap()["mimeType"], FOLDER);
 }
