@@ -431,7 +431,7 @@ The founder, 3 November 2026, after #135 to #137: the new interface does not loo
 
 ## 72. One interface, the new one, built from three page layouts; the classic one leaves once its features have moved
 
-**Proposed.** Replaces decision 71.
+**Accepted** (founder, 3 November 2026, pull request #128). Replaces decision 71. Decision 73 replaces its part 2 and changes its parts 1 and 3.
 
 The founder, after using decision 71's mix: remove the classic interface, work cleanly on the new one, and stop the layout changing from one page to the next. Today it changes four ways:
 
