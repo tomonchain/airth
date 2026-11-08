@@ -1,6 +1,7 @@
 // An agent's face: a geometric shape in its department's colour (decision
 // 65), with eyes that say its state. The shape comes from the agent's seed,
 // so it stays the same from one visit to the next.
+import { useId } from "react"
 import type { AgentState } from "@/lib/api"
 
 const SHAPES = [
@@ -27,7 +28,7 @@ function eyes(state: string, y: number) {
 
 export type Look = { look?: string | null; department: string | null; accessory?: string | null; state: AgentState; title?: string }
 
-export function characterSvg(a: Look, still = false) {
+export function characterSvg(a: Look, still = false, uid = "") {
   const seed = /^[0-9a-f]{8}$/.test(a.look ?? "") ? a.look! : "00000000"
   const i = parseInt(seed.slice(0, 2), 16) % SHAPES.length
   const state = LABEL[a.state] ? a.state : "idle"
@@ -37,7 +38,10 @@ export function characterSvg(a: Look, still = false) {
   // the number reaches the SVG, never the name.
   const hue = key && dept === "none" ? [...key].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7) : null
   const [top, bottom] = hue === null ? [`var(--dept-${dept})`, `var(--dept-${dept}-dark)`] : [`oklch(0.72 0.13 ${hue})`, `oklch(0.55 0.13 ${hue})`]
-  const id = `g${seed}${hue ?? dept}`
+  // Unique per face: a gradient shared by id is drawn from the first face
+  // that has it, and draws nothing when that one is hidden (a list behind the
+  // item open on a phone).
+  const id = `g${seed}${hue ?? dept}${uid}`
   return `<svg class="ch st-${state}${still ? " still" : ""}" viewBox="0 0 100 100" width="100%" height="100%">`
     + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`
     + `<g class="body" fill="url(#${id})" stroke="url(#${id})">${SHAPES[i]}</g>`
@@ -46,13 +50,14 @@ export function characterSvg(a: Look, still = false) {
 
 /** The agent's face; the SVG is built here from known values only. */
 export function Character({ agent, size = 48, still, className }: { agent: Look; size?: number; still?: boolean; className?: string }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "")
   return (
     <span
       role="img"
       aria-label={`${agent.title ?? "Agent"}, ${LABEL[agent.state] ?? "idle"}`}
       className={className}
       style={{ width: size, height: size, display: "inline-block", flexShrink: 0 }}
-      dangerouslySetInnerHTML={{ __html: characterSvg(agent, still) }}
+      dangerouslySetInnerHTML={{ __html: characterSvg(agent, still, uid) }}
     />
   )
 }

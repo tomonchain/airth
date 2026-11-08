@@ -244,14 +244,14 @@ function Agenda({ data, face, onAgent }: { data: Data; face: Face; onAgent: (n: 
   const days = useMemo(() => data.days.filter((d) => d.runs.length || d.deadlines.length), [data])
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-6">
+      <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
         {!days.length ? <Empty icon={CalendarClock} title="Nothing in these four weeks" /> : days.map((d) => (
-          <section key={d.date} className="mb-5 flex gap-5">
-            <div className="w-16 shrink-0 pt-1 text-right">
+          <section key={d.date} className="mb-5 flex gap-3 md:gap-5">
+            <div className="w-10 shrink-0 pt-1 text-right md:w-16">
               <div className={cn("text-xl font-semibold tabular-nums", d.today && "text-sky-500")}>{d.day}</div>
               <div className="text-[11px] text-muted-foreground uppercase">{d.weekday}</div>
             </div>
-            <div className="min-w-0 flex-1 space-y-1 border-l pl-5">
+            <div className="min-w-0 flex-1 space-y-1 border-l pl-2 md:pl-5">
               {d.deadlines.map((t, i) => (
                 <div key={i} className="flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"><CalendarClock className="size-4" /> {t}</div>
               ))}
@@ -259,12 +259,15 @@ function Agenda({ data, face, onAgent }: { data: Data; face: Face; onAgent: (n: 
                 const a = face(run.agent)
                 const s = STATE[run.state] ?? STATE.planned
                 return (
-                  <button key={i} onClick={() => onAgent(run.agent)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent/60">
-                    <span className="w-11 font-mono text-xs text-muted-foreground tabular-nums">{run.time}</span>
+                  <button key={i} onClick={() => onAgent(run.agent)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 md:gap-3 md:px-3 text-left text-sm hover:bg-accent/60">
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums md:w-11">{run.time}</span>
                     {a && <Character agent={a} size={20} still />}
-                    <span className="flex-1 font-mono text-[13px]">{run.routine}</span>
-                    <span className="text-xs text-muted-foreground">{a?.title}</span>
-                    <span className={cn("w-20 text-right text-xs", run.state === "failed" ? "text-red-500" : run.state === "next" ? "text-sky-500" : run.state === "done" ? "text-emerald-500" : "text-muted-foreground")}>{s.label}</span>
+                    {/* On a phone, the agent goes under the routine. */}
+                    <span className="min-w-0 flex-1 md:flex md:items-center md:gap-3">
+                      <span className="block truncate font-mono text-[13px] md:flex-1">{run.routine}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{a?.title}</span>
+                    </span>
+                    <span className={cn("shrink-0 text-right text-xs md:w-20", run.state === "failed" ? "text-red-500" : run.state === "next" ? "text-sky-500" : run.state === "done" ? "text-emerald-500" : "text-muted-foreground")}>{s.label}</span>
                   </button>
                 )
               })}

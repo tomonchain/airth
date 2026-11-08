@@ -374,7 +374,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
 
         <div className="min-h-[300px] min-w-0 flex-1" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move" }} onDrop={onDrop}>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onPaneClick={() => setSelected(null)} colorMode={theme === "dark" ? "dark" : "light"} fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+            onPaneClick={() => setSelected(null)} colorMode={theme === "dark" ? "dark" : "light"} fitView fitViewOptions={{ padding: 0.25, maxZoom: 1, minZoom: 0.2 }} minZoom={0.2}
             deleteKeyCode={["Backspace", "Delete"]} proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep" }}>
             <Background gap={20} size={1} />
             <Controls showInteractive={false} />
