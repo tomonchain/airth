@@ -117,6 +117,28 @@ impl App {
                 }
                 ok()
             }
+            // What each model provider costs and how long its money lasts
+            // (decision 107).
+            (Method::Get, ["spend"]) => {
+                let providers = crate::spend::status(&self.hub, chrono::Utc::now())?;
+                let month: f64 = providers.iter().map(|p| p.month_usd).sum();
+                json_response(200, json!({ "providers": providers, "month_usd": month }))
+            }
+            (Method::Put, ["spend", "budgets", provider]) => {
+                let body = read_json(request)?;
+                let budget = crate::spend::Budget {
+                    monthly_usd: body["monthly_usd"]
+                        .as_f64()
+                        .context("monthly_usd is a number")?,
+                    reset_day: body["reset_day"].as_u64().unwrap_or(1) as u32,
+                };
+                crate::spend::set_budget(self.hub.home(), provider, Some(budget))?;
+                ok()
+            }
+            (Method::Delete, ["spend", "budgets", provider]) => {
+                crate::spend::set_budget(self.hub.home(), provider, None)?;
+                ok()
+            }
             (Method::Get, ["usage"]) => {
                 let days: u32 = query
                     .split('&')

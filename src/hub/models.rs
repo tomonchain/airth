@@ -24,6 +24,27 @@ impl Hub {
         })
     }
 
+    /// A provider's key, for Airth's own requests to that provider (its
+    /// balance): the shared one, else the environment's, else the first
+    /// business's that has one.
+    pub fn provider_key(&self, var: &str) -> Option<String> {
+        let shared = self.home.provider_settings().unwrap_or_default();
+        let found = |list: &[(String, String)]| {
+            list.iter()
+                .find(|(k, v)| k == var && !v.trim().is_empty())
+                .map(|(_, v)| v.clone())
+        };
+        found(&shared)
+            .or_else(|| std::env::var(var).ok().filter(|v| !v.trim().is_empty()))
+            .or_else(|| {
+                self.home
+                    .realms()
+                    .ok()?
+                    .iter()
+                    .find_map(|r| found(&r.secrets().ok()?))
+            })
+    }
+
     /// Whether a model is set up for every realm (shared settings or the
     /// environment): what the welcome guide checks before any realm exists.
     pub fn shared_model_ready(&self) -> bool {

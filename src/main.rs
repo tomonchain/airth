@@ -40,6 +40,7 @@ mod sandbox;
 mod scenarios;
 mod scheduler;
 mod service;
+mod spend;
 mod state;
 mod telegram;
 mod term;

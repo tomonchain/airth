@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 107. The rail shows what each model provider costs, and how long its money lasts
+
+**Accepted** (founder, 8 November 2026: the rail's indicator "is meant to show the LLMs I use and their credit until the reset… to see the subscriptions and what they cost"; "I'd like us to use whatever we want. Right now I use DeepSeek and Claude through the API"; "do what you prefer").
+
+- **The ring at the bottom of the rail** shows the provider closest to running out. It fills with the share of the budget spent, or, for a balance, with how near it is to empty (a month or more left draws nothing). It is green with more than a week left at the current rate, amber with less, red under two days or at nothing. The dot in its middle still pulses while an agent works. On a phone, the same panel opens from More.
+- **For each provider used this month**, the panel shows:
+  - what was spent this month: the tasks' calls (their run records) and the routines' (each business's journal), estimated from list prices as on Usage;
+  - what is left, and for how long at the last seven days' rate.
+- **What is left** is the provider's own balance where it tells it. Today that is DeepSeek (`GET https://api.deepseek.com/user/balance`), read at most once an hour, by Airth, with DeepSeek's key, from DeepSeek's own address. No model and no run sees the key. Elsewhere, what is left comes from a monthly budget the founder sets in the panel, reset on a day of the month (1 to 28). It is kept in `budgets.json` in the Airth home.
+- **A model call's provider is read from the model's name** (`claude…`, `deepseek…`, `gpt…`, `grok…`, `mistral…`): calls record the model, not who served it.
+- `GET /api/spend`, `PUT` and `DELETE /api/spend/budgets/<provider>`.
+
+*Why:* the founder pays providers by use and wants to see, at a glance, which one is about to run dry, before a routine fails on it (`402 Insufficient Balance`).
+
+*Cost:*
+- Spending is an estimate; only a balance is the provider's figure. Anthropic, OpenAI, Mistral and xAI give no balance for an API key, so they need a budget to show a level.
+- A subscription's quota and reset (Claude Pro or Max, through `ANTHROPIC_AUTH_TOKEN`) are not read yet: no subscription is in use. A model whose name matches no provider counts as "other".
+- No alert is sent when a provider runs low: the ring shows it, and a later change can send it to Telegram.
+
 ## 106. Airth moves to the founder's VPS now, without waiting for milestone 6's proof
 
 **Accepted** (founder, 8 November 2026: "Ça fait que de sauter… Est-ce qu'on peut voir pour un VPS ? J'en ai déjà un", then "fais ce que tu préfères"). Brings decision 29's move forward; milestone 9's other items stay where they are.

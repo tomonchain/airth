@@ -158,6 +158,19 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// What the pipelines' model calls cost since `since`, by UTC date
+    /// (`YYYY-MM-DD`) and model: for each provider's spending (decision 107).
+    pub fn model_costs_since(&self, since: DateTime<Utc>) -> Result<Vec<(String, String, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT substr(at, 1, 10), model, COALESCE(SUM(cost_usd), 0)
+             FROM model_calls WHERE at >= ?1 AND dry_run = 0 GROUP BY 1, 2 ORDER BY 1",
+        )?;
+        let rows = stmt.query_map(params![since.to_rfc3339()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The latest runs of `pipeline`, newest first.
     pub fn pipeline_runs(&self, pipeline: &str, limit: usize) -> Result<Vec<RunRow>> {
         let mut stmt = self.conn.prepare(
