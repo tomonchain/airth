@@ -46,6 +46,18 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Cost:* the founder may not see an incident that closed itself before they opened Needs you; it stays in the item's history and on Telegram. A week still counts it as slow when the action worked again more than 24 hours after it failed.
 
+## 101. The first launch sets up a business in four questions, beside the business it builds
+
+**Accepted** (founder, 7 November 2026: "a premium onboarding for the first setup, simple to use"). Replaces the classic interface's eight-step guide, which still asked for a strategy, one agent and an old-style routine.
+
+- **The steps:** a model (only when none is connected), the business (its name, what it does, where it is registered, its folder only if it has one), its team from the library (decision 74) or none, its goal and date. Then what is left to set, from the team's own steps. Each step but the business can be left for later.
+- **Beside the questions,** on a wide screen, a card of the business fills in as it is answered: name, country, team faces, goal.
+- **What it writes:** the business as before; `name` and `country` in `business/profile.md`, `goal` and `by` in `business/goal.md`, through `PATCH /api/realms/<business>/business`, which sets only those fields, one line each, and keeps the rest of the files. Writing the profile's text now keeps its fields too.
+- Begun on the first launch, the guide stays open until it is done, though the business it creates comes into the list meanwhile.
+
+*Why:* the first minutes decide whether a founder goes on. The old guide built a business of the old model; the legal calendar needs the country, the weekly report the goal.
+
+*Cost:* the legal form, the registration and the other fields are left to the Company page. The faces shown before the agents are hired come from their names, not their own looks.
 ## 100. The founder's Airth follows main, and a pull request is tried on a copy
 
 **Accepted** (founder, 7 November 2026: "I'd like a fluid test and deployment workflow").
