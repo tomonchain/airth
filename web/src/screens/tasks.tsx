@@ -151,7 +151,7 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
 
   const whoLabel = (v: string) => (v === "route" ? "The agent that fits" : v === NOBODY ? "Airth itself" : agents.find((a) => a.name === v)?.title ?? v)
   return (
-    <div className="mx-3 rounded-xl border bg-surface p-2.5">
+    <div className="mx-3 rounded-xl bg-surface p-2.5">
       <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Ask the team for something…" aria-label="Ask the team for something"
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
         className="w-full resize-none bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground" />

@@ -353,7 +353,7 @@ function FolderView({ realm, path, d, root, onFile, onFolder, onFinder, onAdd }:
           <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="size-4 text-muted-foreground" /> Made by the agents</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {root.made.map((m) => (
-              <button key={`${m.path}${m.run}`} onClick={() => onFile(m.path)} className="flex items-start gap-2.5 rounded-xl border bg-bubble/40 px-3 py-2.5 text-left hover:bg-accent/60">
+              <button key={`${m.path}${m.run}`} onClick={() => onFile(m.path)} className="flex items-start gap-2.5 rounded-xl bg-bubble px-3 py-2.5 text-left hover:bg-accent/60">
                 <Icon name={m.path} className="mt-0.5" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{base(m.path)}</span>
@@ -365,7 +365,7 @@ function FolderView({ realm, path, d, root, onFile, onFolder, onFinder, onAdd }:
         </section>
       )}
 
-      <div className="mt-7 overflow-hidden rounded-xl border">
+      <div className="mt-7 overflow-hidden rounded-xl bg-bubble">
         {!d ? <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p> : shown.length ? shown.map((e) => {
           const p = join(path, e.name)
           return (
