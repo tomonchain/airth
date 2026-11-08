@@ -42,7 +42,7 @@ fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
     let result = write_bundle(&app, &staged, DEV_IDENTIFIER);
     let _ = std::fs::remove_file(&staged);
     result?;
-    sign(&app);
+    sign_checked(&app)?;
     Ok(app)
 }
 
@@ -98,12 +98,32 @@ pub fn write_bundle(app: &std::path::Path, exe: &std::path::Path, identifier: &s
     write_icon(&contents.join("Resources/Airth.icns"))
 }
 
-/// Ad-hoc sign the bundle, so macOS keeps track of its permissions.
-pub fn sign(app: &std::path::Path) {
-    let _ = Command::new("/usr/bin/codesign")
-        .args(["--force", "--deep", "--sign", "-"])
-        .arg(app)
-        .output();
+/// Ad-hoc sign the bundle, so macOS keeps track of its permissions, then
+/// check the signature holds: macOS kills an app whose signature does not
+/// match the moment it starts. Elsewhere there is nothing to sign.
+pub fn sign_checked(app: &std::path::Path) -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
+    for args in [
+        &["--force", "--deep", "--sign", "-"][..],
+        &["--verify", "--deep", "--strict"][..],
+    ] {
+        let out = Command::new("/usr/bin/codesign")
+            .args(args)
+            .arg(app)
+            .output()
+            .context("cannot run codesign")?;
+        if !out.status.success() {
+            bail!(
+                "codesign {} {} failed: {}",
+                args[0],
+                app.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn write_icon(icns: &std::path::Path) -> Result<()> {

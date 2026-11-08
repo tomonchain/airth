@@ -258,45 +258,84 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
     result
 }
 
-/// Swap the running binary for `staged`, keeping the old one next to it as
-/// `airth.previous` (a staged app bundle replaces the whole running bundle).
+/// Swap the running binary for `staged`, keeping the old one for
+/// `airth update --rollback`. A staged app bundle replaces the whole running
+/// bundle; a binary that runs from Airth.app goes into a signed copy of it.
 /// Returns the installed binary.
 pub fn install(staged: &Path) -> Result<PathBuf> {
     if staged.extension().is_some_and(|e| e == "app") {
         return install_bundle(staged);
     }
     let exe = std::env::current_exe()?.canonicalize()?;
+    if let Ok(app) = current_bundle() {
+        return install_into_bundle(&app, staged, &crate::service::sign_checked);
+    }
     let dir = exe.parent().context("binary has no folder")?;
     let next = dir.join(".airth.next");
     std::fs::copy(staged, &next).with_context(|| format!("cannot write to {}", dir.display()))?;
     std::fs::copy(&exe, previous_path(&exe))?;
     std::fs::rename(&next, &exe)?;
-    resign(&exe);
     Ok(exe)
 }
 
-/// Where the replaced binary is kept: next to it, or next to Airth.app (a
-/// second binary inside the bundle would break its signature).
+/// Put `staged` into Airth.app without the app ever being half signed: macOS
+/// kills an app whose binary does not match its signature the moment it
+/// starts, and launchd may start the service at any time. So the new binary
+/// goes into a copy of the app beside it, the copy is signed and checked, and
+/// only then does it take the app's place, the old app kept for a rollback.
+/// A copy that does not sign is thrown away and nothing changes.
+fn install_into_bundle(
+    app: &Path,
+    staged: &Path,
+    sign: &dyn Fn(&Path) -> Result<()>,
+) -> Result<PathBuf> {
+    let copy = staging_bundle(app);
+    let _ = std::fs::remove_dir_all(&copy);
+    let made = copy_dir(app, &copy)
+        .and_then(|()| {
+            let binary = copy.join("Contents/MacOS/airth");
+            std::fs::remove_file(&binary)?;
+            std::fs::copy(staged, &binary)?;
+            Ok(())
+        })
+        .with_context(|| format!("cannot copy {} to put the update in", app.display()))
+        .and_then(|()| sign(&copy));
+    if let Err(e) = made {
+        let _ = std::fs::remove_dir_all(&copy);
+        return Err(e);
+    }
+    swap_bundle(app, &copy, &previous_bundle(app))?;
+    Ok(app.join("Contents/MacOS/airth"))
+}
+
+/// Where the next app is put together, beside the app (hidden).
+fn staging_bundle(app: &Path) -> PathBuf {
+    app.with_file_name(".Airth-staged.app")
+}
+
+/// Copy a folder, its files and subfolders. An app bundle holds nothing else.
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Where a replaced binary that does not run from an app is kept.
 fn previous_path(exe: &Path) -> PathBuf {
-    let path = exe.to_string_lossy();
-    match path.find(".app/Contents/MacOS/") {
-        Some(i) => Path::new(&path[..i + 4]).with_file_name(".airth-previous"),
-        None => exe.with_file_name("airth.previous"),
-    }
+    exe.with_file_name("airth.previous")
 }
 
-/// A binary inside Airth.app changes the bundle: sign it again, or macOS
-/// would consider the app damaged.
-fn resign(exe: &Path) {
-    let path = exe.to_string_lossy();
-    if let Some(i) = path.find(".app/Contents/MacOS/") {
-        crate::service::sign(Path::new(&path[..i + 4]));
-    }
-}
-
-/// Put back the binary (or, for a release, the app) the last update replaced.
+/// Put back the binary (or the app) the last update replaced.
 pub fn rollback() -> Result<PathBuf> {
-    if from_releases() {
+    if from_releases() || current_bundle().is_ok() {
         return rollback_bundle();
     }
     let exe = std::env::current_exe()?.canonicalize()?;
@@ -307,7 +346,6 @@ pub fn rollback() -> Result<PathBuf> {
     let next = exe.with_file_name(".airth.next");
     std::fs::copy(&previous, &next)?;
     std::fs::rename(&next, &exe)?;
-    resign(&exe);
     Ok(exe)
 }
 
@@ -657,6 +695,74 @@ mod tests {
             Ed25519KeyPair::from_pkcs8(Ed25519KeyPair::generate_pkcs8(&rng).unwrap().as_ref())
                 .unwrap();
         assert!(verify_with(&to_hex(other.public_key().as_ref()), "0.2.0", &sha, &sig).is_err());
+    }
+
+    /// A fake Airth.app: its binary, Info.plist and icon.
+    fn fake_app(dir: &Path, binary: &str) -> PathBuf {
+        let app = dir.join("Airth.app");
+        std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+        std::fs::create_dir_all(app.join("Contents/Resources")).unwrap();
+        std::fs::write(app.join("Contents/MacOS/airth"), binary).unwrap();
+        std::fs::write(app.join("Contents/Info.plist"), "plist").unwrap();
+        std::fs::write(app.join("Contents/Resources/Airth.icns"), "icon").unwrap();
+        app
+    }
+
+    #[test]
+    fn a_new_binary_goes_into_a_signed_copy_of_the_app_then_swaps_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = fake_app(dir.path(), "old");
+        let staged = dir.path().join("airth-new");
+        std::fs::write(&staged, "new").unwrap();
+        let signed = std::cell::RefCell::new(Vec::new());
+        let sign = |b: &Path| {
+            // Signed before it takes the app's place, never in place.
+            assert_ne!(b, app.as_path());
+            assert_eq!(
+                std::fs::read_to_string(b.join("Contents/MacOS/airth")).unwrap(),
+                "new"
+            );
+            signed.borrow_mut().push(b.to_path_buf());
+            Ok(())
+        };
+        let exe = install_into_bundle(&app, &staged, &sign).unwrap();
+        assert_eq!(exe, app.join("Contents/MacOS/airth"));
+        assert_eq!(signed.borrow().len(), 1);
+        assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(app.join("Contents/Info.plist")).unwrap(),
+            "plist"
+        );
+        assert_eq!(
+            std::fs::read_to_string(app.join("Contents/Resources/Airth.icns")).unwrap(),
+            "icon"
+        );
+        let previous = previous_bundle(&app);
+        assert_eq!(
+            std::fs::read_to_string(previous.join("Contents/MacOS/airth")).unwrap(),
+            "old"
+        );
+        assert!(
+            !signed.borrow()[0].exists(),
+            "the signed copy is now the app"
+        );
+    }
+
+    #[test]
+    fn an_app_that_does_not_sign_is_not_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = fake_app(dir.path(), "old");
+        let staged = dir.path().join("airth-new");
+        std::fs::write(&staged, "new").unwrap();
+        let refuse = |_: &Path| -> Result<()> { bail!("codesign failed") };
+        let err = install_into_bundle(&app, &staged, &refuse).unwrap_err();
+        assert!(format!("{err:#}").contains("codesign failed"));
+        assert_eq!(
+            std::fs::read_to_string(app.join("Contents/MacOS/airth")).unwrap(),
+            "old"
+        );
+        assert!(!staging_bundle(&app).exists());
+        assert!(!previous_bundle(&app).exists());
     }
 
     #[test]
