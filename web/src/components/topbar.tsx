@@ -20,6 +20,21 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
     <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none max-md:pl-3">
       {/* Room for the Mac window's buttons, then the tabs from the column's edge. */}
       <div className="w-[calc(var(--side)+56px)] shrink-0 max-md:hidden" />
+      {/* On a phone, Airth's mark at the top left; it opens the HQ, which
+          the business menu alone reaches otherwise. */}
+      <button onClick={onHq} aria-label="Airth: all businesses" className="flex shrink-0 items-center gap-2 rounded-lg py-1 pr-2 md:hidden">
+        <svg viewBox="0 0 64 64" className="size-6" aria-hidden>
+          <defs>
+            <linearGradient id="airth-mark" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#6d5dfc" />
+              <stop offset=".55" stopColor="#3fb8ff" />
+              <stop offset="1" stopColor="#2dd4bf" />
+            </linearGradient>
+          </defs>
+          <circle cx="32" cy="32" r="22" fill="none" stroke="url(#airth-mark)" strokeWidth="12" />
+        </svg>
+        <span className="text-[17px] font-semibold tracking-tight">Airth</span>
+      </button>
       <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto max-md:invisible">
         {onAgents && tabs.map((t) => {
           const a = agents.find((x) => x.name === t)
