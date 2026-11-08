@@ -207,6 +207,48 @@ impl Home {
         Realm::load(&dir)
     }
 
+    /// A folder a realm may work in: there, a folder, outside the Airth home,
+    /// and no other realm's (`except` may keep its own).
+    fn check_root(&self, root: &Path, except: Option<&str>) -> Result<PathBuf> {
+        let root = root
+            .canonicalize()
+            .with_context(|| format!("{} does not exist", root.display()))?;
+        if !root.is_dir() {
+            bail!("{} is not a directory", root.display());
+        }
+        if root.starts_with(&self.dir) {
+            bail!("a realm cannot live inside the Airth home");
+        }
+        if let Some(other) = self
+            .realms()?
+            .into_iter()
+            .find(|r| Some(r.name()) != except && r.config.root.as_deref() == Some(root.as_path()))
+        {
+            bail!(
+                "{} is already the root of realm '{}'",
+                root.display(),
+                other.name()
+            );
+        }
+        Ok(root)
+    }
+
+    /// Point a realm at its folder's new place (Airth moved to another
+    /// machine, or the folder moved): same rules as a new realm's folder.
+    pub fn move_realm_root(&self, name: &str, root: &Path) -> Result<Realm> {
+        let mut realm = self.realm(name)?;
+        let root = self.check_root(root, Some(name))?;
+        if realm.config.isolation == Isolation::Worktree && !isolation::is_repo_root(&root) {
+            bail!(
+                "{} is not a git repository with commits, and this realm works in worktrees",
+                root.display()
+            );
+        }
+        realm.config.root = Some(root);
+        realm.save()?;
+        Ok(realm)
+    }
+
     pub fn create_realm(&self, new: NewRealm) -> Result<Realm> {
         validate_name(&new.name)?;
         let dir = self.dir.join("realms").join(&new.name);
@@ -214,29 +256,7 @@ impl Home {
             bail!("realm '{}' already exists", new.name);
         }
         let root = match &new.root {
-            Some(root) => {
-                let root = root
-                    .canonicalize()
-                    .with_context(|| format!("{} does not exist", root.display()))?;
-                if !root.is_dir() {
-                    bail!("{} is not a directory", root.display());
-                }
-                if root.starts_with(&self.dir) {
-                    bail!("a realm cannot live inside the Airth home");
-                }
-                if let Some(other) = self
-                    .realms()?
-                    .into_iter()
-                    .find(|r| r.config.root.as_deref() == Some(root.as_path()))
-                {
-                    bail!(
-                        "{} is already the root of realm '{}'",
-                        root.display(),
-                        other.name()
-                    );
-                }
-                Some(root)
-            }
+            Some(root) => Some(self.check_root(root, None)?),
             None => None,
         };
         let is_repo = root.as_deref().is_some_and(isolation::is_repo_root);
@@ -337,6 +357,36 @@ mod tests {
             root: root.map(Path::to_path_buf),
             isolation: None,
         }
+    }
+
+    #[test]
+    fn a_realm_moves_to_a_new_folder_under_the_same_rules_as_a_new_one() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = Home::at(home_dir.path()).unwrap();
+        let (old, moved, taken) = (
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+        );
+        home.create_realm(new("acme", Some(old.path()))).unwrap();
+        home.create_realm(new("other", Some(taken.path()))).unwrap();
+
+        let realm = home.move_realm_root("acme", moved.path()).unwrap();
+        assert_eq!(realm.root().unwrap(), moved.path().canonicalize().unwrap());
+        assert_eq!(
+            home.realm("acme").unwrap().root().unwrap(),
+            moved.path().canonicalize().unwrap()
+        );
+        // Moving onto itself is allowed; onto another realm's folder, the
+        // home, or a folder that is not there is not.
+        assert!(home.move_realm_root("acme", moved.path()).is_ok());
+        assert!(home.move_realm_root("acme", taken.path()).is_err());
+        assert!(home.move_realm_root("acme", home.dir()).is_err());
+        assert!(
+            home.move_realm_root("acme", &moved.path().join("gone"))
+                .is_err()
+        );
+        assert!(home.move_realm_root("nope", old.path()).is_err());
     }
 
     #[test]

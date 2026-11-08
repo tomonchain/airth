@@ -352,6 +352,19 @@ impl Store {
         Ok(Self { conn })
     }
 
+    /// A whole, consistent copy of the database at `to` (which must not
+    /// exist), the write-ahead log included, even while another process
+    /// writes: for the daily backup (decision 106).
+    pub fn copy_to(&self, to: &Path) -> Result<()> {
+        if let Some(dir) = to.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        self.conn
+            .execute("VACUUM INTO ?1", [to.to_string_lossy()])
+            .with_context(|| format!("copying the database to {}", to.display()))?;
+        Ok(())
+    }
+
     /// One write, all or nothing. Immediate, so two writers never both read
     /// a state that only one of them may change.
     fn write<T>(&mut self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {

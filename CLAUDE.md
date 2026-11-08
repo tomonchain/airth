@@ -174,7 +174,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 
 **Out of the beta:** holding company accounts, the Customers/Sales/Support/Finance modules, connected accounting, payments and transfers, any bank access beyond decision 54's read-only one, cold email outreach, templates other than media and e-commerce (decision 74), automatic autonomy promotion, the iOS app, multiple human users, a hosted offer, semantic search.
 
-**Current milestone: 6.** Milestones 3 to 5 are built. Milestone 2's gate passed on 7 November 2026 (Hedgen Ltd fully described in config, nothing missing). One gate stays open by the founder's choice, while work goes on: milestone 4's (the replies and the weekly article tried on the real Airth). Milestone 6's stable week is decision 92. Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
+**Current milestone: 6.** Milestones 3 to 5 are built. Milestone 2's gate passed on 7 November 2026 (Hedgen Ltd fully described in config, nothing missing). One gate stays open by the founder's choice, while work goes on: milestone 4's (the replies and the weekly article tried on the real Airth). Milestone 6's stable week is decision 92. The move to the VPS is brought forward into milestone 6 (decision 106). Anything not in the beta goes to `docs/backlog.md` (one line: what, why, which milestone it would serve). Do not build it.
 
 ## Non-negotiable checks
 
