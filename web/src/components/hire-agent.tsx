@@ -116,7 +116,7 @@ export function HireAgent({ realm, taken, departments, open, onOpenChange, onHir
         {!t ? (
           <div className="grid gap-2 overflow-y-auto p-5 sm:grid-cols-2">
             {TEMPLATES.map((x) => (
-              <button key={x.name} onClick={() => pick(x)} className="flex items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-accent/60">
+              <button key={x.name} onClick={() => pick(x)} className="flex items-center gap-3 rounded-xl bg-bubble p-3 text-left transition-colors hover:bg-accent">
                 <Character agent={face(x)} size={36} still />
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">{x.title}</span>

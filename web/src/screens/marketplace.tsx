@@ -81,21 +81,21 @@ export function Marketplace({ realm }: { realm: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       {/* The same column as the content below, as on the other pages. */}
-      <header className="border-b pt-9 pb-0">
-        <div className="mx-auto flex max-w-5xl items-end gap-4 px-8">
-          <div className="flex-1">
+      <header className="border-b pt-6 pb-0 md:pt-9">
+        <div className="mx-auto flex max-w-5xl items-end gap-4 px-4 max-md:flex-col max-md:items-stretch max-md:gap-3 md:px-8">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>
             <p className="mt-1.5 text-base text-foreground/80">Teams, skills, connectors and agents to add to <span className="capitalize">{realm}</span>.</p>
           </div>
-          <label className="mb-1 flex h-9 w-72 items-center gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
+          <label className="mb-1 flex h-9 w-72 items-center max-md:w-full gap-2 rounded-lg bg-muted px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40">
             <Search className="size-4" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${tab}`} className="flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
           </label>
         </div>
-        <nav className="mx-auto mt-5 flex max-w-5xl gap-1 px-5">
+        <nav className="mx-auto mt-5 flex max-w-5xl gap-1 overflow-x-auto px-1 [scrollbar-width:none] md:px-5">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={cn("relative flex items-center gap-1.5 px-3 pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground", tab === t.id && "text-foreground")}>
+              className={cn("relative flex shrink-0 items-center gap-1.5 px-3 pb-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground", tab === t.id && "text-foreground")}>
               <t.icon className="size-4" /> {t.label}
               {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground" />}
             </button>
@@ -103,7 +103,7 @@ export function Marketplace({ realm }: { realm: string }) {
         </nav>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div key={tab} className="mx-auto max-w-5xl px-8 py-6 duration-200 animate-in fade-in slide-in-from-bottom-1">
+        <div key={tab} className="mx-auto max-w-5xl px-4 py-6 md:px-8 duration-200 animate-in fade-in slide-in-from-bottom-1">
           {tab === "teams" ? <Teams realm={realm} q={q} onConnectors={() => setTab("connectors")} /> : tab === "skills" ? <Skills realm={realm} q={q} /> : tab === "connectors" ? <Connectors realm={realm} q={q} /> : <Agents />}
         </div>
       </div>
@@ -117,7 +117,7 @@ function Grid({ children }: { children: React.ReactNode }) {
 
 function Card({ name, logo, title, description, meta, action, onOpen }: { name: string; logo?: string; title: string; description: string; meta?: React.ReactNode; action: React.ReactNode; onOpen?: () => void }) {
   return (
-    <div className="group flex flex-col rounded-xl border bg-bubble/40 p-4 transition-colors hover:border-foreground/20">
+    <div className="group flex flex-col rounded-xl bg-bubble p-4 transition-colors hover:bg-accent/70">
       <button onClick={onOpen} className="flex items-start gap-3 text-left" disabled={!onOpen}>
         <Logo name={name} id={logo} />
         <span className="min-w-0 flex-1">
@@ -320,7 +320,7 @@ function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnect
       {!data ? <Loading /> : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {shown.map((t) => (
-            <button key={t.id} onClick={() => { setDone(null); setOpen(t) }} className="group flex flex-col rounded-2xl border bg-bubble/40 p-5 text-left transition-colors hover:border-foreground/20">
+            <button key={t.id} onClick={() => { setDone(null); setOpen(t) }} className="group flex flex-col rounded-2xl bg-bubble p-5 text-left transition-colors hover:bg-accent/70">
               <div className="flex items-center gap-1.5">
                 {t.agents.map((a, i) => (
                   <span key={a.name} className="rounded-full ring-2 ring-surface" style={{ marginLeft: i ? -10 : 0, zIndex: t.agents.length - i }}>
@@ -332,10 +332,10 @@ function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnect
               <h3 className="mt-4 text-base font-semibold">{t.title}</h3>
               <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{t.description}</p>
               <div className="mt-4 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                <span className="rounded-md bg-muted px-1.5 py-0.5">{t.agents.length} agent{t.agents.length === 1 ? "" : "s"}</span>
-                <span className="rounded-md bg-muted px-1.5 py-0.5">{t.routines.length} routine{t.routines.length === 1 ? "" : "s"}</span>
-                {t.skills.length > 0 && <span className="rounded-md bg-muted px-1.5 py-0.5">{t.skills.length} skills</span>}
-                {t.connectors.map((c) => <span key={c} className="rounded-md bg-muted px-1.5 py-0.5">{connectorName(c)}</span>)}
+                <span className="rounded-md bg-surface px-1.5 py-0.5">{t.agents.length} agent{t.agents.length === 1 ? "" : "s"}</span>
+                <span className="rounded-md bg-surface px-1.5 py-0.5">{t.routines.length} routine{t.routines.length === 1 ? "" : "s"}</span>
+                {t.skills.length > 0 && <span className="rounded-md bg-surface px-1.5 py-0.5">{t.skills.length} skills</span>}
+                {t.connectors.map((c) => <span key={c} className="rounded-md bg-surface px-1.5 py-0.5">{connectorName(c)}</span>)}
               </div>
             </button>
           ))}
@@ -353,7 +353,7 @@ function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnect
                 <>
                   <ol className="space-y-2">
                     {done.setup.map((step, i) => (
-                      <li key={i} className="flex gap-3 rounded-xl border bg-bubble/40 px-3.5 py-3 text-sm">
+                      <li key={i} className="flex gap-3 rounded-xl bg-bubble px-3.5 py-3 text-sm">
                         <span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold tabular-nums">{i + 1}</span>
                         <span className="leading-relaxed">{step}</span>
                       </li>
@@ -369,7 +369,7 @@ function Teams({ realm, q, onConnectors }: { realm: string; q: string; onConnect
                     <h4 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Agents</h4>
                     <div className="space-y-2">
                       {open.agents.map((a) => (
-                        <div key={a.name} className="flex gap-3 rounded-xl border bg-bubble/40 p-3">
+                        <div key={a.name} className="flex gap-3 rounded-xl bg-bubble p-3">
                           <Character agent={face(a)} size={34} still />
                           <div className="min-w-0">
                             <div className="text-sm font-medium">{a.title} <span className="text-xs font-normal text-muted-foreground capitalize">· {a.department}</span></div>

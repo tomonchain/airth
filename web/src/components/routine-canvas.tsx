@@ -374,7 +374,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
 
         <div className="min-h-[300px] min-w-0 flex-1" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move" }} onDrop={onDrop}>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onPaneClick={() => setSelected(null)} colorMode={theme === "dark" ? "dark" : "light"} fitView fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+            onPaneClick={() => setSelected(null)} colorMode={theme === "dark" ? "dark" : "light"} fitView fitViewOptions={{ padding: 0.25, maxZoom: 1, minZoom: 0.2 }} minZoom={0.2}
             deleteKeyCode={["Backspace", "Delete"]} proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep" }}>
             <Background gap={20} size={1} />
             <Controls showInteractive={false} />
@@ -461,7 +461,7 @@ function BlockRun({ report, id }: { report: Report; id: string }) {
   const ran = report.blocks.find((b) => b.id === id)
   if (!ran) return <p className="text-xs text-muted-foreground">{id} was not reached in this dry run.</p>
   return (
-    <section className="space-y-1 rounded-lg border bg-surface p-3" aria-label={`What ${id} did`}>
+    <section className="space-y-1 rounded-lg bg-surface p-3" aria-label={`What ${id} did`}>
       <h3 className="mb-1.5 text-xs font-medium">What {id} did</h3>
       {ran.lines.map((l, i) => <pre key={`l${i}`} className="font-mono text-[11.5px] whitespace-pre-wrap">{l}</pre>)}
       {ran.notes.map((l, i) => <pre key={`n${i}`} className="font-mono text-[11.5px] whitespace-pre-wrap text-amber-600 dark:text-amber-400">{l}</pre>)}

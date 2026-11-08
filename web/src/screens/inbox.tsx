@@ -219,7 +219,7 @@ function Origin({ realm, it }: { realm: string; it: Item }) {
   }, [realm, it.id])
   const secs = (b: Step) => (b.finished_at ? Math.max(0, Math.round((Date.parse(b.finished_at) - Date.parse(b.started_at)) / 1000)) : 0)
   return (
-    <section className="mt-8 rounded-xl border bg-bubble/40 p-4">
+    <section className="mt-8 rounded-xl bg-bubble p-4">
       <h3 className="text-xs font-medium text-muted-foreground">Where it comes from</h3>
       {!blocks ? <p className="mt-2 text-xs text-muted-foreground">Loading…</p> : !blocks.length ? (
         <p className="mt-2 text-xs text-muted-foreground">No step was recorded for this run.</p>
@@ -264,7 +264,7 @@ function Drafts({ realm }: { realm: string }) {
           if (!shown.current.has(d.id)) shown.current.set(d.id, Date.now())
           const link = /^https?:\/\//i.test(d.source?.link ?? "") ? d.source!.link! : null
           return (
-            <div key={d.id} className="rounded-xl border bg-bubble/40 p-3">
+            <div key={d.id} className="rounded-xl bg-bubble p-3">
               <div className="text-[11px] text-muted-foreground">{d.kind} · {d.pipeline} · {stamp(d.created_at)}</div>
               {editing?.id === d.id
                 ? <textarea value={editing.text} onChange={(e) => setEditing({ id: d.id, text: e.target.value })} rows={5} className="mt-1.5 w-full rounded-md border bg-surface p-2 text-[12.5px] outline-none" />
