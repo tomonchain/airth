@@ -309,6 +309,8 @@ impl App {
                 })
             })
             .collect();
+        // What the Mac app's menu bar shows when it opens a server (decision 112).
+        let (unread, waiting) = self.hub.home().inbox().attention();
         json!({
             "version": crate::update::version(),
             "update": &*self.update.locked(),
@@ -317,7 +319,8 @@ impl App {
             "realm": self.options.realm,
             "default_realm": self.hub.home().default_realm(),
             "max_iterations": self.options.max_iterations,
-            "unread": self.hub.home().inbox().unread(),
+            "unread": unread,
+            "waiting": waiting,
             "tools": tools,
         })
     }

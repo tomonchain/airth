@@ -81,7 +81,13 @@ airth phone allow your-server.tailXXXX.ts.net
 airth phone pair                     # scan the code with the phone
 ```
 
-On the Mac, open the same address in the browser.
+On the Mac, open the same address in the browser, or make Airth.app open it (decision 112): copy the pairing link (Settings, Phone, on the phone), then on the Mac
+
+```bash
+airth app connect 'https://your-server.tailXXXX.ts.net/#token=…'
+```
+
+Airth.app then shows the server and starts nothing on the Mac. `airth app local` goes back.
 
 A new sign-in that comes back to `127.0.0.1` (Google Drive, an MCP server's OAuth) needs a tunnel from the Mac: `ssh -L 7457:127.0.0.1:7457 you@your-server`, then the link `airth ui --no-open` prints on the server. Connections made on the Mac moved with the home and keep working.
 

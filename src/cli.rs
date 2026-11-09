@@ -146,6 +146,17 @@ pub enum PhoneCmd {
 }
 
 #[derive(Subcommand)]
+pub enum AppCmd {
+    /// Open an Airth that runs on a server: give its pairing link
+    /// (`airth phone pair` on the server, or Settings, Phone)
+    Connect { link: String },
+    /// Open this Mac's own Airth again
+    Local,
+    /// Say which Airth the app opens
+    Status,
+}
+
+#[derive(Subcommand)]
 pub enum PipelineCmd {
     /// Check every pipeline: its steps, schedule and prompt versions, or why it is refused
     Check,
@@ -1369,6 +1380,37 @@ pub fn phone(ctx: &Ctx, command: PhoneCmd) -> Result<bool> {
                 "It opens Airth with its key: whoever scans it controls Airth. Keep it to yourself."
             );
         }
+    }
+    Ok(true)
+}
+
+pub fn app(ctx: &Ctx, command: AppCmd) -> Result<bool> {
+    let home = ctx.home();
+    match command {
+        AppCmd::Connect { link } => {
+            let remote = crate::remote::Remote::parse(&link)?;
+            // Tried first: a wrong key or a server off the tailnet is said
+            // now, not as an empty window later.
+            remote.attention()?;
+            crate::remote::save(home, Some(&remote))?;
+            eprintln!(
+                "\x1b[32m✓\x1b[0m Airth.app opens {} from its next start, and starts no Airth on this Mac",
+                remote.host
+            );
+            if crate::ui::running_url(&ctx.hub()).is_some() {
+                eprintln!(
+                    "  An Airth still runs on this Mac: stop it (`airth service uninstall`, and quit the app), or both run the same routines"
+                );
+            }
+        }
+        AppCmd::Local => {
+            crate::remote::save(home, None)?;
+            eprintln!("Airth.app opens this Mac's Airth from its next start");
+        }
+        AppCmd::Status => match crate::remote::load(home) {
+            Some(r) => println!("Airth.app opens {}", r.origin()),
+            None => println!("Airth.app opens this Mac's Airth"),
+        },
     }
     Ok(true)
 }

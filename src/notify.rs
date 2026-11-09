@@ -78,11 +78,6 @@ impl Inbox {
         (unread, waiting)
     }
 
-    pub fn unread(&self) -> usize {
-        self.list()
-            .map_or(0, |l| l.iter().filter(|n| !n.read).count())
-    }
-
     pub fn push(
         &self,
         kind: Kind,
@@ -145,10 +140,10 @@ mod tests {
             .push(Kind::Failed, "home", None, "backup: failed", "")
             .unwrap();
         assert_eq!(second.id, 2);
-        assert_eq!(inbox.unread(), 2);
+        assert_eq!(inbox.attention().0, 2);
         inbox.mark_read(Some(&[1])).unwrap();
-        assert_eq!(inbox.unread(), 1);
+        assert_eq!(inbox.attention().0, 1);
         inbox.mark_read(None).unwrap();
-        assert_eq!(inbox.unread(), 0);
+        assert_eq!(inbox.attention().0, 0);
     }
 }

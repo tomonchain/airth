@@ -48,13 +48,19 @@ fn open_outside(url: &str) {
 
 pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
     let home = hub.home().clone();
-    // The background service serves the app when it runs; otherwise we do.
-    let (url, own) = match ui::running_url(&hub) {
-        Some(url) => (url, None),
-        None => {
-            let running = ui::start(hub, options)?;
-            (running.url.clone(), Some(running))
-        }
+    // A server set with `airth app connect` is opened, and nothing starts on
+    // this Mac (decision 112). Otherwise the background service serves the
+    // app when it runs, and this process when it does not.
+    let remote = crate::remote::load(&home);
+    let (url, own) = match &remote {
+        Some(r) => (r.link(), None),
+        None => match ui::running_url(&hub) {
+            Some(url) => (url, None),
+            None => {
+                let running = ui::start(hub, options)?;
+                (running.url.clone(), Some(running))
+            }
+        },
     };
     let origin = url.split("/#").next().unwrap_or(&url).to_string();
 
@@ -134,7 +140,8 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
             let _ = ipc.send_event(event);
         })
         .with_navigation_handler(move |to| {
-            if to.starts_with(&origin) || to.starts_with("about:") {
+            // The origin itself, not a longer name that starts like it.
+            if to == origin || to.starts_with(&format!("{origin}/")) || to.starts_with("about:") {
                 return true;
             }
             open_outside(&to);
@@ -147,12 +154,22 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         .build(&window)
         .context("cannot create the web view")?;
 
-    // Menu bar icon.
+    // Menu bar icon. Its first line says which Airth the window shows.
+    let tray_where = MenuItem::new(
+        match &remote {
+            Some(r) => format!("On {}", r.host),
+            None => "On this Mac".to_string(),
+        },
+        false,
+        None,
+    );
     let tray_open = MenuItem::new("Open Airth", true, None);
     let tray_inbox = MenuItem::new("Today", true, None);
     let tray_quit = MenuItem::new("Quit Airth", true, None);
     let tray_menu = Menu::new();
     tray_menu.append_items(&[
+        &tray_where,
+        &PredefinedMenuItem::separator(),
         &tray_open,
         &tray_inbox,
         &PredefinedMenuItem::separator(),
@@ -181,17 +198,26 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
     // Dock bounce when a run waits for the owner.
     let proxy = event_loop.create_proxy();
     let inbox_home = home.clone();
+    let inbox_remote = remote.clone();
     std::thread::spawn(move || {
         let mut last = None;
         loop {
-            let now = inbox_home.inbox().attention();
-            if last != Some(now) {
+            // A server is asked over the tailnet; when it does not answer,
+            // the count stays as it was.
+            let now = match &inbox_remote {
+                Some(r) => r.attention().ok(),
+                None => Some(inbox_home.inbox().attention()),
+            };
+            if let Some(now) = now
+                && last != Some(now)
+            {
                 last = Some(now);
                 if proxy.send_event(UserEvent::Inbox(now.0, now.1)).is_err() {
                     break;
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            let every = if inbox_remote.is_some() { 15 } else { 5 };
+            std::thread::sleep(std::time::Duration::from_secs(every));
         }
     });
     let mut seen_waiting: Option<u64> = None;
