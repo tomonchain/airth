@@ -576,3 +576,43 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         1
     );
 }
+
+#[test]
+fn a_test_reaches_the_bot_then_the_paired_chat() {
+    let api = Fake::default();
+    let config = Config {
+        token: "t".into(),
+        chat: Some(42),
+        ..Config::default()
+    };
+    let said = check(&api, &config).unwrap();
+    assert!(said.contains("@acme_bot"), "{said}");
+    let sent = api.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["chat_id"], 42);
+}
+
+#[test]
+fn a_test_before_pairing_reaches_the_bot_and_sends_nothing() {
+    let api = Fake::default();
+    let config = Config {
+        token: "t".into(),
+        ..Config::default()
+    };
+    let said = check(&api, &config).unwrap();
+    assert!(said.contains("not paired"), "{said}");
+    assert!(api.sent().is_empty());
+}
+
+#[test]
+fn a_failed_request_says_why_and_never_shows_the_token() {
+    // Nothing listens on port 9: the connection is refused at once.
+    let err = reqwest::blocking::Client::new()
+        .get("http://127.0.0.1:9/bot123:SECRET/getMe")
+        .send()
+        .unwrap_err();
+    let said = describe(err, "123:SECRET");
+    assert!(!said.contains("SECRET"), "{said}");
+    // The cause, not only "error sending request".
+    assert!(said.split(": ").count() > 1, "{said}");
+}

@@ -71,8 +71,7 @@ impl Api for Telegram<'_> {
             .post(format!("{API}/bot{}/{method}", self.0))
             .json(body)
             .send()
-            // The URL holds the token: never show it.
-            .map_err(|e| anyhow::anyhow!("Telegram did not answer: {}", e.without_url()))?;
+            .map_err(|e| anyhow::anyhow!("Telegram did not answer: {}", describe(e, self.0)))?;
         let answer: Value = response.json().context("Telegram's answer is not JSON")?;
         if answer["ok"] != Value::Bool(true) {
             bail!(
@@ -82,6 +81,49 @@ impl Api for Telegram<'_> {
         }
         Ok(answer["result"].clone())
     }
+}
+
+/// Why a request failed, with each cause beneath it: reqwest's own message
+/// is only "error sending request", which says nothing of a refused
+/// connection, a name that did not resolve or a time-out. The URL holds the
+/// token: it is left out, and the token is masked wherever it shows.
+fn describe(e: reqwest::Error, token: &str) -> String {
+    let e = e.without_url();
+    let mut said = e.to_string();
+    let mut cause = std::error::Error::source(&e);
+    while let Some(c) = cause {
+        let text = c.to_string();
+        if !said.ends_with(&text) {
+            said.push_str(": ");
+            said.push_str(&text);
+        }
+        cause = c.source();
+    }
+    if token.is_empty() {
+        said
+    } else {
+        said.replace(token, "<token>")
+    }
+}
+
+/// Check the bot from end to end: Telegram answers for it, and, once
+/// paired, a message reaches the founder's chat. What it says, or why not.
+pub fn check(api: &dyn Api, config: &Config) -> Result<String> {
+    let me = api.call("getMe", &json!({}))?;
+    let bot = me["username"].as_str().unwrap_or("your bot");
+    let Some(chat) = config.chat else {
+        return Ok(format!(
+            "@{bot} answers, but is not paired yet: open https://t.me/{bot}?start={}",
+            config.code
+        ));
+    };
+    api.call(
+        "sendMessage",
+        &json!({"chat_id": chat, "text": "Airth: a test message. Telegram works."}),
+    )?;
+    Ok(format!(
+        "@{bot} answers, and a test message was sent to your chat"
+    ))
 }
 
 fn path(hub: &Hub) -> PathBuf {
