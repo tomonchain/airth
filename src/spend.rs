@@ -16,6 +16,8 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 const FILE: &str = "budgets.json";
+/// What the founder was last told of each provider (decision 111).
+const TOLD: &str = "spend-told.json";
 /// Days of spending the rate is taken over.
 const RATE_DAYS: i64 = 7;
 /// A balance is read again after this long.
@@ -35,7 +37,7 @@ pub struct Balance {
     pub currency: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     /// More than a week left at the current rate.
@@ -311,6 +313,118 @@ pub fn status(hub: &Hub, now: DateTime<Utc>) -> Result<Vec<Status>> {
     ))
 }
 
+/// How bad a level is, for telling the founder when it gets worse. Not
+/// knowing says nothing either way: a balance the provider did not give this
+/// hour must not count as money found again.
+fn severity(level: Level) -> Option<u8> {
+    match level {
+        Level::Ok => Some(0),
+        Level::Warn => Some(1),
+        Level::Low => Some(2),
+        Level::Unknown => None,
+    }
+}
+
+/// The providers the founder should hear of: those whose level is worse
+/// than the one last told. `told` keeps the level told, and follows a
+/// provider back up, so the next fall is told again.
+fn worse<'a>(told: &mut BTreeMap<String, Level>, now: &'a [Status]) -> Vec<&'a Status> {
+    let mut out = Vec::new();
+    for s in now {
+        let Some(level) = severity(s.level) else {
+            continue;
+        };
+        let before = told
+            .get(&s.provider)
+            .copied()
+            .and_then(severity)
+            .unwrap_or(0);
+        if level > before {
+            out.push(s);
+        }
+        if level != before {
+            told.insert(s.provider.clone(), s.level);
+        }
+    }
+    out
+}
+
+/// What the founder is told when a provider's money runs low.
+fn warning(s: &Status) -> (String, String) {
+    let title = match s.days_left {
+        Some(d) if s.left_usd.is_some_and(|l| l > 0.0) => {
+            let days = d.floor().max(0.0) as i64;
+            match days {
+                0 => format!("{}: less than a day of credit left", s.name),
+                1 => format!("{}: about a day of credit left", s.name),
+                n => format!("{}: about {n} days of credit left", s.name),
+            }
+        }
+        _ => format!("{}: no credit left", s.name),
+    };
+    let mut body = match (&s.balance, s.budget) {
+        (Some(b), _) => format!("The account holds {:.2} {}", b.amount, b.currency),
+        (None, Some(b)) => format!(
+            "${:.2} of the ${:.2} monthly budget is spent",
+            s.since_reset_usd.unwrap_or(0.0),
+            b.monthly_usd
+        ),
+        (None, None) => String::new(),
+    };
+    if s.daily_usd > 0.0 {
+        body.push_str(&format!(
+            ", at about ${:.2} a day over the last week",
+            s.daily_usd
+        ));
+    }
+    body.push('.');
+    if let Some(on) = s.resets_on {
+        body.push_str(&format!(
+            " The budget starts again on {}.",
+            on.format("%-d %B")
+        ));
+    }
+    body.push_str(if s.balance.is_some() {
+        " Calls stop when it is empty: top the account up with the provider."
+    } else {
+        " If this spending is expected, raise the budget in Airth."
+    });
+    (title, body)
+}
+
+static CHECKED: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Once an hour, tell the founder of each provider whose money got lower
+/// (decision 111): in the notifications, which Telegram relays.
+pub fn warn_low(hub: &Hub, now: DateTime<Utc>) -> Result<Vec<String>> {
+    {
+        let mut checked = CHECKED.locked();
+        if checked.is_some_and(|at| at.elapsed() < BALANCE_TTL) {
+            return Ok(Vec::new());
+        }
+        *checked = Some(Instant::now());
+    }
+    let all = status(hub, now)?;
+    let path = hub.home().dir().join(TOLD);
+    let mut told: BTreeMap<String, Level> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    let before = told.clone();
+    let mut said = Vec::new();
+    for s in worse(&mut told, &all) {
+        let (title, body) = warning(s);
+        hub.home()
+            .inbox()
+            .push(crate::notify::Kind::Failed, "airth", None, &title, &body)?;
+        said.push(title);
+    }
+    if told != before {
+        std::fs::write(&path, serde_json::to_string_pretty(&told)?)?;
+    }
+    Ok(said)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +540,98 @@ mod tests {
         );
         assert_eq!(next_reset(15, d(10)), d(15));
         assert_eq!(last_reset(1, d(10)), d(1));
+    }
+
+    fn at(provider: &str, level: Level) -> Status {
+        Status {
+            provider: provider.into(),
+            name: provider.into(),
+            month_usd: 0.0,
+            daily_usd: 0.0,
+            budget: None,
+            since_reset_usd: None,
+            resets_on: None,
+            balance: None,
+            left_usd: None,
+            days_left: None,
+            used: None,
+            level,
+        }
+    }
+
+    fn told_of(told: &mut BTreeMap<String, Level>, now: &[Status]) -> Vec<String> {
+        worse(told, now)
+            .into_iter()
+            .map(|s| format!("{}:{:?}", s.provider, s.level))
+            .collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn the_founder_hears_once_when_money_gets_lower_and_again_after_a_top_up() {
+        let mut told = BTreeMap::new();
+        let ds = |l| [at("deepseek", l)];
+        assert!(told_of(&mut told, &ds(Level::Ok)).is_empty());
+        assert_eq!(told_of(&mut told, &ds(Level::Warn)), ["deepseek:Warn"]);
+        assert!(told_of(&mut told, &ds(Level::Warn)).is_empty(), "said once");
+        // A balance not read this hour is no news, good or bad.
+        assert!(told_of(&mut told, &ds(Level::Unknown)).is_empty());
+        assert_eq!(told_of(&mut told, &ds(Level::Low)), ["deepseek:Low"]);
+        assert!(
+            told_of(&mut told, &ds(Level::Warn)).is_empty(),
+            "better is not news"
+        );
+        assert!(told_of(&mut told, &ds(Level::Ok)).is_empty());
+        assert_eq!(
+            told_of(&mut told, &ds(Level::Low)),
+            ["deepseek:Low"],
+            "after a top-up, the next fall is told"
+        );
+        assert_eq!(
+            told_of(
+                &mut told,
+                &[at("anthropic", Level::Low), at("openai", Level::Unknown)]
+            ),
+            ["anthropic:Low"]
+        );
+    }
+
+    #[test]
+    fn the_warning_says_what_is_left_and_what_to_do() {
+        let mut s = at("deepseek", Level::Warn);
+        s.name = "DeepSeek".into();
+        s.balance = Some(Balance {
+            amount: 3.5,
+            currency: "USD".into(),
+        });
+        s.left_usd = Some(3.5);
+        s.daily_usd = 1.0;
+        s.days_left = Some(3.5);
+        let (title, body) = warning(&s);
+        assert_eq!(title, "DeepSeek: about 3 days of credit left");
+        assert!(
+            body.starts_with("The account holds 3.50 USD, at about $1.00 a day"),
+            "{body}"
+        );
+        assert!(body.contains("top the account up"), "{body}");
+
+        let mut s = at("anthropic", Level::Low);
+        s.name = "Anthropic".into();
+        s.budget = Some(Budget {
+            monthly_usd: 50.0,
+            reset_day: 5,
+        });
+        s.since_reset_usd = Some(52.0);
+        s.left_usd = Some(-2.0);
+        s.days_left = Some(0.0);
+        s.resets_on = NaiveDate::from_ymd_opt(2026, 12, 5);
+        let (title, body) = warning(&s);
+        assert_eq!(title, "Anthropic: no credit left");
+        assert!(
+            body.contains("$52.00 of the $50.00 monthly budget"),
+            "{body}"
+        );
+        assert!(body.contains("starts again on 5 December"), "{body}");
+        assert!(body.contains("raise the budget"), "{body}");
     }
 
     #[test]
