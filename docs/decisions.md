@@ -12,10 +12,19 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 - **One business's error stops only that business.** Scheduling routines, pipelines and objectives used to fail for every business when one failed (an unreadable file, a database that would not open), every ten seconds, for good. Now the error is said once to the founder, in Needs you and the log, and again only when it changes. The other businesses go on, and the failing one is tried again each tick.
 - **A late run still runs** when its "did not run on time" incident cannot be written: its slot is already claimed.
 - **A task that cannot take the founder's message lets it go and says why, once.** Before, it failed again every tick and held up every task after it.
+- **A run's lock from before the machine last started is stale.** After a reboot its pid can belong to another process, Airth itself included, and the run counted as in progress for good.
+- **Telegram:**
+  - an item Telegram refuses three times is let go and the founder told; a Telegram that does not answer is tried again as before;
+  - the bot loop no longer undoes an `airth telegram forget` or `connect` made while it polled;
+  - `telegram.json` is private from its first byte.
+- **The daily backup is told when it fails**, once until it changes or works again. A file that vanishes mid-copy, a write in progress or a run's lock no longer fails it.
+- **A business whose settings do not read is told once**, rather than vanishing behind a warning repeated many times a tick.
+- **The service's log is kept to 20 MB**: above it, it moves to `serve.log.1` and starts again, at start and hourly.
+- **No command holds a loop for good.** `git` gives up after a minute below 1 kB/s and stops at ten minutes. The updater's `cargo build` and `cargo test` stop at an hour.
 
 *Why:* milestone 6 needs weeks where every routine runs on time, on a server nobody watches. A silent stop is the worst failure: the founder learns of it days later.
 
-*Cost:* a loop whose panic comes back at once restarts every minute, its notice once an hour, until a fix is installed. A lock taken after a panic gives the data as the panicking thread left it; each holder leaves it whole between writes, so it is readable.
+*Cost:* a loop whose panic comes back at once restarts every minute, its notice once an hour, until a fix is installed. A lock taken after a panic gives the data as the panicking thread left it; each holder leaves it whole between writes, so it is readable. An item Telegram refuses reaches the founder only in the app. One generation of the log is kept. A legitimate fetch slower than 1 kB/s for a minute fails, and is tried again at the next check.
 
 ## 107. The rail shows what each model provider costs, and how long its money lasts
 

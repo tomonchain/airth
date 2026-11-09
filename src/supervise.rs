@@ -7,7 +7,9 @@
 
 use crate::notify::{Inbox, Kind};
 use std::collections::HashMap;
+use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -93,6 +95,59 @@ pub fn report(inbox: &Inbox, key: &str, realm: &str, what: &str, outcome: anyhow
     );
 }
 
+/// Run a command and wait for it at most `limit`, then kill it: a `git
+/// fetch` on a stalled connection, or a test that hangs, would otherwise
+/// hold a loop for good (decision 108). Its output is read as it comes, so a
+/// chatty command cannot block on a full pipe.
+pub fn output_within(cmd: &mut Command, limit: Duration) -> std::io::Result<Output> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut out);
+            }
+            out
+        })
+    };
+    let stdout = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let stderr = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("stopped after {} s without finishing", limit.as_secs()),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    Ok(Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
+}
+
 /// Take a lock even if a thread panicked while holding it: what it guards
 /// is plain data each holder leaves whole between writes, and a poisoned
 /// lock would otherwise make every later holder panic in turn, so one
@@ -130,6 +185,18 @@ mod tests {
         assert!(news(&mut seen, "routines/acme", Some("no such folder")));
         assert!(!news(&mut seen, "routines/acme", None));
         assert!(news(&mut seen, "routines/acme", Some("no such folder")));
+    }
+
+    #[test]
+    fn a_command_that_takes_too_long_is_stopped() {
+        let started = Instant::now();
+        let err =
+            output_within(Command::new("sleep").arg("5"), Duration::from_millis(300)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let out = output_within(Command::new("echo").arg("hi"), Duration::from_secs(5)).unwrap();
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "hi\n");
     }
 
     #[test]

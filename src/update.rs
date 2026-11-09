@@ -88,12 +88,22 @@ pub struct Manifest {
 }
 
 fn git(repo: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .output()
-        .context("cannot run git")?;
+    // A stalled connection gives up after a minute below 1 kB/s, and no git
+    // command holds the updater more than ten minutes (decision 108).
+    let out = crate::supervise::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args([
+                "-c",
+                "http.lowSpeedLimit=1000",
+                "-c",
+                "http.lowSpeedTime=60",
+            ])
+            .args(args),
+        std::time::Duration::from_secs(600),
+    )
+    .context("git did not finish")?;
     if !out.status.success() {
         bail!(
             "git {}: {}",
@@ -221,12 +231,16 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
     let result = (|| -> Result<PathBuf> {
         let cargo = |args: &[&str], what: &str| -> Result<()> {
             step(what);
-            let out = Command::new("cargo")
-                .args(args)
-                .current_dir(&src)
-                .env("CARGO_TARGET_DIR", &target)
-                .output()
-                .context("cannot run cargo")?;
+            // A build or a test that hangs is stopped after an hour, so the
+            // updater can offer the next fix (decision 108).
+            let out = crate::supervise::output_within(
+                Command::new("cargo")
+                    .args(args)
+                    .current_dir(&src)
+                    .env("CARGO_TARGET_DIR", &target),
+                std::time::Duration::from_secs(3600),
+            )
+            .with_context(|| format!("{what} did not finish"))?;
             if !out.status.success() {
                 let err = String::from_utf8_lossy(&out.stderr);
                 let tail: Vec<&str> = err.lines().rev().take(40).collect();
