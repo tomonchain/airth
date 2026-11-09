@@ -102,10 +102,17 @@ pub fn qr(text: &str) -> Result<(usize, Vec<bool>)> {
 /// A QR code of `text` drawn for a terminal.
 pub fn qr_text(text: &str) -> Result<String> {
     let code = QrCode::new(text.as_bytes()).context("making the QR code")?;
-    Ok(code
+    let art = code
         .render::<qrcode::render::unicode::Dense1x2>()
         .quiet_zone(true)
-        .build())
+        .build();
+    // Black on white whatever the terminal's colours: on a dark terminal the
+    // code is drawn light on dark, which a phone's camera does not read.
+    Ok(art
+        .lines()
+        .map(|l| format!("\x1b[38;5;16;48;5;231m{l}\x1b[0m"))
+        .collect::<Vec<_>>()
+        .join("\n"))
 }
 
 #[cfg(test)]
@@ -169,6 +176,12 @@ mod tests {
         let (width, cells) = qr(&link).unwrap();
         assert_eq!(cells.len(), width * width);
         assert!(cells.iter().any(|c| *c) && cells.iter().any(|c| !*c));
-        assert!(qr_text(&link).unwrap().contains('█'));
+        let text = qr_text(&link).unwrap();
+        assert!(text.contains('█'));
+        // Each line black on white, then back to the terminal's colours.
+        assert!(
+            text.lines()
+                .all(|l| l.starts_with("\x1b[38;5;16;48;5;231m") && l.ends_with("\x1b[0m"))
+        );
     }
 }
