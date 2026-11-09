@@ -219,8 +219,17 @@ impl RunLock {
         Ok(Self(path))
     }
 
-    fn is_held(dir: &Path, id: &str) -> bool {
-        match std::fs::read_to_string(Self::path(dir, id)) {
+    pub(super) fn is_held(dir: &Path, id: &str) -> bool {
+        let path = Self::path(dir, id);
+        // Written before the machine last started: its process is gone,
+        // whatever now has its pid (decision 108).
+        let before_boot = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|at| booted_at().is_some_and(|boot| at < boot));
+        if before_boot {
+            return false;
+        }
+        match std::fs::read_to_string(path) {
             Ok(pid) => pid.trim().parse().is_ok_and(process_alive),
             Err(_) => false,
         }
@@ -231,6 +240,48 @@ impl Drop for RunLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
+}
+
+/// When this machine last started, if the system says.
+#[cfg(target_os = "linux")]
+fn booted_at() -> Option<std::time::SystemTime> {
+    let stat = std::fs::read_to_string("/proc/stat").ok()?;
+    let secs: u64 = stat
+        .lines()
+        .find_map(|l| l.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+}
+
+#[cfg(target_os = "macos")]
+fn booted_at() -> Option<std::time::SystemTime> {
+    let mut tv = libc::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    let mut size = std::mem::size_of::<libc::timeval>();
+    let mut mib = [libc::CTL_KERN, libc::KERN_BOOTTIME];
+    // SAFETY: sysctl writes at most `size` bytes into `tv`, a timeval, as
+    // KERN_BOOTTIME returns one.
+    let rc = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            2,
+            (&mut tv as *mut libc::timeval).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (rc == 0 && tv.tv_sec > 0)
+        .then(|| std::time::UNIX_EPOCH + std::time::Duration::from_secs(tv.tv_sec as u64))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn booted_at() -> Option<std::time::SystemTime> {
+    None
 }
 
 #[cfg(unix)]

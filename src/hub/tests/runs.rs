@@ -985,3 +985,26 @@ fn a_run_cannot_see_the_banks_key_or_tokens() {
         assert!(!format!("{:?}", seen.lock().unwrap()).contains("bank-"));
     }
 }
+
+/// Decision 108: a run's lock from before the machine last started is
+/// stale, whatever process now has its pid (after a reboot, often Airth
+/// itself), so the run is not held "in progress" for good.
+#[test]
+fn a_lock_from_before_the_machine_started_is_stale() {
+    let dir = tempfile::tempdir().unwrap();
+    let lock = RunLock::acquire(dir.path(), "r1").unwrap();
+    assert!(
+        RunLock::is_held(dir.path(), "r1"),
+        "our own, fresh lock holds"
+    );
+    std::mem::forget(lock);
+    // The same pid (alive: ours), written long before this boot.
+    let file = std::fs::File::options()
+        .write(true)
+        .open(dir.path().join("r1.lock"))
+        .unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1))
+        .unwrap();
+    assert!(!RunLock::is_held(dir.path(), "r1"));
+    assert!(RunLock::acquire(dir.path(), "r1").is_ok());
+}
