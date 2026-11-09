@@ -789,7 +789,23 @@ fn go_on(
     let chat = config.chat.unwrap_or_default();
     let (name, run) = key.split_once('/').context("unknown task")?;
     let realm = hub.home().realm(name)?;
-    let state = hub.follow_up(&realm, run, text)?;
+    // A task that can no longer go on (its worktree cleared after a week,
+    // its change merged) says so, rather than leave the reply unanswered.
+    let state = match hub.follow_up(&realm, run, text) {
+        Ok(state) => state,
+        Err(e) => {
+            config.threads.retain(|_, k| k != key);
+            send(
+                api,
+                chat,
+                &format!(
+                    "{name} · That task cannot go on ({e:#}). Send a new message to start another."
+                ),
+                None,
+            )?;
+            return Ok(());
+        }
+    };
     let agent = state.agent.clone().unwrap_or_else(|| "the agent".into());
     config.talks.insert(key.to_string());
     send(api, chat, &format!("{name} · {agent} goes on."), None)?;

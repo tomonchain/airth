@@ -338,6 +338,16 @@ pub(super) fn run_scheduler(runner: Runner) {
             }
             Err(e) => eprintln!("tasks: {e:#}"),
         }
+        // What finished runs leave behind, once an hour (decision 110).
+        if runner.hub.sweep_due() {
+            match runner.hub.sweep_finished(chrono::Utc::now()) {
+                Ok(0) => {}
+                Ok(n) => {
+                    eprintln!("cleared the worktrees of {n} finished run(s) with nothing changed")
+                }
+                Err(e) => eprintln!("clearing finished runs: {e:#}"),
+            }
+        }
         // Connected banks, at most once an hour (decision 54).
         match runner.hub.refresh_finance(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),

@@ -136,6 +136,57 @@ impl Hub {
         State::load(&path)
     }
 
+    /// Clear what finished runs leave behind (decision 110), once an hour
+    /// from the scheduler: a run's temporary folder a day after its last
+    /// work (made again if it goes on), and the worktree and branch of a run
+    /// that ended with nothing changed, a week after (it can be followed up
+    /// until then). A change to review is never touched. How many worktrees
+    /// went.
+    pub fn sweep_finished(&self, now: DateTime<Utc>) -> Result<usize> {
+        let mut cleared = 0;
+        for realm in self.home.realms()? {
+            let Ok(runs) = self.runs(&realm) else {
+                continue;
+            };
+            for run in runs.iter().filter(|r| !r.live) {
+                let idle = now - run.updated_at;
+                if idle > chrono::Duration::days(1) {
+                    let _ = std::fs::remove_dir_all(self.run_tmp(&realm, &run.id));
+                }
+                if run.status != Status::Completed
+                    || run.change != Some(ChangeStatus::Open)
+                    || idle <= chrono::Duration::days(7)
+                {
+                    continue;
+                }
+                let Ok(mut state) = self.load_run(&realm, &run.id) else {
+                    continue;
+                };
+                let Some(change) = state.change.as_mut() else {
+                    continue;
+                };
+                if change.has_changes() {
+                    continue;
+                }
+                isolation::discard(change)?;
+                state.save()?;
+                cleared += 1;
+            }
+        }
+        Ok(cleared)
+    }
+
+    /// Whether an hour passed since the last sweep (and so one is due now).
+    pub fn sweep_due(&self) -> bool {
+        static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+        let mut last = LAST.locked();
+        let due = last.is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(3600));
+        if due {
+            *last = Some(std::time::Instant::now());
+        }
+        due
+    }
+
     /// Whether a live process (this one or another) is driving the run.
     pub fn is_live(&self, realm: &Realm, id: &str) -> bool {
         validate_id(id).is_ok() && RunLock::is_held(&realm.runs_dir(), id)
