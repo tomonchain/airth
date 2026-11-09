@@ -34,6 +34,7 @@ mod pipeline;
 mod prices;
 mod realm;
 mod release;
+mod remote;
 mod routine;
 mod runtime;
 mod sandbox;
@@ -153,8 +154,11 @@ enum Cmd {
         #[arg(long)]
         preview: bool,
     },
-    /// Open Airth in its own window (macOS)
-    App,
+    /// Open Airth in its own window (macOS): this Mac's Airth, or a server's
+    App {
+        #[command(subcommand)]
+        command: Option<cli::AppCmd>,
+    },
     /// Run Airth in the background: the app server and the scheduler that
     /// starts objectives (see also `airth service install`)
     Serve {
@@ -353,7 +357,7 @@ fn cancel_on_ctrl_c() -> Result<CancelToken> {
 fn main() -> ExitCode {
     let mut cli = Cli::parse();
     if launched_as_app() {
-        cli.command = Some(Cmd::App);
+        cli.command = Some(Cmd::App { command: None });
     }
     let result = Home::locate(cli.real_home).and_then(|home| {
         let ctx = Ctx {
@@ -451,7 +455,10 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         }
         Some(Cmd::Service { command }) => service::run(ctx, command),
         Some(Cmd::Release { command }) => release::run(command),
-        Some(Cmd::App) => desktop_app(ctx),
+        Some(Cmd::App { command: None }) => desktop_app(ctx),
+        Some(Cmd::App {
+            command: Some(command),
+        }) => cli::app(ctx, command),
         Some(Cmd::Update { check, rollback }) => self_update(ctx, check, rollback),
         Some(Cmd::Objective { command }) => cli::objective(ctx, command),
         Some(Cmd::Inbox { args }) => cli::inbox(ctx, args),
