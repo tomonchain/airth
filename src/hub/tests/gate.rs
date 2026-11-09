@@ -143,11 +143,11 @@ fn a_routine_goes_from_its_feed_to_the_founders_approval_on_telegram() {
 
     // 4. The founder edits, as a reply to the item, then approves.
     let tap = |data: &str| json!({"update_id": 1, "callback_query": {"id": "q", "from": {"id": 7}, "message": {"chat": {"id": 5}}, "data": data}});
-    telegram::handle(&hub, &phone, &mut bot, &tap("e/work/1/1")).unwrap();
+    telegram::handle(&hub, &phone, &mut bot, &tap("e/work/1/1"), &|_, _| {}).unwrap();
     let reply = json!({"update_id": 2, "message": {"chat": {"id": 5}, "from": {"id": 7},
         "text": "ETH's unstaking queue is empty: exits are instant again.", "reply_to_message": {"message_id": item_message}}});
-    telegram::handle(&hub, &phone, &mut bot, &reply).unwrap();
-    telegram::handle(&hub, &phone, &mut bot, &tap("a/work/1/2")).unwrap();
+    telegram::handle(&hub, &phone, &mut bot, &reply, &|_, _| {}).unwrap();
+    telegram::handle(&hub, &phone, &mut bot, &tap("a/work/1/2"), &|_, _| {}).unwrap();
     assert!(
         phone.sent.borrow().last().unwrap()["text"]
             .as_str()

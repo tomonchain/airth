@@ -46,6 +46,15 @@ pub struct Config {
     pub editing: Option<String>,
     /// How many times Telegram refused to take each item, by `realm/id`.
     pub refused: BTreeMap<String, u32>,
+    /// The business the founder's plain messages go to (decision 109); the
+    /// default business when none was chosen.
+    pub business: Option<String>,
+    /// The founder's tasks still at work, by `realm/run`: their answer goes
+    /// to the chat when they end.
+    pub talks: std::collections::BTreeSet<String>,
+    /// The agents' answers in the chat, by message id: a reply to one goes
+    /// on with its task (`realm/run`). The newest are kept.
+    pub threads: BTreeMap<i64, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,6 +391,7 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
         }
         config.inbox_sent = config.inbox_sent.max(n.id);
     }
+    answers(hub, api, config)?;
     Ok(())
 }
 
@@ -402,7 +412,16 @@ fn from_founder(config: &Config, message: &Value) -> bool {
 
 /// One update from Telegram. Before pairing, only the pairing link counts;
 /// after, only the founder's messages and taps, as answers to the queue.
-pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> Result<()> {
+/// Starts a task unwatched, as the service's runner does.
+pub type Start<'a> = &'a dyn Fn(crate::realm::Realm, crate::state::State);
+
+pub fn handle(
+    hub: &Hub,
+    api: &dyn Api,
+    config: &mut Config,
+    update: &Value,
+    start: Start,
+) -> Result<()> {
     if !update["callback_query"].is_null() {
         return tap(hub, api, config, &update["callback_query"]);
     }
@@ -439,7 +458,25 @@ pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> 
     if message["reply_to_message"].is_null() && crate::routine::x_post::link_in(text).is_some() {
         return reply_to_post(hub, api, chat, text);
     }
+    // Decision 109: the founder talks to the agents. A reply to an agent's
+    // answer goes on with its task; `/business` says or moves the business;
+    // any other plain message is an order.
+    if let Some(key) = message["reply_to_message"]["message_id"]
+        .as_i64()
+        .and_then(|id| config.threads.get(&id).cloned())
+    {
+        return go_on(hub, api, config, &key, text, start);
+    }
+    if let Some(rest) = text.strip_prefix("/business") {
+        return choose_business(hub, api, config, rest.trim());
+    }
     let Some(key) = config.editing.clone() else {
+        if message["reply_to_message"].is_null()
+            && !text.trim().is_empty()
+            && !text.starts_with('/')
+        {
+            return talk(hub, api, config, text, start);
+        }
         return Ok(());
     };
     // The new text counts only as a reply to that item's message.
@@ -657,14 +694,167 @@ fn answered(realm: &str, item: &Item, report: Option<&str>) -> String {
 }
 
 /// Ask Telegram for what came, handle it, then send what waits.
-pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
+/// The business the founder's messages go to: the one chosen, else the
+/// default, else the first.
+fn current_business(hub: &Hub, config: &Config) -> Result<crate::realm::Realm> {
+    let realms: Vec<_> = hub
+        .home()
+        .realms()?
+        .into_iter()
+        .filter(|r| !r.config.archived)
+        .collect();
+    let wanted = config
+        .business
+        .clone()
+        .or_else(|| hub.home().default_realm());
+    realms
+        .iter()
+        .find(|r| Some(r.name()) == wanted.as_deref())
+        .or(realms.first())
+        .cloned()
+        .context("there is no business yet")
+}
+
+fn choose_business(hub: &Hub, api: &dyn Api, config: &mut Config, name: &str) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let names: Vec<String> = hub
+        .home()
+        .realms()?
+        .into_iter()
+        .filter(|r| !r.config.archived)
+        .map(|r| r.name().to_string())
+        .collect();
+    let said = if name.is_empty() {
+        let on = current_business(hub, config)?.name().to_string();
+        format!(
+            "Your messages go to {on}. Businesses: {}. Move with /business <name>.",
+            names.join(", ")
+        )
+    } else if names.iter().any(|n| n == name) {
+        config.business = Some(name.to_string());
+        format!("Your messages now go to {name}.")
+    } else {
+        format!(
+            "There is no business {name}. Businesses: {}.",
+            names.join(", ")
+        )
+    };
+    send(api, chat, &said, None)?;
+    Ok(())
+}
+
+/// A plain message: an order to the business's agents, routed as the
+/// command bar routes it (decision 64), run unwatched.
+fn talk(hub: &Hub, api: &dyn Api, config: &mut Config, text: &str, start: Start) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let realm = current_business(hub, config)?;
+    let route = match hub.route_order(&realm, text) {
+        Ok(route) => route,
+        Err(e) => {
+            send(
+                api,
+                chat,
+                &format!(
+                    "{} · I could not tell which agent should take it: {e:#}. Start with its name, like \"writer: …\".",
+                    realm.name()
+                ),
+                None,
+            )?;
+            return Ok(());
+        }
+    };
+    let state = hub.start_task(&realm, &route.agent, text)?;
+    config
+        .talks
+        .insert(format!("{}/{}", realm.name(), state.id));
+    send(
+        api,
+        chat,
+        &format!("{} · {} is on it.", realm.name(), route.agent),
+        None,
+    )?;
+    start(realm, state);
+    Ok(())
+}
+
+/// A reply to an agent's answer: the same task goes on with it.
+fn go_on(
+    hub: &Hub,
+    api: &dyn Api,
+    config: &mut Config,
+    key: &str,
+    text: &str,
+    start: Start,
+) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let (name, run) = key.split_once('/').context("unknown task")?;
+    let realm = hub.home().realm(name)?;
+    let state = hub.follow_up(&realm, run, text)?;
+    let agent = state.agent.clone().unwrap_or_else(|| "the agent".into());
+    config.talks.insert(key.to_string());
+    send(api, chat, &format!("{name} · {agent} goes on."), None)?;
+    start(realm, state);
+    Ok(())
+}
+
+/// How many answers a reply can still reach.
+const THREADS: usize = 200;
+
+/// The founder's tasks that ended since: their answer goes to the chat. A
+/// task waiting for the founder in Needs you is not over.
+fn answers(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    for key in config.talks.clone() {
+        let Some((name, run)) = key.split_once('/') else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let Ok(realm) = hub.home().realm(name) else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let Ok(state) = hub.load_run(&realm, run) else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let waiting = Store::of(&realm)?
+            .queue(&["pending"])?
+            .iter()
+            .any(|i| i.run.as_deref() == Some(run));
+        if hub.is_live(&realm, run) || state.status == crate::state::Status::Running || waiting {
+            continue;
+        }
+        let agent = state.agent.clone().unwrap_or_else(|| "The agent".into());
+        let body = match (&state.report, state.status) {
+            (Some(report), _) if !report.trim().is_empty() => report.trim().to_string(),
+            (_, crate::state::Status::Failed) => {
+                "It could not finish: see the task in the app.".into()
+            }
+            (_, crate::state::Status::Stopped) => {
+                "It stopped before finishing: see the task in the app.".into()
+            }
+            _ => "Done, with nothing to say.".into(),
+        };
+        let ids = send(api, chat, &format!("{name} · {agent}\n{body}"), None)?;
+        for id in ids {
+            config.threads.insert(id, key.clone());
+        }
+        while config.threads.len() > THREADS {
+            config.threads.pop_first();
+        }
+        config.talks.remove(&key);
+    }
+    Ok(())
+}
+
+pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config, start: Start) -> Result<()> {
     let updates = api.call(
         "getUpdates",
         &json!({"offset": config.offset, "timeout": POLL_SECONDS, "allowed_updates": ["message", "callback_query"]}),
     )?;
     for update in updates.as_array().into_iter().flatten() {
         config.offset = update["update_id"].as_i64().unwrap_or_default() + 1;
-        if let Err(e) = handle(hub, api, config, update) {
+        if let Err(e) = handle(hub, api, config, update, start) {
             eprintln!("telegram: {e:#}");
         }
     }
@@ -672,7 +862,7 @@ pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
 }
 
 /// The bot's loop, in the service: nothing while no bot is connected.
-pub fn run(hub: Hub) {
+pub fn run(hub: Hub, start: Start) {
     loop {
         let result = load(&hub).and_then(|mut config| {
             if config.token.is_empty() {
@@ -680,7 +870,7 @@ pub fn run(hub: Hub) {
                 return Ok(());
             }
             let token = config.token.clone();
-            let outcome = turn(&hub, &Telegram(&token), &mut config);
+            let outcome = turn(&hub, &Telegram(&token), &mut config, start);
             save_unless_changed(&hub, &config)?;
             outcome
         });

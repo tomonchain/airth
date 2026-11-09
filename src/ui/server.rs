@@ -556,9 +556,14 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         });
         let hub = app.hub.clone();
         let tell = inbox();
+        let runner = app.runner.clone();
         std::thread::spawn(move || {
             supervise("Telegram bot", tell, || {
-                crate::telegram::run((*hub).clone())
+                // The founder's orders from the phone run unwatched, as
+                // from the command bar (decision 109).
+                crate::telegram::run((*hub).clone(), &|realm, state| {
+                    runner.spawn(realm, state, Job::Alone)
+                })
             })
         });
         let (hub, update) = (app.hub.clone(), app.update.clone());

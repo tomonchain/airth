@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 109. The founder talks to the agents on Telegram, as to a colleague
+
+**Accepted** (founder, 9 November 2026: "I'd like to be able to ask it simply… to reach them the way I would reach a person", then "go" on Telegram first, SMS later).
+
+- **A plain message to the bot is an order** to the business the bot is on: a task, routed as the command bar routes it (decision 64). It goes to the agent named first ("watcher: what's new this morning?"), else to the only agent, else to the one the fast model picks. The bot says at once which agent took it. Like a task from the bar, it runs unwatched (`Job::Alone`), within its agent's scope and budget. What needs the founder comes as the usual Needs you item, with its buttons.
+- **The agent's answer comes back in the chat** when its task ends, as a message. **Replying to that message goes on with the same task**, with the founder's reply as the next message, as a follow-up in the app does.
+- **`/business`** lists the businesses and the one the bot is on. **`/business <name>`** moves it. Without a choice, it is the default business.
+- **Nothing else changes.** Only the paired chat and the founder's user id are heard (decision 28). The order is the founder's own words, so it carries no more rights than the same order typed in the app. Item replies, edits and X links keep their meaning.
+
+*Why:* the founder wants to ask their agents things from the phone the way they would ask a person, not open the app. Telegram is the phone channel already (CLAUDE.md), and it needs nothing opened to the internet.
+
+*Cost:* an agent's answer arrives only when its task ends, not word by word. A task that stops to wait for the founder answers after the founder does. The routing is the bar's, without the bar's chance to change the agent before it starts: the founder sees which agent took it, and can say "stop" in the app. SMS and phone calls are not part of this.
+
 ## 108. The service keeps running on its own: its loops survive a panic, and one business's error stops only that business
 
 **Accepted** (founder, 9 November 2026: "a stabilisation and optimisation pass" before more features, then "vas-y" on the plan). An audit of the long-running service found ways it could stop working with nothing said.
