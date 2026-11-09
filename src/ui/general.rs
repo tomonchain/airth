@@ -1,6 +1,7 @@
 //! App-wide routes: setup, the owner, updates, the inbox and usage.
 
 use super::*;
+use crate::supervise::Locked;
 
 impl App {
     /// The app-wide routes; None when the request is not one of them.
@@ -39,7 +40,7 @@ impl App {
                 json_response(200, self.owner()?)
             }
             (Method::Post, ["update", "check"]) => {
-                let mut st = self.update.lock().unwrap();
+                let mut st = self.update.locked();
                 if st.phase == "idle" || st.phase == "failed" {
                     st.phase = "checking";
                     st.prepared_commit = None;
@@ -48,7 +49,7 @@ impl App {
             }
             (Method::Post, ["update", "restart"]) => {
                 let staged = {
-                    let mut st = self.update.lock().unwrap();
+                    let mut st = self.update.locked();
                     if st.phase != "ready" {
                         return Err(anyhow!("no update is ready to install"));
                     }
@@ -59,7 +60,7 @@ impl App {
                 let exe = match crate::update::install(&staged) {
                     Ok(exe) => exe,
                     Err(e) => {
-                        let mut st = self.update.lock().unwrap();
+                        let mut st = self.update.locked();
                         st.phase = "failed";
                         st.error = Some(format!("installing failed: {e:#}"));
                         return Err(e);
@@ -115,6 +116,28 @@ impl App {
                 if !crate::phone::forget(self.hub.home().dir(), host)? {
                     bail!("{host} was not allowed");
                 }
+                ok()
+            }
+            // What each model provider costs and how long its money lasts
+            // (decision 107).
+            (Method::Get, ["spend"]) => {
+                let providers = crate::spend::status(&self.hub, chrono::Utc::now())?;
+                let month: f64 = providers.iter().map(|p| p.month_usd).sum();
+                json_response(200, json!({ "providers": providers, "month_usd": month }))
+            }
+            (Method::Put, ["spend", "budgets", provider]) => {
+                let body = read_json(request)?;
+                let budget = crate::spend::Budget {
+                    monthly_usd: body["monthly_usd"]
+                        .as_f64()
+                        .context("monthly_usd is a number")?,
+                    reset_day: body["reset_day"].as_u64().unwrap_or(1) as u32,
+                };
+                crate::spend::set_budget(self.hub.home(), provider, Some(budget))?;
+                ok()
+            }
+            (Method::Delete, ["spend", "budgets", provider]) => {
+                crate::spend::set_budget(self.hub.home(), provider, None)?;
                 ok()
             }
             (Method::Get, ["usage"]) => {

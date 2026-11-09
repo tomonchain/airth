@@ -55,6 +55,7 @@ mod realms;
 mod runs;
 mod server;
 
+use crate::supervise::Locked;
 use http::*;
 use live::*;
 use server::*;
@@ -198,7 +199,7 @@ impl App {
             && let Some(ticket) = path.strip_prefix("/preview/")
         {
             let found = {
-                let mut previews = self.previews.lock().unwrap();
+                let mut previews = self.previews.locked();
                 previews.retain(|_, (_, at)| at.elapsed() < PREVIEW_FOR);
                 previews.get(ticket).map(|(p, _)| p.clone())
             };
@@ -285,7 +286,7 @@ impl App {
     }
 
     fn live(&self, realm: &str, id: &str) -> Option<Arc<Live>> {
-        self.registry.lock().unwrap().get(&key(realm, id)).cloned()
+        self.registry.locked().get(&key(realm, id)).cloned()
     }
 
     fn ensure_idle(&self, realm: &str, id: &str) -> Result<()> {
@@ -310,7 +311,7 @@ impl App {
             .collect();
         json!({
             "version": crate::update::version(),
-            "update": &*self.update.lock().unwrap(),
+            "update": &*self.update.locked(),
             "home": self.hub.home().dir().display().to_string(),
             "sandbox": sandbox::available(),
             "realm": self.options.realm,

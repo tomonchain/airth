@@ -84,12 +84,26 @@ fn only_the_founder_pairs_with_the_link() {
         code: "c1".into(),
         ..Config::default()
     };
-    handle(&hub, &api, &mut config, &message(5, 7, "/start wrong")).unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "/start wrong"),
+        &|_, _| {},
+    )
+    .unwrap();
     let mut forwarded = message(5, 7, "/start c1");
     forwarded["message"]["forward_date"] = json!(1);
-    handle(&hub, &api, &mut config, &forwarded).unwrap();
+    handle(&hub, &api, &mut config, &forwarded, &|_, _| {}).unwrap();
     assert_eq!(config.chat, None);
-    handle(&hub, &api, &mut config, &message(5, 7, "/start c1")).unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "/start c1"),
+        &|_, _| {},
+    )
+    .unwrap();
     assert_eq!(
         (config.chat, config.user, config.code.as_str()),
         (Some(5), Some(7), "")
@@ -231,14 +245,28 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
     };
 
     // Someone else's tap changes nothing.
-    handle(&hub, &api, &mut config, &tap(8, "e/acme/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(8, "e/acme/1/1"), &|_, _| {}).unwrap();
     assert_eq!(config.editing, None);
-    handle(&hub, &api, &mut config, &tap(7, "e/acme/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "e/acme/1/1"), &|_, _| {}).unwrap();
     assert_eq!(config.editing.as_deref(), Some("acme/1"));
     // A free message, or a reply to the other item: asked again.
     let asked = api.sent().len();
-    handle(&hub, &api, &mut config, &message(5, 7, "ETH left. Calmly.")).unwrap();
-    handle(&hub, &api, &mut config, &reply(second, "ETH left. Calmly.")).unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "ETH left. Calmly."),
+        &|_, _| {},
+    )
+    .unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &reply(second, "ETH left. Calmly."),
+        &|_, _| {},
+    )
+    .unwrap();
     assert_eq!(api.sent().len(), asked + 2);
     assert!(
         api.sent().last().unwrap()["text"]
@@ -249,19 +277,26 @@ fn an_edit_is_a_reply_to_its_item_and_stale_buttons_are_refused() {
     assert_eq!(draft(1), "ETH left the queue.");
     assert_eq!(draft(2), "Staking is up.");
     // The reply to the item's own message is the edit; it comes back.
-    handle(&hub, &api, &mut config, &reply(first, "ETH left. Calmly.")).unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &reply(first, "ETH left. Calmly."),
+        &|_, _| {},
+    )
+    .unwrap();
     assert_eq!(draft(1), "ETH left. Calmly.");
     assert_eq!(config.editing, None);
     assert_eq!(config.sent["acme/1"].revision, 2);
     // The old buttons are out of date; the new ones work.
-    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/1"), &|_, _| {}).unwrap();
     assert!(
         api.sent().last().unwrap()["text"]
             .as_str()
             .unwrap()
             .starts_with("Not done")
     );
-    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/2")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "a/acme/1/2"), &|_, _| {}).unwrap();
     assert!(
         api.sent().last().unwrap()["text"]
             .as_str()
@@ -441,7 +476,7 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
     assert_eq!(labels(1), ["Retry…", "Seen"]);
     assert_eq!(labels(2), ["Seen"]);
     // "Retry…" asks first; its button is the checked retry.
-    handle(&hub, &api, &mut config, &tap(7, "u/acme/2/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "u/acme/2/1"), &|_, _| {}).unwrap();
     let asked = api.sent().last().unwrap().clone();
     assert!(
         asked["text"]
@@ -455,7 +490,7 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
     );
     // An unknown button answers nothing and leaves the item waiting.
     let before = api.sent().len();
-    handle(&hub, &api, &mut config, &tap(7, "z/acme/3/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "z/acme/3/1"), &|_, _| {}).unwrap();
     assert_eq!(api.sent().len(), before);
     assert!(
         Store::of(&realm)
@@ -466,7 +501,7 @@ fn an_incident_offers_retry_and_an_ambiguous_one_asks_first() {
             .any(|i| i.id == 3)
     );
     // Retry is taken; this one belongs to no routine, so it says it failed.
-    handle(&hub, &api, &mut config, &tap(7, "t/acme/1/1")).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "t/acme/1/1"), &|_, _| {}).unwrap();
     let said = api.sent().last().unwrap()["text"]
         .as_str()
         .unwrap()
@@ -487,7 +522,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         ..Config::default()
     };
     let link = "https://x.com/jack/status/777";
-    handle(&hub, &api, &mut config, &message(5, 7, link)).unwrap();
+    handle(&hub, &api, &mut config, &message(5, 7, link), &|_, _| {}).unwrap();
     assert!(
         api.sent().last().unwrap()["text"]
             .as_str()
@@ -520,6 +555,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         &api,
         &mut config,
         &message(5, 7, &format!("acme {link} push back on the yield claim")),
+        &|_, _| {},
     )
     .unwrap();
     let said = api.sent().last().unwrap()["text"]
@@ -540,10 +576,10 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
     let before = api.sent().len();
     let mut forwarded = message(5, 7, link);
     forwarded["message"]["forward_date"] = json!(1);
-    handle(&hub, &api, &mut config, &forwarded).unwrap();
+    handle(&hub, &api, &mut config, &forwarded, &|_, _| {}).unwrap();
     let mut reply = message(5, 7, link);
     reply["message"]["reply_to_message"] = json!({"message_id": 1});
-    handle(&hub, &api, &mut config, &reply).unwrap();
+    handle(&hub, &api, &mut config, &reply, &|_, _| {}).unwrap();
     assert_eq!(api.sent().len(), before);
     assert_eq!(
         Store::of(&realm)
@@ -558,7 +594,7 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
         .lock()
         .unwrap()
         .insert(url, oembed("pic.twitter.com/abc"));
-    handle(&hub, &api, &mut config, &message(5, 7, link)).unwrap();
+    handle(&hub, &api, &mut config, &message(5, 7, link), &|_, _| {}).unwrap();
     let said = api.sent().last().unwrap()["text"]
         .as_str()
         .unwrap()
@@ -575,4 +611,327 @@ fn a_post_link_from_the_founder_drafts_a_reply() {
             .len(),
         1
     );
+}
+
+#[test]
+fn a_test_reaches_the_bot_then_the_paired_chat() {
+    let api = Fake::default();
+    let config = Config {
+        token: "t".into(),
+        chat: Some(42),
+        ..Config::default()
+    };
+    let said = check(&api, &config).unwrap();
+    assert!(said.contains("@acme_bot"), "{said}");
+    let sent = api.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["chat_id"], 42);
+}
+
+#[test]
+fn a_test_before_pairing_reaches_the_bot_and_sends_nothing() {
+    let api = Fake::default();
+    let config = Config {
+        token: "t".into(),
+        ..Config::default()
+    };
+    let said = check(&api, &config).unwrap();
+    assert!(said.contains("not paired"), "{said}");
+    assert!(api.sent().is_empty());
+}
+
+#[test]
+fn a_failed_request_says_why_and_never_shows_the_token() {
+    // Nothing listens on port 9: the connection is refused at once.
+    let err = reqwest::blocking::Client::new()
+        .get("http://127.0.0.1:9/bot123:SECRET/getMe")
+        .send()
+        .unwrap_err();
+    let said = describe(err, "123:SECRET");
+    assert!(!said.contains("SECRET"), "{said}");
+    // The cause, not only "error sending request".
+    assert!(said.split(": ").count() > 1, "{said}");
+}
+
+/// Refuses any message whose text holds "BAD", as Telegram refuses a message
+/// it cannot take; takes the others.
+#[derive(Default)]
+struct Picky {
+    inner: Fake,
+}
+
+impl Api for Picky {
+    fn call(&self, method: &str, body: &Value) -> Result<Value> {
+        if body["text"].as_str().is_some_and(|t| t.contains("BAD")) {
+            bail!("Telegram refused {method}: Bad Request: can't parse entities");
+        }
+        self.inner.call(method, body)
+    }
+}
+
+/// Decision 108: a message Telegram refuses no longer holds up every later
+/// item: after three refusals it is let go, and the founder is told.
+#[test]
+fn a_refused_item_is_let_go_and_the_others_still_go() {
+    let (_home, _root, hub, realm) = business();
+    post(&realm, "BAD post");
+    post(&realm, "Good post");
+    let api = Picky::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    for _ in 0..3 {
+        push(&hub, &api, &mut config).unwrap();
+    }
+    let texts: Vec<String> = api
+        .inner
+        .sent()
+        .iter()
+        .map(|b| b["text"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(
+        texts.iter().filter(|t| t.contains("Good post")).count(),
+        1,
+        "{texts:?}"
+    );
+    // Let go after the third refusal, said once in the app and on the phone.
+    let told = hub.home().inbox().list().unwrap();
+    assert_eq!(
+        told.iter()
+            .filter(|n| n.title.contains("Telegram refused"))
+            .count(),
+        1
+    );
+    // The notice itself reaches the phone.
+    push(&hub, &api, &mut config).unwrap();
+    assert!(api.inner.sent().iter().any(|b| {
+        b["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Telegram refused")
+    }));
+}
+
+/// A Telegram that does not answer is tried again later: nothing is let go.
+#[test]
+fn an_unanswered_push_is_tried_again_not_let_go() {
+    struct Down;
+    impl Api for Down {
+        fn call(&self, _: &str, _: &Value) -> Result<Value> {
+            bail!("Telegram did not answer: error sending request")
+        }
+    }
+    let (_home, _root, hub, realm) = business();
+    post(&realm, "A post");
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    for _ in 0..5 {
+        assert!(push(&hub, &Down, &mut config).is_err());
+    }
+    assert!(config.sent.is_empty());
+    assert!(hub.home().inbox().list().unwrap().is_empty());
+}
+
+/// Decision 108: the bot loop does not undo `airth telegram forget` (or a
+/// new `connect`) made while it waited on Telegram.
+#[test]
+fn the_loop_keeps_a_bot_forgotten_meanwhile() {
+    let (_home, _root, hub, _) = business();
+    let mut config = Config {
+        token: "old".into(),
+        offset: 3,
+        ..Config::default()
+    };
+    save(&hub, &config).unwrap();
+    // Meanwhile, the founder forgets the bot.
+    save(&hub, &Config::default()).unwrap();
+    config.offset = 9;
+    save_unless_changed(&hub, &config).unwrap();
+    assert_eq!(load(&hub).unwrap().token, "");
+}
+
+/// What the bot asked to start, as the service's runner would.
+#[derive(Default)]
+struct Started(RefCell<Vec<(String, String)>>);
+
+impl Started {
+    fn starter(&self) -> impl Fn(crate::realm::Realm, crate::state::State) + '_ {
+        |realm, state| {
+            self.0
+                .borrow_mut()
+                .push((realm.name().to_string(), state.id.clone()))
+        }
+    }
+}
+
+fn agent(root: &std::path::Path, name: &str) {
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join(format!("agents/{name}.md")), "Watch the news.").unwrap();
+}
+
+fn reply_to(chat: i64, user: i64, text: &str, to: i64) -> Value {
+    let mut m = message(chat, user, text);
+    m["message"]["reply_to_message"] = json!({"message_id": to});
+    m
+}
+
+/// Decision 109: a plain message is an order, the agent's answer comes
+/// back in the chat, and a reply to it goes on with the same task.
+#[test]
+fn the_founder_talks_to_an_agent_and_goes_on_with_a_reply() {
+    let (_home, root, hub, realm) = business();
+    agent(root.path(), "watcher");
+    let api = Fake::default();
+    let started = Started::default();
+    let start = started.starter();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "watcher: what's new this morning?"),
+        &start,
+    )
+    .unwrap();
+    let run = started.0.borrow()[0].1.clone();
+    assert_eq!(started.0.borrow()[0].0, "acme");
+    assert!(api.sent()[0]["text"].as_str().unwrap().contains("watcher"));
+
+    // Not ended yet: nothing more is said.
+    push(&hub, &api, &mut config).unwrap();
+    assert_eq!(api.sent().len(), 1);
+
+    // The task ends with its report: it comes back, once.
+    let mut state = hub.load_run(&realm, &run).unwrap();
+    state.status = crate::state::Status::Completed;
+    state.report = Some("Two stories worth a post.".into());
+    state.save().unwrap();
+    push(&hub, &api, &mut config).unwrap();
+    push(&hub, &api, &mut config).unwrap();
+    let answers: Vec<Value> = api
+        .sent()
+        .into_iter()
+        .filter(|b| b["text"].as_str().unwrap().contains("Two stories"))
+        .collect();
+    assert_eq!(answers.len(), 1);
+
+    // A reply to the answer goes on with the same task.
+    let answer_id = *config
+        .threads
+        .iter()
+        .find(|(_, k)| k.ends_with(&run))
+        .unwrap()
+        .0;
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &reply_to(5, 7, "Draft the first one.", answer_id),
+        &start,
+    )
+    .unwrap();
+    assert_eq!(started.0.borrow().len(), 2);
+    assert_eq!(started.0.borrow()[1].1, run);
+}
+
+/// A plain message from anyone but the founder starts nothing.
+#[test]
+fn only_the_founder_gives_orders() {
+    let (_home, root, hub, _) = business();
+    agent(root.path(), "watcher");
+    let api = Fake::default();
+    let started = Started::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 8, "watcher: delete everything"),
+        &started.starter(),
+    )
+    .unwrap();
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(6, 7, "watcher: delete everything"),
+        &started.starter(),
+    )
+    .unwrap();
+    assert!(started.0.borrow().is_empty());
+    assert!(api.sent().is_empty());
+}
+
+/// `/business` says which business the bot is on, and moves it.
+#[test]
+fn the_founder_moves_the_bot_to_another_business() {
+    let (home_dir, _root, hub, _) = business();
+    let other = tempfile::tempdir().unwrap();
+    Home::at(home_dir.path())
+        .unwrap()
+        .create_realm(NewRealm {
+            name: "numirama".into(),
+            description: String::new(),
+            root: Some(other.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    agent(other.path(), "seller");
+    let api = Fake::default();
+    let started = Started::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "/business"),
+        &started.starter(),
+    )
+    .unwrap();
+    let said = api.sent()[0]["text"].as_str().unwrap().to_string();
+    assert!(said.contains("acme") && said.contains("numirama"), "{said}");
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "/business numirama"),
+        &started.starter(),
+    )
+    .unwrap();
+    assert_eq!(config.business.as_deref(), Some("numirama"));
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "/business nope"),
+        &started.starter(),
+    )
+    .unwrap();
+    assert_eq!(config.business.as_deref(), Some("numirama"));
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &message(5, 7, "what sold today?"),
+        &started.starter(),
+    )
+    .unwrap();
+    assert_eq!(started.0.borrow()[0].0, "numirama");
 }

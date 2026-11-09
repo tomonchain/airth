@@ -165,20 +165,31 @@ impl GitHub {
             "AUTHORIZATION: basic {}",
             base64(format!("x-access-token:{}", self.token).as_bytes())
         );
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["-c", "core.hooksPath=/dev/null", "-c", "credential.helper="])
-            .args(args)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_CONFIG_COUNT", "1")
-            .env(
-                "GIT_CONFIG_KEY_0",
-                format!("http.{}/.extraheader", self.git),
-            )
-            .env("GIT_CONFIG_VALUE_0", header)
-            .output()
-            .context("cannot run git")?;
+        // A stalled connection gives up after a minute below 1 kB/s, and no
+        // fetch or push holds the pull-request follower more than ten
+        // minutes (decision 108).
+        let out = crate::supervise::output_within(
+            Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["-c", "core.hooksPath=/dev/null", "-c", "credential.helper="])
+                .args([
+                    "-c",
+                    "http.lowSpeedLimit=1000",
+                    "-c",
+                    "http.lowSpeedTime=60",
+                ])
+                .args(args)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .env("GIT_CONFIG_COUNT", "1")
+                .env(
+                    "GIT_CONFIG_KEY_0",
+                    format!("http.{}/.extraheader", self.git),
+                )
+                .env("GIT_CONFIG_VALUE_0", header),
+            std::time::Duration::from_secs(600),
+        )
+        .context("git did not finish")?;
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr).replace(&self.token, "[token]");
             bail!("git {} failed: {}", args[0], err.trim());

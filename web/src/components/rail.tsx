@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
@@ -52,14 +53,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
       <RailButton icon={Building2} label="Company" active={page === "company"} onClick={() => onPage("company")} />
       <RailButton icon={Store} label="Marketplace" active={page === "marketplace"} onClick={() => onPage("marketplace")} />
       <div className="mt-auto flex flex-col items-center gap-1.5">
-        <Tooltip>
-          <TooltipTrigger render={<span className="mb-1 grid size-10 place-items-center" />}>
-            <span className={cn("grid size-8 place-items-center rounded-full ring-2", live ? "ring-emerald-400/80" : "ring-zinc-500/40")}>
-              <span className={cn("size-2.5 rounded-full", live ? "animate-pulse bg-emerald-400" : "bg-zinc-500")} />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="right">{live ? "An agent is working" : "No agent is working"}</TooltipContent>
-        </Tooltip>
+        <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
         <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
       </div>
@@ -78,6 +72,8 @@ const MORE: [Page, string, LucideIcon][] = [
 export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) => void; needs: number }) {
   const { theme, setTheme } = useTheme()
   const [more, setMore] = useState(false)
+  const [spending, setSpending] = useState(false)
+  const spend = useSpend()
   const tabs: [Page | "more", string, LucideIcon][] = [...MAIN, ["more", "More", Ellipsis]]
   // The tab the page is under: its own, or More; none for the HQ.
   const at = MAIN.findIndex(([p]) => p === page)
@@ -102,10 +98,25 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
           )
         })}
       </div>
-      <Sheet open={more} onOpenChange={setMore}>
+      <Sheet open={more} onOpenChange={(o) => { setMore(o); if (!o) setSpending(false) }}>
         <SheetContent side="bottom" className="glass rounded-[28px] border px-3 pt-4 pb-3 data-[side=bottom]:inset-x-3 data-[side=bottom]:bottom-[max(env(safe-area-inset-bottom),10px)]">
           <SheetTitle className="px-2">More</SheetTitle>
-          <div className="grid grid-cols-4 gap-1">
+          {/* What the models cost, as the rail's ring shows it on a computer. */}
+          {spending ? (
+            <div className="max-h-[60svh] overflow-y-auto px-1">
+              <SpendPanel data={spend.data} error={spend.error} onChanged={spend.refresh} onUsage={() => { onPage("usage"); setMore(false); setSpending(false) }} />
+              <button className="mt-3 text-sm text-muted-foreground" onClick={() => setSpending(false)}>Back</button>
+            </div>
+          ) : (
+            <button onClick={() => setSpending(true)} className="flex items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-accent">
+              <SpendRing data={spend.data} live={false} size={28} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Models and spending</span>
+                <span className="block text-xs text-muted-foreground">{spend.data ? `$${spend.data.month_usd.toFixed(2)} this month` : "Loading…"}</span>
+              </span>
+            </button>
+          )}
+          {!spending && <div className="grid grid-cols-4 gap-1">
             {MORE.map(([p, label, Icon]) => (
               <button key={p} onClick={() => { onPage(p); setMore(false) }}
                 className={cn("flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
@@ -115,7 +126,7 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
             <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
               {theme === "dark" ? <Sun className="size-[22px]" strokeWidth={1.8} /> : <Moon className="size-[22px]" strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
             </button>
-          </div>
+          </div>}
         </SheetContent>
       </Sheet>
     </nav>

@@ -225,7 +225,7 @@ export default function App() {
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
           : page === "usage" ? <Usage realm={realm} />
-          : page === "hq" ? <Hq onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
+          : page === "hq" ? <Hq shared={hq.data as Parameters<typeof Hq>[0]["shared"]} onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={business} agents={agents} />
           : page === "settings" ? <Settings realm={realm} start={setting} />
           : page === "marketplace" ? <Marketplace realm={realm} />

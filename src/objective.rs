@@ -11,6 +11,7 @@
 use crate::agent::Budget;
 use crate::permissions::Grant;
 use crate::realm::{validate_name, write_atomic};
+use crate::supervise::Locked;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -271,7 +272,7 @@ impl ObjectiveStore {
     /// Add an objective, or replace the one with the same id.
     pub fn save(&self, objective: Objective) -> Result<()> {
         objective.validate()?;
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.locked();
         let mut all = self.list()?;
         let count = all.len();
         match all.iter_mut().find(|o| o.id == objective.id) {
@@ -286,7 +287,7 @@ impl ObjectiveStore {
 
     /// Change one objective in place; false if there is none with this id.
     pub fn update(&self, id: &str, change: impl FnOnce(&mut Objective)) -> Result<bool> {
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.locked();
         let mut all = self.list()?;
         let Some(objective) = all.iter_mut().find(|o| o.id == id) else {
             return Ok(false);
@@ -297,7 +298,7 @@ impl ObjectiveStore {
     }
 
     pub fn remove(&self, id: &str) -> Result<bool> {
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.locked();
         let mut all = self.list()?;
         let before = all.len();
         all.retain(|o| o.id != id);

@@ -2,6 +2,7 @@
 //! repositories.
 
 use super::*;
+use crate::supervise::Locked;
 
 /// Let a bot go, unless a routine still names it: that routine would fail.
 pub(super) fn let_go(realm: &Realm, name: &str) -> Result<()> {
@@ -540,7 +541,7 @@ impl App {
 
 impl App {
     fn realms(&self) -> Result<Value> {
-        let registry = self.registry.lock().unwrap();
+        let registry = self.registry.locked();
         let default = self.hub.home().default_realm();
         let realms: Vec<Value> = self
             .hub
@@ -562,7 +563,7 @@ impl App {
                     "default": default.as_deref() == Some(r.name()),
                     "image": images::version(r.dir(), "image"),
                     "live": lives.len(),
-                    "needs_approval": lives.iter().filter(|l| l.pending.lock().unwrap().is_some()).count(),
+                    "needs_approval": lives.iter().filter(|l| l.pending.locked().is_some()).count(),
                 })
             })
             .collect();
@@ -819,12 +820,12 @@ impl App {
         let root = realm.root()?;
         let store = Store::of(realm)?;
         let mut approvals = Vec::new();
-        for (k, live) in self.registry.lock().unwrap().iter() {
+        for (k, live) in self.registry.locked().iter() {
             let Some(id) = k.strip_prefix(&format!("{}/", realm.name())) else {
                 continue;
             };
-            if let Some(p) = live.pending.lock().unwrap().as_ref() {
-                let state = live.snapshot.lock().unwrap();
+            if let Some(p) = live.pending.locked().as_ref() {
+                let state = live.snapshot.locked();
                 approvals.push(json!({
                     "run": id,
                     "objective": state.objective,
@@ -1136,7 +1137,7 @@ impl App {
             std::sync::OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         if !force
-            && let Some((at, v)) = cache.lock().unwrap().get(realm.name())
+            && let Some((at, v)) = cache.locked().get(realm.name())
             && at.elapsed() < Duration::from_secs(600)
         {
             return Ok(v.clone());
@@ -1145,7 +1146,7 @@ impl App {
             "providers": self.hub.model_options(realm)?,
             "default": self.hub.model_for(realm).ok().map(|m| m.name()),
         });
-        cache.lock().unwrap().insert(
+        cache.locked().insert(
             realm.name().to_string(),
             (std::time::Instant::now(), value.clone()),
         );

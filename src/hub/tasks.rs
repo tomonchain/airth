@@ -75,18 +75,41 @@ impl Hub {
                 continue;
             }
             // Only a stopped run that is not being driven can wait to resume.
-            for summary in self.runs(&realm)? {
+            let Ok(runs) = self.runs(&realm) else {
+                continue;
+            };
+            for summary in runs {
                 if summary.status != Status::Stopped || summary.live {
                     continue;
                 }
-                let run = self.load_run(&realm, &summary.id)?;
+                let Ok(mut run) = self.load_run(&realm, &summary.id) else {
+                    continue;
+                };
                 let Some(message) = run.resume.clone() else {
                     continue;
                 };
-                let mut state = self.follow_up(&realm, &run.id, &message)?;
-                state.resume = None;
-                state.save()?;
-                out.push((realm.clone(), state));
+                // A run that cannot take its message (its change merged
+                // since, its file unreadable) lets it go and says why, once:
+                // it would otherwise fail again every tick, for good, and
+                // keep every run after it waiting (decision 108).
+                match self.follow_up(&realm, &run.id, &message) {
+                    Ok(mut state) => {
+                        state.resume = None;
+                        state.save()?;
+                        out.push((realm.clone(), state));
+                    }
+                    Err(e) => {
+                        run.resume = None;
+                        let _ = run.save();
+                        crate::supervise::report(
+                            &self.home.inbox(),
+                            &format!("resume/{}/{}", realm.name(), run.id),
+                            realm.name(),
+                            "Resuming a task with your message",
+                            Err(e),
+                        );
+                    }
+                }
             }
         }
         Ok(out)

@@ -2,6 +2,76 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 110. Airth stays fast and its disk bounded as the businesses' history grows
+
+**Accepted** (founder, 9 November 2026: "ok pour la base et iso", after the audit of decision 108 found what grows with every run). It touches the database access layer and calls on `isolation.rs`, two security boundaries, on the founder's word.
+
+- **Runs are parsed once.** Every page asked for the business's runs every 4 s, and the scheduler every 10 s; each request parsed every run's JSON (whole transcripts), ever made. A run's state is now kept, keyed by its file's time, size and inode, and parsed again only when the file changes. `/runs` reads them before taking the registry lock.
+- **The database reads the pages repeat use indexes** (migration 19): `model_calls` by time (covering what spending reads, so no answer is read), `queue_log` by item and by time, `routine_blocks` by start, `actions` by status, the draft log by time. `Store::queue` reads only the statuses asked for, through `queue_by_status`, instead of the whole history filtered in code.
+- **Finished runs no longer keep their worktrees for good.** Once an hour, a run's temporary folder goes a day after its last work, and the worktree and branch of a run that ended with nothing changed go a week after (`isolation::discard`, as discarding by hand does). A change to review is never touched. A reply on Telegram to a task that can no longer go on says so.
+- **The update folder is bounded.** Only the newest prepared version is kept, one update is prepared at a time (`prepare.lock`, between the service and `airth update`), and the kept build folder starts again past 8 GB.
+- **The pages ask less.** The HQ page uses the app's own HQ answer instead of asking twice. The Marketplace asks for installs every 3 s only while one runs, every 30 s otherwise.
+
+*Why:* milestone 6 runs for weeks on a small server. What a page costs must not grow with every run ever made, and the disk must not fill.
+
+*Cost:* the kept runs take memory, about what their files take. A run with nothing changed cannot be followed up after a week; the founder starts a new one. Past 8 GB, the next update builds everything again, which takes longer once.
+
+## 109. The founder talks to the agents on Telegram, as to a colleague
+
+**Accepted** (founder, 9 November 2026: "I'd like to be able to ask it simply… to reach them the way I would reach a person", then "go" on Telegram first, SMS later).
+
+- **A plain message to the bot is an order** to the business the bot is on: a task, routed as the command bar routes it (decision 64). It goes to the agent named first ("watcher: what's new this morning?"), else to the only agent, else to the one the fast model picks. The bot says at once which agent took it. Like a task from the bar, it runs unwatched (`Job::Alone`), within its agent's scope and budget. What needs the founder comes as the usual Needs you item, with its buttons.
+- **The agent's answer comes back in the chat** when its task ends, as a message. **Replying to that message goes on with the same task**, with the founder's reply as the next message, as a follow-up in the app does.
+- **`/business`** lists the businesses and the one the bot is on. **`/business <name>`** moves it. Without a choice, it is the default business.
+- **Nothing else changes.** Only the paired chat and the founder's user id are heard (decision 28). The order is the founder's own words, so it carries no more rights than the same order typed in the app. Item replies, edits and X links keep their meaning.
+
+*Why:* the founder wants to ask their agents things from the phone the way they would ask a person, not open the app. Telegram is the phone channel already (CLAUDE.md), and it needs nothing opened to the internet.
+
+*Cost:* an agent's answer arrives only when its task ends, not word by word. A task that stops to wait for the founder answers after the founder does. The routing is the bar's, without the bar's chance to change the agent before it starts: the founder sees which agent took it, and can say "stop" in the app. SMS and phone calls are not part of this.
+
+## 108. The service keeps running on its own: its loops survive a panic, and one business's error stops only that business
+
+**Accepted** (founder, 9 November 2026: "a stabilisation and optimisation pass" before more features, then "vas-y" on the plan). An audit of the long-running service found ways it could stop working with nothing said.
+
+- **Each background loop is supervised** (`src/supervise.rs`): the scheduler, the pull-request follower, the Telegram bot, the updater and the backup. A panic used to end its thread for good, with the app still answering, so systemd or launchd never restarted anything. Now the loop starts again after a minute, and the founder gets a failure notice (relayed by Telegram), at most once an hour per loop.
+- **A lock survives a panic.** The locks the app's threads share (the runs in progress, the update state, the notifications, the objectives) are taken with `locked()`, which recovers a lock a panicking thread held. Otherwise one panic would make every later holder panic in turn.
+- **A run leaves the list of runs in progress however its thread ends.** Before, a panic left it "running" for good, and the pull-request follower skipped its pull request.
+- **One business's error stops only that business.** Scheduling routines, pipelines and objectives used to fail for every business when one failed (an unreadable file, a database that would not open), every ten seconds, for good. Now the error is said once to the founder, in Needs you and the log, and again only when it changes. The other businesses go on, and the failing one is tried again each tick.
+- **A late run still runs** when its "did not run on time" incident cannot be written: its slot is already claimed.
+- **A task that cannot take the founder's message lets it go and says why, once.** Before, it failed again every tick and held up every task after it.
+- **A run's lock from before the machine last started is stale.** After a reboot its pid can belong to another process, Airth itself included, and the run counted as in progress for good.
+- **Telegram:**
+  - an item Telegram refuses three times is let go and the founder told; a Telegram that does not answer is tried again as before;
+  - the bot loop no longer undoes an `airth telegram forget` or `connect` made while it polled;
+  - `telegram.json` is private from its first byte.
+- **The daily backup is told when it fails**, once until it changes or works again. A file that vanishes mid-copy, a write in progress or a run's lock no longer fails it.
+- **A business whose settings do not read is told once**, rather than vanishing behind a warning repeated many times a tick.
+- **The service's log is kept to 20 MB**: above it, it moves to `serve.log.1` and starts again, at start and hourly.
+- **No command holds a loop for good.** `git` gives up after a minute below 1 kB/s and stops at ten minutes. The updater's `cargo build` and `cargo test` stop at an hour.
+
+*Why:* milestone 6 needs weeks where every routine runs on time, on a server nobody watches. A silent stop is the worst failure: the founder learns of it days later.
+
+*Cost:* a loop whose panic comes back at once restarts every minute, its notice once an hour, until a fix is installed. A lock taken after a panic gives the data as the panicking thread left it; each holder leaves it whole between writes, so it is readable. An item Telegram refuses reaches the founder only in the app. One generation of the log is kept. A legitimate fetch slower than 1 kB/s for a minute fails, and is tried again at the next check.
+
+## 107. The rail shows what each model provider costs, and how long its money lasts
+
+**Accepted** (founder, 8 November 2026: the rail's indicator "is meant to show the LLMs I use and their credit until the reset… to see the subscriptions and what they cost"; "I'd like us to use whatever we want. Right now I use DeepSeek and Claude through the API"; "do what you prefer").
+
+- **The ring at the bottom of the rail** shows the provider closest to running out. It fills with the share of the budget spent, or, for a balance, with how near it is to empty (a month or more left draws nothing). It is green with more than a week left at the current rate, amber with less, red under two days or at nothing. The dot in its middle still pulses while an agent works. On a phone, the same panel opens from More.
+- **For each provider used this month**, the panel shows:
+  - what was spent this month: the tasks' calls (their run records) and the routines' (each business's journal), estimated from list prices as on Usage;
+  - what is left, and for how long at the last seven days' rate.
+- **What is left** is the provider's own balance where it tells it. Today that is DeepSeek (`GET https://api.deepseek.com/user/balance`), read at most once an hour, by Airth, with DeepSeek's key, from DeepSeek's own address. No model and no run sees the key. Elsewhere, what is left comes from a monthly budget the founder sets in the panel, reset on a day of the month (1 to 28). It is kept in `budgets.json` in the Airth home.
+- **A model call's provider is read from the model's name** (`claude…`, `deepseek…`, `gpt…`, `grok…`, `mistral…`): calls record the model, not who served it.
+- `GET /api/spend`, `PUT` and `DELETE /api/spend/budgets/<provider>`.
+
+*Why:* the founder pays providers by use and wants to see, at a glance, which one is about to run dry, before a routine fails on it (`402 Insufficient Balance`).
+
+*Cost:*
+- Spending is an estimate; only a balance is the provider's figure. Anthropic, OpenAI, Mistral and xAI give no balance for an API key, so they need a budget to show a level.
+- A subscription's quota and reset (Claude Pro or Max, through `ANTHROPIC_AUTH_TOKEN`) are not read yet: no subscription is in use. A model whose name matches no provider counts as "other".
+- No alert is sent when a provider runs low: the ring shows it, and a later change can send it to Telegram.
+
 ## 106. Airth moves to the founder's VPS now, without waiting for milestone 6's proof
 
 **Accepted** (founder, 8 November 2026: "Ça fait que de sauter… Est-ce qu'on peut voir pour un VPS ? J'en ai déjà un", then "fais ce que tu préfères"). Brings decision 29's move forward; milestone 9's other items stay where they are.

@@ -2,6 +2,7 @@
 //! shared snapshot, with permission requests answered through a channel.
 
 use super::*;
+use crate::supervise::Locked;
 
 /// A run driven by this process.
 pub(super) struct Live {
@@ -28,7 +29,7 @@ pub(super) struct Draft {
 
 impl Draft {
     fn set(&self, text: &str) {
-        let mut t = self.text.lock().unwrap();
+        let mut t = self.text.locked();
         if *t != text {
             text.clone_into(&mut t);
             self.seq.fetch_add(1, Ordering::SeqCst);
@@ -93,13 +94,13 @@ impl Watch {
 
     /// The run's page looked at it.
     pub(super) fn seen(&self) {
-        let mut w = self.0.lock().unwrap();
+        let mut w = self.0.locked();
         w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
         w.0 = Some(std::time::Instant::now());
     }
 
     pub(super) fn watching(&self) -> bool {
-        let mut w = self.0.lock().unwrap();
+        let mut w = self.0.locked();
         w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
         !w.1
     }
@@ -130,7 +131,7 @@ pub(super) struct UiObserver(pub(super) Arc<Live>);
 
 impl Observer for UiObserver {
     fn changed(&mut self, state: &State) {
-        *self.0.snapshot.lock().unwrap() = state.clone();
+        *self.0.snapshot.locked() = state.clone();
         self.0.bump();
         self.0.draft.set("");
     }
@@ -154,7 +155,7 @@ impl Live {
     /// Keeps what the founder wrote for the agent's next turn; false when
     /// nothing will read it.
     pub(super) fn tell(&self, text: &str) -> bool {
-        match self.said.lock().unwrap().as_mut() {
+        match self.said.locked().as_mut() {
             Some(said) if !self.cancel.is_cancelled() => {
                 said.push(text.to_string());
                 true
@@ -214,7 +215,7 @@ impl Approver for UiApprover {
         };
         let (tx, rx) = mpsc::channel();
         self.next_id += 1;
-        *self.live.pending.lock().unwrap() = Some(Pending {
+        *self.live.pending.locked() = Some(Pending {
             id: self.next_id,
             request: request.clone(),
             reply: tx,
@@ -242,7 +243,7 @@ impl Approver for UiApprover {
                 Err(_) => break Answer::No("the run was stopped".into()),
             }
         };
-        *self.live.pending.lock().unwrap() = None;
+        *self.live.pending.locked() = None;
         self.live.bump();
         Ok(answer)
     }
@@ -278,7 +279,7 @@ pub(super) struct Runner {
 
 impl Runner {
     pub(super) fn is_running(&self, realm: &str, id: &str) -> bool {
-        self.registry.lock().unwrap().contains_key(&key(realm, id))
+        self.registry.locked().contains_key(&key(realm, id))
     }
 
     pub(super) fn spawn(&self, realm: Realm, state: State, job: Job) {
@@ -294,15 +295,16 @@ impl Runner {
                 matches!(job, Job::Drive | Job::Alone | Job::Unattended { .. }).then(Vec::new),
             ),
         });
-        self.registry
-            .lock()
-            .unwrap()
-            .insert(k.clone(), live.clone());
+        self.registry.locked().insert(k.clone(), live.clone());
         let hub = self.hub.clone();
         let registry = self.registry.clone();
         let max_iterations = self.max_iterations;
 
         std::thread::spawn(move || {
+            // The run leaves the registry however its thread ends, a panic
+            // included: an entry left behind would show it running for good,
+            // and the pull-request follower would skip it.
+            let _leave = Leave(registry, k);
             let mut state = state;
             let mut observer = UiObserver(live.clone());
             let mut away = match &job {
@@ -385,7 +387,7 @@ impl Runner {
                         // Written as the run ended: it goes on with it, as a
                         // follow-up would. Past this, what is written starts
                         // the run again the usual way.
-                        let mut said = live.said.lock().unwrap();
+                        let mut said = live.said.locked();
                         let left = said.take().unwrap_or_default();
                         if left.is_empty()
                             || live.cancel.is_cancelled()
@@ -428,16 +430,47 @@ impl Runner {
                     }
                 }
             }
-            *live.snapshot.lock().unwrap() = state;
+            *live.snapshot.locked() = state;
             live.bump();
-            registry.lock().unwrap().remove(&k);
         });
+    }
+}
+
+/// Takes a run out of the registry when dropped.
+struct Leave(Registry, String);
+
+impl Drop for Leave {
+    fn drop(&mut self) {
+        self.0.locked().remove(&self.1);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_whose_thread_panics_leaves_the_registry() {
+        let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(Live {
+            snapshot: Mutex::new(State::new("Publish the article", None)),
+            pending: Mutex::new(None),
+            cancel: CancelToken::default(),
+            version: std::sync::atomic::AtomicU64::new(1),
+            watch: Watch::default(),
+            draft: Draft::default(),
+            said: Mutex::new(None),
+        });
+        registry.locked().insert("r/run1".into(), live);
+        let held = registry.clone();
+        let ended = std::thread::spawn(move || {
+            let _leave = Leave(held, "r/run1".into());
+            panic!("the run's thread panics");
+        })
+        .join();
+        assert!(ended.is_err());
+        assert!(registry.locked().is_empty());
+    }
     use std::time::Instant;
 
     /// Decision 81: a passing failure is tried again three times, later and

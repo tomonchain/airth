@@ -161,6 +161,14 @@ pub fn report<Tz: TimeZone>(
     Ok(aggregate(&runs, days, now, &prices))
 }
 
+/// What one model call cost, by `prices`; nothing for a model without a
+/// known price.
+pub fn call_cost(call: &Usage, prices: &Prices) -> f64 {
+    prices
+        .get(&call.model)
+        .map_or(0.0, |p| Cost::of(call, p).total())
+}
+
 /// A run's model calls. Runs from before calls were recorded (or the part of
 /// a run that predates it) count as one call when the run started.
 /// What a run's model calls cost so far, by `prices`; calls to a model

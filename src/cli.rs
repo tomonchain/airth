@@ -763,6 +763,9 @@ pub enum TelegramCmd {
     Connect,
     /// Whether a bot is connected and paired
     Status,
+    /// Check the bot from end to end: send a test message, or say why it
+    /// cannot
+    Test,
     /// Disconnect the bot
     Forget,
 }
@@ -777,6 +780,14 @@ pub fn telegram(ctx: &Ctx, command: TelegramCmd) -> Result<bool> {
             let token = token.trim();
             let link = crate::telegram::connect(&hub, &crate::telegram::Telegram(token), token)?;
             println!("Open this link on your phone to pair (keep it private):\n{link}");
+        }
+        TelegramCmd::Test => {
+            let c = crate::telegram::load(&hub)?;
+            if c.token.is_empty() {
+                bail!("no bot connected (airth telegram connect)");
+            }
+            let said = crate::telegram::check(&crate::telegram::Telegram(&c.token), &c)?;
+            eprintln!("\x1b[32m✓\x1b[0m {said}");
         }
         TelegramCmd::Status => {
             let c = crate::telegram::load(&hub)?;

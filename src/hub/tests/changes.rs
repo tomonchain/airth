@@ -838,3 +838,49 @@ fn a_config_change_that_breaks_the_config_goes_back_to_the_run() {
         "the run was not told why"
     );
 }
+
+/// Decision 110: a finished run with no change keeps its worktree a week
+/// (it can still be followed up), then loses it; a run with a change to
+/// review keeps it, as does a recent one.
+#[test]
+fn a_finished_run_with_no_change_loses_its_worktree_after_a_week() {
+    let home_dir = tempfile::tempdir().unwrap();
+    let home = Home::at(home_dir.path()).unwrap();
+    let repo = crate::isolation::tests::repo();
+    let realm = home
+        .create_realm(NewRealm {
+            name: "code".into(),
+            description: String::new(),
+            root: Some(repo.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    let hub = Hub::new(home.clone());
+    let mut idle = hub.create_run(&realm, "nothing to change").unwrap();
+    idle.status = crate::state::Status::Completed;
+    idle.save().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let mut changed = hub.create_run(&realm, "a change").unwrap();
+    let tree = changed.change.as_ref().unwrap().path.clone();
+    std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
+    crate::isolation::commit(changed.change.as_mut().unwrap(), "change").unwrap();
+    changed.status = crate::state::Status::Completed;
+    changed.save().unwrap();
+    let idle_tree = idle.change.as_ref().unwrap().path.clone();
+    assert!(idle_tree.exists());
+
+    // A day on: kept, it may still be followed up.
+    let soon = chrono::Utc::now() + chrono::Duration::days(1);
+    assert_eq!(hub.sweep_finished(soon).unwrap(), 0);
+    assert!(idle_tree.exists());
+
+    let later = chrono::Utc::now() + chrono::Duration::days(8);
+    assert_eq!(hub.sweep_finished(later).unwrap(), 1);
+    assert!(!idle_tree.exists());
+    let idle = hub.load_run(&realm, &idle.id).unwrap();
+    assert_eq!(
+        idle.change.unwrap().status,
+        crate::isolation::ChangeStatus::Discarded
+    );
+    assert!(tree.exists(), "a change to review keeps its worktree");
+}

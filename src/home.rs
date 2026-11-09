@@ -188,9 +188,28 @@ impl Home {
         for entry in std::fs::read_dir(self.dir.join("realms"))? {
             let path = entry?.path();
             if path.join("realm.json").exists() {
-                match Realm::load(&path) {
-                    Ok(realm) => realms.push(realm),
-                    Err(e) => eprintln!("warning: skipping realm {}: {e:#}", path.display()),
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                // A business whose settings do not read is left out, and
+                // the founder is told once (decision 108): it would
+                // otherwise vanish, its routines with it, and the warning
+                // come back many times a tick.
+                let loaded = Realm::load(&path);
+                crate::supervise::report(
+                    &self.inbox(),
+                    &format!("realm/{name}"),
+                    &name,
+                    "Reading this business's settings",
+                    loaded
+                        .as_ref()
+                        .map(|_| ())
+                        .map_err(|e| anyhow::anyhow!("{e:#}")),
+                );
+                if let Ok(realm) = loaded {
+                    realms.push(realm);
                 }
             }
         }

@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* The built app is committed (web/dist): Tailwind must not read its own
+   output for class names, or each build would depend on the one before. */
+@source not "../dist";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";

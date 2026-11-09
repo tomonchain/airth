@@ -88,12 +88,22 @@ pub struct Manifest {
 }
 
 fn git(repo: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .output()
-        .context("cannot run git")?;
+    // A stalled connection gives up after a minute below 1 kB/s, and no git
+    // command holds the updater more than ten minutes (decision 108).
+    let out = crate::supervise::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args([
+                "-c",
+                "http.lowSpeedLimit=1000",
+                "-c",
+                "http.lowSpeedTime=60",
+            ])
+            .args(args),
+        std::time::Duration::from_secs(600),
+    )
+    .context("git did not finish")?;
     if !out.status.success() {
         bail!(
             "git {}: {}",
@@ -189,9 +199,102 @@ fn newer_in(repo: &Path, current: &str, fetch: bool) -> Result<Option<Available>
 /// each step: a release is downloaded and verified, a commit is built and
 /// tested. Returns what `install` takes.
 pub fn prepare(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Result<PathBuf> {
-    match &available.manifest {
+    // The service's updater and `airth update` share this folder: one at a
+    // time (decision 110).
+    let _lock = PrepareLock::take(work)?;
+    let staged = match &available.manifest {
         Some(manifest) => prepare_release(manifest, work, step),
         None => prepare_source(available, work, step),
+    }?;
+    prune_staged(work, &staged);
+    Ok(staged)
+}
+
+/// Only the newest prepared version is kept: each update used to leave its
+/// binary (or its unpacked app) behind for good.
+fn prune_staged(work: &Path, staged: &Path) {
+    let keep = staged
+        .strip_prefix(work)
+        .ok()
+        .and_then(|p| p.components().next())
+        .map(|c| c.as_os_str().to_os_string());
+    let Ok(entries) = std::fs::read_dir(work) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let staged_kind = name.to_string_lossy().starts_with("airth-")
+            || name.to_string_lossy().starts_with("Airth-");
+        if staged_kind && Some(&name) != keep.as_ref() {
+            let path = entry.path();
+            let _ = if path.is_dir() {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+        }
+    }
+}
+
+/// Above this size, the update's build folder starts again from nothing.
+const TARGET_LIMIT: u64 = 8 << 30;
+
+fn dir_size(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Held while an update is prepared in `work`: `prepare.lock` names the
+/// process. A lock whose process is gone is taken over.
+struct PrepareLock(PathBuf);
+
+impl PrepareLock {
+    fn take(work: &Path) -> Result<Self> {
+        std::fs::create_dir_all(work)?;
+        let path = work.join("prepare.lock");
+        for _ in 0..2 {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    write!(file, "{}", std::process::id())?;
+                    return Ok(Self(path));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let holder: Option<i32> = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|t| t.trim().parse().ok());
+                    if let Some(pid) = holder
+                        && crate::hub::process_alive(pid)
+                    {
+                        bail!(
+                            "another update is being prepared (process {pid}); try again when it is done"
+                        );
+                    }
+                    let _ = std::fs::remove_file(&path);
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        bail!("cannot take {}", path.display())
+    }
+}
+
+impl Drop for PrepareLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -200,6 +303,11 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
     let src = work.join("src");
     let target = work.join("target");
     std::fs::create_dir_all(work)?;
+    // Kept between updates so only what changed is built again, but it grows
+    // with each dependency change: past a limit it starts again.
+    if dir_size(&target) > TARGET_LIMIT {
+        let _ = std::fs::remove_dir_all(&target);
+    }
     step("checking out");
     let _ = git(
         &repo,
@@ -221,12 +329,16 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
     let result = (|| -> Result<PathBuf> {
         let cargo = |args: &[&str], what: &str| -> Result<()> {
             step(what);
-            let out = Command::new("cargo")
-                .args(args)
-                .current_dir(&src)
-                .env("CARGO_TARGET_DIR", &target)
-                .output()
-                .context("cannot run cargo")?;
+            // A build or a test that hangs is stopped after an hour, so the
+            // updater can offer the next fix (decision 108).
+            let out = crate::supervise::output_within(
+                Command::new("cargo")
+                    .args(args)
+                    .current_dir(&src)
+                    .env("CARGO_TARGET_DIR", &target),
+                std::time::Duration::from_secs(3600),
+            )
+            .with_context(|| format!("{what} did not finish"))?;
             if !out.status.success() {
                 let err = String::from_utf8_lossy(&out.stderr);
                 let tail: Vec<&str> = err.lines().rev().take(40).collect();
@@ -763,6 +875,39 @@ mod tests {
         );
         assert!(!staging_bundle(&app).exists());
         assert!(!previous_bundle(&app).exists());
+    }
+
+    #[test]
+    fn one_update_is_prepared_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let held = PrepareLock::take(dir.path()).unwrap();
+        let err = PrepareLock::take(dir.path()).err().unwrap();
+        assert!(format!("{err:#}").contains("another update"));
+        drop(held);
+        let again = PrepareLock::take(dir.path()).unwrap();
+        drop(again);
+        // A lock left by a process that is gone is taken over.
+        std::fs::write(dir.path().join("prepare.lock"), "999999999").unwrap();
+        assert!(PrepareLock::take(dir.path()).is_ok());
+    }
+
+    #[test]
+    fn only_the_newest_prepared_version_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = dir.path();
+        std::fs::write(w.join("airth-old1"), "x").unwrap();
+        std::fs::write(w.join("airth-new"), "x").unwrap();
+        std::fs::create_dir_all(w.join("Airth-0.1.0/Airth.app")).unwrap();
+        std::fs::create_dir_all(w.join("src")).unwrap();
+        prune_staged(w, &w.join("airth-new"));
+        assert!(w.join("airth-new").exists());
+        assert!(!w.join("airth-old1").exists());
+        assert!(!w.join("Airth-0.1.0").exists());
+        assert!(w.join("src").exists(), "the rest is left alone");
+        std::fs::create_dir_all(w.join("Airth-0.2.0/Airth.app")).unwrap();
+        prune_staged(w, &w.join("Airth-0.2.0/Airth.app"));
+        assert!(w.join("Airth-0.2.0").exists());
+        assert!(!w.join("airth-new").exists());
     }
 
     #[test]

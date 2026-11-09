@@ -143,7 +143,14 @@ function Skills({ realm, q }: { realm: string; q: string }) {
     setFresh(true)
     try { await api("catalog?refresh=1"); cat.refresh() } catch (e) { toast.error((e as Error).message) } finally { setFresh(false) }
   }
-  const mine = usePoll<Installed>(() => api(`realms/${enc(realm)}/catalog`), 3000, [realm])
+  // Asked often only while something installs (decision 110).
+  const mine = usePoll<Installed>(() => api(`realms/${enc(realm)}/catalog`), 30000, [realm])
+  const installing = mine.data?.installing.length ?? 0
+  useEffect(() => {
+    if (!installing) return
+    const t = setInterval(mine.refresh, 3000)
+    return () => clearInterval(t)
+  }, [installing, mine.refresh])
   const [open, setOpen] = useState<Skill | null>(null)
   const shown = (cat.data?.skills ?? []).filter((s) => !q || `${s.title} ${s.description}`.toLowerCase().includes(q.toLowerCase()))
   async function act(s: Skill, remove: boolean) {

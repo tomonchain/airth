@@ -10,7 +10,7 @@
 use crate::business::store::Store;
 use crate::business::store::queue::Item;
 use crate::hub::Hub;
-use crate::realm::write_atomic;
+use crate::realm::write_private;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,17 @@ pub struct Config {
     pub sent: BTreeMap<String, Sent>,
     /// The item whose new text the bot waits for, after an Edit tap.
     pub editing: Option<String>,
+    /// How many times Telegram refused to take each item, by `realm/id`.
+    pub refused: BTreeMap<String, u32>,
+    /// The business the founder's plain messages go to (decision 109); the
+    /// default business when none was chosen.
+    pub business: Option<String>,
+    /// The founder's tasks still at work, by `realm/run`: their answer goes
+    /// to the chat when they end.
+    pub talks: std::collections::BTreeSet<String>,
+    /// The agents' answers in the chat, by message id: a reply to one goes
+    /// on with its task (`realm/run`). The newest are kept.
+    pub threads: BTreeMap<i64, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,8 +82,7 @@ impl Api for Telegram<'_> {
             .post(format!("{API}/bot{}/{method}", self.0))
             .json(body)
             .send()
-            // The URL holds the token: never show it.
-            .map_err(|e| anyhow::anyhow!("Telegram did not answer: {}", e.without_url()))?;
+            .map_err(|e| anyhow::anyhow!("Telegram did not answer: {}", describe(e, self.0)))?;
         let answer: Value = response.json().context("Telegram's answer is not JSON")?;
         if answer["ok"] != Value::Bool(true) {
             bail!(
@@ -82,6 +92,49 @@ impl Api for Telegram<'_> {
         }
         Ok(answer["result"].clone())
     }
+}
+
+/// Why a request failed, with each cause beneath it: reqwest's own message
+/// is only "error sending request", which says nothing of a refused
+/// connection, a name that did not resolve or a time-out. The URL holds the
+/// token: it is left out, and the token is masked wherever it shows.
+fn describe(e: reqwest::Error, token: &str) -> String {
+    let e = e.without_url();
+    let mut said = e.to_string();
+    let mut cause = std::error::Error::source(&e);
+    while let Some(c) = cause {
+        let text = c.to_string();
+        if !said.ends_with(&text) {
+            said.push_str(": ");
+            said.push_str(&text);
+        }
+        cause = c.source();
+    }
+    if token.is_empty() {
+        said
+    } else {
+        said.replace(token, "<token>")
+    }
+}
+
+/// Check the bot from end to end: Telegram answers for it, and, once
+/// paired, a message reaches the founder's chat. What it says, or why not.
+pub fn check(api: &dyn Api, config: &Config) -> Result<String> {
+    let me = api.call("getMe", &json!({}))?;
+    let bot = me["username"].as_str().unwrap_or("your bot");
+    let Some(chat) = config.chat else {
+        return Ok(format!(
+            "@{bot} answers, but is not paired yet: open https://t.me/{bot}?start={}",
+            config.code
+        ));
+    };
+    api.call(
+        "sendMessage",
+        &json!({"chat_id": chat, "text": "Airth: a test message. Telegram works."}),
+    )?;
+    Ok(format!(
+        "@{bot} answers, and a test message was sent to your chat"
+    ))
 }
 
 fn path(hub: &Hub) -> PathBuf {
@@ -97,14 +150,27 @@ pub fn load(hub: &Hub) -> Result<Config> {
 }
 
 pub fn save(hub: &Hub, config: &Config) -> Result<()> {
-    let p = path(hub);
-    write_atomic(&p, &serde_json::to_string_pretty(config)?)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+    // Private from the first byte: the file holds the bot's token.
+    write_private(&path(hub), &serde_json::to_string_pretty(config)?)
+}
+
+/// Save what the bot loop changed, unless the bot was forgotten or replaced
+/// meanwhile (`airth telegram forget` or `connect` while the loop waited on
+/// Telegram): that change wins (decision 108).
+pub fn save_unless_changed(hub: &Hub, config: &Config) -> Result<()> {
+    if load(hub)?.token != config.token {
+        return Ok(());
     }
-    Ok(())
+    save(hub, config)
+}
+
+/// After this many refusals of the same item, it is let go.
+const REFUSALS: u32 = 3;
+
+/// Whether Telegram took the request and refused it (a bad message), rather
+/// than not answering (the network): only the first is let go.
+fn refused(e: &anyhow::Error) -> bool {
+    format!("{e:#}").starts_with("Telegram refused")
 }
 
 /// Check a bot's token and start pairing: the link the founder opens.
@@ -267,12 +333,38 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
             if config.sent.contains_key(&key) {
                 continue;
             }
-            let messages = send(
+            let messages = match send(
                 api,
                 chat,
                 &item_text(realm.name(), &item),
                 Some(buttons(realm.name(), &item)),
-            )?;
+            ) {
+                Ok(messages) => messages,
+                // A message Telegram will never take must not hold up every
+                // item after it: after a few refusals it is let go, and the
+                // founder told (decision 108). Not answering is tried again.
+                Err(e) if refused(&e) => {
+                    let n = config.refused.entry(key.clone()).or_default();
+                    *n += 1;
+                    if *n < REFUSALS {
+                        continue;
+                    }
+                    config.refused.remove(&key);
+                    let _ = hub.home().inbox().push(
+                        crate::notify::Kind::Failed,
+                        realm.name(),
+                        None,
+                        "Telegram refused an item",
+                        &format!(
+                            "Item {} waits for you in Needs you, in the app. Telegram refused it {REFUSALS} times: {e:#}",
+                            item.id
+                        ),
+                    );
+                    Vec::new()
+                }
+                Err(e) => return Err(e),
+            };
+            config.refused.remove(&key);
             config.sent.insert(
                 key,
                 Sent {
@@ -285,15 +377,21 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
     }
     for n in hub.home().inbox().list()? {
         if n.id > config.inbox_sent && n.kind == crate::notify::Kind::Failed {
-            send(
+            match send(
                 api,
                 chat,
                 &format!("{} · {}\n{}", n.realm, n.title, n.body),
                 None,
-            )?;
+            ) {
+                Ok(_) => {}
+                // It stays in the app's notifications.
+                Err(e) if refused(&e) => eprintln!("telegram: notice {} refused: {e:#}", n.id),
+                Err(e) => return Err(e),
+            }
         }
         config.inbox_sent = config.inbox_sent.max(n.id);
     }
+    answers(hub, api, config)?;
     Ok(())
 }
 
@@ -314,7 +412,16 @@ fn from_founder(config: &Config, message: &Value) -> bool {
 
 /// One update from Telegram. Before pairing, only the pairing link counts;
 /// after, only the founder's messages and taps, as answers to the queue.
-pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> Result<()> {
+/// Starts a task unwatched, as the service's runner does.
+pub type Start<'a> = &'a dyn Fn(crate::realm::Realm, crate::state::State);
+
+pub fn handle(
+    hub: &Hub,
+    api: &dyn Api,
+    config: &mut Config,
+    update: &Value,
+    start: Start,
+) -> Result<()> {
     if !update["callback_query"].is_null() {
         return tap(hub, api, config, &update["callback_query"]);
     }
@@ -351,7 +458,25 @@ pub fn handle(hub: &Hub, api: &dyn Api, config: &mut Config, update: &Value) -> 
     if message["reply_to_message"].is_null() && crate::routine::x_post::link_in(text).is_some() {
         return reply_to_post(hub, api, chat, text);
     }
+    // Decision 109: the founder talks to the agents. A reply to an agent's
+    // answer goes on with its task; `/business` says or moves the business;
+    // any other plain message is an order.
+    if let Some(key) = message["reply_to_message"]["message_id"]
+        .as_i64()
+        .and_then(|id| config.threads.get(&id).cloned())
+    {
+        return go_on(hub, api, config, &key, text, start);
+    }
+    if let Some(rest) = text.strip_prefix("/business") {
+        return choose_business(hub, api, config, rest.trim());
+    }
     let Some(key) = config.editing.clone() else {
+        if message["reply_to_message"].is_null()
+            && !text.trim().is_empty()
+            && !text.starts_with('/')
+        {
+            return talk(hub, api, config, text, start);
+        }
         return Ok(());
     };
     // The new text counts only as a reply to that item's message.
@@ -569,14 +694,183 @@ fn answered(realm: &str, item: &Item, report: Option<&str>) -> String {
 }
 
 /// Ask Telegram for what came, handle it, then send what waits.
-pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
+/// The business the founder's messages go to: the one chosen, else the
+/// default, else the first.
+fn current_business(hub: &Hub, config: &Config) -> Result<crate::realm::Realm> {
+    let realms: Vec<_> = hub
+        .home()
+        .realms()?
+        .into_iter()
+        .filter(|r| !r.config.archived)
+        .collect();
+    let wanted = config
+        .business
+        .clone()
+        .or_else(|| hub.home().default_realm());
+    realms
+        .iter()
+        .find(|r| Some(r.name()) == wanted.as_deref())
+        .or(realms.first())
+        .cloned()
+        .context("there is no business yet")
+}
+
+fn choose_business(hub: &Hub, api: &dyn Api, config: &mut Config, name: &str) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let names: Vec<String> = hub
+        .home()
+        .realms()?
+        .into_iter()
+        .filter(|r| !r.config.archived)
+        .map(|r| r.name().to_string())
+        .collect();
+    let said = if name.is_empty() {
+        let on = current_business(hub, config)?.name().to_string();
+        format!(
+            "Your messages go to {on}. Businesses: {}. Move with /business <name>.",
+            names.join(", ")
+        )
+    } else if names.iter().any(|n| n == name) {
+        config.business = Some(name.to_string());
+        format!("Your messages now go to {name}.")
+    } else {
+        format!(
+            "There is no business {name}. Businesses: {}.",
+            names.join(", ")
+        )
+    };
+    send(api, chat, &said, None)?;
+    Ok(())
+}
+
+/// A plain message: an order to the business's agents, routed as the
+/// command bar routes it (decision 64), run unwatched.
+fn talk(hub: &Hub, api: &dyn Api, config: &mut Config, text: &str, start: Start) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let realm = current_business(hub, config)?;
+    let route = match hub.route_order(&realm, text) {
+        Ok(route) => route,
+        Err(e) => {
+            send(
+                api,
+                chat,
+                &format!(
+                    "{} · I could not tell which agent should take it: {e:#}. Start with its name, like \"writer: …\".",
+                    realm.name()
+                ),
+                None,
+            )?;
+            return Ok(());
+        }
+    };
+    let state = hub.start_task(&realm, &route.agent, text)?;
+    config
+        .talks
+        .insert(format!("{}/{}", realm.name(), state.id));
+    send(
+        api,
+        chat,
+        &format!("{} · {} is on it.", realm.name(), route.agent),
+        None,
+    )?;
+    start(realm, state);
+    Ok(())
+}
+
+/// A reply to an agent's answer: the same task goes on with it.
+fn go_on(
+    hub: &Hub,
+    api: &dyn Api,
+    config: &mut Config,
+    key: &str,
+    text: &str,
+    start: Start,
+) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    let (name, run) = key.split_once('/').context("unknown task")?;
+    let realm = hub.home().realm(name)?;
+    // A task that can no longer go on (its worktree cleared after a week,
+    // its change merged) says so, rather than leave the reply unanswered.
+    let state = match hub.follow_up(&realm, run, text) {
+        Ok(state) => state,
+        Err(e) => {
+            config.threads.retain(|_, k| k != key);
+            send(
+                api,
+                chat,
+                &format!(
+                    "{name} · That task cannot go on ({e:#}). Send a new message to start another."
+                ),
+                None,
+            )?;
+            return Ok(());
+        }
+    };
+    let agent = state.agent.clone().unwrap_or_else(|| "the agent".into());
+    config.talks.insert(key.to_string());
+    send(api, chat, &format!("{name} · {agent} goes on."), None)?;
+    start(realm, state);
+    Ok(())
+}
+
+/// How many answers a reply can still reach.
+const THREADS: usize = 200;
+
+/// The founder's tasks that ended since: their answer goes to the chat. A
+/// task waiting for the founder in Needs you is not over.
+fn answers(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
+    let chat = config.chat.unwrap_or_default();
+    for key in config.talks.clone() {
+        let Some((name, run)) = key.split_once('/') else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let Ok(realm) = hub.home().realm(name) else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let Ok(state) = hub.load_run(&realm, run) else {
+            config.talks.remove(&key);
+            continue;
+        };
+        let waiting = Store::of(&realm)?
+            .queue(&["pending"])?
+            .iter()
+            .any(|i| i.run.as_deref() == Some(run));
+        if hub.is_live(&realm, run) || state.status == crate::state::Status::Running || waiting {
+            continue;
+        }
+        let agent = state.agent.clone().unwrap_or_else(|| "The agent".into());
+        let body = match (&state.report, state.status) {
+            (Some(report), _) if !report.trim().is_empty() => report.trim().to_string(),
+            (_, crate::state::Status::Failed) => {
+                "It could not finish: see the task in the app.".into()
+            }
+            (_, crate::state::Status::Stopped) => {
+                "It stopped before finishing: see the task in the app.".into()
+            }
+            _ => "Done, with nothing to say.".into(),
+        };
+        let ids = send(api, chat, &format!("{name} · {agent}\n{body}"), None)?;
+        for id in ids {
+            config.threads.insert(id, key.clone());
+        }
+        while config.threads.len() > THREADS {
+            config.threads.pop_first();
+        }
+        config.talks.remove(&key);
+    }
+    Ok(())
+}
+
+pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config, start: Start) -> Result<()> {
     let updates = api.call(
         "getUpdates",
         &json!({"offset": config.offset, "timeout": POLL_SECONDS, "allowed_updates": ["message", "callback_query"]}),
     )?;
     for update in updates.as_array().into_iter().flatten() {
         config.offset = update["update_id"].as_i64().unwrap_or_default() + 1;
-        if let Err(e) = handle(hub, api, config, update) {
+        if let Err(e) = handle(hub, api, config, update, start) {
             eprintln!("telegram: {e:#}");
         }
     }
@@ -584,7 +878,7 @@ pub fn turn(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
 }
 
 /// The bot's loop, in the service: nothing while no bot is connected.
-pub fn run(hub: Hub) {
+pub fn run(hub: Hub, start: Start) {
     loop {
         let result = load(&hub).and_then(|mut config| {
             if config.token.is_empty() {
@@ -592,8 +886,8 @@ pub fn run(hub: Hub) {
                 return Ok(());
             }
             let token = config.token.clone();
-            let outcome = turn(&hub, &Telegram(&token), &mut config);
-            save(&hub, &config)?;
+            let outcome = turn(&hub, &Telegram(&token), &mut config, start);
+            save_unless_changed(&hub, &config)?;
             outcome
         });
         if let Err(e) = result {
