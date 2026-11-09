@@ -375,6 +375,42 @@ pub fn run(ctx: &Ctx, command: ServiceCmd) -> Result<bool> {
     Ok(true)
 }
 
+/// Above this size, the service's log is set aside and started again.
+const LOG_LIMIT: u64 = 20 * 1024 * 1024;
+
+/// Keep the service's log from filling the disk (decision 108): above
+/// `limit`, its content moves to `serve.log.1` (one generation kept) and the
+/// log starts again empty. launchd and systemd keep the log open to append,
+/// so emptying it in place is safe: their next line goes at its new end.
+pub fn trim_log(log: &std::path::Path, limit: u64) -> Result<bool> {
+    let size = match std::fs::metadata(log) {
+        Ok(m) => m.len(),
+        Err(_) => return Ok(false),
+    };
+    if size <= limit {
+        return Ok(false);
+    }
+    std::fs::copy(log, log.with_extension("log.1"))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(log)?
+        .set_len(0)?;
+    Ok(true)
+}
+
+/// The service's housekeeping: the log, at start and every hour.
+pub fn keep_log(home: &std::path::Path) {
+    let log = home.join("logs/serve.log");
+    loop {
+        match trim_log(&log, LOG_LIMIT) {
+            Ok(true) => eprintln!("log: the previous lines are in serve.log.1"),
+            Ok(false) => {}
+            Err(e) => eprintln!("log: could not set the log aside: {e:#}"),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(3600));
+    }
+}
+
 /// Linux (decision 106): a systemd user service, started at boot and again
 /// whenever it stops, as launchd keeps the Mac's alive.
 mod systemd {
@@ -539,6 +575,27 @@ mod systemd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_log_over_its_limit_is_set_aside_and_started_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("serve.log");
+        std::fs::write(&log, "a".repeat(100)).unwrap();
+        assert!(!trim_log(&log, 1000).unwrap());
+        // Kept open to append, as launchd and systemd keep it.
+        let mut held = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+        assert!(trim_log(&log, 50).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(log.with_extension("log.1"))
+                .unwrap()
+                .len(),
+            100
+        );
+        use std::io::Write;
+        writeln!(held, "next").unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "next\n");
+        assert!(!trim_log(&dir.path().join("none.log"), 50).unwrap());
+    }
 
     #[test]
     fn the_systemd_unit_quotes_paths_and_restarts_airth() {

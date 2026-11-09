@@ -569,6 +569,11 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         let home = app.hub.home().clone();
         let tell = inbox();
         std::thread::spawn(move || supervise("backup", tell, || crate::backup::run(home.clone())));
+        let dir = app.hub.home().dir().to_path_buf();
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("log keeper", tell, || crate::service::keep_log(&dir))
+        });
     }
 
     let registry = app.registry.clone();

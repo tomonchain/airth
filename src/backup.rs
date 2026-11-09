@@ -66,10 +66,18 @@ pub fn run(home: Home) {
         let due = last(&home)
             .is_none_or(|at| Local::now().naive_local() - at >= chrono::Duration::hours(24));
         if due {
-            match make(&home, Local::now()) {
-                Ok(path) => eprintln!("backup: {}", path.display()),
-                Err(e) => eprintln!("backup failed: {e:#}"),
-            }
+            let outcome = make(&home, Local::now()).map(|path| {
+                eprintln!("backup: {}", path.display());
+            });
+            // A failed backup is told, once until it changes or works again:
+            // weeks without one must not go unseen (decision 108).
+            crate::supervise::report(
+                &home.inbox(),
+                "backup",
+                "airth",
+                "The daily backup",
+                outcome,
+            );
         }
         std::thread::sleep(Duration::from_secs(3600));
     }
@@ -108,9 +116,19 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
             if !SKIP.iter().any(|s| name == *s) {
                 copy_tree(&entry.path(), &target)?;
             }
-        } else if kind.is_file() && !is_database(&name.to_string_lossy()) {
-            std::fs::copy(entry.path(), &target)
-                .with_context(|| format!("copying {}", entry.path().display()))?;
+        } else if kind.is_file()
+            && !is_database(&name.to_string_lossy())
+            && !passing(&name.to_string_lossy())
+        {
+            match std::fs::copy(entry.path(), &target) {
+                Ok(_) => {}
+                // Gone since the folder was read (a run's state rewritten,
+                // its lock released): nothing to keep.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(e).with_context(|| format!("copying {}", entry.path().display()));
+                }
+            }
         }
     }
     Ok(())
@@ -123,6 +141,12 @@ fn is_database(name: &str) -> bool {
         .iter()
         .any(|end| name.ends_with(end))
         || (name.contains(".db.") && name.ends_with(".bak"))
+}
+
+/// A file that only lives while something is written or held: a write in
+/// progress (`.tmp`) or a run's lock.
+fn passing(name: &str) -> bool {
+    name.ends_with(".tmp") || name.ends_with(".lock")
 }
 
 /// A folder only the owner can open: a backup holds the secrets.
@@ -171,6 +195,9 @@ mod tests {
             std::fs::write(home.dir().join(skipped).join("big"), "x").unwrap();
         }
         std::fs::create_dir_all(realm.dir().join("worktrees/run1")).unwrap();
+        std::fs::write(realm.dir().join("realm.json.tmp"), "half").unwrap();
+        std::fs::create_dir_all(realm.runs_dir()).unwrap();
+        std::fs::write(realm.runs_dir().join("r1.lock"), "123").unwrap();
 
         let copy = make(&home, at(8)).unwrap();
         let r = copy.join("realms/acme");
@@ -180,6 +207,14 @@ mod tests {
         );
         assert!(r.join("realm.json").exists());
         assert!(!r.join("worktrees").exists());
+        assert!(
+            !r.join("realm.json.tmp").exists(),
+            "a write in progress is not kept"
+        );
+        assert!(
+            !copy.join("realms/acme/runs/r1.lock").exists(),
+            "nor a run's lock"
+        );
         assert!(!copy.join("update").exists() && !copy.join("logs").exists());
         // The database copy opens, with what was in it.
         let kept = Store::open(&r.join(FILE))
