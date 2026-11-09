@@ -2,6 +2,9 @@
 //! that marks a run as driven by a live process.
 
 use super::*;
+use crate::supervise::Locked;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 impl Hub {
     /// Delete a chat for good: its file, its name and archive mark, and its
@@ -26,7 +29,7 @@ impl Hub {
     /// All saved runs of a realm, oldest first. Unreadable files are reported and skipped.
     pub fn runs(&self, realm: &Realm) -> Result<Vec<RunSummary>> {
         Ok(self
-            .load_all(realm)?
+            .load_shared(realm)?
             .into_iter()
             .map(|s| RunSummary {
                 live: self.is_live(realm, &s.id),
@@ -66,9 +69,9 @@ impl Hub {
                     .as_deref()
                     .and_then(|r| r.lines().find(|l| !l.trim().is_empty()))
                     .map(|l| l.chars().take(160).collect()),
-                routine: s.origin.map(|o| o.objective),
-                id: s.id,
-                objective: s.objective,
+                routine: s.origin.as_ref().map(|o| o.objective.clone()),
+                id: s.id.clone(),
+                objective: s.objective.clone(),
                 status: s.status,
                 iterations: s.iterations,
                 updated_at: s.updated_at,
@@ -82,19 +85,37 @@ impl Hub {
     }
 
     pub(super) fn load_all(&self, realm: &Realm) -> Result<Vec<State>> {
+        Ok(self
+            .load_shared(realm)?
+            .into_iter()
+            .map(|s| (*s).clone())
+            .collect())
+    }
+
+    /// Every saved run of the realm, oldest first, each parsed only when its
+    /// file changed since it was last read (decision 110): the pages and the
+    /// scheduler list the runs every few seconds, and each file holds a
+    /// whole transcript.
+    fn load_shared(&self, realm: &Realm) -> Result<Vec<Arc<State>>> {
         let dir = realm.runs_dir();
         if !dir.exists() {
             return Ok(Vec::new());
         }
         let mut runs = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
             if path.extension().is_some_and(|e| e == "json") {
-                match State::load(&path) {
+                match load_cached(&path) {
                     Ok(state) => runs.push(state),
                     Err(e) => eprintln!("warning: skipping {}: {e:#}", path.display()),
                 }
+                seen.insert(path);
             }
+        }
+        // Runs deleted since are forgotten.
+        if let Some(read) = RUNS.locked().as_mut() {
+            read.retain(|path, _| path.parent() != Some(dir.as_path()) || seen.contains(path));
         }
         runs.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(runs)
@@ -191,6 +212,34 @@ impl RunSummary {
             self.status.as_str()
         }
     }
+}
+
+/// A run's file as last read: what tells a change (time, size, file), and
+/// what it held.
+type Read = (std::time::SystemTime, u64, u64, Arc<State>);
+
+static RUNS: std::sync::Mutex<Option<HashMap<PathBuf, Read>>> = std::sync::Mutex::new(None);
+
+/// A run's state, parsed again only if its file changed: a save writes a new
+/// file and renames it over the old one, which gives it a new inode and time.
+fn load_cached(path: &Path) -> Result<Arc<State>> {
+    let meta = std::fs::metadata(path)?;
+    let modified = meta.modified()?;
+    #[cfg(unix)]
+    let inode = std::os::unix::fs::MetadataExt::ino(&meta);
+    #[cfg(not(unix))]
+    let inode = 0;
+    if let Some((at, len, ino, state)) = RUNS.locked().get_or_insert_with(HashMap::new).get(path)
+        && (*at, *len, *ino) == (modified, meta.len(), inode)
+    {
+        return Ok(state.clone());
+    }
+    let state = Arc::new(State::load(path)?);
+    RUNS.locked().get_or_insert_with(HashMap::new).insert(
+        path.to_path_buf(),
+        (modified, meta.len(), inode, state.clone()),
+    );
+    Ok(state)
 }
 
 fn validate_id(id: &str) -> Result<()> {

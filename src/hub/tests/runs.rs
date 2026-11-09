@@ -1008,3 +1008,34 @@ fn a_lock_from_before_the_machine_started_is_stale() {
     assert!(!RunLock::is_held(dir.path(), "r1"));
     assert!(RunLock::acquire(dir.path(), "r1").is_ok());
 }
+
+/// Decision 110: runs are parsed once and again only when their file
+/// changes; a saved change, a new run and a deleted one all show.
+#[test]
+fn the_runs_listed_follow_their_files() {
+    let f = fixture();
+    let hub = Hub::new(f.home.clone());
+    let mut first = hub.create_run(&f.realm, "first objective").unwrap();
+    let listed = |hub: &Hub| -> Vec<String> {
+        hub.runs(&f.realm)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.objective)
+            .collect()
+    };
+    assert_eq!(listed(&hub), ["first objective"]);
+    first.objective = "changed objective".into();
+    first.save().unwrap();
+    assert_eq!(listed(&hub), ["changed objective"]);
+    // Run ids are timestamps to the millisecond: one apart.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let second = hub.create_run(&f.realm, "second").unwrap();
+    assert_eq!(listed(&hub).len(), 2);
+    std::fs::remove_file(second.path().unwrap()).unwrap();
+    assert_eq!(listed(&hub), ["changed objective"]);
+    // The full states agree with the summaries.
+    assert_eq!(
+        hub.all_runs(&f.realm).unwrap()[0].objective,
+        "changed objective"
+    );
+}

@@ -181,12 +181,13 @@ impl App {
 
 impl App {
     fn runs(&self, realm: &Realm) -> Result<Value> {
+        // Read the runs before taking the registry: while it is held, no
+        // run can start or end, and no other page can list what is live.
+        let saved = self.hub.runs(realm)?;
         let registry = self.registry.locked();
         let titles = realm.run_titles();
         let archived = realm.archived_runs();
-        let runs: Vec<Value> = self
-            .hub
-            .runs(realm)?
+        let runs: Vec<Value> = saved
             .into_iter()
             .rev()
             .map(|r| {
