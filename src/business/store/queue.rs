@@ -128,16 +128,15 @@ fn set_at(value: &mut Value, path: &str, text: &str) -> Result<()> {
 impl Store {
     /// The items with one of `statuses`, oldest first.
     pub fn queue(&self, statuses: &[&str]) -> Result<Vec<Item>> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("SELECT {COLUMNS} FROM queue ORDER BY id"))?;
-        let all = stmt
-            .query_map([], read)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(all
-            .into_iter()
-            .filter(|i| statuses.contains(&i.status.as_str()))
-            .collect())
+        // Only the statuses asked for are read, through `queue_by_status`:
+        // the history grows, what is pending stays small (decision 110).
+        let marks = vec!["?"; statuses.len()].join(", ");
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM queue WHERE status IN ({marks}) ORDER BY id"
+        ))?;
+        Ok(stmt
+            .query_map(rusqlite::params_from_iter(statuses), read)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Delayed actions whose cancellation window has passed by `now`, and

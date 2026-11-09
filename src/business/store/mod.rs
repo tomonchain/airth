@@ -327,6 +327,16 @@ const MIGRATIONS: &[&str] = &[
         BEGIN SELECT RAISE(ABORT, 'legal filings are append-only'); END;
     CREATE TRIGGER legal_filings_no_delete BEFORE DELETE ON legal_filings
         BEGIN SELECT RAISE(ABORT, 'legal filings are append-only'); END;",
+    // 19: indexes for what the pages and the scheduler read every few
+    // seconds (decision 110): spending by time, without reading each call's
+    // answer; an item's log; the latest routine runs; actions by status;
+    // the draft log by time.
+    "CREATE INDEX model_calls_by_at ON model_calls(at, dry_run, pipeline, model, cost_usd, input_tokens, output_tokens);
+    CREATE INDEX queue_log_by_item ON queue_log(item, at);
+    CREATE INDEX queue_log_by_at ON queue_log(at);
+    CREATE INDEX routine_blocks_by_start ON routine_blocks(started_at);
+    CREATE INDEX actions_by_status ON actions(status, started_at);
+    CREATE INDEX draft_log_by_at ON draft_log(at);",
 ];
 
 pub struct Store {
@@ -436,6 +446,55 @@ fn migrate_unchecked(conn: &mut Connection) -> Result<()> {
     tx.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?;
     tx.commit()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod indexes {
+    use super::*;
+
+    /// Decision 110: the reads the pages repeat use an index, not a scan of
+    /// the whole table.
+    #[test]
+    fn the_repeated_reads_use_an_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join(FILE)).unwrap();
+        let plan = |sql: &str| -> String {
+            let mut stmt = store
+                .conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap();
+            stmt.query_map([], |r| r.get::<_, String>(3))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        for (sql, index) in [
+            (
+                "SELECT model, COALESCE(SUM(cost_usd), 0) FROM model_calls WHERE at >= '2026' AND dry_run = 0 GROUP BY model",
+                "model_calls_by_at",
+            ),
+            (
+                "SELECT * FROM queue WHERE status IN ('pending') ORDER BY id",
+                "queue_by_status",
+            ),
+            (
+                "SELECT * FROM queue_log WHERE item = 3",
+                "queue_log_by_item",
+            ),
+            (
+                "SELECT * FROM routine_blocks WHERE started_at >= '2026'",
+                "routine_blocks_by_start",
+            ),
+            (
+                "SELECT * FROM actions WHERE status = 'unknown'",
+                "actions_by_status",
+            ),
+        ] {
+            let p = plan(sql);
+            assert!(p.contains(index), "{sql}: {p}");
+        }
+    }
 }
 
 #[cfg(test)]
