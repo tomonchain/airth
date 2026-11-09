@@ -14,8 +14,11 @@ const HEALTH: Record<string, string> = {
 /** HQ (decision 53): every business, what needs the founder in each, their
     time and cost this week. It aggregates; it never reads one business's
     content into another. */
-export function Hq({ onOpen }: { onOpen: (realm: string) => void }) {
-  const { data } = usePoll<Hq>(() => api("hq"), 15000, [])
+export function Hq({ onOpen, shared }: { onOpen: (realm: string) => void; shared?: Hq | null }) {
+  // The app already asks for the HQ every 15 s: its answer is used when
+  // there is one, rather than asking twice (decision 110).
+  const own = usePoll<Hq>(shared === undefined ? () => api("hq") : null, 15000, [shared === undefined])
+  const data = shared ?? own.data
   const time = data?.businesses.map((b) => b.time).filter(Boolean)
   const cost = data?.businesses.reduce((a, b) => a + (b.cost_usd || 0), 0) ?? 0
   return (

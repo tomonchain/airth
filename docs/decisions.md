@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 110. Airth stays fast and its disk bounded as the businesses' history grows
+
+**Accepted** (founder, 9 November 2026: "ok pour la base et iso", after the audit of decision 108 found what grows with every run). It touches the database access layer and calls on `isolation.rs`, two security boundaries, on the founder's word.
+
+- **Runs are parsed once.** Every page asked for the business's runs every 4 s, and the scheduler every 10 s; each request parsed every run's JSON (whole transcripts), ever made. A run's state is now kept, keyed by its file's time, size and inode, and parsed again only when the file changes. `/runs` reads them before taking the registry lock.
+- **The database reads the pages repeat use indexes** (migration 19): `model_calls` by time (covering what spending reads, so no answer is read), `queue_log` by item and by time, `routine_blocks` by start, `actions` by status, the draft log by time. `Store::queue` reads only the statuses asked for, through `queue_by_status`, instead of the whole history filtered in code.
+- **Finished runs no longer keep their worktrees for good.** Once an hour, a run's temporary folder goes a day after its last work, and the worktree and branch of a run that ended with nothing changed go a week after (`isolation::discard`, as discarding by hand does). A change to review is never touched. A reply on Telegram to a task that can no longer go on says so.
+- **The update folder is bounded.** Only the newest prepared version is kept, one update is prepared at a time (`prepare.lock`, between the service and `airth update`), and the kept build folder starts again past 8 GB.
+- **The pages ask less.** The HQ page uses the app's own HQ answer instead of asking twice. The Marketplace asks for installs every 3 s only while one runs, every 30 s otherwise.
+
+*Why:* milestone 6 runs for weeks on a small server. What a page costs must not grow with every run ever made, and the disk must not fill.
+
+*Cost:* the kept runs take memory, about what their files take. A run with nothing changed cannot be followed up after a week; the founder starts a new one. Past 8 GB, the next update builds everything again, which takes longer once.
+
 ## 109. The founder talks to the agents on Telegram, as to a colleague
 
 **Accepted** (founder, 9 November 2026: "I'd like to be able to ask it simply… to reach them the way I would reach a person", then "go" on Telegram first, SMS later).
