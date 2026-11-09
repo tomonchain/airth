@@ -81,10 +81,12 @@ airth phone allow your-server.tailXXXX.ts.net
 airth phone pair                     # scan the code with the phone
 ```
 
-On the Mac, open the same address in the browser, or make Airth.app open it (decision 112): copy the pairing link (Settings, Phone, on the phone), then on the Mac
+On the Mac, open the same address in the browser, or make Airth.app open it (decision 112). From a checkout of Airth on the Mac:
 
 ```bash
-airth app connect 'https://your-server.tailXXXX.ts.net/#token=…'
+cargo build --release
+./target/release/airth app install     # Airth.app, without a service on the Mac
+./target/release/airth app connect "https://your-server.tailXXXX.ts.net/#token=$(ssh you@your-server cat .airth/ui-token)"
 ```
 
 Airth.app then shows the server and starts nothing on the Mac. `airth app local` goes back.

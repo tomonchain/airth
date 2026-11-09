@@ -28,7 +28,7 @@ fn launcher_path() -> Result<PathBuf> {
 /// Build `~/Applications/Airth.app` around `exe`, ad-hoc signed. A release
 /// app is already a signed bundle: it is used where it is (rebuilding it
 /// would break its signature).
-fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
+pub fn install_app(exe: &std::path::Path) -> Result<PathBuf> {
     if crate::update::from_releases()
         && let Some(app) = bundle_of(exe)
     {

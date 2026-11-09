@@ -6,7 +6,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 **Accepted** (founder, 9 November 2026, once Airth moved to the VPS: "it must be able to connect to a remote server or a local one").
 
-- **`airth app connect <pairing link>`** sets the server Airth.app opens: the link `airth phone pair` or Settings, Phone gives, on a tailnet name only (decision 37). The server is tried first, so a wrong key or a server off the tailnet is said then. **`airth app local`** goes back to this Mac's Airth; **`airth app status`** says which.
+- **`airth app connect <pairing link>`** sets the server Airth.app opens: the link `airth phone pair` or Settings, Phone gives, on a tailnet name only (decision 37). The server is tried first, so a wrong key or a server off the tailnet is said then. **`airth app local`** goes back to this Mac's Airth; **`airth app status`** says which. **`airth app install`** puts the build in `~/Applications/Airth.app` without starting a service, for a Mac that only opens a server.
 - **With a server set, the app starts nothing on the Mac.** Its window shows the server's page; its menu bar count and Dock bounce come from the server's `/api/info`, asked every 15 s over the tailnet. Two Airths on one home would run the same routines and answer the same Telegram bot. The menu bar menu's first line says which Airth the window shows.
 - **The key is kept in `remote.json`**, in the Mac's Airth home, readable by the founder only, as the phone keeps it.
 - **The window opens only the server's own pages.** A link elsewhere opens in the browser, as before. A name that merely starts like the server's is elsewhere.

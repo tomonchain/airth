@@ -154,6 +154,9 @@ pub enum AppCmd {
     Local,
     /// Say which Airth the app opens
     Status,
+    /// Put this build in ~/Applications/Airth.app, without starting any
+    /// service: for a Mac that only opens a server (macOS)
+    Install,
 }
 
 #[derive(Subcommand)]
@@ -1406,6 +1409,13 @@ pub fn app(ctx: &Ctx, command: AppCmd) -> Result<bool> {
         AppCmd::Local => {
             crate::remote::save(home, None)?;
             eprintln!("Airth.app opens this Mac's Airth from its next start");
+        }
+        AppCmd::Install => {
+            if !cfg!(target_os = "macos") {
+                bail!("Airth.app is macOS only");
+            }
+            let app = crate::service::install_app(&std::env::current_exe()?.canonicalize()?)?;
+            eprintln!("\x1b[32m✓\x1b[0m {} (no service started)", app.display());
         }
         AppCmd::Status => match crate::remote::load(home) {
             Some(r) => println!("Airth.app opens {}", r.origin()),
