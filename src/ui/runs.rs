@@ -1,6 +1,7 @@
 //! Chats and objectives: starting, following, answering and adopting runs.
 
 use super::*;
+use crate::supervise::Locked;
 
 /// How long a page waits for a run to change before it asks again: under
 /// the gap after which the founder counts as gone, as a closed page keeps
@@ -180,7 +181,7 @@ impl App {
 
 impl App {
     fn runs(&self, realm: &Realm) -> Result<Value> {
-        let registry = self.registry.lock().unwrap();
+        let registry = self.registry.locked();
         let titles = realm.run_titles();
         let archived = realm.archived_runs();
         let runs: Vec<Value> = self
@@ -190,7 +191,7 @@ impl App {
             .rev()
             .map(|r| {
                 let live = registry.get(&key(realm.name(), &r.id));
-                let needs_approval = live.is_some_and(|l| l.pending.lock().unwrap().is_some());
+                let needs_approval = live.is_some_and(|l| l.pending.locked().is_some());
                 json!({
                     "id": r.id,
                     "title": titles.get(&r.id),
@@ -239,7 +240,7 @@ impl App {
                 || number("draft") != Some(seq)
                 || started.elapsed() >= NEXT_CHANGE_WAIT
             {
-                let draft = live.draft.text.lock().unwrap().clone();
+                let draft = live.draft.text.locked().clone();
                 return json!({"here": true, "version": version, "draft_seq": seq, "draft": draft});
             }
             std::thread::sleep(Duration::from_millis(40));
@@ -267,9 +268,9 @@ impl App {
             if since == Some(version) {
                 return Ok(json!({"unchanged": true, "version": version}));
             }
-            let state = live.snapshot.lock().unwrap().clone();
+            let state = live.snapshot.locked().clone();
             let (checks_required, repo_name, delivery) = repo(&state);
-            let pending = live.pending.lock().unwrap().as_ref().map(|p| {
+            let pending = live.pending.locked().as_ref().map(|p| {
                 json!({
                     "id": p.id,
                     "tool": p.request.tool,
@@ -315,7 +316,7 @@ impl App {
         let live = self
             .live(realm, id)
             .context("this run is not in progress")?;
-        let mut pending = live.pending.lock().unwrap();
+        let mut pending = live.pending.locked();
         let p = pending
             .take_if(|p| Some(p.id) == body["approval_id"].as_u64())
             .context("this approval is no longer pending")?;

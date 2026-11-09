@@ -7,6 +7,7 @@
 
 use crate::home::Home;
 use crate::hub::Hub;
+use crate::supervise::Locked;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -271,7 +272,7 @@ static BALANCES: Mutex<Option<(Instant, BTreeMap<String, Balance>)>> = Mutex::ne
 /// only to the provider's own address, with its own key, from Airth itself:
 /// no model and no run sees the key.
 fn balances(hub: &Hub) -> BTreeMap<String, Balance> {
-    let mut cache = BALANCES.lock().unwrap();
+    let mut cache = BALANCES.locked();
     if let Some((at, b)) = cache.as_ref()
         && at.elapsed() < BALANCE_TTL
     {

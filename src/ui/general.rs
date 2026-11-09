@@ -1,6 +1,7 @@
 //! App-wide routes: setup, the owner, updates, the inbox and usage.
 
 use super::*;
+use crate::supervise::Locked;
 
 impl App {
     /// The app-wide routes; None when the request is not one of them.
@@ -39,7 +40,7 @@ impl App {
                 json_response(200, self.owner()?)
             }
             (Method::Post, ["update", "check"]) => {
-                let mut st = self.update.lock().unwrap();
+                let mut st = self.update.locked();
                 if st.phase == "idle" || st.phase == "failed" {
                     st.phase = "checking";
                     st.prepared_commit = None;
@@ -48,7 +49,7 @@ impl App {
             }
             (Method::Post, ["update", "restart"]) => {
                 let staged = {
-                    let mut st = self.update.lock().unwrap();
+                    let mut st = self.update.locked();
                     if st.phase != "ready" {
                         return Err(anyhow!("no update is ready to install"));
                     }
@@ -59,7 +60,7 @@ impl App {
                 let exe = match crate::update::install(&staged) {
                     Ok(exe) => exe,
                     Err(e) => {
-                        let mut st = self.update.lock().unwrap();
+                        let mut st = self.update.locked();
                         st.phase = "failed";
                         st.error = Some(format!("installing failed: {e:#}"));
                         return Err(e);

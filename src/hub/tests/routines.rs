@@ -738,3 +738,54 @@ fn content_from_outside_needs_an_approval_until_the_founder_raises_the_level() {
         .unwrap();
     assert!(load().is_ok());
 }
+
+/// Decision 108: a business that fails to schedule (here, its database
+/// cannot open) is said once to the founder, and the others' routines still
+/// run.
+#[test]
+fn a_broken_business_does_not_stop_the_others_routines() {
+    let f = fixture();
+    let root = f.root.path();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/watcher.md"), "Watch.").unwrap();
+    std::fs::write(
+        root.join("routines/hourly.json"),
+        json!({"agent": "watcher", "trigger": {"schedule": "every 1h"}, "blocks": [
+            {"id": "tell", "type": "act", "action": "airth.report", "fields": {"title": "Hourly"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    // Sorted before "work", so it is tried first.
+    let other = tempfile::tempdir().unwrap();
+    let broken = f
+        .home
+        .create_realm(NewRealm {
+            name: "broken".into(),
+            description: String::new(),
+            root: Some(other.path().to_path_buf()),
+            isolation: None,
+        })
+        .unwrap();
+    std::fs::create_dir_all(broken.dir().join(crate::business::store::FILE)).unwrap();
+
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let now = Utc::now();
+    assert!(hub.due_routines(now).unwrap().is_empty(), "armed, not run");
+    let due = hub
+        .due_routines(now + chrono::Duration::minutes(61))
+        .unwrap();
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].0.name(), "work");
+    let told: Vec<_> = f
+        .home
+        .inbox()
+        .list()
+        .unwrap()
+        .into_iter()
+        .filter(|n| n.realm == "broken")
+        .collect();
+    assert_eq!(told.len(), 1, "said once, though it failed twice");
+    assert!(told[0].title.contains("Scheduling routines"));
+}

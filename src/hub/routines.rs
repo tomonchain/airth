@@ -782,44 +782,72 @@ impl Hub {
             if realm.config.archived || realm.root().is_err() {
                 continue;
             }
-            let graphs = self.with_routine_checks(&realm, crate::routine::load_all)?;
-            let mut store = Store::of(&realm)?;
-            for (name, graph) in graphs {
-                let Some(schedule) = graph.ok().and_then(|g| g.trigger.schedule) else {
-                    continue;
-                };
-                let schedule = Schedule::parse(&schedule)?;
-                // Kept apart from pipelines of the same name.
-                let key = format!("routine:{name}");
-                let Tick::Run {
-                    due,
-                    missed,
-                    silent,
-                } = tick(&mut store, &key, &schedule, now)?
-                else {
-                    continue;
-                };
-                // A missing heartbeat is an incident (`CLAUDE.md`).
-                let late = [
+            // One business that fails here does not stop the others: it is
+            // told once, and tried again next tick (decision 108).
+            let outcome = self.due_routines_in(&realm, now, &mut out);
+            crate::supervise::report(
+                &self.home.inbox(),
+                &format!("routines/{}", realm.name()),
+                realm.name(),
+                "Scheduling routines",
+                outcome,
+            );
+        }
+        Ok(out)
+    }
+
+    fn due_routines_in(
+        &self,
+        realm: &Realm,
+        now: DateTime<Utc>,
+        out: &mut Vec<(Realm, String, DateTime<Utc>)>,
+    ) -> Result<()> {
+        let graphs = self.with_routine_checks(realm, crate::routine::load_all)?;
+        let mut store = Store::of(realm)?;
+        for (name, graph) in graphs {
+            let Some(schedule) = graph.ok().and_then(|g| g.trigger.schedule) else {
+                continue;
+            };
+            let Ok(schedule) = Schedule::parse(&schedule) else {
+                continue;
+            };
+            // Kept apart from pipelines of the same name.
+            let key = format!("routine:{name}");
+            let Tick::Run {
+                due,
+                missed,
+                silent,
+            } = tick(&mut store, &key, &schedule, now)?
+            else {
+                continue;
+            };
+            // A missing heartbeat is an incident (`CLAUDE.md`).
+            let late = [
                     silent.map(|at| format!("The run started at {} left no trace: Airth stopped during it. Running it again now.", at.to_rfc3339())),
                     missed.map(|at| format!("It should have run at {}; Airth was not running then. Running it now, once.", at.to_rfc3339())),
                 ];
-                for detail in late.into_iter().flatten() {
-                    let incident = super::incidents::Incident {
-                        title: &format!("{name} did not run on time"),
-                        detail: &detail,
-                        agent: None,
-                        routine: Some(&name),
-                        action: None,
-                        demote: false,
-                        retry: None,
-                    };
-                    super::incidents::record(&realm, &incident)?;
+            for detail in late.into_iter().flatten() {
+                let incident = super::incidents::Incident {
+                    title: &format!("{name} did not run on time"),
+                    detail: &detail,
+                    agent: None,
+                    routine: Some(&name),
+                    action: None,
+                    demote: false,
+                    retry: None,
+                };
+                // The slot is claimed: the run goes ahead even if its
+                // incident cannot be written.
+                if let Err(e) = super::incidents::record(realm, &incident) {
+                    eprintln!(
+                        "routine {}/{name}: could not record it was late: {e:#}",
+                        realm.name()
+                    );
                 }
-                out.push((realm.clone(), name, due));
             }
+            out.push((realm.clone(), name, due));
         }
-        Ok(out)
+        Ok(())
     }
 
     /// Run a routine its schedule started for `due`, and leave its

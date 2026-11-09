@@ -31,57 +31,71 @@ pub fn due(hub: &Hub, now: DateTime<Utc>) -> Result<Vec<Due>> {
         if realm.config.archived {
             continue;
         }
-        let store = realm.objectives();
-        for o in store.list()? {
-            if !o.enabled {
-                continue;
-            }
-            if o.last_run
-                .as_deref()
-                .is_some_and(|r| hub.is_live(&realm, r))
-            {
-                continue;
-            }
-            let fire = match &o.trigger {
-                Trigger::Schedule { every } => {
-                    let Ok(schedule) = Schedule::parse(every) else {
-                        continue;
-                    };
-                    match o.next_at {
-                        Some(at) => at <= now,
-                        None => {
-                            let next = schedule.next_after(now);
-                            store.update(&o.id, |o| o.next_at = Some(next))?;
-                            false
-                        }
-                    }
-                }
-                Trigger::Watch { path } => {
-                    let Ok(root) = realm.root() else { continue };
-                    let Ok(path) = objective::watched_path(&root, path) else {
-                        continue;
-                    };
-                    let now_fp = objective::fingerprint(&path);
-                    match &o.fingerprint {
-                        Some(fp) => *fp != now_fp,
-                        None => {
-                            store.update(&o.id, |o| o.fingerprint = Some(now_fp))?;
-                            false
-                        }
-                    }
-                }
-                Trigger::Manual | Trigger::Webhook { .. } => false,
-            };
-            if fire {
-                out.push(Due {
-                    trigger: o.trigger.describe(),
-                    realm: realm.clone(),
-                    objective: o.id,
-                });
-            }
-        }
+        // One business that fails here does not stop the others
+        // (decision 108).
+        let outcome = due_in(hub, &realm, now, &mut out);
+        crate::supervise::report(
+            &hub.home().inbox(),
+            &format!("objectives/{}", realm.name()),
+            realm.name(),
+            "Scheduling objectives",
+            outcome,
+        );
     }
     Ok(out)
+}
+
+fn due_in(hub: &Hub, realm: &Realm, now: DateTime<Utc>, out: &mut Vec<Due>) -> Result<()> {
+    let store = realm.objectives();
+    for o in store.list()? {
+        if !o.enabled {
+            continue;
+        }
+        if o.last_run
+            .as_deref()
+            .is_some_and(|r| hub.is_live(realm, r))
+        {
+            continue;
+        }
+        let fire = match &o.trigger {
+            Trigger::Schedule { every } => {
+                let Ok(schedule) = Schedule::parse(every) else {
+                    continue;
+                };
+                match o.next_at {
+                    Some(at) => at <= now,
+                    None => {
+                        let next = schedule.next_after(now);
+                        store.update(&o.id, |o| o.next_at = Some(next))?;
+                        false
+                    }
+                }
+            }
+            Trigger::Watch { path } => {
+                let Ok(root) = realm.root() else { continue };
+                let Ok(path) = objective::watched_path(&root, path) else {
+                    continue;
+                };
+                let now_fp = objective::fingerprint(&path);
+                match &o.fingerprint {
+                    Some(fp) => *fp != now_fp,
+                    None => {
+                        store.update(&o.id, |o| o.fingerprint = Some(now_fp))?;
+                        false
+                    }
+                }
+            }
+            Trigger::Manual | Trigger::Webhook { .. } => false,
+        };
+        if fire {
+            out.push(Due {
+                trigger: o.trigger.describe(),
+                realm: realm.clone(),
+                objective: o.id,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// What happened in one realm since some time.

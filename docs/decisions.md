@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 108. The service keeps running on its own: its loops survive a panic, and one business's error stops only that business
+
+**Accepted** (founder, 9 November 2026: "a stabilisation and optimisation pass" before more features, then "vas-y" on the plan). An audit of the long-running service found ways it could stop working with nothing said.
+
+- **Each background loop is supervised** (`src/supervise.rs`): the scheduler, the pull-request follower, the Telegram bot, the updater and the backup. A panic used to end its thread for good, with the app still answering, so systemd or launchd never restarted anything. Now the loop starts again after a minute, and the founder gets a failure notice (relayed by Telegram), at most once an hour per loop.
+- **A lock survives a panic.** The locks the app's threads share (the runs in progress, the update state, the notifications, the objectives) are taken with `locked()`, which recovers a lock a panicking thread held. Otherwise one panic would make every later holder panic in turn.
+- **A run leaves the list of runs in progress however its thread ends.** Before, a panic left it "running" for good, and the pull-request follower skipped its pull request.
+- **One business's error stops only that business.** Scheduling routines, pipelines and objectives used to fail for every business when one failed (an unreadable file, a database that would not open), every ten seconds, for good. Now the error is said once to the founder, in Needs you and the log, and again only when it changes. The other businesses go on, and the failing one is tried again each tick.
+- **A late run still runs** when its "did not run on time" incident cannot be written: its slot is already claimed.
+- **A task that cannot take the founder's message lets it go and says why, once.** Before, it failed again every tick and held up every task after it.
+
+*Why:* milestone 6 needs weeks where every routine runs on time, on a server nobody watches. A silent stop is the worst failure: the founder learns of it days later.
+
+*Cost:* a loop whose panic comes back at once restarts every minute, its notice once an hour, until a fix is installed. A lock taken after a panic gives the data as the panicking thread left it; each holder leaves it whole between writes, so it is readable.
+
 ## 107. The rail shows what each model provider costs, and how long its money lasts
 
 **Accepted** (founder, 8 November 2026: the rail's indicator "is meant to show the LLMs I use and their credit until the reset… to see the subscriptions and what they cost"; "I'd like us to use whatever we want. Right now I use DeepSeek and Claude through the API"; "do what you prefer").

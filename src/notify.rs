@@ -7,6 +7,7 @@
 //! the owner (see desktop/).
 
 use crate::realm::write_atomic;
+use crate::supervise::Locked;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -90,7 +91,7 @@ impl Inbox {
         title: &str,
         body: &str,
     ) -> Result<Notification> {
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.locked();
         let mut all = self.list()?;
         let n = Notification {
             id: all.iter().map(|n| n.id).max().unwrap_or(0) + 1,
@@ -112,7 +113,7 @@ impl Inbox {
 
     /// Mark notifications read: those with these ids, or all of them.
     pub fn mark_read(&self, ids: Option<&[u64]>) -> Result<()> {
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.locked();
         let mut all = self.list()?;
         for n in &mut all {
             if ids.is_none_or(|ids| ids.contains(&n.id)) {

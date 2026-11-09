@@ -152,23 +152,44 @@ impl Hub {
                 continue;
             }
             let Ok(root) = realm.root() else { continue };
-            let scheduled: Vec<(String, Schedule)> =
-                crate::pipeline::load_all(&crate::business::dir(&root))?
-                    .into_iter()
-                    .filter_map(|(name, p)| Some((name, Schedule::parse(&p.ok()?.schedule?).ok()?)))
-                    .collect();
-            if scheduled.is_empty() {
-                continue;
-            }
-            let mut store = Store::of(&realm)?;
-            for (name, schedule) in scheduled {
-                let Tick::Run { missed, silent, .. } = tick(&mut store, &name, &schedule, now)?
-                else {
-                    continue;
-                };
-                self.tell_late(&realm, &name, missed, silent)?;
-                out.push((realm.clone(), name));
-            }
+            // One business that fails here does not stop the others
+            // (decision 108).
+            let outcome = (|| -> Result<()> {
+                let scheduled: Vec<(String, Schedule)> =
+                    crate::pipeline::load_all(&crate::business::dir(&root))?
+                        .into_iter()
+                        .filter_map(|(name, p)| {
+                            Some((name, Schedule::parse(&p.ok()?.schedule?).ok()?))
+                        })
+                        .collect();
+                if scheduled.is_empty() {
+                    return Ok(());
+                }
+                let mut store = Store::of(&realm)?;
+                for (name, schedule) in scheduled {
+                    let Tick::Run { missed, silent, .. } = tick(&mut store, &name, &schedule, now)?
+                    else {
+                        continue;
+                    };
+                    // The slot is claimed: the run goes ahead even if the
+                    // founder cannot be told it was late.
+                    if let Err(e) = self.tell_late(&realm, &name, missed, silent) {
+                        eprintln!(
+                            "pipeline {}/{name}: could not tell it was late: {e:#}",
+                            realm.name()
+                        );
+                    }
+                    out.push((realm.clone(), name));
+                }
+                Ok(())
+            })();
+            crate::supervise::report(
+                &self.home.inbox(),
+                &format!("pipelines/{}", realm.name()),
+                realm.name(),
+                "Scheduling pipelines",
+                outcome,
+            );
         }
         Ok(out)
     }

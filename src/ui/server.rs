@@ -3,6 +3,7 @@
 //! schedules, pull requests).
 
 use super::*;
+use crate::supervise::Locked;
 
 /// Where the self-update stands, as shown in the app.
 #[derive(Default, serde::Serialize)]
@@ -27,12 +28,12 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
     let work = hub.home().dir().join("update");
     let mut ticks: u64 = 0;
     loop {
-        let fetch = ticks.is_multiple_of(30) || state.lock().unwrap().phase == "checking";
+        let fetch = ticks.is_multiple_of(30) || state.locked().phase == "checking";
         ticks += 1;
         match crate::update::check(fetch) {
             Ok(found) => {
                 let todo = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.locked();
                     if st.phase == "checking" {
                         st.phase = "idle";
                     }
@@ -56,16 +57,16 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
                 };
                 if let Some(available) = todo {
                     {
-                        let mut st = state.lock().unwrap();
+                        let mut st = state.locked();
                         st.phase = "preparing";
                         st.error = None;
                         st.prepared_commit = Some(available.commit.clone());
                     }
                     let step_state = state.clone();
                     let result = crate::update::prepare(&available, &work, &|step| {
-                        step_state.lock().unwrap().step = Some(step.to_string());
+                        step_state.locked().step = Some(step.to_string());
                     });
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.locked();
                     st.step = None;
                     match result {
                         Ok(staged) => {
@@ -82,7 +83,7 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
                 }
             }
             Err(e) => {
-                let mut st = state.lock().unwrap();
+                let mut st = state.locked();
                 if st.phase == "checking" {
                     st.phase = "idle";
                     st.error = Some(format!("{e:#}"));
@@ -90,7 +91,7 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
             }
         }
         for _ in 0..60 {
-            if state.lock().unwrap().phase == "checking" {
+            if state.locked().phase == "checking" {
                 break;
             }
             std::thread::sleep(Duration::from_secs(1));
@@ -142,12 +143,12 @@ pub(super) fn restart(
     exe: std::path::PathBuf,
     port: u16,
 ) {
-    let lives: Vec<Arc<Live>> = registry.lock().unwrap().values().cloned().collect();
+    let lives: Vec<Arc<Live>> = registry.locked().values().cloned().collect();
     for live in &lives {
         live.cancel.cancel();
     }
     for _ in 0..100 {
-        if registry.lock().unwrap().is_empty() {
+        if registry.locked().is_empty() {
             break;
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -476,12 +477,12 @@ impl Running {
     /// the Mac's desktop app does, when it quits.
     #[cfg(target_os = "macos")]
     pub fn stop(&self) {
-        let lives: Vec<Arc<Live>> = self.registry.lock().unwrap().values().cloned().collect();
+        let lives: Vec<Arc<Live>> = self.registry.locked().values().cloned().collect();
         for live in &lives {
             live.cancel.cancel();
         }
         for _ in 0..50 {
-            if self.registry.lock().unwrap().is_empty() {
+            if self.registry.locked().is_empty() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -539,16 +540,35 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
 
     // A preview serves the pages and nothing else: nothing runs on its own.
     if app.options.background {
+        // Each loop is kept alive: a panic starts it again, and the founder
+        // hears of it (decision 108).
+        use crate::supervise::supervise;
+        let inbox = || app.hub.home().inbox();
         let runner = app.runner.clone();
-        std::thread::spawn(move || run_scheduler(runner));
+        let tell = inbox();
+        std::thread::spawn(move || supervise("scheduler", tell, || run_scheduler(runner.clone())));
         let runner = app.runner.clone();
-        std::thread::spawn(move || follow_pull_requests(runner));
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("pull-request follower", tell, || {
+                follow_pull_requests(runner.clone())
+            })
+        });
         let hub = app.hub.clone();
-        std::thread::spawn(move || crate::telegram::run((*hub).clone()));
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("Telegram bot", tell, || {
+                crate::telegram::run((*hub).clone())
+            })
+        });
         let (hub, update) = (app.hub.clone(), app.update.clone());
-        std::thread::spawn(move || run_updater(hub, update));
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("updater", tell, || run_updater(hub.clone(), update.clone()))
+        });
         let home = app.hub.home().clone();
-        std::thread::spawn(move || crate::backup::run(home));
+        let tell = inbox();
+        std::thread::spawn(move || supervise("backup", tell, || crate::backup::run(home.clone())));
     }
 
     let registry = app.registry.clone();
@@ -586,7 +606,7 @@ pub(super) fn shut_down(registry: &Registry, info_path: &std::path::Path) {
     if CALLS.fetch_add(1, Ordering::SeqCst) > 0 {
         std::process::exit(130);
     }
-    let lives: Vec<Arc<Live>> = registry.lock().unwrap().values().cloned().collect();
+    let lives: Vec<Arc<Live>> = registry.locked().values().cloned().collect();
     if !lives.is_empty() {
         eprintln!(
             "\nstopping {} run(s)… (Ctrl-C again to quit now)",
@@ -599,7 +619,7 @@ pub(super) fn shut_down(registry: &Registry, info_path: &std::path::Path) {
     let registry = registry.clone();
     std::thread::spawn(move || {
         for _ in 0..50 {
-            if registry.lock().unwrap().is_empty() {
+            if registry.locked().is_empty() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
