@@ -51,10 +51,7 @@ fn due_in(hub: &Hub, realm: &Realm, now: DateTime<Utc>, out: &mut Vec<Due>) -> R
         if !o.enabled {
             continue;
         }
-        if o.last_run
-            .as_deref()
-            .is_some_and(|r| hub.is_live(realm, r))
-        {
+        if o.last_run.as_deref().is_some_and(|r| hub.is_live(realm, r)) {
             continue;
         }
         let fire = match &o.trigger {
