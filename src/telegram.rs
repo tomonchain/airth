@@ -10,7 +10,7 @@
 use crate::business::store::Store;
 use crate::business::store::queue::Item;
 use crate::hub::Hub;
-use crate::realm::write_atomic;
+use crate::realm::write_private;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,8 @@ pub struct Config {
     pub sent: BTreeMap<String, Sent>,
     /// The item whose new text the bot waits for, after an Edit tap.
     pub editing: Option<String>,
+    /// How many times Telegram refused to take each item, by `realm/id`.
+    pub refused: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,14 +141,27 @@ pub fn load(hub: &Hub) -> Result<Config> {
 }
 
 pub fn save(hub: &Hub, config: &Config) -> Result<()> {
-    let p = path(hub);
-    write_atomic(&p, &serde_json::to_string_pretty(config)?)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+    // Private from the first byte: the file holds the bot's token.
+    write_private(&path(hub), &serde_json::to_string_pretty(config)?)
+}
+
+/// Save what the bot loop changed, unless the bot was forgotten or replaced
+/// meanwhile (`airth telegram forget` or `connect` while the loop waited on
+/// Telegram): that change wins (decision 108).
+pub fn save_unless_changed(hub: &Hub, config: &Config) -> Result<()> {
+    if load(hub)?.token != config.token {
+        return Ok(());
     }
-    Ok(())
+    save(hub, config)
+}
+
+/// After this many refusals of the same item, it is let go.
+const REFUSALS: u32 = 3;
+
+/// Whether Telegram took the request and refused it (a bad message), rather
+/// than not answering (the network): only the first is let go.
+fn refused(e: &anyhow::Error) -> bool {
+    format!("{e:#}").starts_with("Telegram refused")
 }
 
 /// Check a bot's token and start pairing: the link the founder opens.
@@ -309,12 +324,38 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
             if config.sent.contains_key(&key) {
                 continue;
             }
-            let messages = send(
+            let messages = match send(
                 api,
                 chat,
                 &item_text(realm.name(), &item),
                 Some(buttons(realm.name(), &item)),
-            )?;
+            ) {
+                Ok(messages) => messages,
+                // A message Telegram will never take must not hold up every
+                // item after it: after a few refusals it is let go, and the
+                // founder told (decision 108). Not answering is tried again.
+                Err(e) if refused(&e) => {
+                    let n = config.refused.entry(key.clone()).or_default();
+                    *n += 1;
+                    if *n < REFUSALS {
+                        continue;
+                    }
+                    config.refused.remove(&key);
+                    let _ = hub.home().inbox().push(
+                        crate::notify::Kind::Failed,
+                        realm.name(),
+                        None,
+                        "Telegram refused an item",
+                        &format!(
+                            "Item {} waits for you in Needs you, in the app. Telegram refused it {REFUSALS} times: {e:#}",
+                            item.id
+                        ),
+                    );
+                    Vec::new()
+                }
+                Err(e) => return Err(e),
+            };
+            config.refused.remove(&key);
             config.sent.insert(
                 key,
                 Sent {
@@ -327,12 +368,17 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
     }
     for n in hub.home().inbox().list()? {
         if n.id > config.inbox_sent && n.kind == crate::notify::Kind::Failed {
-            send(
+            match send(
                 api,
                 chat,
                 &format!("{} · {}\n{}", n.realm, n.title, n.body),
                 None,
-            )?;
+            ) {
+                Ok(_) => {}
+                // It stays in the app's notifications.
+                Err(e) if refused(&e) => eprintln!("telegram: notice {} refused: {e:#}", n.id),
+                Err(e) => return Err(e),
+            }
         }
         config.inbox_sent = config.inbox_sent.max(n.id);
     }
@@ -635,7 +681,7 @@ pub fn run(hub: Hub) {
             }
             let token = config.token.clone();
             let outcome = turn(&hub, &Telegram(&token), &mut config);
-            save(&hub, &config)?;
+            save_unless_changed(&hub, &config)?;
             outcome
         });
         if let Err(e) = result {
