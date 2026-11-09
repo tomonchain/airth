@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 111. The founder is told when a model provider's money runs low
+
+**Accepted** (founder, 9 November 2026: "go" on the alert proposed after decision 107).
+
+- **Once an hour, the scheduler judges each provider** as the spending gauge does (decision 107): from its balance, or its budget less what was spent, at the last week's rate.
+- **When a provider's level gets worse** (fine to less than a week, or to less than two days or nothing left), the founder gets a notice, which Telegram relays. It says what is left, the daily rate, when a budget starts again, and what to do.
+- **It is said once per fall.** What was told is kept in `spend-told.json`, in the Airth home, so a restart does not say it again. A level that gets better is noted, so the next fall is told. A balance the provider did not give this hour changes nothing.
+
+*Why:* a provider that runs dry stops every task and routine on it, and the founder learns it from failures. The gauge shows it only to someone who looks.
+
+*Cost:* one more small file. The level is an estimate from list prices, as on the gauge.
+
 ## 110. Airth stays fast and its disk bounded as the businesses' history grows
 
 **Accepted** (founder, 9 November 2026: "ok pour la base et iso", after the audit of decision 108 found what grows with every run). It touches the database access layer and calls on `isolation.rs`, two security boundaries, on the founder's word.

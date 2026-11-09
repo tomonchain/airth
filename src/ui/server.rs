@@ -348,6 +348,11 @@ pub(super) fn run_scheduler(runner: Runner) {
                 Err(e) => eprintln!("clearing finished runs: {e:#}"),
             }
         }
+        // A model provider whose money runs low, once an hour (decision 111).
+        match crate::spend::warn_low(&runner.hub, chrono::Utc::now()) {
+            Ok(said) => said.iter().for_each(|t| eprintln!("spend: {t}")),
+            Err(e) => eprintln!("spend: {e:#}"),
+        }
         // Connected banks, at most once an hour (decision 54).
         match runner.hub.refresh_finance(chrono::Utc::now()) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
