@@ -19,12 +19,14 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
   return (
     <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none max-md:pl-3">
       {/* Room for the Mac window's buttons, then the tabs from the column's
-          edge. Airth's mark sits over the rail in a browser, and just after
-          the window's buttons in the Mac app; it opens the HQ. */}
+          edge. Airth's mark and name sit over the rail in a browser, and
+          just after the window's buttons in the Mac app; they open the HQ.
+          On a phone, the mark alone (the founder's choice). */}
       <div className="flex w-[calc(var(--side)+56px)] shrink-0 items-center max-md:hidden">
         <button onClick={onHq} aria-label="Airth: all businesses" title="Airth: all businesses"
-          className={cn("grid size-8 place-items-center rounded-lg hover:bg-accent", mac ? "ml-[80px]" : "ml-4")}>
+          className={cn("flex h-8 items-center gap-2 rounded-lg pr-2.5 pl-1 hover:bg-accent", mac ? "ml-[80px]" : "ml-4")}>
           <AirthMark id="airth-mark-desk" />
+          <span className="text-[15px] font-semibold tracking-tight">Airth</span>
         </button>
       </div>
       {/* On a phone, Airth's mark at the top left; it opens the HQ, which
