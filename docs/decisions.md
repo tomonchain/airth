@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 114. Each business folder follows its remote
+
+**Accepted** (founder, 10 November 2026: "Airth should fetch the businesses' updates by itself").
+
+- **Every ten minutes, each business folder takes what was merged on its remote** (`src/business/sync.rs`, in a loop of its own beside the backup, so a slow fetch never holds the scheduler). It reads the branch the folder's current branch follows, through the folder's own git access (a deploy key on the VPS), and never waits for a password.
+- **It never overwrites the server's work.** Edits that are not committed stop it: the founder is told which files. Commits made on the server, such as an adopted run, are kept, and the remote's changes are merged in with a commit signed "Airth". A conflict is undone, so the folder stays as it was, and the founder is told to merge by hand.
+- **The founder hears of it:**
+  - what was taken comes as a notice with the commits' subjects;
+  - what stops it is said once, until it changes or clears (decision 108).
+- **Nothing in the folder runs:** no hooks, as for every git command Airth runs. A routine taken this way is checked when it loads, as any other.
+- A folder with no git, or a branch that follows nothing, is left alone.
+
+*Why:* the founder changes a business's prompts and routines on GitHub, often through a pull request. Since Airth moved to the VPS (decision 106), the change reached the server only when the founder pulled by hand.
+
+*Cost:* a fetch every ten minutes per business. Commits adopted on the server stay local: a deploy key reads only, so they never reach the remote by themselves.
+
 ## 113. The founder names each Airth
 
 **Accepted** (founder, 10 November 2026: "an alias on Airth, a name I give, for the VPS server").

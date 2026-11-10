@@ -11,6 +11,7 @@
 
 pub mod config;
 pub mod store;
+pub mod sync;
 
 // The access layer's areas, under the names the rest of Airth uses.
 pub use store::{drafts, time};

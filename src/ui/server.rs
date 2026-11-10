@@ -589,6 +589,14 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         let home = app.hub.home().clone();
         let tell = inbox();
         std::thread::spawn(move || supervise("backup", tell, || crate::backup::run(home.clone())));
+        // Its own loop: a slow fetch never holds the scheduler (decision 114).
+        let home = app.hub.home().clone();
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("business folder sync", tell, || {
+                crate::business::sync::run(home.clone())
+            })
+        });
         let dir = app.hub.home().dir().to_path_buf();
         let tell = inbox();
         std::thread::spawn(move || {

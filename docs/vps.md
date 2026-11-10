@@ -58,6 +58,8 @@ airth realm root ~/hedgen --realm hedgen
 airth realm show --realm hedgen   # check the folder and repositories
 ```
 
+A private business folder needs read access from the server: add a deploy key (Settings, Deploy keys on GitHub, without write access) and point the folder's `origin` at it. Airth then takes what is merged on GitHub every ten minutes (decision 114).
+
 `airth realm show` also lists a business's other repositories. Their paths are the Mac's: change them with `airth realm repo`.
 
 ## 4. Start the service
