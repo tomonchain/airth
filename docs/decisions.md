@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 113. The founder names each Airth
+
+**Accepted** (founder, 10 November 2026: "an alias on Airth, a name I give, for the VPS server").
+
+- **Settings, About, Name** sets the name of this Airth, for example "VPS Contabo". It is kept in the home's `config.json`: at most 30 characters, one line. An empty name removes it.
+- **The name is shown where the founder looks:** at the top of every page next to the business, in the browser tab's title, and in the first line of the Mac app's menu bar menu ("On VPS Contabo"). Without a name, nothing changes.
+- **`/api/info` carries it**, so the Mac app opening a server (decision 112) shows the server's name, not the Mac's.
+
+*Why:* the same pages are reached from the server, the Mac and the phone. With Airth moved to the VPS (decision 106), the founder wants to see at a glance which Airth is open.
+
+*Cost:* one more field in the home's config, and one more call for the page's info every five minutes.
+
 ## 112. Airth.app opens this Mac's Airth or a server's
 
 **Accepted** (founder, 9 November 2026, once Airth moved to the VPS: "it must be able to connect to a remote server or a local one").

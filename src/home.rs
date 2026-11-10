@@ -33,6 +33,9 @@ struct Config {
     default_realm: Option<String>,
     /// Show notifications on the desktop too (macOS). Default on.
     desktop_notifications: Option<bool>,
+    /// The name the founder gives this Airth ("VPS", "Mac"), shown so they
+    /// know which one they are looking at (decision 113).
+    name: Option<String>,
 }
 
 /// What a new realm looks like.
@@ -143,6 +146,22 @@ impl Home {
             &self.dir.join("config.json"),
             &serde_json::to_string_pretty(config)?,
         )
+    }
+
+    /// The name the founder gave this Airth, if any.
+    pub fn name(&self) -> Option<String> {
+        self.config().name
+    }
+
+    /// Name this Airth; an empty name removes it.
+    pub fn set_name(&self, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.chars().count() > 30 || name.chars().any(char::is_control) {
+            bail!("a name is one line of at most 30 characters");
+        }
+        let mut config = self.config();
+        config.name = (!name.is_empty()).then(|| name.to_string());
+        self.save_config(&config)
     }
 
     /// Whether the Mac app bounces its Dock icon when a run waits for the owner.
@@ -351,6 +370,20 @@ impl Home {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn this_airth_can_be_named_and_unnamed() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = super::Home::at(dir.path()).unwrap();
+        assert_eq!(home.name(), None);
+        home.set_name("  VPS Contabo ").unwrap();
+        assert_eq!(home.name().as_deref(), Some("VPS Contabo"));
+        assert!(home.set_name("two\nlines").is_err());
+        assert!(home.set_name(&"x".repeat(31)).is_err());
+        assert_eq!(home.name().as_deref(), Some("VPS Contabo"));
+        home.set_name("").unwrap();
+        assert_eq!(home.name(), None);
+    }
+
     use super::*;
 
     /// A development build opens `~/.airth` only when told to; `AIRTH_HOME`
