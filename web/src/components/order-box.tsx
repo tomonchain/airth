@@ -112,8 +112,8 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
 
   return (
     <div>
-      <div className="mb-1.5 flex h-6 items-center gap-2 px-1 text-xs text-muted-foreground">
-        {working ? <span>{title} is working. It reads what you write at its next step. <kbd className="font-sans">Esc</kbd> stops it.</span>
+      <div className="mb-1.5 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted-foreground">
+        {working ? <span>{title} is working. It reads what you write at its next step.<span className="hidden md:inline"> <kbd className="font-sans">Esc</kbd> stops it.</span></span>
           : continuing ? (
             <>
               <span>Continues the current task</span>
@@ -125,7 +125,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
               <button onClick={() => setFresh(false)} className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 hover:bg-accent hover:text-foreground"><X className="size-3" /> Keep the current one</button>
             </>
           ) : closed ? <span>The last task is closed (its change was {closed}): this starts a new one.</span>
-          : <span>Starts a task: {title} asks you here before anything that needs your OK.</span>}
+          : <span>Starts a task<span className="hidden md:inline">: {title} asks you here before anything that needs your OK</span>.</span>}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-2 rounded-2xl border bg-bubble/60 p-2 shadow-sm focus-within:border-ring/50">
         {shown.length > 0 && (

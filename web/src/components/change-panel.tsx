@@ -103,7 +103,7 @@ export function ChangePanel({ realm, id, title, r, onChange, onAsk }: {
   const ready = !!g && g.state === "open" && g.checks === "passing" && pushed && g.head === c.head && !["dirty", "behind"].includes(g.merge_state)
 
   return (
-    <div className="mb-5 ml-10 max-w-[85%] rounded-2xl bg-bubble fade-up">
+    <div className="mb-5 rounded-2xl bg-bubble fade-up md:ml-10 md:max-w-[85%]">
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
