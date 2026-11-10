@@ -241,7 +241,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
               <div className="mx-auto max-w-2xl px-4 py-5 md:px-8 md:py-7">
                 <Header it={open} agent={agent(open.agent)} onAgent={onAgent} onTask={onTask} />
                 <NeedCard
-                  key={`${open.id}-${open.revision}`} realm={realm} it={open} page
+                  key={`${open.id}-${open.revision}`} realm={realm} it={open} page onTask={onTask}
                   onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}
                 />
                 {open.routine && open.run && <Origin key={open.id} realm={realm} it={open} />}

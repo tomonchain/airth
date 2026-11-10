@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,7 @@ export function kindOf(it: Item) {
 /** One thing an agent sent up, with the answers it allows. The server says
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
-export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean }) {
+export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean; onTask?: (id: string) => void }) {
   const [mode, setMode] = useState<"edit" | "reject" | "confirm" | "redo" | null>(null)
   const [ask, setAsk] = useState("")
   const [text, setText] = useState(it.text ?? "")
@@ -72,6 +72,27 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
       toast.error((e as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Something the founder must do themself (a filing, a prepared action):
+  // a task with the agent that fits, to guide them through it. It does not
+  // answer the item: Filed or Done stays the founder's, once it is done.
+  const [helping, setHelping] = useState(false)
+  async function help() {
+    setHelping(true)
+    try {
+      const what = [it.title, it.text && it.text !== it.title ? it.text : null, it.source?.link ? `Official page: ${it.source.link}` : null].filter(Boolean).join("\n")
+      const text = `Help me do this myself, step by step:\n\n${what}\n\nTell me where to go, what I need at hand, and what to enter, using what you know of the business (its legal identity, its figures). Ask me for anything you don't have. Don't file or submit anything yourself: I do it.`
+      const r = await api<{ agent: string | null; error?: string }>(`realms/${enc(realm)}/orders/route`, { text })
+      if (!r.agent) throw new Error(r.error ?? "No agent fits this: ask from Tasks, choosing one.")
+      const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text, agent: r.agent, watched: true })
+      toast.success("A task is open with the agent: it guides you there.")
+      onTask?.(out.id)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setHelping(false)
     }
   }
 
@@ -212,6 +233,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
             {redoable && <Button size="sm" variant="outline" onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
             {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
+            {onTask && (it.kind === "deadline" || it.kind === "prepared") && (
+              <Button size="sm" variant="outline" disabled={helping} onClick={help}>{helping ? <Loader className="animate-spin" /> : <LifeBuoy />} Get help</Button>
+            )}
           </>
         )}
       </footer>
