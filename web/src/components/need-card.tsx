@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
-import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
@@ -27,7 +26,7 @@ export function kindOf(it: Item) {
 /** One thing an agent sent up, with the answers it allows. The server says
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
-export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean }) {
+export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean; onTask?: (id: string) => void }) {
   const [mode, setMode] = useState<"edit" | "reject" | "confirm" | "redo" | null>(null)
   const [ask, setAsk] = useState("")
   const [text, setText] = useState(it.text ?? "")
@@ -75,6 +74,27 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
     }
   }
 
+  // Something the founder must do themself (a filing, a prepared action):
+  // a task with the agent that fits, to guide them through it. It does not
+  // answer the item: Filed or Done stays the founder's, once it is done.
+  const [helping, setHelping] = useState(false)
+  async function help() {
+    setHelping(true)
+    try {
+      const what = [it.title, it.text && it.text !== it.title ? it.text : null, it.source?.link ? `Official page: ${it.source.link}` : null].filter(Boolean).join("\n")
+      const text = `Help me do this myself, step by step:\n\n${what}\n\nTell me where to go, what I need at hand, and what to enter, using what you know of the business (its legal identity, its figures). Ask me for anything you don't have. Don't file or submit anything yourself: I do it.`
+      const r = await api<{ agent: string | null; error?: string }>(`realms/${enc(realm)}/orders/route`, { text })
+      if (!r.agent) throw new Error(r.error ?? "No agent fits this: ask from Tasks, choosing one.")
+      const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text, agent: r.agent, watched: true })
+      toast.success("A task is open with the agent: it guides you there.")
+      onTask?.(out.id)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setHelping(false)
+    }
+  }
+
   // The main answer A gives, when one is safe without a second look: never
   // an override, a cancellation or a retry the founder must check first.
   const key =
@@ -111,13 +131,14 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
     : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve{hint("A")}</Button>
 
   return (
-    <article className={page ? "" : "rounded-2xl rounded-bl-md border border-amber-400/25 bg-bubble px-4 py-3.5"}>
-      {!page && <header className="mb-2 flex items-center gap-2 text-xs">
+    <article className={page ? "" : "rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"}>
+      {/* In a conversation, a draft to approve needs no label: its buttons
+          say it, and the thread gives its time. Other kinds keep a short
+          one, so an incident or a deadline is not read as a draft. */}
+      {!page && !(it.kind === "approval" && !blocked) && <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
         </span>
-        {it.routine && <span className="font-mono text-muted-foreground">{it.routine}</span>}
-        <span className="ml-auto text-muted-foreground">{ago(it.created_at)}</span>
       </header>}
 
       {!page && !(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
@@ -183,7 +204,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
 
       {page && it.note && it.kind === "approval" && <p className="mt-3 text-xs text-muted-foreground">{it.note}</p>}
 
-      <footer className={cn("mt-3 flex flex-wrap items-center gap-2", page && "mt-5 border-t pt-4")}>
+      <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
@@ -208,10 +229,14 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
           <>
             {main}
             {it.retry === "ambiguous" && <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>}
-            {it.editable && <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
-            {redoable && <Button size="sm" variant="outline" onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
-            {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject{hint("R")}</Button>}
+            {/* In a conversation the other answers stay quiet, beside Approve. */}
+            {it.editable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
+            {redoable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
+            {it.kind === "approval" && <Button size={page ? "sm" : "xs"} variant="ghost" className="text-muted-foreground" aria-label="Reject" title="Reject" onClick={() => setMode("reject")}><X /> <span className={cn(!page && "max-sm:hidden")}>Reject</span>{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
+            {onTask && (it.kind === "deadline" || it.kind === "prepared") && (
+              <Button size="sm" variant="outline" disabled={helping} onClick={help}>{helping ? <Loader className="animate-spin" /> : <LifeBuoy />} Get help</Button>
+            )}
           </>
         )}
       </footer>
