@@ -1023,3 +1023,49 @@ fn a_redo_takes_the_reply_to_its_item() {
     let item = Store::of(&realm).unwrap().queue(&["pending"]).unwrap();
     assert_eq!(item[0].args["answer"]["draft"], "ETH left the queue.");
 }
+
+/// Decision 118: a device asking for access is shown once with its code;
+/// only the founder's tap allows it, and the device then gets its key.
+#[test]
+fn a_device_is_allowed_from_telegram_by_the_founder_only() {
+    let (home, _root, hub, _realm) = business();
+    let now = Utc::now();
+    let (secret, code) = crate::devices::ask(home.path(), "iPhone · Safari", now).unwrap();
+    let api = Fake::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    push(&hub, &api, &mut config).unwrap();
+    push(&hub, &api, &mut config).unwrap();
+    let sent = api.sent();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0]["text"].as_str().unwrap().contains(&code));
+    let allow = sent[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(!allow.contains(&secret));
+    let start = |_: crate::realm::Realm, _: crate::state::State| {};
+    // Someone else's tap does nothing.
+    handle(&hub, &api, &mut config, &tap(8, &allow), &start).unwrap();
+    assert_eq!(
+        crate::devices::standing(home.path(), &secret, Utc::now()).unwrap(),
+        crate::devices::Standing::Waiting
+    );
+    handle(&hub, &api, &mut config, &tap(7, &allow), &start).unwrap();
+    assert!(matches!(
+        crate::devices::standing(home.path(), &secret, Utc::now()).unwrap(),
+        crate::devices::Standing::Allowed(_)
+    ));
+    assert!(
+        api.sent().last().unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("is allowed")
+    );
+    // A second tap on the old message changes nothing.
+    handle(&hub, &api, &mut config, &tap(7, &allow), &start).unwrap();
+    assert_eq!(crate::devices::list(home.path()).len(), 1);
+}

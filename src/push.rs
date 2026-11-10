@@ -38,7 +38,8 @@ pub struct Subscription {
 #[serde(default)]
 struct State {
     subscriptions: Vec<Subscription>,
-    /// The items pushed already (`realm/id`), so nothing is pushed twice.
+    /// What was pushed already (`realm/id` for an item, `device/id` for a
+    /// device asking for access), so nothing is pushed twice.
     sent: BTreeSet<String>,
     /// The notifications already looked at: only newer ones are pushed.
     notices_seen: u64,
@@ -407,6 +408,17 @@ pub fn push_new(home: &Home) -> Result<usize> {
                 .collect();
             out.push((keys, items_message(realm.name(), &new)));
         }
+    }
+    // A device asking for access (decision 118): approved in the app.
+    for ask in crate::devices::asking(home.dir(), Utc::now()) {
+        let key = format!("device/{}", ask.id);
+        if !state.sent.contains(&key) {
+            out.push((
+                vec![key.clone()],
+                json!({"title": "Airth · A device asks for access", "body": format!("{}, code {}. Allow it only if this code is on a device you hold.", ask.name, ask.code), "url": "/", "tag": key}),
+            ));
+        }
+        waiting.insert(key);
     }
     let mut seen = state.notices_seen;
     for n in home.inbox().list()? {

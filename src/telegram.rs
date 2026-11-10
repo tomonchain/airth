@@ -59,6 +59,8 @@ pub struct Config {
     /// The agents' answers in the chat, by message id: a reply to one goes
     /// on with its task (`realm/run`). The newest are kept.
     pub threads: BTreeMap<i64, String>,
+    /// The devices asking for access the founder was asked about (decision 118).
+    pub devices_sent: std::collections::BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -401,6 +403,34 @@ pub fn push(hub: &Hub, api: &dyn Api, config: &mut Config) -> Result<()> {
             );
         }
     }
+    // A device asking for access (decision 118): the founder allows it here
+    // only when its code is the one on their own device.
+    let asking = crate::devices::asking(hub.home().dir(), Utc::now());
+    for ask in &asking {
+        if config.devices_sent.contains(&ask.id) {
+            continue;
+        }
+        let button = |label: &str, op: &str| json!({"text": label, "callback_data": format!("{op}/device/{}", ask.id)});
+        let text = format!(
+            "A device asks for access to Airth: {}\nCode on its screen: {}\nAllow it only if this code is on a device you hold.",
+            ask.name, ask.code
+        );
+        match send(
+            api,
+            chat,
+            &text,
+            Some(json!([[button("Allow", "da"), button("Refuse", "dr")]])),
+        ) {
+            Ok(_) => {}
+            // It stays in the app, under Settings, Phone.
+            Err(e) if refused(&e) => eprintln!("telegram: device request refused: {e:#}"),
+            Err(e) => return Err(e),
+        }
+        config.devices_sent.insert(ask.id.clone());
+    }
+    config
+        .devices_sent
+        .retain(|id| asking.iter().any(|a| &a.id == id));
     for n in hub.home().inbox().list()? {
         if n.id > config.inbox_sent && n.kind == crate::notify::Kind::Failed {
             match send(
@@ -671,6 +701,25 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
         parts.next().unwrap_or_default(),
         parts.next().unwrap_or_default(),
     );
+    if let Some(id) = rest.strip_prefix("device/") {
+        let allow = match op {
+            "da" => true,
+            "dr" => false,
+            _ => return Ok(()),
+        };
+        let said = match crate::devices::answer(hub.home().dir(), id, allow, Utc::now()) {
+            Ok(name) if allow => format!("{name} is allowed: it opens Airth in a few seconds."),
+            Ok(name) => format!("{name} is refused."),
+            Err(e) => format!("{e:#}"),
+        };
+        // The buttons go: a request is answered once.
+        let _ = api.call(
+            "editMessageReplyMarkup",
+            &json!({"chat_id": chat, "message_id": query["message"]["message_id"], "reply_markup": {"inline_keyboard": []}}),
+        );
+        send(api, chat, &said, None)?;
+        return Ok(());
+    }
     let Some((key, revision)) = rest.rsplit_once('/') else {
         return Ok(());
     };

@@ -18,6 +18,7 @@ import { Character } from "@/components/character"
 import { Button } from "@/components/ui/button"
 import { NewBusiness } from "@/components/new-business"
 import { Pair } from "@/components/pair"
+import { DeviceAsks } from "@/components/device-asks"
 import { Palette } from "@/components/palette"
 
 // The pages opened now and then load when first opened, so the first
@@ -221,6 +222,7 @@ export default function App() {
       />
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
+      <DeviceAsks />
       <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
         {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}

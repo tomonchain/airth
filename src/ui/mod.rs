@@ -60,7 +60,7 @@ use http::*;
 use live::*;
 use server::*;
 
-pub(crate) use http::random_token;
+pub(crate) use http::{constant_time_eq, random_token};
 #[cfg(target_os = "macos")]
 pub use server::start;
 pub use server::{open_url, persistent_token, running_url, serve};
@@ -221,6 +221,13 @@ impl App {
         {
             return Ok(self.webhook(request, hook));
         }
+        // A device without a key asks for one (decision 118). Only JSON, so
+        // another website cannot send it (that needs a preflight, never granted).
+        if method == Method::Post
+            && let Some(step) = path.strip_prefix("/pair/")
+        {
+            return Ok(self.pairing(request, step));
+        }
         let Some(api) = path.strip_prefix("/api/") else {
             return Ok(json_response(404, json!({"error": "not found"})));
         };
@@ -277,8 +284,42 @@ impl App {
         crate::phone::host_allowed(&host, self.port, &phone)
     }
 
+    /// The main key, or the key of a device the founder allowed (decision 118).
     fn token_valid(&self, request: &Request) -> bool {
-        header(request, "X-Airth-Token").is_some_and(|t| constant_time_eq(&t, &self.token()))
+        header(request, "X-Airth-Token").is_some_and(|t| {
+            constant_time_eq(&t, &self.token())
+                || crate::devices::known(self.hub.home().dir(), &t, chrono::Utc::now()).is_some()
+        })
+    }
+
+    fn pairing(&self, request: &mut Request, step: &str) -> HttpResponse {
+        let json = header(request, "Content-Type")
+            .is_some_and(|t| t.split(';').next().unwrap_or_default().trim() == "application/json");
+        if !json {
+            return json_response(415, json!({"error": "JSON only"}));
+        }
+        let body = read_json(request).unwrap_or_default();
+        let home = self.hub.home().dir();
+        let now = chrono::Utc::now();
+        let answer = match step {
+            "ask" => crate::devices::ask(home, body["name"].as_str().unwrap_or_default(), now)
+                .map(|(secret, code)| json!({"secret": secret, "code": code})),
+            "status" => {
+                crate::devices::standing(home, body["secret"].as_str().unwrap_or_default(), now)
+                    .map(|s| match s {
+                        crate::devices::Standing::Waiting => json!({"status": "waiting"}),
+                        crate::devices::Standing::Allowed(key) => {
+                            json!({"status": "allowed", "key": key})
+                        }
+                        crate::devices::Standing::Gone => json!({"status": "gone"}),
+                    })
+            }
+            _ => return json_response(404, json!({"error": "not found"})),
+        };
+        match answer {
+            Ok(v) => json_response(200, v),
+            Err(e) => json_response(400, json!({"error": format!("{e:#}")})),
+        }
     }
 
     fn realm(&self, name: &str) -> Result<Realm> {
@@ -816,6 +857,143 @@ mod tests {
             ),
             200
         );
+    }
+
+    /// Decision 118: a device without a key asks, the founder allows it, and
+    /// it gets a key of its own; before, after a refusal or a revocation,
+    /// and after a new main key, it reaches nothing.
+    #[test]
+    fn a_device_reaches_the_app_only_once_allowed_and_until_revoked() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        crate::phone::allow(home_dir.path(), "mac.tail1234.ts.net").unwrap();
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let app = test_app(home, port);
+        std::thread::spawn(move || serve_requests(server, app));
+        let http = reqwest::blocking::Client::new();
+        let phone = "mac.tail1234.ts.net";
+        let mac = format!("127.0.0.1:{port}");
+        let send = |verb: &str, path: &str, host: &str, token: &str, body: Value| {
+            let url = format!("http://127.0.0.1:{port}{path}");
+            let req = match verb {
+                "GET" => http.get(url),
+                "DELETE" => http.delete(url),
+                _ => http
+                    .post(url)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string()),
+            };
+            let r = req
+                .header("Host", host)
+                .header("X-Airth-Token", token)
+                .send()
+                .unwrap();
+            let status = r.status().as_u16();
+            (status, r.json::<Value>().unwrap_or_default())
+        };
+
+        // Another website cannot ask: JSON only.
+        let plain = http
+            .post(format!("http://127.0.0.1:{port}/pair/ask"))
+            .header("Host", phone)
+            .body("{}")
+            .send()
+            .unwrap();
+        assert_eq!(plain.status().as_u16(), 415);
+        // An unknown name cannot ask either.
+        assert_eq!(
+            send("POST", "/pair/ask", "evil.example", "", json!({})).0,
+            403
+        );
+
+        let (status, asked) = send("POST", "/pair/ask", phone, "", json!({"name": "iPhone"}));
+        assert_eq!(status, 200);
+        let secret = asked["secret"].as_str().unwrap().to_string();
+        let status_of = || send("POST", "/pair/status", phone, "", json!({"secret": secret})).1;
+        assert_eq!(status_of()["status"], "waiting");
+        // Asking gives no access, and a device cannot allow itself without a key.
+        assert_eq!(
+            send("GET", "/api/devices", phone, &secret, json!({})).0,
+            401
+        );
+        let (_, list) = send("GET", "/api/devices", &mac, "t0k3n", json!({}));
+        assert_eq!(list["asking"][0]["code"], asked["code"]);
+        let id = list["asking"][0]["id"].as_str().unwrap().to_string();
+        let allow = format!("/api/devices/asking/{id}/allow");
+        assert_eq!(send("POST", &allow, phone, "", json!({})).0, 401);
+
+        assert_eq!(send("POST", &allow, &mac, "t0k3n", json!({})).0, 200);
+        let got = status_of();
+        assert_eq!(got["status"], "allowed");
+        let key = got["key"].as_str().unwrap().to_string();
+        assert_eq!(status_of()["status"], "gone");
+        let (status, list) = send("GET", "/api/devices", phone, &key, json!({}));
+        assert_eq!(status, 200);
+        assert_eq!(list["devices"][0]["this"], true);
+        // A device cannot make a new main key.
+        assert_eq!(
+            send("POST", "/api/phone/new-key", phone, &key, json!({})).0,
+            403
+        );
+
+        // Revoked: shut out at once.
+        assert_eq!(
+            send(
+                "DELETE",
+                &format!("/api/devices/{id}"),
+                &mac,
+                "t0k3n",
+                json!({})
+            )
+            .0,
+            200
+        );
+        assert_eq!(send("GET", "/api/devices", phone, &key, json!({})).0, 401);
+
+        // Refused: nothing to collect.
+        let (_, asked) = send("POST", "/pair/ask", phone, "", json!({"name": "iPad"}));
+        let (_, list) = send("GET", "/api/devices", &mac, "t0k3n", json!({}));
+        let id = list["asking"][0]["id"].as_str().unwrap().to_string();
+        send(
+            "POST",
+            &format!("/api/devices/asking/{id}/refuse"),
+            &mac,
+            "t0k3n",
+            json!({}),
+        );
+        let (_, got) = send(
+            "POST",
+            "/pair/status",
+            phone,
+            "",
+            json!({"secret": asked["secret"]}),
+        );
+        assert_eq!(got["status"], "gone");
+
+        // A new main key drops every device.
+        let (_, asked) = send("POST", "/pair/ask", phone, "", json!({"name": "Mac"}));
+        let (_, list) = send("GET", "/api/devices", &mac, "t0k3n", json!({}));
+        let id = list["asking"][0]["id"].as_str().unwrap().to_string();
+        send(
+            "POST",
+            &format!("/api/devices/asking/{id}/allow"),
+            &mac,
+            "t0k3n",
+            json!({}),
+        );
+        let (_, got) = send(
+            "POST",
+            "/pair/status",
+            phone,
+            "",
+            json!({"secret": asked["secret"]}),
+        );
+        let key = got["key"].as_str().unwrap().to_string();
+        assert_eq!(send("GET", "/api/devices", phone, &key, json!({})).0, 200);
+        let (_, made) = send("POST", "/api/phone/new-key", &mac, "t0k3n", json!({}));
+        assert!(made["token"].is_string());
+        assert_eq!(send("GET", "/api/devices", phone, &key, json!({})).0, 401);
     }
 
     /// A new key shuts out every holder of the old one, phones included,

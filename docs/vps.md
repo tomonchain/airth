@@ -80,8 +80,9 @@ tail -f ~/.airth/logs/serve.log
 ```bash
 tailscale serve --bg 7457            # prints the server's address, like https://your-server.tailXXXX.ts.net
 airth phone allow your-server.tailXXXX.ts.net
-airth phone pair                     # scan the code with the phone
 ```
+
+On the phone, open that address in Safari: it asks for access and shows a code. Allow it on Telegram, or in Airth on a device already in (Settings, Phone), when the code is the one on the phone (decision 118). Each device gets a key of its own, revoked alone in Settings, Phone. `airth phone pair` still shows a code carrying the main key, for a first device when Telegram is not set up.
 
 On the Mac, open the same address in the browser, or make Airth.app open it (decision 112). From a checkout of Airth on the Mac:
 

@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 118. Each device asks for access, and gets a key of its own
+
+**Accepted** (founder, 10 November 2026: "can't we have a better way to sign in? how do OpenClaw or Hermes do it?", then "go" on device pairing approved from Telegram).
+
+- **A device without a key asks.** It opens Airth's address, presses Ask for access, and shows a code of four letters. The founder gets the request on Telegram (Allow, Refuse), as a phone notification (decision 117), and in Airth on any device already in: a card on every page, and Settings, Phone. The founder allows it only when the code is on a device they hold.
+- **Allowed, the device gets a key of its own,** made at the moment it collects it and shown once. Settings, Phone lists the devices (name, when added, when last used) and revokes one alone; its key stops working at the next request.
+- **Nothing that opens Airth is stored as such:** `devices.json` (in the Airth home, mode 600) keeps only the SHA-256 of each device's key and of each request's secret. A request waits 10 minutes; three at most wait at once.
+- **The boundary:**
+  - The two routes that ask (`/pair/ask`, `/pair/status`) take JSON only, so another website cannot call them without a preflight, which Airth never grants. The Host check applies to them as to everything.
+  - Asking gives no access. Only the page that asked can collect the key (it holds the secret), and only once the founder has allowed it.
+  - The founder's taps on Telegram are checked as for the queue (decision 52): the paired chat, the founder's user id.
+  - A new main key (decision 98) drops every device with it. A device, like a phone with the main key, cannot make one.
+- **The main key stays,** for the Mac app, the command line and `airth phone pair`: a first device when Telegram is not set up.
+- **Not taken:** trusting Tailscale's identity headers, as OpenClaw can. On the server, any program can send them to Airth on loopback, the agents' sandboxes included. Passkeys (Face ID) are kept for later: more security code, for the day Airth has more than one user.
+
+*Why:* a single key copied by hand to each device, giving everything, and revoked only by changing it everywhere. A device now asks, and the founder answers where they already answer Airth.
+
+*Cost:* a new device waits for the founder's answer: a few seconds in the app, up to half a minute on Telegram (its polling). One more file in the home. A stolen phone that is unlocked still holds its key until the founder revokes it.
+
 ## 117. Airth on the phone's home screen, with its own notifications
 
 **Accepted** (founder, 10 November 2026: "I'd like a real iOS app", then "go" on the first step: the web app on the home screen, with notifications, before any native app).

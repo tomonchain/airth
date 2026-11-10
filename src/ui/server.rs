@@ -122,6 +122,8 @@ impl App {
         let token = random_token()?;
         let home = self.hub.home().dir();
         crate::realm::write_private(&home.join("ui-token"), &token)?;
+        // The devices allowed with the old key go with it.
+        crate::devices::forget_all(home)?;
         let info = server_file(&self.hub);
         if let Ok(text) = std::fs::read_to_string(&info)
             && let Ok(mut running) = serde_json::from_str::<ServerInfo>(&text)

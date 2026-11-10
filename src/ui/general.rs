@@ -60,6 +60,37 @@ impl App {
                 let n = crate::push::test(self.hub.home())?;
                 json_response(200, json!({"phones": n}))
             }
+            // The founder's devices, and those asking for access (decision 118).
+            (Method::Get, ["devices"]) => {
+                let home = self.hub.home().dir();
+                let now = chrono::Utc::now();
+                let this = header(request, "X-Airth-Token")
+                    .and_then(|t| crate::devices::known(home, &t, now));
+                let devices: Vec<Value> = crate::devices::list(home)
+                    .iter()
+                    .map(|d| json!({"id": d.id, "name": d.name, "added": d.added, "seen": d.seen, "this": this.as_deref() == Some(d.id.as_str())}))
+                    .collect();
+                let asking: Vec<Value> = crate::devices::asking(home, now)
+                    .iter()
+                    .map(|a| json!({"id": a.id, "name": a.name, "code": a.code, "at": a.at}))
+                    .collect();
+                json_response(200, json!({"devices": devices, "asking": asking}))
+            }
+            (Method::Post, ["devices", "asking", id, verdict @ ("allow" | "refuse")]) => {
+                let name = crate::devices::answer(
+                    self.hub.home().dir(),
+                    id,
+                    *verdict == "allow",
+                    chrono::Utc::now(),
+                )?;
+                json_response(200, json!({"name": name}))
+            }
+            (Method::Delete, ["devices", id]) => {
+                if !crate::devices::revoke(self.hub.home().dir(), id)? {
+                    return Ok(Some(json_response(404, json!({"error": "no such device"}))));
+                }
+                ok()
+            }
             (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =
