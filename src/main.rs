@@ -32,6 +32,7 @@ mod permissions;
 mod phone;
 mod pipeline;
 mod prices;
+mod push;
 mod realm;
 mod release;
 mod remote;
