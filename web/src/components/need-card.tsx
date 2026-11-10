@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
-import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
@@ -132,13 +131,14 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
     : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve{hint("A")}</Button>
 
   return (
-    <article className={page ? "" : "rounded-2xl rounded-bl-md border border-amber-400/25 bg-bubble px-4 py-3.5"}>
-      {!page && <header className="mb-2 flex items-center gap-2 text-xs">
+    <article className={page ? "" : "rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"}>
+      {/* In a conversation, a draft to approve needs no label: its buttons
+          say it, and the thread gives its time. Other kinds keep a short
+          one, so an incident or a deadline is not read as a draft. */}
+      {!page && !(it.kind === "approval" && !blocked) && <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
         </span>
-        {it.routine && <span className="font-mono text-muted-foreground">{it.routine}</span>}
-        <span className="ml-auto text-muted-foreground">{ago(it.created_at)}</span>
       </header>}
 
       {!page && !(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
@@ -204,7 +204,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
 
       {page && it.note && it.kind === "approval" && <p className="mt-3 text-xs text-muted-foreground">{it.note}</p>}
 
-      <footer className={cn("mt-3 flex flex-wrap items-center gap-2", page && "mt-5 border-t pt-4")}>
+      <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
@@ -229,9 +229,10 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           <>
             {main}
             {it.retry === "ambiguous" && <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>}
-            {it.editable && <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
-            {redoable && <Button size="sm" variant="outline" onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
-            {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject{hint("R")}</Button>}
+            {/* In a conversation the other answers stay quiet, beside Approve. */}
+            {it.editable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
+            {redoable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
+            {it.kind === "approval" && <Button size={page ? "sm" : "xs"} variant="ghost" className="text-muted-foreground" aria-label="Reject" title="Reject" onClick={() => setMode("reject")}><X /> <span className={cn(!page && "max-sm:hidden")}>Reject</span>{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
             {onTask && (it.kind === "deadline" || it.kind === "prepared") && (
               <Button size="sm" variant="outline" disabled={helping} onClick={help}>{helping ? <Loader className="animate-spin" /> : <LifeBuoy />} Get help</Button>
