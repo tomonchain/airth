@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 117. Airth on the phone's home screen, with its own notifications
+
+**Accepted** (founder, 10 November 2026: "I'd like a real iOS app", then "go" on the first step: the web app on the home screen, with notifications, before any native app).
+
+- **The web interface is the phone app.** Added to the home screen (Share, then Add to Home Screen), it opens full screen, with Airth's icon and name, from a web manifest (`web/public/manifest.webmanifest`). No App Store, no Xcode, no second interface to keep in step: what ships in `web/` is on the phone at the next opening.
+- **Notifications through Web Push** (iOS 16.4 and later, only from the home screen app). Settings → Phone → Turn on notifications asks the phone, then gives Airth the address its push service gave. Every 15 seconds, Airth pushes what is new: what waits in Needs you, one notification per business for a batch (six drafts are one notification, not six), and what failed. A tap opens that business's Needs you.
+- **The push service carries, it cannot read.** Each message is encrypted for the phone (RFC 8291) and signed with Airth's own key (VAPID, RFC 8292), with the cryptography Airth already ships (`aws-lc-rs`): no new crate. The key and the phones' addresses stay in the Airth home, readable by the founder only (`push-key.pk8`, `push.json`). A phone that is gone (the push service answers 404 or 410) is forgotten. At most 8 phones.
+- **A notification shows, it never answers.** Approving stays in the app or on Telegram, behind the pairing key. The service worker (`web/public/sw.js`) caches nothing: Airth is always read live.
+- Telegram stays as it is. The founder keeps either channel, or both.
+- **A native iOS app stays out of the beta.** It would only be worth it for what the web cannot do on iOS: answering from the notification itself, widgets, a lock screen view.
+
+*Why:* the founder wants Airth on the phone as an app, and to be told without Telegram. Most of an app is already there: the interface works on the phone, and Tailscale brings it there. What was missing was the icon, full screen, and notifications.
+
+*Cost:* one more loop in the service, and the server must reach Apple's push service (`web.push.apple.com`), and Google's for an Android phone. A message's text (at most 180 characters of a draft) goes through it, encrypted. iOS shows notifications only from the home screen app, so a phone that opens Airth in Safari gets none: the Phone page says so.
+
 ## 116. The founder's words on a routine's drafts reach its next drafts
 
 **Accepted** (founder, 10 November 2026: "if I give feedback on the posts, will the bot apply it on the next run?", then "go").

@@ -30,6 +30,36 @@ impl App {
                     .set_name(body["name"].as_str().unwrap_or_default())?;
                 json_response(200, json!({"name": self.hub.home().name()}))
             }
+            // Notifications on the founder's phone (decision 117).
+            (Method::Get, ["push"]) => {
+                let home = self.hub.home();
+                json_response(
+                    200,
+                    json!({"key": crate::push::public_key(home)?, "phones": crate::push::subscriptions(home).len()}),
+                )
+            }
+            (Method::Post, ["push", "subscribe"]) => {
+                let body = read_json(request)?;
+                crate::push::subscribe(
+                    self.hub.home(),
+                    body["endpoint"].as_str().unwrap_or_default(),
+                    body["keys"]["p256dh"].as_str().unwrap_or_default(),
+                    body["keys"]["auth"].as_str().unwrap_or_default(),
+                )?;
+                ok()
+            }
+            (Method::Post, ["push", "unsubscribe"]) => {
+                let body = read_json(request)?;
+                crate::push::unsubscribe(
+                    self.hub.home(),
+                    body["endpoint"].as_str().unwrap_or_default(),
+                )?;
+                ok()
+            }
+            (Method::Post, ["push", "test"]) => {
+                let n = crate::push::test(self.hub.home())?;
+                json_response(200, json!({"phones": n}))
+            }
             (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =

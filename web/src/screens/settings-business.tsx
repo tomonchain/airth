@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Code2, GitPullRequest, Loader, Plus, Smartphone, X } from "lucide-react"
+import { Bell, Code2, GitPullRequest, Loader, Plus, Smartphone, X } from "lucide-react"
 import { toast } from "sonner"
 import { Loading, Panel } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, onPhone, pairingLink, raw, rekey, type Department } from "@/lib/api"
+import { pushState, turnOff, turnOn, type PushState } from "@/lib/push"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -383,8 +384,9 @@ export function Phone() {
   }
   return (
     <>
-      <Head title="Phone">Use Airth from your phone, at home or away. It stays on this Mac: Tailscale brings it to your own devices only, encrypted, and nothing is opened to the internet. Telegram stays the channel for Needs you.</Head>
-      <Panel className="space-y-3 p-4">
+      <Head title="Phone">Use Airth from your phone, at home or away. It stays on this Mac: Tailscale brings it to your own devices only, encrypted, and nothing is opened to the internet. Telegram and the phone's notifications tell you what needs you.</Head>
+      <Notifications />
+      <Panel className="mt-2.5 space-y-3 p-4">
         <ol className="list-decimal space-y-1.5 pl-5 text-sm">
           <li>Install Tailscale on this Mac and on your phone, signed in to the same account on both.</li>
           <li>On this Mac, in a terminal: <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">tailscale serve --bg 7457</code>. It prints the Mac's address, like https://mac.tail1234.ts.net.</li>
@@ -416,6 +418,58 @@ export function Phone() {
         </Panel>
       ))}
     </>
+  )
+}
+
+const SAY: Record<Exclude<PushState, "off" | "on">, string> = {
+  "home-screen": "To get notifications, open Airth from the home screen: Share, then Add to Home Screen, then open it from there and come back to this page.",
+  unsupported: "This phone cannot get notifications from Airth. On an iPhone, iOS 16.4 or later is needed.",
+  blocked: "Notifications are blocked for Airth. Allow them in the phone's Settings, under Notifications, then come back here.",
+}
+
+/** Notifications on the phone (decision 117): what needs the founder, without Telegram. */
+function Notifications() {
+  const { data, refresh } = usePoll<{ phones: number }>(() => api("push"), 600000, [])
+  const [state, setState] = useState<PushState | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (onPhone) pushState().then(setState, () => setState("unsupported")) }, [])
+  async function run(what: () => Promise<unknown>, done: string) {
+    setBusy(true)
+    try { await what(); toast.success(done); refresh(); if (onPhone) setState(await pushState()) }
+    catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  const test = () => run(() => api("push/test", {}), "Sent. It arrives in a few seconds.")
+  const phones = data?.phones ?? 0
+  return (
+    <Panel className="space-y-2 p-4 text-sm">
+      <div className="flex items-center gap-1.5 font-medium"><Bell className="size-4 text-muted-foreground" /> Notifications</div>
+      {onPhone && state === null && <Loading />}
+      {onPhone && state && state !== "off" && state !== "on" && <p className="text-muted-foreground">{SAY[state]}</p>}
+      {onPhone && state === "off" && (
+        <>
+          <p className="text-muted-foreground">Airth tells this phone when a draft, a review or a deadline needs you, and when something fails.</p>
+          <Button size="sm" disabled={busy} onClick={() => run(turnOn, "Notifications are on.")}>Turn on notifications</Button>
+        </>
+      )}
+      {onPhone && state === "on" && (
+        <>
+          <p className="text-muted-foreground">On. Airth tells this phone when something needs you. A tap opens Needs you.</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={busy} onClick={test}>Send a test</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(turnOff, "Notifications are off on this phone.")}>Turn off</Button>
+          </div>
+        </>
+      )}
+      {!onPhone && (
+        <>
+          <p className="text-muted-foreground">
+            {phones ? `${phones} phone${phones > 1 ? "s get" : " gets"} Airth's notifications.` : "No phone gets notifications yet. Open this page in Airth on your phone to turn them on."}
+          </p>
+          {phones > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={test}>Send a test</Button>}
+        </>
+      )}
+    </Panel>
   )
 }
 

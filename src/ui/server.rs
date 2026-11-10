@@ -596,6 +596,14 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         let home = app.hub.home().clone();
         let tell = inbox();
         std::thread::spawn(move || supervise("backup", tell, || crate::backup::run(home.clone())));
+        // Notifications on the founder's phone (decision 117).
+        let home = app.hub.home().clone();
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("phone notifications", tell, || {
+                crate::push::run(home.clone())
+            })
+        });
         // Its own loop: a slow fetch never holds the scheduler (decision 114).
         let home = app.hub.home().clone();
         let tell = inbox();

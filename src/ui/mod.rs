@@ -343,6 +343,7 @@ fn web_file(path: &str) -> Option<(&'static [u8], &'static str)> {
         "svg" => "image/svg+xml",
         "woff2" => "font/woff2",
         "png" => "image/png",
+        "webmanifest" => "application/manifest+json",
         _ => return None,
     };
     Some((body, kind))
