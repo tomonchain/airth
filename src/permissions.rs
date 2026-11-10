@@ -316,29 +316,49 @@ impl PermissionGate {
 }
 
 /// Files that enforce Airth's security boundaries: permissions, realm
-/// isolation, the command sandbox and secret handling.
+/// isolation, the command sandbox, secret handling, the database access
+/// layer and graph validation (CLAUDE.md). A path ending in `/` covers what
+/// is under it. Writing one is always asked, even in a worktree (decision 80).
 const SECURITY_CRITICAL: &[&str] = &[
     "src/permissions.rs",
     "src/runtime.rs",
     "src/sandbox.rs",
     "src/tools/mod.rs",
     "src/tools/shell.rs",
-    "src/hub.rs",
+    "src/tools/http.rs",
+    "src/tools/remote.rs",
     "src/realm.rs",
     "src/home.rs",
     "src/isolation.rs",
     "src/integration.rs",
-    "src/tools/http.rs",
-    "src/skill.rs",
-    "src/tools/skill.rs",
-    "src/tools/mac.rs",
+    "src/github.rs",
+    "src/actions.rs",
     "src/update.rs",
     "src/service.rs",
+    "src/routine/mod.rs",
+    "src/hub/",
+    "src/business/store/",
 ];
 
 /// Paths whose modification would change how permissions are enforced.
+/// The path is read as the file system will: `src/./runtime.rs` and
+/// `src/hub/../runtime.rs` are `src/runtime.rs`.
 pub fn is_permission_critical(path: &str) -> bool {
-    SECURITY_CRITICAL.contains(&path.trim_start_matches("./"))
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            p => parts.push(p),
+        }
+    }
+    let path = parts.join("/");
+    SECURITY_CRITICAL.iter().any(|c| match c.strip_suffix('/') {
+        Some(dir) => path.starts_with(&format!("{dir}/")),
+        None => path == *c,
+    })
 }
 
 /// Asks on the terminal. Reads answers from stdin.
@@ -548,6 +568,37 @@ mod tests {
             Verdict::Denied(_)
         ));
         assert_eq!(gate.grants().len(), 1);
+    }
+
+    #[test]
+    fn every_way_to_name_a_security_file_is_caught() {
+        for path in [
+            "src/runtime.rs",
+            "./src/runtime.rs",
+            "src/./runtime.rs",
+            "src//runtime.rs",
+            "src/hub/../runtime.rs",
+            "src/hub/runs.rs",
+            "src/hub/tests/gate.rs",
+            "src/business/store/queue.rs",
+            "src/tools/remote.rs",
+            "src/github.rs",
+            "src/actions.rs",
+            "src/routine/mod.rs",
+        ] {
+            assert!(is_permission_critical(path), "{path}");
+        }
+        for path in [
+            "src/main.rs",
+            "src/hub.rs",
+            "src/hubble/x.rs",
+            "src/business/agents.rs",
+            "src/routine/week.rs",
+            "web/src/App.tsx",
+            "src/runtime.rs.bak",
+        ] {
+            assert!(!is_permission_critical(path), "{path}");
+        }
     }
 
     #[test]
