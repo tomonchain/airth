@@ -38,6 +38,13 @@ impl App {
                     json!({"routine": item.routine, "run": item.run, "blocks": blocks}),
                 )
             }
+            // The founder takes back what a draft taught (decision 116).
+            (Method::Post, ["realms", r, "queue", id, "forget"]) => {
+                let realm = self.realm(r)?;
+                let id: i64 = id.parse().context("no such item")?;
+                Store::of(&realm)?.forget_feedback(id)?;
+                json_response(200, json!({"ok": true}))
+            }
             (Method::Post, ["realms", r, "queue", id]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

@@ -58,6 +58,25 @@ pub enum Answer {
 /// a blocking flag (decision 58).
 pub const FOUNDER_CHANNELS: &[&str] = &["app", "telegram"];
 
+/// Rejection reasons that say nothing about the draft: Telegram's default,
+/// a batch let go, none at all.
+const SILENT: [&str; 3] = ["", "from Telegram", "let go with its batch"];
+
+/// One thing the founder said about a draft (decision 116).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Feedback {
+    pub item: i64,
+    pub at: String,
+    /// `edit`, `reject` or `redo`.
+    pub kind: &'static str,
+    /// The draft as the agent wrote it.
+    pub draft: String,
+    /// The founder's words: why rejected, or what to change.
+    pub said: String,
+    /// The draft as the founder approved it, after their edit.
+    pub edited: String,
+}
+
 const COLUMNS: &str = "id, created_at, kind, title, agent, routine, run, action, args, \
     original_args, source, model_call, execute_at, status, revision, flag, flag_reason, note";
 
@@ -137,6 +156,86 @@ impl Store {
         Ok(stmt
             .query_map(rusqlite::params_from_iter(statuses), read)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// What the founder said about routine `routine`'s drafts since `since`,
+    /// newest first, at most `limit` (decision 116): each draft they edited
+    /// before approving, rejected with a reason, or asked to redo. Bare
+    /// rejections, batches let go and expired drafts say nothing, and are
+    /// left out, as is what the founder chose to forget.
+    pub fn founder_feedback(
+        &self,
+        routine: &str,
+        since: chrono::DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<Feedback>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM queue
+             WHERE routine = ?1 AND kind = 'approval' AND created_at >= ?2
+               AND status IN ('approved', 'done', 'failed', 'rejected')
+               AND id NOT IN (SELECT item FROM queue_log WHERE action = 'feedback forgotten')
+             ORDER BY id DESC"
+        ))?;
+        let items = stmt
+            .query_map(params![routine, since.to_rfc3339()], read)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut out = Vec::new();
+        for item in items {
+            let Some(path) = item.source["show"].as_str() else {
+                continue;
+            };
+            let at = |v: &Value| {
+                path.split('.')
+                    .try_fold(v, |v, k| v.get(k))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let (draft, now) = (at(&item.original_args), at(&item.args));
+            let said = if item.status == "rejected" {
+                let why: String = self
+                    .conn
+                    .query_row(
+                        "SELECT detail FROM queue_log WHERE item = ?1 AND action = 'rejected' ORDER BY id DESC LIMIT 1",
+                        params![item.id],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or_default();
+                match why.strip_prefix("redone: ") {
+                    Some(ask) => Some(("redo", ask.to_string(), String::new())),
+                    None if SILENT.contains(&why.trim()) => None,
+                    None => Some(("reject", why, String::new())),
+                }
+            } else if now != draft && !now.is_empty() {
+                Some(("edit", String::new(), now))
+            } else {
+                None
+            };
+            if let Some((kind, said, edited)) = said {
+                out.push(Feedback {
+                    item: item.id,
+                    at: item.created_at,
+                    kind,
+                    draft,
+                    said,
+                    edited,
+                });
+            }
+            if out.len() == limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The founder takes back what item `id` taught: it is no longer shown
+    /// to the agent (decision 116). The log keeps that it was said.
+    pub fn forget_feedback(&mut self, id: i64) -> Result<()> {
+        self.write(|tx| {
+            get(tx, id)?;
+            log(tx, id, "feedback forgotten", "founder", Some("app"), "")
+        })
     }
 
     /// Delayed actions whose cancellation window has passed by `now`, and

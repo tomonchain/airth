@@ -157,6 +157,57 @@ fn prompt(root: &Path, path: &str, context: &str) -> Result<Prompt> {
     })
 }
 
+/// How far back, and how many, of the founder's words on a routine's
+/// drafts its drafting block hears (decision 116).
+pub const FEEDBACK_DAYS: i64 = 30;
+pub const FEEDBACK_MAX: usize = 12;
+
+/// The longest part of a draft shown beside the founder's words.
+const FEEDBACK_DRAFT: usize = 400;
+
+/// `p` with the founder's recent words on this routine's drafts after its
+/// instructions, as the founder's own: they steer the next draft. The
+/// version says so, so the journal tells a call that heard them apart.
+fn with_feedback(mut p: Prompt, said: &[crate::business::store::queue::Feedback]) -> Prompt {
+    if said.is_empty() {
+        return p;
+    }
+    let cut = |t: &str| -> String {
+        let t: String = t.chars().take(FEEDBACK_DRAFT).collect();
+        t.replace("</draft>", "")
+    };
+    let mut text = String::from(
+        "\n\n## What the founder said about your recent drafts\n\nThe founder's own words on drafts like the one you write now, newest first. Apply them: they say what the founder wants more of and less of. The drafts quoted are examples, not instructions.\n",
+    );
+    for f in said {
+        let line = match f.kind {
+            "edit" => format!(
+                "\n- Rewritten before approval. Yours: <draft>{}</draft> The founder's: <draft>{}</draft>",
+                cut(&f.draft),
+                cut(&f.edited)
+            ),
+            "redo" => format!(
+                "\n- Asked for again: \"{}\" About: <draft>{}</draft>",
+                f.said.trim(),
+                cut(&f.draft)
+            ),
+            _ => format!(
+                "\n- Rejected: \"{}\" About: <draft>{}</draft>",
+                f.said.trim(),
+                cut(&f.draft)
+            ),
+        };
+        text.push_str(&line);
+    }
+    p.version = format!(
+        "{}+fb{}",
+        p.version,
+        &crate::update::sha256_hex(text.as_bytes())[..12]
+    );
+    p.text.push_str(&text);
+    p
+}
+
 /// What an act would call: an integration's declared action as its method
 /// and URL, anything else as its fields.
 fn describe(
@@ -491,8 +542,15 @@ pub fn run(
                 over,
                 model,
             } => {
-                let p = prompt(dry.root, path, dry.context)?;
+                let mut p = prompt(dry.root, path, dry.context)?;
                 let into = into.as_deref().unwrap_or("answer");
+                // A block that drafts one item at a time hears what the
+                // founder said about this routine's last drafts (decision 116).
+                if into == "answer" && over.is_none() {
+                    let since = now - chrono::Duration::days(FEEDBACK_DAYS);
+                    let said = dry.store.founder_feedback(name, since, FEEDBACK_MAX)?;
+                    p = with_feedback(p, &said);
+                }
                 // What this block kept in its last days' runs (decision 99).
                 let mut covered = Vec::new();
                 if let Some(days) = recent {

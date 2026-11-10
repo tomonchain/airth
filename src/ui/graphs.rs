@@ -157,6 +157,12 @@ impl App {
                 "next_at": store.next_run(&key)?,
                 "cost_usd": cost.map_or(0.0, |c| c.cost_usd),
                 "unpriced": cost.map_or(0, |c| c.unpriced),
+                // What its drafting block hears from the founder (decision 116).
+                "feedback": store.founder_feedback(
+                    &name,
+                    chrono::Utc::now() - chrono::Duration::days(crate::routine::run::FEEDBACK_DAYS),
+                    crate::routine::run::FEEDBACK_MAX,
+                )?,
             });
             match graph {
                 Ok(g) => {

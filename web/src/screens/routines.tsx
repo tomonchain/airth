@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Bot, BookOpen, Check, GitBranch, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
+import { Bot, BookOpen, Check, ChevronDown, GitBranch, GraduationCap, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Routine } from "@/lib/api"
+import { api, enc, type Agent, type Feedback, type Routine } from "@/lib/api"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -67,7 +67,7 @@ export function Routines({ realm, agents, onAgent }: { realm: string; agents: Ag
         {!graphs.data ? <Loading /> : graphs.data.routines.length ? (
           <div className="space-y-2.5">
             {graphs.data.routines.map((r) => (
-              <GraphCard key={r.name} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} onOpen={() => setCanvas(r.name)} onAgent={onAgent} />
+              <GraphCard key={r.name} realm={realm} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} onOpen={() => setCanvas(r.name)} onAgent={onAgent} onChanged={graphs.refresh} />
             ))}
           </div>
         ) : <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link.</Empty>}
@@ -107,7 +107,7 @@ function Last({ ok, at }: { ok: boolean; at: string }) {
 }
 
 /** A routine in the list: who, when, its chain of blocks; it opens on the canvas. */
-function GraphCard({ r, agent, onOpen, onAgent }: { r: Routine; agent?: Agent; onOpen: () => void; onAgent: (name: string) => void }) {
+function GraphCard({ realm, r, agent, onOpen, onAgent, onChanged }: { realm: string; r: Routine; agent?: Agent; onOpen: () => void; onAgent: (name: string) => void; onChanged: () => void }) {
   const g = r.graph
   const last = r.runs[0]
   return (
@@ -141,9 +141,59 @@ function GraphCard({ r, agent, onOpen, onAgent }: { r: Routine; agent?: Agent; o
           })}
         </button>
       )}
+      {!!r.feedback?.length && <Learned realm={realm} said={r.feedback} onChanged={onChanged} />}
       {!g && r.error && <p className="-mt-1 px-4 pb-3.5 font-mono text-[11px] break-words text-red-500">{r.error}</p>}
       {last?.error && <p className="-mt-1 line-clamp-2 px-4 pb-3.5 font-mono text-[11px] text-red-500">{last.error}</p>}
     </Panel>
+  )
+}
+
+/** What the routine's next drafts hear from the founder (decision 116):
+    their last edits, reasons to reject and redos. One that no longer holds
+    can be taken back. */
+function Learned({ realm, said, onChanged }: { realm: string; said: Feedback[]; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  async function forget(f: Feedback) {
+    try {
+      await api(`realms/${enc(realm)}/queue/${f.item}/forget`, {})
+      toast.success("Forgotten: the next drafts no longer hear it.")
+      onChanged()
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const cut = (t: string) => (t.length > 160 ? `${t.slice(0, 160)}…` : t)
+  return (
+    <div className="border-t px-4 py-2.5">
+      <button className="flex w-full items-center gap-2 text-left text-xs text-muted-foreground hover:text-foreground" onClick={() => setOpen(!open)}>
+        <GraduationCap className="size-3.5" />
+        <span>Learned from you: {said.length} note{said.length === 1 ? "" : "s"}, heard by the next drafts</span>
+        <ChevronDown className={cn("ml-auto size-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-2">
+          {said.map((f) => (
+            <li key={f.item} className="group flex gap-3 rounded-lg bg-bubble px-3 py-2 text-xs leading-relaxed">
+              <div className="min-w-0 flex-1">
+                {f.kind === "edit" ? (
+                  <>
+                    <p className="text-muted-foreground line-through decoration-muted-foreground/40">{cut(f.draft)}</p>
+                    <p className="mt-0.5">{cut(f.edited)}</p>
+                  </>
+                ) : (
+                  <>
+                    <p><b className="font-medium">{f.kind === "redo" ? "Redo:" : "Rejected:"}</b> “{f.said}”</p>
+                    <p className="mt-0.5 text-muted-foreground">{cut(f.draft)}</p>
+                  </>
+                )}
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{ago(f.at)}</p>
+              </div>
+              <Button size="xs" variant="ghost" className="shrink-0 self-start text-muted-foreground opacity-0 group-hover:opacity-100 max-md:opacity-100" onClick={() => forget(f)}>Forget</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
