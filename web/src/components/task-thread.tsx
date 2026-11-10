@@ -192,7 +192,7 @@ function Work({ items, live, saying, tail }: { items: Part[]; live: boolean; say
     return said?.kind === "agent" ? said.text.split("\n")[0].slice(0, 80) : "Thinking"
   })()
   return (
-    <div className="max-w-[85%]">
+    <div className="md:max-w-[85%]">
       <button onClick={() => setOpen(!open)} className="inline-flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
         <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")} />
         {live ? <Shimmer className="truncate">{`${now.replace(/[\s.…:]+$/, "")}…`}</Shimmer> : <span>Worked{steps.length ? ` · ${steps.length} step${steps.length === 1 ? "" : "s"}` : ""}</span>}
@@ -224,7 +224,7 @@ function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "
   if (side === "right") {
     return (
       <div className={cn("flex flex-col items-end", last ? "mb-4" : "mb-1.5")}>
-        <div className="flex max-w-[75%] items-start gap-1">
+        <div className="flex max-w-[88%] items-start gap-1 md:max-w-[75%]">
           {aside}
           <div className="min-w-0 rounded-2xl rounded-br-md bg-me px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground">{children}</div>
         </div>
@@ -234,7 +234,7 @@ function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "
   }
   return (
     <div className={cn("flex items-end gap-2.5", last ? "mb-4" : "mb-1.5")}>
-      <span className="w-8 shrink-0">{last && <Character agent={agent} size={32} still />}</span>
+      <span className="hidden w-8 shrink-0 md:block">{last && <Character agent={agent} size={32} still />}</span>
       <div className="flex min-w-0 flex-1 items-start gap-1">{children}{aside}</div>
     </div>
   )
@@ -333,7 +333,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
             <Bubble side="left" agent={agent} last={last} aside={t.kind === "answer" ? <KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" /> : undefined}>
               {t.kind === "work" ? <Work items={t.items} live={t.live && !long} saying={t.live ? short : undefined} tail={t.live && !long && !view.pending ? timer : undefined} /> : (
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
+                <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 md:max-w-[85%] text-[13.5px] leading-relaxed">
                   <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
                 </div>
               )}
@@ -347,7 +347,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         const [decision, replaced] = view.pending.preview.split("\n\nReplaces: ")
         return (
           <Bubble side="left" agent={agent} last>
-            <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-sky-400/40 bg-bubble px-4 py-3 fade-up">
+            <div className="rounded-2xl rounded-bl-md border border-sky-400/40 md:max-w-[85%] bg-bubble px-4 py-3 fade-up">
               <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 dark:text-sky-300"><BookmarkPlus className="size-3.5" /> {agent.title} proposes to keep this for the whole team</div>
               <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{decision}</p>
               {replaced && <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium">In place of:</span> <span className="line-through decoration-muted-foreground/50">{replaced}</span></p>}
@@ -362,7 +362,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       })()}
       {((view.pending && view.pending.tool !== "remember") || question) && (
         <Bubble side="left" agent={agent} last>
-          <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-amber-400/40 bg-bubble px-4 py-3 fade-up">
+          <div className="rounded-2xl rounded-bl-md border border-amber-400/40 md:max-w-[85%] bg-bubble px-4 py-3 fade-up">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-300"><ShieldQuestion className="size-3.5" /> {agent.title} asks before it goes on</div>
             <pre className="max-h-40 overflow-auto rounded-lg bg-muted/60 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">{view.pending?.preview ?? question?.text ?? question?.title}</pre>
             {view.pending?.warnings.map((w, i) => <p key={i} className="mt-2 flex gap-1.5 text-xs text-amber-600 dark:text-amber-300"><CircleAlert className="mt-0.5 size-3.5 shrink-0" /> {w}</p>)}
@@ -376,7 +376,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       )}
       {live && !view.pending && long && (
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
-          <div className="writing max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
+          <div className="writing rounded-2xl md:max-w-[85%] rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
             {/* A list item or a line just begun shows once it has words. */}
             <Rich text={draft.replace(/\n\s*(?:[-*•]|\d+[.)])?\s*$/, "").trimEnd()} />
           </div>
@@ -401,16 +401,16 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       {/* A passing failure, about to be tried again (decision 81). */}
       {live && view.state.report?.startsWith("Trying again") && (() => {
         const [, when, why] = view.state.report.match(/^(Trying again in [^:]+): ([\s\S]*)$/) ?? []
-        return <p className="mb-4 ml-10 text-xs text-amber-600 dark:text-amber-400">{failure(why ?? null)} {when}.</p>
+        return <p className="mb-4 md:ml-10 text-xs text-amber-600 dark:text-amber-400">{failure(why ?? null)} {when}.</p>
       })()}
       {!live && status === "failed" && (
-        <div className="mb-4 ml-10 flex flex-wrap items-center gap-2 text-xs">
+        <div className="mb-4 md:ml-10 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-red-500">{failure(view.state.report)}</span>
           <Button size="xs" variant="outline" disabled={busy} onClick={goOn}><RotateCw /> Try again</Button>
         </div>
       )}
       {!live && status === "stopped" && !question && (
-        <div className="mb-4 ml-10 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <div className="mb-4 md:ml-10 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>
             {askedItem && askedItem.status !== "rejected" ? `It paused to ask you; you allowed it in Needs you.`
               : askedItem ? "It paused to ask you; you said no, so it stopped."

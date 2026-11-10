@@ -124,7 +124,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroller} onScroll={scrolled} className="no-dock min-h-0 flex-1 overflow-y-auto">
-        <div ref={content} className={cn("mx-auto px-4 pt-5 pb-4 md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1 }}>
+        <div ref={content} className={cn("mx-auto px-3 pt-4 pb-4 md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1 }}>
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (
@@ -141,7 +141,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
                   )}
                   {x.side === "task" ? x.node(lastOfGroup) : x.side === "left" ? (
                     <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
-                      <span className="mb-6 w-8 shrink-0">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
+                      <span className="mb-6 hidden w-8 shrink-0 md:block">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
                       <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
                     </div>
                   ) : (
@@ -156,7 +156,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
           ))}
           {outbox.length > 0 && !outbox[0].queued && (
             <div className="mb-5 flex items-end gap-2.5 fade-up">
-              <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+              <span className="hidden w-8 shrink-0 md:block"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
               <div className="inline-flex items-center rounded-2xl rounded-bl-md bg-bubble px-4 py-3.5"><Typing /></div>
             </div>
           )}
@@ -166,7 +166,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
       <div className={cn("dock-lift relative mx-auto w-full px-3 pb-3 md:px-6 md:pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
         {away && (
           <button onClick={() => { pinned.current = true; setAway(false); toBottom(true) }} aria-label="Newest messages"
-            className="absolute -top-11 left-1/2 grid size-8 -translate-x-1/2 place-items-center rounded-full border bg-popover text-muted-foreground shadow-md fade-up hover:text-foreground">
+            className="absolute -top-11 right-4 grid size-8 place-items-center md:right-auto md:left-1/2 md:-translate-x-1/2 rounded-full border bg-popover text-muted-foreground shadow-md fade-up hover:text-foreground">
             <ArrowDown className="size-4" />
           </button>
         )}
@@ -192,7 +192,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
 function Working({ agent }: { agent: Agent }) {
   return (
     <div className="mb-5 flex items-end gap-2.5 fade-up">
-      <span className="w-8 shrink-0"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
+      <span className="hidden w-8 shrink-0 md:block"><Character agent={{ ...agent, state: "working" }} size={32} /></span>
       <div className="inline-flex items-center gap-3 rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
         <Typing />
         <span className="text-xs text-muted-foreground">Running {agent.routines.find((r) => r.schedule)?.name ?? "a routine"}</span>
@@ -231,7 +231,7 @@ function Meta({ at, copy, children }: { at: string; copy?: string; children?: Re
 function Mine({ text, at, note }: { text: string; at: string; note?: string }) {
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[75%] rounded-2xl rounded-br-md bg-me px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground shadow-sm">{text}</div>
+      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-me md:max-w-[75%] px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-me-foreground shadow-sm">{text}</div>
       <div className="mt-1 pr-1 text-[11px] text-muted-foreground">{stamp(at)}{note ? ` · ${note}` : ""}</div>
     </div>
   )
@@ -242,7 +242,7 @@ function RunMessage({ run, stream }: { run: ThreadRun; stream?: boolean }) {
   const failed = run.blocks.some((b) => b.outcome === "failed")
   return (
     <div>
-      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
+      <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-3 md:max-w-[85%]">
         <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Workflow className="size-3.5" /> <span className="font-mono">{run.routine}</span>
           {failed && <span className="rounded bg-red-500/15 px-1.5 py-px text-[11px] font-medium text-red-500">failed</span>}
@@ -261,7 +261,7 @@ function RunMessage({ run, stream }: { run: ThreadRun; stream?: boolean }) {
 function ItemMessage({ realm, item, onDone, stream }: { realm: string; item: Item; onDone: () => void; stream?: boolean }) {
   if (item.status === "pending") {
     return (
-      <div className="max-w-[85%]">
+      <div className="md:max-w-[85%]">
         <NeedCard realm={realm} it={item} onDone={onDone} stream={stream} />
         <Meta at={item.created_at} copy={item.text ?? item.title} />
       </div>
@@ -269,7 +269,7 @@ function ItemMessage({ realm, item, onDone, stream }: { realm: string; item: Ite
   }
   return (
     <div>
-      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-bubble px-4 py-3">
+      <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-3 md:max-w-[85%]">
         <p className="line-clamp-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={item.kind === "approval" && item.text ? item.text : item.title} /> : item.kind === "approval" && item.text ? item.text : item.title}</p>
       </div>
       <Meta at={item.created_at} copy={item.text ?? item.title} />
