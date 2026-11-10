@@ -1,7 +1,7 @@
 import { Building, ChevronsUpDown, PanelRight, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
-import { titleBar } from "@/lib/shell"
+import { mac, titleBar } from "@/lib/shell"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { named, type Agent, type Realm } from "@/lib/api"
@@ -18,21 +18,19 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
   const closed = agents.filter((a) => !tabs.includes(a.name))
   return (
     <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none max-md:pl-3">
-      {/* Room for the Mac window's buttons, then the tabs from the column's edge. */}
-      <div className="w-[calc(var(--side)+56px)] shrink-0 max-md:hidden" />
+      {/* Room for the Mac window's buttons, then the tabs from the column's
+          edge. Airth's mark sits over the rail in a browser, and just after
+          the window's buttons in the Mac app; it opens the HQ. */}
+      <div className="flex w-[calc(var(--side)+56px)] shrink-0 items-center max-md:hidden">
+        <button onClick={onHq} aria-label="Airth: all businesses" title="Airth: all businesses"
+          className={cn("grid size-8 place-items-center rounded-lg hover:bg-accent", mac ? "ml-[80px]" : "ml-4")}>
+          <AirthMark id="airth-mark-desk" />
+        </button>
+      </div>
       {/* On a phone, Airth's mark at the top left; it opens the HQ, which
           the business menu alone reaches otherwise. */}
       <button onClick={onHq} aria-label="Airth: all businesses" className="grid size-8 shrink-0 place-items-center rounded-lg md:hidden">
-        <svg viewBox="0 0 64 64" className="size-6" aria-hidden>
-          <defs>
-            <linearGradient id="airth-mark" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#6d5dfc" />
-              <stop offset=".55" stopColor="#3fb8ff" />
-              <stop offset="1" stopColor="#2dd4bf" />
-            </linearGradient>
-          </defs>
-          <circle cx="32" cy="32" r="22" fill="none" stroke="url(#airth-mark)" strokeWidth="12" />
-        </svg>
+        <AirthMark id="airth-mark-phone" />
       </button>
       <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto max-md:invisible">
         {onAgents && tabs.map((t) => {
@@ -99,5 +97,22 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
         </DropdownMenuContent>
       </DropdownMenu>
     </header>
+  )
+}
+
+/** Airth's mark: a ring in the brand's gradient. `id` names its gradient,
+    one per copy on the page. */
+function AirthMark({ id }: { id: string }) {
+  return (
+    <svg viewBox="0 0 64 64" className="size-6" aria-hidden>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#6d5dfc" />
+          <stop offset=".55" stopColor="#3fb8ff" />
+          <stop offset="1" stopColor="#2dd4bf" />
+        </linearGradient>
+      </defs>
+      <circle cx="32" cy="32" r="22" fill="none" stroke={`url(#${id})`} strokeWidth="12" />
+    </svg>
   )
 }
