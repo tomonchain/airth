@@ -178,6 +178,33 @@ fn describe(
 }
 
 /// The blocks in an order where each comes after every block leading to it.
+/// The block that drafted what the approval block `approval` shows: the
+/// last AI block before it that gives the item its `answer`, one item at a
+/// time. Its id, and the names of the later answers (a check's) that a new
+/// draft makes stale.
+pub fn drafting_block(graph: &Graph, approval: &str) -> Result<(String, Vec<String>)> {
+    let ord = order(graph)?;
+    let at = ord
+        .iter()
+        .position(|&i| graph.blocks[i].id == approval)
+        .ok_or_else(|| anyhow::anyhow!("no block '{approval}' any more"))?;
+    let mut later = Vec::new();
+    for &i in ord[..at].iter().rev() {
+        let block = &graph.blocks[i];
+        if let Kind::Ai { into, over, .. } = &block.kind {
+            match into.as_deref() {
+                None | Some("answer") if over.is_none() => return Ok((block.id.clone(), later)),
+                None | Some("answer") => bail!(
+                    "'{}' drafts a whole list at once: it cannot redo one item",
+                    block.id
+                ),
+                Some(other) => later.push(other.to_string()),
+            }
+        }
+    }
+    bail!("no AI block drafts what '{approval}' shows")
+}
+
 fn order(graph: &Graph) -> Result<Vec<usize>> {
     fn visit(i: usize, graph: &Graph, done: &mut Vec<bool>, out: &mut Vec<usize>) -> Result<()> {
         if !done[i] {
@@ -214,6 +241,12 @@ pub enum Start {
     /// (decision 63).
     Event(Item),
     After {
+        block: String,
+        item: Item,
+    },
+    /// At the AI block `block` again, for one item the founder asked to
+    /// redo: it carries the founder's request (`pipeline::run::REDO`).
+    Redo {
         block: String,
         item: Item,
     },
@@ -316,6 +349,16 @@ pub fn run(
             for j in successors(graph, at)? {
                 inbox[j].push(item.clone());
             }
+        }
+        Start::Redo { block, item } => {
+            let at = graph
+                .blocks
+                .iter()
+                .position(|b| b.id == block)
+                .ok_or_else(|| anyhow::anyhow!("{name} has no block '{block}' any more"))?;
+            let mut item = item;
+            item.remove(APPROVED);
+            inbox[at].push(item);
         }
         Start::Mission { block, item } => {
             let at = graph

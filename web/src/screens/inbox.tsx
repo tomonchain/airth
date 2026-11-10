@@ -9,7 +9,7 @@ import { toast } from "sonner"
 import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Item } from "@/lib/api"
-import { ago, stamp } from "@/lib/time"
+import { ago, day, left, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 // Most pressing first: what broke, what the check holds, what is due.
@@ -27,6 +27,66 @@ const SECTIONS = [
   { label: "To read", ranks: [6] },
 ]
 
+/** A routine's name as a person says it: "daily-posts" is "Daily posts". */
+const named = (routine: string) => {
+  const s = routine.replace(/[-_]+/g, " ").trim()
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** The items of a section in runs: same routine, same day, one header each,
+    so a morning's drafts read as one batch and an old batch can go at once. */
+function batches(list: Item[]) {
+  const out: { key: string; label: string | null; items: Item[] }[] = []
+  for (const it of list) {
+    const label = it.routine ? `${named(it.routine)} · ${day(it.created_at)}` : null
+    const key = label ?? `item-${it.id}`
+    const last = out[out.length - 1]
+    if (label && last?.key === key) last.items.push(it)
+    else out.push({ key, label, items: [it] })
+  }
+  return out
+}
+
+/** A batch's header: its routine and day, how many, and a way to let the
+    whole batch go when the moment passed (an old morning's drafts). */
+function Batch({ realm, label, items, onDone }: { realm: string; label: string; items: Item[]; onDone: () => void }) {
+  const [sure, setSure] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const drafts = items.filter((i) => i.kind === "approval")
+  async function rejectAll() {
+    setBusy(true)
+    let done = 0
+    for (const it of drafts) {
+      try {
+        await api(`realms/${enc(realm)}/queue/${it.id}`, { answer: "reject", text: "let go with its batch", revision: it.revision, seconds: 0 })
+        done++
+      } catch (e) {
+        toast.error((e as Error).message)
+      }
+    }
+    setBusy(false)
+    setSure(false)
+    if (done) toast.success(`${done} rejected.`)
+    onDone()
+  }
+  return (
+    <div className="flex items-center gap-2 px-2.5 pt-2 pb-1 text-[11.5px] text-muted-foreground">
+      <span className="truncate font-medium text-foreground/80">{label}</span>
+      <span className="tabular-nums">{items.length}</span>
+      {drafts.length > 1 && (sure ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <Button size="xs" variant="destructive" disabled={busy} onClick={rejectAll}>Reject {drafts.length}</Button>
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => setSure(false)}>Keep</Button>
+        </span>
+      ) : (
+        <Button size="xs" variant="ghost" className="ml-auto shrink-0 text-muted-foreground" onClick={() => setSure(true)}>Reject all</Button>
+      ))}
+    </div>
+  )
+}
+
+const soon = (it: Item) => !!it.expires_at && Date.parse(it.expires_at) - Date.now() < 3 * 3600 * 1000
+
 const preview = (it: Item) => (it.kind === "approval" && it.text ? it.text : it.title).replace(/\s+/g, " ")
 
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
@@ -37,7 +97,10 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
 }) {
   const [q, setQ] = useState("")
   const sorted = useMemo(
-    () => [...items].sort((a, b) => rank(a) - rank(b) || a.created_at.localeCompare(b.created_at))
+    () => [...items].sort((a, b) => rank(a) - rank(b)
+      || a.created_at.slice(0, 10).localeCompare(b.created_at.slice(0, 10))
+      || (a.routine ?? "").localeCompare(b.routine ?? "")
+      || a.created_at.localeCompare(b.created_at))
       .filter((it) => !q || `${preview(it)} ${it.agent} ${it.routine}`.toLowerCase().includes(q.toLowerCase())),
     [items, q],
   )
@@ -101,8 +164,11 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                 <h2 className="flex items-center justify-between px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                   {s.label} <span className="tabular-nums">{list.length}</span>
                 </h2>
+                {batches(list).map((b) => (
+                <div key={b.key}>
+                {b.label && b.items.length > 1 && <Batch realm={realm} label={b.label} items={b.items} onDone={onDone} />}
                 <ul className="space-y-0.5">
-                  {list.map((it) => {
+                  {b.items.map((it) => {
                     const a = agent(it.agent)
                     const k = kindOf(it)
                     return (
@@ -116,7 +182,10 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                             <span className="flex items-center gap-2">
                               <span className="truncate text-[13px] font-medium">{a?.title ?? "Airth"}</span>
                               <span className={cn("inline-flex shrink-0 items-center gap-1 rounded px-1 text-[10.5px] font-medium", k.tone)}><k.icon className="size-3" />{k.label}</span>
-                              <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{stamp(it.created_at)}</span>
+                              <span className={cn("ml-auto shrink-0 text-[11px] text-muted-foreground", soon(it) && "text-amber-600 dark:text-amber-400")}
+                                title={it.expires_at ? `Leaves Needs you unanswered ${ago(it.expires_at).replace(" ago", "")}` : undefined}>
+                                {soon(it) ? left(it.expires_at) : stamp(it.created_at)}
+                              </span>
                             </span>
                             <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-muted-foreground">{preview(it)}</span>
                           </span>
@@ -125,6 +194,8 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                     )
                   })}
                 </ul>
+                </div>
+                ))}
               </section>
             )
           })}
@@ -144,6 +215,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
             <Button variant="ghost" size="icon-sm" disabled={at <= 0} onClick={() => setSel(sorted[at - 1].id)} aria-label="Previous (K)"><ChevronUp /></Button>
             <Button variant="ghost" size="icon-sm" disabled={at >= sorted.length - 1} onClick={() => setSel(sorted[at + 1].id)} aria-label="Next (J)"><ChevronDown /></Button>
             <span className="ml-1 text-xs text-muted-foreground tabular-nums">{at + 1} of {sorted.length}</span>
+            {open.expires_at && <span className={cn("ml-2 text-xs text-muted-foreground", soon(open) && "text-amber-600 dark:text-amber-400")}>· {left(open.expires_at)}, then it leaves unanswered</span>}
             <span className="ml-auto hidden items-center gap-1 text-xs text-muted-foreground md:flex">
               <Kbd>J</Kbd><Kbd>K</Kbd> to move
             </span>

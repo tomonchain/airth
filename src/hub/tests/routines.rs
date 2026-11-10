@@ -789,3 +789,203 @@ fn a_broken_business_does_not_stop_the_others_routines() {
     assert_eq!(told.len(), 1, "said once, though it failed twice");
     assert!(told[0].title.contains("Scheduling routines"));
 }
+
+/// A draft the founder did not answer within its routine's `expires_after`
+/// leaves Needs you, marked expired; one still in its window, or answered,
+/// stays as it is.
+#[test]
+fn a_draft_not_answered_in_its_window_expires() {
+    let mut f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/post-writer.md".to_string(), "Draft posts.".to_string()),
+        ("prompts/post.md".into(), "Draft a post.".into()),
+        ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
+        ("routines/posts.json".into(), json!({"agent": "post-writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["http://127.0.0.1:9/feed"], "dedupe": "link"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft", "expires_after": 24},
+            {"id": "send", "type": "act", "action": "typefully.create_draft", "fields": {"content": "{{answer.draft}}"}}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    f.realm
+        .set_integration(crate::integration::Integration {
+            free_reads: false,
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: "http://127.0.0.1:9".into(),
+            headers: Default::default(),
+            actions: vec![
+                serde_json::from_value(
+                    json!({"name": "create_draft", "method": "POST", "path": "/v1/drafts",
+                "fields": [{"name": "content", "place": "body"}], "class": "reversible"}),
+                )
+                .unwrap(),
+            ],
+        })
+        .unwrap();
+    f.realm.save().unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    assert_eq!(
+        hub.approval_windows(&f.realm)
+            .get(&("posts".to_string(), "ok".to_string())),
+        Some(&24)
+    );
+    let mut store = Store::of(&f.realm).unwrap();
+    for title in ["Old draft", "Answered draft", "Fresh draft"] {
+        store
+            .propose(&crate::business::store::autonomy::NewItem {
+                kind: "approval",
+                title,
+                agent: Some("post-writer"),
+                routine: Some("posts"),
+                run: Some("r1"),
+                action: None,
+                args: r#"{"answer": {"draft": "x"}}"#,
+                execute_at: None,
+                source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+                model_call: None,
+            })
+            .unwrap();
+    }
+    let created = |id: i64| {
+        let item = store
+            .queue(&["pending"])
+            .unwrap()
+            .into_iter()
+            .find(|i| i.id == id)
+            .unwrap();
+        chrono::DateTime::parse_from_rfc3339(&item.created_at)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    let at = created(1);
+    store
+        .answer(2, None, Answer::Reject("no".into()), "app", 5)
+        .unwrap();
+    // A day and an hour later, the first draft is out of its window.
+    let gone = hub
+        .expire_approvals(at + chrono::Duration::hours(25))
+        .unwrap();
+    assert_eq!(gone, vec![(f.realm.name().to_string(), 2)]);
+    let left: Vec<String> = store
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .map(|i| i.title)
+        .collect();
+    assert!(
+        left.is_empty(),
+        "both unanswered drafts were made at once: {left:?}"
+    );
+    let expired = store.queue(&["expired"]).unwrap();
+    assert_eq!(expired.len(), 2);
+    assert_eq!(
+        store.queue(&["rejected"]).unwrap().len(),
+        1,
+        "an answered draft stays answered"
+    );
+    // Within the window, nothing leaves.
+    assert!(hub.expire_approvals(at).unwrap().is_empty());
+}
+
+/// The founder asks for a new version of a draft: the drafting block runs
+/// again with the founder's words, told apart from the item's data; the new
+/// draft takes the old one's place, and the old one is rejected with the
+/// request.
+#[test]
+fn a_draft_is_redone_with_what_the_founder_asked() {
+    let mut f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/post-writer.md".to_string(), "Draft posts.".to_string()),
+        ("prompts/post.md".into(), "Draft a post.".into()),
+        ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
+        ("routines/posts.json".into(), json!({"agent": "post-writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["http://127.0.0.1:9/feed"], "dedupe": "link"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft", "expires_after": 24},
+            {"id": "send", "type": "act", "action": "typefully.create_draft", "fields": {"content": "{{answer.draft}}"}}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    f.realm
+        .set_integration(crate::integration::Integration {
+            free_reads: false,
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: "http://127.0.0.1:9".into(),
+            headers: Default::default(),
+            actions: vec![
+                serde_json::from_value(
+                    json!({"name": "create_draft", "method": "POST", "path": "/v1/drafts",
+                "fields": [{"name": "content", "place": "body"}], "class": "reversible"}),
+                )
+                .unwrap(),
+            ],
+        })
+        .unwrap();
+    f.realm.save().unwrap();
+    let (hub, seen, _) = make_hub(&f.home, vec![done(r#"{"draft": "ETH left. Short."}"#)]);
+    let item = json!({"title": "Flows", "link": "https://example.com/1", "source_id": "https://example.com/1",
+        "answer": {"draft": "ETH left the staking queue, and here is a long story about it."}});
+    Store::of(&f.realm)
+        .unwrap()
+        .propose(&crate::business::store::autonomy::NewItem {
+            kind: "approval",
+            title: "ETH left the staking queue",
+            agent: Some("post-writer"),
+            routine: Some("posts"),
+            run: Some("r1"),
+            action: None,
+            args: &item.to_string(),
+            execute_at: None,
+            source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+            model_call: None,
+        })
+        .unwrap();
+    assert!(
+        hub.redo_item(&f.realm, 1, None, "  ", "app", 3).is_err(),
+        "a redo says what to change"
+    );
+    hub.redo_item(&f.realm, 1, None, "shorter", "app", 3)
+        .unwrap();
+
+    let store = Store::of(&f.realm).unwrap();
+    let pending = store.queue(&["pending"]).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].args["answer"]["draft"], "ETH left. Short.");
+    assert_eq!(
+        pending[0].args["title"], "Flows",
+        "the same item, drafted again"
+    );
+    assert!(
+        pending[0].args.get(crate::pipeline::run::REDO).is_none(),
+        "the request served this draft only"
+    );
+    let old = store.queue(&["rejected"]).unwrap();
+    assert_eq!(old.len(), 1);
+    assert_eq!(old[0].id, 1);
+    // The founder's words reach the model outside the item, with the old draft.
+    let asked: String = seen.lock().unwrap()[0]
+        .iter()
+        .map(|m| format!("{m:?}"))
+        .collect();
+    let item_part = asked.split("</item>").next().unwrap();
+    assert!(
+        !item_part.contains("shorter"),
+        "the request is not the item's data"
+    );
+    assert!(asked.contains("asks for a new one: shorter"), "{asked}");
+    assert!(
+        asked.contains("a long story about it"),
+        "the draft it replaces"
+    );
+}

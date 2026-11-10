@@ -27,3 +27,22 @@ export function stamp(iso: string | null | undefined, now = new Date()): string 
   if (d.toDateString() === y.toDateString()) return "Yesterday"
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
 }
+
+/** How long until `iso`, said plainly: "5h left", "40m left", "expiring". */
+export function left(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return ""
+  const s = (Date.parse(iso) - now) / 1000
+  if (s <= 60) return "expiring"
+  if (s < 3600) return `${Math.round(s / 60)}m left`
+  if (s < 2 * 86400) return `${Math.round(s / 3600)}h left`
+  return `${Math.round(s / 86400)}d left`
+}
+
+/** The day of `iso`: Today, Yesterday, or the date. */
+export function day(iso: string, now = new Date()): string {
+  const d = new Date(iso)
+  if (d.toDateString() === now.toDateString()) return "Today"
+  const y = new Date(now); y.setDate(now.getDate() - 1)
+  if (d.toDateString() === y.toDateString()) return "Yesterday"
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })
+}

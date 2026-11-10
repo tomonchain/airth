@@ -150,7 +150,12 @@ export type Item = {
   overdue: boolean
   execute_at: string | null
   created_at: string
-  source: { link: string | null; title: string | null } | null
+  /** When an unanswered draft leaves Needs you: its routine's window. */
+  expires_at?: string | null
+  /** The drafting step's one line on why this. */
+  angle?: string | null
+  /** What the draft answers or is written from: the post replied to, the article. */
+  source: { link: string | null; title: string | null; text?: string | null } | null
 }
 
 export type Block = {

@@ -44,6 +44,10 @@ pub struct Config {
     pub sent: BTreeMap<String, Sent>,
     /// The item whose new text the bot waits for, after an Edit tap.
     pub editing: Option<String>,
+    /// The item whose draft the founder asked to redo: their next reply to
+    /// it says what should change.
+    #[serde(default)]
+    pub redoing: Option<String>,
     /// How many times Telegram refused to take each item, by `realm/id`.
     pub refused: BTreeMap<String, u32>,
     /// The business the founder's plain messages go to (decision 109); the
@@ -287,6 +291,11 @@ fn item_text(realm: &str, item: &Item) -> String {
     format!("{realm} · {what}{action}{title}{flag}{dropped}\n\n{whole}")
 }
 
+/// Whether an item's draft can be drafted again: a routine's draft.
+fn redoable(item: &Item) -> bool {
+    item.kind == "approval" && item.routine.is_some() && item.source["editable"].is_string()
+}
+
 fn buttons(realm: &str, item: &Item) -> Value {
     let data = |op: &str| format!("{op}/{realm}/{}/{}", item.id, item.revision);
     let button = |label: &str, op: &str| json!({"text": label, "callback_data": data(op)});
@@ -310,8 +319,19 @@ fn buttons(realm: &str, item: &Item) -> Value {
             if item.source["editable"].is_string() {
                 row.push(button("Edit", "e"));
             }
+            if redoable(item) {
+                row.push(button("Redo", "n"));
+            }
             row.push(button("Reject", "r"));
             json!([row])
+        }
+        _ if redoable(item) => {
+            json!([[
+                button("Approve", "a"),
+                button("Edit", "e"),
+                button("Redo", "n"),
+                button("Reject", "r")
+            ]])
         }
         _ if item.source["editable"].is_string() => {
             json!([[
@@ -475,6 +495,34 @@ pub fn handle(
     }
     if let Some(rest) = text.strip_prefix("/business") {
         return choose_business(hub, api, config, rest.trim());
+    }
+    // The founder said what should change in a draft: it is drafted again.
+    if let Some(key) = config.redoing.clone() {
+        let replied = message["reply_to_message"]["message_id"].as_i64();
+        if let Some(sent) = config
+            .sent
+            .get(&key)
+            .cloned()
+            .filter(|s| replied.is_some_and(|r| s.messages.contains(&r)))
+        {
+            config.redoing = None;
+            let (realm, id) = item_of(hub, &key)?;
+            send(api, chat, "Drafting it again…", None)?;
+            let said = match hub.redo_item(
+                &realm,
+                id,
+                Some(sent.revision),
+                text,
+                "telegram",
+                answer_seconds(&sent),
+            ) {
+                // The new draft comes as its own item, with its buttons.
+                Ok(report) => report,
+                Err(e) => format!("Not redone: {e:#}"),
+            };
+            send(api, chat, &said, None)?;
+            return Ok(());
+        }
     }
     let Some(key) = config.editing.clone() else {
         if message["reply_to_message"].is_null()
@@ -644,8 +692,33 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
                 return Ok(());
             }
             config.editing = Some(key.to_string());
+            config.redoing = None;
             let last = sent.messages.last().copied().unwrap_or_default();
             let body = json!({"chat_id": chat, "text": "Reply to the item's message with the new text.",
+                "reply_to_message_id": last, "reply_markup": {"force_reply": true}});
+            let asked = api.call("sendMessage", &body)?["message_id"]
+                .as_i64()
+                .unwrap_or_default();
+            // A reply to this question is a reply to the item.
+            if let Some(s) = config.sent.get_mut(key) {
+                s.messages.push(asked);
+            }
+            return Ok(());
+        }
+        "n" => {
+            if sent.revision != revision {
+                send(
+                    api,
+                    chat,
+                    "That button is out of date: use the item's latest message.",
+                    None,
+                )?;
+                return Ok(());
+            }
+            config.redoing = Some(key.to_string());
+            config.editing = None;
+            let last = sent.messages.last().copied().unwrap_or_default();
+            let body = json!({"chat_id": chat, "text": "What should change? Reply here: shorter, funnier, another angle…",
                 "reply_to_message_id": last, "reply_markup": {"force_reply": true}});
             let asked = api.call("sendMessage", &body)?["message_id"]
                 .as_i64()

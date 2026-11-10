@@ -47,6 +47,7 @@ pub(crate) use pipelines::TEST_FEEDS;
 mod repos;
 mod retries;
 mod routines;
+pub use routines::expires_at;
 mod runs;
 mod skills;
 mod tasks;

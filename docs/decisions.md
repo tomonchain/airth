@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 115. The founder asks for a draft again, saying what should change
+
+**Accepted** (founder, 10 November 2026: "go" on a Redo with a one-line instruction, in the app and on Telegram).
+
+- **Redo, beside Approve, Edit and Reject**, on a routine's draft. The founder says what should change ("shorter", "funnier", "another angle"). On Telegram, the Redo button asks, and the founder's reply to the item's message is the request.
+- **The block that drafted it runs again** on the same item, with the request and the draft it replaces. What follows runs as in any run: a check, then the approval. That block is the last AI block before the approval that gives the item its `answer`. A block that drafts a whole list at once cannot redo one item. The new draft takes the old one's place in Needs you; the old one is rejected with the request ("redone: shorter"), so the agent learns from it. When no new draft comes out, the old one stays and the founder is told why.
+- **The founder's words are told to the model as the founder's, outside the item.** The item comes from outside and is data the model never obeys (decision 63's rule). The request travels under a key only Airth sets (`airth_redo`), is taken out of the item before the call, and is gone once the draft is answered, so a check after it never sees it.
+
+*Why:* correcting a draft meant rewriting it by hand. The founder knows what is wrong in a few words; the agent can do the rest.
+
+*Cost:* one more model call per redo, and the founder waits for it (a few seconds to a minute). A redo is a new run of the routine from its drafting block, recorded as such.
+
 ## 114. Each business folder follows its remote
 
 **Accepted** (founder, 10 November 2026: "Airth should fetch the businesses' updates by itself").

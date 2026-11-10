@@ -338,6 +338,79 @@ impl Hub {
         self.run_routine(realm, &name, &run, start, None)
     }
 
+    /// The founder asks for a new version of draft `id`, saying what should
+    /// change: the block that drafted it runs again on the same item, with
+    /// the founder's words and the draft it replaces, and the rest of the
+    /// routine follows (a check, the approval). The new draft takes the old
+    /// one's place in Needs you; the old one is rejected with the request,
+    /// so the agent learns from it. What the run said.
+    pub fn redo_item(
+        &self,
+        realm: &Realm,
+        id: i64,
+        revision: Option<i64>,
+        ask: &str,
+        channel: &str,
+        seconds: u64,
+    ) -> Result<String> {
+        let ask = ask.trim();
+        anyhow::ensure!(!ask.is_empty(), "say what should change");
+        let item = Store::of(realm)?
+            .queue(&["pending"])?
+            .into_iter()
+            .find(|i| i.id == id)
+            .context("this item no longer waits for you")?;
+        let (Some(name), Some(approval)) = (item.routine.clone(), item.source["block"].as_str())
+        else {
+            bail!("only a routine's draft can be redone");
+        };
+        anyhow::ensure!(item.kind == "approval", "only a draft can be redone");
+        let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, &name))?;
+        let (block, stale) = crate::routine::run::drafting_block(&graph, approval)?;
+        let Value::Object(mut fields) = item.args.clone() else {
+            bail!("item {id} does not hold the routine's item");
+        };
+        let before = fields.remove("answer").unwrap_or(Value::Null);
+        fields.remove("model_call");
+        for key in &stale {
+            fields.remove(key);
+        }
+        fields.insert(
+            crate::pipeline::run::REDO.into(),
+            json!({"ask": ask, "before": before}),
+        );
+        let run = format!("{name}-redo-{}", Utc::now().format("%Y%m%dT%H%M%S%3f"));
+        let ran = self.run_routine(
+            realm,
+            &name,
+            &run,
+            crate::routine::run::Start::Redo {
+                block,
+                item: fields,
+            },
+            None,
+        )?;
+        let mut store = Store::of(realm)?;
+        let drafted = store
+            .queue(&["pending"])?
+            .iter()
+            .any(|i| i.run.as_deref() == Some(run.as_str()));
+        // No new draft: the old one stays, and the founder sees why.
+        anyhow::ensure!(
+            drafted,
+            "no new draft came out, the old one stays:\n{}",
+            ran.text
+        );
+        store.answer(
+            id,
+            revision,
+            crate::business::store::queue::Answer::Reject(format!("redone: {ask}")),
+            channel,
+            seconds,
+        )?;
+        Ok("A new draft waits for you in its place.".into())
+    }
+
     /// The founder answers queue item `id` from `channel`. An approval of a
     /// routine's item resumes the routine after its approval block, with the
     /// item as the founder left it; the routine's report comes back.
@@ -721,6 +794,61 @@ impl Hub {
         bail!("{}", event.result)
     }
 
+    /// How long each routine's approvals wait for the founder, by routine
+    /// and approval block: the graph's `expires_after`, in hours.
+    pub fn approval_windows(&self, realm: &Realm) -> BTreeMap<(String, String), u32> {
+        let Ok(graphs) = self.with_routine_checks(realm, crate::routine::load_all) else {
+            return BTreeMap::new();
+        };
+        let mut out = BTreeMap::new();
+        for (name, graph) in graphs {
+            let Ok(graph) = graph else { continue };
+            for block in &graph.blocks {
+                if let crate::routine::Kind::Approval {
+                    expires_after: Some(hours),
+                    ..
+                } = &block.kind
+                {
+                    out.insert((name.clone(), block.id.clone()), *hours);
+                }
+            }
+        }
+        out
+    }
+
+    /// Approvals the founder did not answer within their routine's
+    /// `expires_after` leave Needs you, across realms: a morning's drafts
+    /// are of no use the next day. How many, by realm.
+    pub fn expire_approvals(&self, now: DateTime<Utc>) -> Result<Vec<(String, usize)>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived || !realm.dir().join(crate::business::store::FILE).exists() {
+                continue;
+            }
+            let windows = self.approval_windows(&realm);
+            if windows.is_empty() {
+                continue;
+            }
+            let mut store = Store::of(&realm)?;
+            let mut n = 0;
+            for item in store.queue(&["pending"])? {
+                let Some(hours) = expires_at(&item, &windows)
+                    .filter(|(at, _)| *at <= now)
+                    .map(|(_, h)| h)
+                else {
+                    continue;
+                };
+                if store.expire_item(item.id, &format!("not answered within {hours} h"))? {
+                    n += 1;
+                }
+            }
+            if n > 0 {
+                out.push((realm.name().to_string(), n));
+            }
+        }
+        Ok(out)
+    }
+
     /// Reports not seen within a week leave Needs you, across realms; how
     /// many, by realm.
     pub fn expire_reports(&self, now: DateTime<Utc>) -> Result<Vec<(String, usize)>> {
@@ -954,6 +1082,25 @@ const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [
     std::time::Duration::from_secs(60),
     std::time::Duration::from_secs(300),
 ];
+/// When an approval leaves Needs you unanswered, and its window in hours:
+/// its creation plus its routine's `expires_after`, if it has one.
+pub fn expires_at(
+    item: &crate::business::store::queue::Item,
+    windows: &BTreeMap<(String, String), u32>,
+) -> Option<(DateTime<Utc>, u32)> {
+    if item.kind != "approval" {
+        return None;
+    }
+    let routine = item.routine.clone()?;
+    let block = item.source["block"].as_str()?.to_string();
+    let hours = *windows.get(&(routine, block))?;
+    let created = DateTime::parse_from_rfc3339(&item.created_at).ok()?;
+    Some((
+        created.with_timezone(&Utc) + chrono::Duration::hours(hours.into()),
+        hours,
+    ))
+}
+
 #[cfg(test)]
 const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO; 2];
 

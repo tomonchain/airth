@@ -152,6 +152,22 @@ impl Store {
             .collect())
     }
 
+    /// An item nobody answered in time leaves Needs you, marked expired,
+    /// unless the founder answered meanwhile. Whether it did.
+    pub fn expire_item(&mut self, id: i64, why: &str) -> Result<bool> {
+        self.write(|tx| {
+            let changed = tx.execute(
+                "UPDATE queue SET status = 'expired', revision = revision + 1
+                 WHERE id = ?1 AND kind = 'approval' AND status = 'pending'",
+                params![id],
+            )?;
+            if changed == 1 {
+                log(tx, id, "expired", "airth", None, why)?;
+            }
+            Ok(changed == 1)
+        })
+    }
+
     /// Airth lets a delayed item go once its window has passed: it becomes
     /// approved, unless the founder answered meanwhile.
     pub fn release_item(&mut self, id: i64) -> Result<bool> {

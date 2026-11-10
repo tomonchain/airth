@@ -368,6 +368,13 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
             Err(e) => eprintln!("legal deadlines: {e:#}"),
         }
+        // Drafts not answered within their routine's window (`expires_after`).
+        match runner.hub.expire_approvals(chrono::Utc::now()) {
+            Ok(gone) => gone
+                .iter()
+                .for_each(|(realm, n)| eprintln!("{realm}: {n} draft(s) expired unanswered")),
+            Err(e) => eprintln!("drafts: {e:#}"),
+        }
         match runner.hub.expire_reports(chrono::Utc::now()) {
             Ok(gone) => gone
                 .iter()
