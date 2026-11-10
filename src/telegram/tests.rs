@@ -375,9 +375,10 @@ fn a_blocked_item_offers_override_not_approve() {
             .map(|b| b["text"].as_str().unwrap().to_string())
             .collect()
     };
-    assert_eq!(labels(&items[0]), ["Override", "Edit", "Reject"]);
+    // A routine's draft can also be drafted again.
+    assert_eq!(labels(&items[0]), ["Override", "Edit", "Redo", "Reject"]);
     assert!(item_text("acme", &items[0]).contains("Flagged by the check: a call to buy"));
-    assert_eq!(labels(&items[1]), ["Approve", "Edit", "Reject"]);
+    assert_eq!(labels(&items[1]), ["Approve", "Edit", "Redo", "Reject"]);
     assert!(item_text("acme", &items[1]).contains("Note from the check: long"));
     // What the same run dropped reaches the phone too (decision 61).
     store
@@ -975,4 +976,50 @@ fn the_founder_moves_the_bot_to_another_business() {
     )
     .unwrap();
     assert_eq!(started.0.borrow()[0].0, "numirama");
+}
+
+/// Redo: the tap asks what should change; the founder's reply to the item
+/// goes to the redo, never to an edit or a new task, and is said back.
+#[test]
+fn a_redo_takes_the_reply_to_its_item() {
+    let (_home, _root, hub, realm) = business();
+    post(&realm, "ETH left the queue.");
+    let api = Fake::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    push(&hub, &api, &mut config).unwrap();
+    let first = config.sent["acme/1"].messages[0];
+    handle(&hub, &api, &mut config, &tap(8, "n/acme/1/1"), &|_, _| {}).unwrap();
+    assert_eq!(config.redoing, None, "someone else's tap changes nothing");
+    handle(&hub, &api, &mut config, &tap(7, "n/acme/1/1"), &|_, _| {}).unwrap();
+    assert_eq!(config.redoing.as_deref(), Some("acme/1"));
+    assert!(
+        api.sent().last().unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("What should change?")
+    );
+    let started = std::cell::Cell::new(false);
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &reply(first, "shorter"),
+        &|_, _| started.set(true),
+    )
+    .unwrap();
+    assert!(!started.get(), "the reply is not a new task");
+    assert_eq!(config.redoing, None);
+    // This test business has no routine to draft again with: said, and the
+    // draft stays as it was.
+    let said = api.sent().last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(said.starts_with("Not redone"), "{said}");
+    let item = Store::of(&realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(item[0].args["answer"]["draft"], "ETH left the queue.");
 }

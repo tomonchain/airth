@@ -43,6 +43,18 @@ impl App {
                 let realm = self.realm(r)?;
                 let id: i64 = id.parse().context("no such item")?;
                 let text = body["text"].as_str().unwrap_or_default().to_string();
+                // A new version of a draft, with what should change.
+                if body["answer"] == "redo" {
+                    let report = self.hub.redo_item(
+                        &realm,
+                        id,
+                        body["revision"].as_i64(),
+                        &text,
+                        "app",
+                        body["seconds"].as_u64().unwrap_or(0),
+                    )?;
+                    return Ok(Some(json_response(200, json!({"report": report}))));
+                }
                 let answer = match body["answer"].as_str() {
                     Some("approve") => Answer::Approve,
                     Some("edit") => Answer::Edit(text),

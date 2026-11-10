@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Pencil, RotateCcw, Send, ShieldAlert, Timer, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
@@ -28,13 +28,16 @@ export function kindOf(it: Item) {
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
 export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean }) {
-  const [mode, setMode] = useState<"edit" | "reject" | "confirm" | null>(null)
+  const [mode, setMode] = useState<"edit" | "reject" | "confirm" | "redo" | null>(null)
+  const [ask, setAsk] = useState("")
   const [text, setText] = useState(it.text ?? "")
   const [why, setWhy] = useState("")
   const [busy, setBusy] = useState(false)
   const [shown] = useState(Date.now())
   const k = kindOf(it)
   const blocked = it.flag === "blocking"
+  // A routine's draft can be drafted again; a task's proposed call cannot.
+  const redoable = it.kind === "approval" && !!it.routine && it.editable
 
   async function answer(kind: string, body = "", extra: object = {}) {
     setBusy(true)
@@ -44,6 +47,26 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
       })
       toast.success(kind === "edit" ? "Edited. It still waits for your approval." : out.report ?? `Done: ${out.item.status}`)
       setMode(null)
+      onDone()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // A new version of the draft: the agent drafts again with what to change.
+  // It takes a model call, so it says it is working until the new one is in.
+  async function redo() {
+    if (!ask.trim()) return
+    setBusy(true)
+    try {
+      const out = await api<{ report: string }>(`realms/${enc(realm)}/queue/${it.id}`, {
+        answer: "redo", text: ask, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000),
+      }, undefined, 180000)
+      toast.success(out.report)
+      setMode(null)
+      setAsk("")
       onDone()
     } catch (e) {
       toast.error((e as Error).message)
@@ -68,6 +91,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
       const k = e.key.toLowerCase()
       if (k === "a" && key && !mode) { e.preventDefault(); answer(key) }
       else if (k === "e" && it.editable && !mode) { e.preventDefault(); setMode("edit") }
+      else if (k === "n" && redoable && !mode) { e.preventDefault(); setMode("redo") }
       else if (k === "r" && (it.kind === "approval" || it.kind === "delayed") && !mode) { e.preventDefault(); setMode("reject") }
       else if (k === "escape") setMode(null)
     }
@@ -145,6 +169,10 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
         </a>
       )}
 
+      {mode === "redo" && (
+        <Input className="mt-3" placeholder="What should change? Shorter, funnier, another angle…" value={ask} onChange={(e) => setAsk(e.target.value)} autoFocus
+          disabled={busy} onKeyDown={(e) => e.key === "Enter" && redo()} />
+      )}
       {mode === "reject" && (
         <Input className="mt-3" placeholder="Why? The agent learns from it (optional)" value={why} onChange={(e) => setWhy(e.target.value)} autoFocus
           onKeyDown={(e) => e.key === "Enter" && answer("reject", why)} />
@@ -161,6 +189,11 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
             <Button size="sm" variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
           </>
+        ) : mode === "redo" ? (
+          <>
+            <Button size="sm" disabled={busy || !ask.trim()} onClick={redo}>{busy ? <><Loader className="animate-spin" /> Drafting again…</> : <><Sparkles /> Draft again</>}</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setMode(null)}>Cancel</Button>
+          </>
         ) : mode === "reject" ? (
           <>
             <Button size="sm" variant="destructive" disabled={busy} onClick={() => answer("reject", why)}><X /> {it.kind === "delayed" ? "Cancel it" : "Reject"}</Button>
@@ -176,6 +209,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
             {main}
             {it.retry === "ambiguous" && <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>}
             {it.editable && <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
+            {redoable && <Button size="sm" variant="outline" onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
             {it.kind === "approval" && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setMode("reject")}><X /> Reject{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
           </>

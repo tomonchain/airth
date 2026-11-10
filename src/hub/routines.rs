@@ -338,6 +338,79 @@ impl Hub {
         self.run_routine(realm, &name, &run, start, None)
     }
 
+    /// The founder asks for a new version of draft `id`, saying what should
+    /// change: the block that drafted it runs again on the same item, with
+    /// the founder's words and the draft it replaces, and the rest of the
+    /// routine follows (a check, the approval). The new draft takes the old
+    /// one's place in Needs you; the old one is rejected with the request,
+    /// so the agent learns from it. What the run said.
+    pub fn redo_item(
+        &self,
+        realm: &Realm,
+        id: i64,
+        revision: Option<i64>,
+        ask: &str,
+        channel: &str,
+        seconds: u64,
+    ) -> Result<String> {
+        let ask = ask.trim();
+        anyhow::ensure!(!ask.is_empty(), "say what should change");
+        let item = Store::of(realm)?
+            .queue(&["pending"])?
+            .into_iter()
+            .find(|i| i.id == id)
+            .context("this item no longer waits for you")?;
+        let (Some(name), Some(approval)) = (item.routine.clone(), item.source["block"].as_str())
+        else {
+            bail!("only a routine's draft can be redone");
+        };
+        anyhow::ensure!(item.kind == "approval", "only a draft can be redone");
+        let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, &name))?;
+        let (block, stale) = crate::routine::run::drafting_block(&graph, approval)?;
+        let Value::Object(mut fields) = item.args.clone() else {
+            bail!("item {id} does not hold the routine's item");
+        };
+        let before = fields.remove("answer").unwrap_or(Value::Null);
+        fields.remove("model_call");
+        for key in &stale {
+            fields.remove(key);
+        }
+        fields.insert(
+            crate::pipeline::run::REDO.into(),
+            json!({"ask": ask, "before": before}),
+        );
+        let run = format!("{name}-redo-{}", Utc::now().format("%Y%m%dT%H%M%S%3f"));
+        let ran = self.run_routine(
+            realm,
+            &name,
+            &run,
+            crate::routine::run::Start::Redo {
+                block,
+                item: fields,
+            },
+            None,
+        )?;
+        let mut store = Store::of(realm)?;
+        let drafted = store
+            .queue(&["pending"])?
+            .iter()
+            .any(|i| i.run.as_deref() == Some(run.as_str()));
+        // No new draft: the old one stays, and the founder sees why.
+        anyhow::ensure!(
+            drafted,
+            "no new draft came out, the old one stays:\n{}",
+            ran.text
+        );
+        store.answer(
+            id,
+            revision,
+            crate::business::store::queue::Answer::Reject(format!("redone: {ask}")),
+            channel,
+            seconds,
+        )?;
+        Ok("A new draft waits for you in its place.".into())
+    }
+
     /// The founder answers queue item `id` from `channel`. An approval of a
     /// routine's item resumes the routine after its approval block, with the
     /// item as the founder left it; the routine's report comes back.
