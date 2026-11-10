@@ -323,12 +323,30 @@ function Connections({ realm }: { realm: string }) {
 
 
 function About() {
-  const { data } = usePoll<{ home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])
+  const { data, refresh } = usePoll<{ name: string | null; home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])
+  const [name, setName] = useState<string | null>(null)
+  const shown = name ?? data?.name ?? ""
+  async function save() {
+    try {
+      await api("name", { name: shown }, "PUT")
+      setName(null)
+      refresh()
+      // The top bar and the tab's title show it at once.
+      window.dispatchEvent(new Event("airth:name"))
+      toast.success(shown.trim() ? `This Airth is now "${shown.trim()}".` : "Name removed.")
+    } catch (e) { toast.error((e as Error).message) }
+  }
   return (
     <>
       <Head title="About">Airth on this machine.</Head>
       {!data ? <Loading /> : (
         <Panel className="divide-y">
+          <Row label="Name" hint="Shown at the top and in the tab, so you know which Airth you are on: your server, your Mac.">
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); save() }}>
+              <Input value={shown} onChange={(e) => setName(e.target.value)} placeholder="VPS" maxLength={30} className="h-8 w-36" aria-label="Name of this Airth" />
+              <Button size="sm" variant="outline" type="submit" disabled={name === null || name === (data.name ?? "")}>Save</Button>
+            </form>
+          </Row>
           <Row label="Airth home" hint="Data, secrets and run records. Agents cannot reach it."><span className="font-mono text-xs text-muted-foreground">{data.home.split("/").slice(-2).join("/")}</span></Row>
           <Row label="Sandbox" hint="Commands of missions run isolated.">{data.sandbox ? <span className="text-xs text-emerald-500">On</span> : <span className="text-xs text-red-500">Off</span>}</Row>
           <Row label="Tools" hint="What a mission's agent can call."><span className="text-xs text-muted-foreground">{data.tools.length}</span></Row>

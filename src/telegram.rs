@@ -275,10 +275,16 @@ fn item_text(realm: &str, item: &Item) -> String {
         .as_deref()
         .map(|n| format!("\nAlso in this run: {n}"))
         .unwrap_or_default();
-    format!(
-        "{realm} · {what}{action}\n{}{flag}{dropped}\n\n{whole}",
-        item.title
-    )
+    // A draft's title is often its first words, cut: shown above the whole
+    // text, it read as a second, broken copy. It is said only when it adds
+    // something.
+    let stem = item.title.trim_end_matches(['…', '.']).trim();
+    let title = if stem.is_empty() || whole.trim_start().starts_with(stem) {
+        String::new()
+    } else {
+        format!("\n{}", item.title)
+    };
+    format!("{realm} · {what}{action}{title}{flag}{dropped}\n\n{whole}")
 }
 
 fn buttons(realm: &str, item: &Item) -> Value {

@@ -92,9 +92,19 @@ export default function App() {
   const realms = usePoll(() => api<Realm[]>("realms"), 15000, [])
   const realm = hash ?? realms.data?.find((r) => r.default)?.name ?? realms.data?.[0]?.name ?? null
 
+  // The name the founder gave this Airth (decision 113): said at the top and
+  // in the tab, so they know whether they are on the server or the Mac.
+  const info = usePoll<{ name: string | null }>(() => api("info"), 300000, [])
+  const server = info.data?.name ?? null
+  useEffect(() => {
+    const again = () => info.refresh()
+    addEventListener("airth:name", again)
+    return () => removeEventListener("airth:name", again)
+  }, [info.refresh])
+
   // The tab says how many things wait for the founder, in every business.
   const waiting = (realms.data ?? []).reduce((n, r) => n + (r.archived ? 0 : r.needs_approval || 0), 0)
-  useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${named(realm, realms.data?.find((r) => r.name === realm)?.title)} · ` : ""}Airth` }, [waiting, realm, realms.data])
+  useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${named(realm, realms.data?.find((r) => r.name === realm)?.title)} · ` : ""}Airth${server ? ` · ${server}` : ""}` }, [waiting, realm, realms.data, server])
 
   const data = usePoll<Data>(
     realm
@@ -206,7 +216,7 @@ export default function App() {
   return (
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
       <TopBar
-        realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
+        server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
         onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}

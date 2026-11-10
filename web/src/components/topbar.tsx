@@ -1,4 +1,4 @@
-import { Building, ChevronsUpDown, PanelRight, Plus, Sparkles, X } from "lucide-react"
+import { Building, ChevronsUpDown, PanelRight, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
 import { titleBar } from "@/lib/shell"
@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils"
 /** The window's top: the open conversations as tabs (on the Agents page),
     the update notice, the details toggle and, at the far right, the
     business. In the Mac app it is the title bar. */
-export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onHq, details, onDetails }: {
-  realms: Realm[]; realm: string; onAgents: boolean; tabs: string[]; current: string | null; agents: Agent[]
+export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onHq, details, onDetails }: {
+  server: string | null; realms: Realm[]; realm: string; onAgents: boolean; tabs: string[]; current: string | null; agents: Agent[]
   onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onHq: () => void; details: boolean; onDetails: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
@@ -65,6 +65,12 @@ export function TopBar({ realms, realm, onAgents, tabs, current, agents, onTab, 
         )}
       </nav>
       <UpdateNotice working={agents.filter((a) => a.state === "working").length} />
+      {/* Which Airth this is, when the founder named it (Settings, About). */}
+      {server && (
+        <span className="flex h-8 max-w-32 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground" title="This Airth's name, set in Settings, About">
+          <Server className="size-3.5 shrink-0" /> <span className="truncate">{server}</span>
+        </span>
+      )}
       {onAgents && <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground max-md:hidden", details && "bg-accent text-foreground")} aria-label="Details" title="Details" onClick={onDetails}><PanelRight /></Button>}
       <DropdownMenu>
         <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg border bg-background/60 pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>

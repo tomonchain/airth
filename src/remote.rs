@@ -52,9 +52,9 @@ impl Remote {
         format!("https://{}", self.host)
     }
 
-    /// What waits for the founder on the server: unread notifications, and
-    /// the newest approval among them.
-    pub fn attention(&self) -> Result<(usize, Option<u64>)> {
+    /// What the server says of itself: unread notifications, the newest
+    /// approval among them, and the name the founder gave it.
+    pub fn seen(&self) -> Result<Seen> {
         let info: serde_json::Value = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()?
@@ -65,15 +65,25 @@ impl Remote {
             .error_for_status()
             .with_context(|| format!("{} refused the key", self.host))?
             .json()?;
-        Ok(attention_of(&info))
+        Ok(Seen::of(&info))
     }
 }
 
-fn attention_of(info: &serde_json::Value) -> (usize, Option<u64>) {
-    (
-        info["unread"].as_u64().unwrap_or(0) as usize,
-        info["waiting"].as_u64(),
-    )
+#[derive(Debug, Clone, PartialEq)]
+pub struct Seen {
+    pub unread: usize,
+    pub waiting: Option<u64>,
+    pub name: Option<String>,
+}
+
+impl Seen {
+    fn of(info: &serde_json::Value) -> Seen {
+        Seen {
+            unread: info["unread"].as_u64().unwrap_or(0) as usize,
+            waiting: info["waiting"].as_u64(),
+            name: info["name"].as_str().map(String::from),
+        }
+    }
 }
 
 /// The server the app opens, if one is set.
@@ -152,8 +162,16 @@ mod tests {
 
     #[test]
     fn the_server_says_what_waits() {
-        let info = serde_json::json!({"unread": 3, "waiting": 12});
-        assert_eq!(attention_of(&info), (3, Some(12)));
-        assert_eq!(attention_of(&serde_json::json!({})), (0, None));
+        let info = serde_json::json!({"unread": 3, "waiting": 12, "name": "VPS"});
+        assert_eq!(
+            Seen::of(&info),
+            Seen {
+                unread: 3,
+                waiting: Some(12),
+                name: Some("VPS".into())
+            }
+        );
+        let none = Seen::of(&serde_json::json!({"name": null}));
+        assert_eq!((none.unread, none.waiting, none.name), (0, None, None));
     }
 }

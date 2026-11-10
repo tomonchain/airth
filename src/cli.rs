@@ -1394,11 +1394,12 @@ pub fn app(ctx: &Ctx, command: AppCmd) -> Result<bool> {
             let remote = crate::remote::Remote::parse(&link)?;
             // Tried first: a wrong key or a server off the tailnet is said
             // now, not as an empty window later.
-            remote.attention()?;
+            let seen = remote.seen()?;
             crate::remote::save(home, Some(&remote))?;
             eprintln!(
-                "\x1b[32m✓\x1b[0m Airth.app opens {} from its next start, and starts no Airth on this Mac",
-                remote.host
+                "\x1b[32m✓\x1b[0m Airth.app opens {}{} from its next start, and starts no Airth on this Mac",
+                remote.host,
+                seen.name.map(|n| format!(" ({n})")).unwrap_or_default()
             );
             if crate::ui::running_url(&ctx.hub()).is_some() {
                 eprintln!(

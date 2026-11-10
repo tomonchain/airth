@@ -313,6 +313,7 @@ impl App {
         let (unread, waiting) = self.hub.home().inbox().attention();
         json!({
             "version": crate::update::version(),
+            "name": self.hub.home().name(),
             "update": &*self.update.locked(),
             "home": self.hub.home().dir().display().to_string(),
             "sandbox": sandbox::available(),

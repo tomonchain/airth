@@ -32,6 +32,8 @@ enum UserEvent {
     Zoom,
     /// The inbox: unread notifications, and the newest one waiting for the owner.
     Inbox(usize, Option<u64>),
+    /// Which Airth the window shows, for the menu bar menu's first line.
+    Where(String),
 }
 
 /// The page draws its own title bar: it knows it runs in the app window, and
@@ -43,6 +45,16 @@ const WINDOW_SCRIPT: &str = r#"window.airthShell = "mac";"#;
 fn open_outside(url: &str) {
     if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:") {
         let _ = std::process::Command::new("/usr/bin/open").arg(url).spawn();
+    }
+}
+
+/// The menu bar menu's first line: the name the founder gave the Airth the
+/// window shows, else the server's address, else this Mac.
+fn place(name: Option<String>, server: Option<&str>) -> String {
+    match (name, server) {
+        (Some(n), _) => format!("On {n}"),
+        (None, Some(host)) => format!("On {host}"),
+        (None, None) => "On this Mac".to_string(),
     }
 }
 
@@ -154,12 +166,10 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         .build(&window)
         .context("cannot create the web view")?;
 
-    // Menu bar icon. Its first line says which Airth the window shows.
+    // Menu bar icon. Its first line says which Airth the window shows: the
+    // name the founder gave it (decision 113), else where it runs.
     let tray_where = MenuItem::new(
-        match &remote {
-            Some(r) => format!("On {}", r.host),
-            None => "On this Mac".to_string(),
-        },
+        place(None, remote.as_ref().map(|r| r.host.as_str())),
         false,
         None,
     );
@@ -203,16 +213,24 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
         let mut last = None;
         loop {
             // A server is asked over the tailnet; when it does not answer,
-            // the count stays as it was.
+            // the menu bar stays as it was.
             let now = match &inbox_remote {
-                Some(r) => r.attention().ok(),
-                None => Some(inbox_home.inbox().attention()),
+                Some(r) => r.seen().ok().map(|s| ((s.unread, s.waiting), s.name)),
+                None => Some((inbox_home.inbox().attention(), inbox_home.name())),
             };
             if let Some(now) = now
-                && last != Some(now)
+                && last.as_ref() != Some(&now)
             {
+                let ((unread, waiting), name) = now.clone();
                 last = Some(now);
-                if proxy.send_event(UserEvent::Inbox(now.0, now.1)).is_err() {
+                if proxy.send_event(UserEvent::Inbox(unread, waiting)).is_err()
+                    || proxy
+                        .send_event(UserEvent::Where(place(
+                            name,
+                            inbox_remote.as_ref().map(|r| r.host.as_str()),
+                        )))
+                        .is_err()
+                {
                     break;
                 }
             }
@@ -275,6 +293,7 @@ pub fn run(hub: Hub, options: UiOptions) -> Result<()> {
                 let _ = window.drag_window();
             }
             Event::UserEvent(UserEvent::Zoom) => window.set_maximized(!window.is_maximized()),
+            Event::UserEvent(UserEvent::Where(text)) => tray_where.set_text(text),
             Event::UserEvent(UserEvent::Inbox(unread, waiting)) => {
                 if let Some(t) = &tray {
                     t.set_title((unread > 0).then(|| unread.to_string()));

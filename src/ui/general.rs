@@ -22,6 +22,14 @@ impl App {
                     .set_shared_anthropic_key(body["key"].as_str().unwrap_or_default())?;
                 json_response(200, self.setup()?)
             }
+            // The name the founder gives this Airth (decision 113).
+            (Method::Put, ["name"]) => {
+                let body = read_json(request)?;
+                self.hub
+                    .home()
+                    .set_name(body["name"].as_str().unwrap_or_default())?;
+                json_response(200, json!({"name": self.hub.home().name()}))
+            }
             (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =
