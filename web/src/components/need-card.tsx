@@ -174,7 +174,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
           disabled={busy} onKeyDown={(e) => e.key === "Enter" && redo()} />
       )}
       {mode === "reject" && (
-        <Input className="mt-3" placeholder="Why? The agent learns from it (optional)" value={why} onChange={(e) => setWhy(e.target.value)} autoFocus
+        <Input className="mt-3" placeholder={it.routine ? "Why? The next drafts hear it (optional)" : "Why? (optional)"} value={why} onChange={(e) => setWhy(e.target.value)} autoFocus
           onKeyDown={(e) => e.key === "Enter" && answer("reject", why)} />
       )}
       {mode === "confirm" && (

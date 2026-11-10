@@ -258,3 +258,111 @@ fn an_edit_lifts_the_block_and_the_journal_says_so() {
         .unwrap_err();
     assert!(format!("{e:#}").contains("note or blocking"), "{e:#}");
 }
+
+/// Decision 116: what the founder said about a routine's drafts, newest
+/// first: an edit before approval, a reason to reject, a redo. A bare
+/// rejection, an untouched approval, another routine and what the founder
+/// forgot say nothing.
+#[test]
+fn the_founders_words_on_drafts_are_kept_for_the_next_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+    let draft = |store: &mut Store, routine: &str, text: &str| {
+        store
+            .propose(&NewItem {
+                kind: "approval",
+                title: text,
+                agent: Some("post-writer"),
+                routine: Some(routine),
+                run: Some("r1"),
+                action: None,
+                args: &json!({"answer": {"draft": text}}).to_string(),
+                execute_at: None,
+                source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+                model_call: None,
+            })
+            .unwrap()
+    };
+    let edited = draft(&mut store, "posts", "A long dry post.");
+    store
+        .answer(
+            edited,
+            None,
+            Answer::Edit("Short and punchy.".into()),
+            "app",
+            1,
+        )
+        .unwrap();
+    store
+        .answer(edited, None, Answer::Approve, "app", 1)
+        .unwrap();
+    let kept = draft(&mut store, "posts", "Fine as it is.");
+    store.answer(kept, None, Answer::Approve, "app", 1).unwrap();
+    let bare = draft(&mut store, "posts", "Meh.");
+    store
+        .answer(
+            bare,
+            None,
+            Answer::Reject("from Telegram".into()),
+            "telegram",
+            1,
+        )
+        .unwrap();
+    let why = draft(&mut store, "posts", "Too technical.");
+    store
+        .answer(
+            why,
+            None,
+            Answer::Reject("too much jargon".into()),
+            "app",
+            1,
+        )
+        .unwrap();
+    let redo = draft(&mut store, "posts", "Flat.");
+    store
+        .answer(
+            redo,
+            None,
+            Answer::Reject("redone: funnier".into()),
+            "app",
+            1,
+        )
+        .unwrap();
+    let other = draft(&mut store, "replies", "Elsewhere.");
+    store
+        .answer(other, None, Answer::Reject("wrong tone".into()), "app", 1)
+        .unwrap();
+    draft(&mut store, "posts", "Still waiting.");
+
+    let since = Utc::now() - chrono::Duration::days(30);
+    let said = store.founder_feedback("posts", since, 12).unwrap();
+    let kinds: Vec<(&str, &str, &str)> = said
+        .iter()
+        .map(|f| (f.kind, f.said.as_str(), f.edited.as_str()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ("redo", "funnier", ""),
+            ("reject", "too much jargon", ""),
+            ("edit", "", "Short and punchy."),
+        ]
+    );
+    assert_eq!(
+        said[2].draft, "A long dry post.",
+        "the draft as the agent wrote it"
+    );
+    assert_eq!(store.founder_feedback("posts", since, 1).unwrap().len(), 1);
+    // Taken back, it is no longer said.
+    store.forget_feedback(why).unwrap();
+    let said = store.founder_feedback("posts", since, 12).unwrap();
+    assert!(said.iter().all(|f| f.item != why));
+    assert_eq!(said.len(), 2);
+    // Older than the window, nothing.
+    assert!(
+        store
+            .founder_feedback("posts", Utc::now() + chrono::Duration::hours(1), 12)
+            .unwrap()
+            .is_empty()
+    );
+}

@@ -200,7 +200,12 @@ export type Routine = {
   source: string
   version: string
   graph?: { description: string; agent: string; trigger: { schedule: string | null; manual: unknown; telegram: string | null; webhook: string | null }; blocks: GraphBlock[] }
+  /** What its drafting block hears from the founder, newest first (decision 116). */
+  feedback?: Feedback[]
 }
+
+/** One thing the founder said about a draft: an edit, a reason to reject, a redo. */
+export type Feedback = { item: number; at: string; kind: "edit" | "reject" | "redo"; draft: string; said: string; edited: string }
 
 /** A routine's block as its file says: the six kinds' fields (src/routine). */
 export type GraphBlock = { id: string; type: string; [field: string]: unknown }

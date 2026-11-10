@@ -2,6 +2,24 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 116. The founder's words on a routine's drafts reach its next drafts
+
+**Accepted** (founder, 10 November 2026: "if I give feedback on the posts, will the bot apply it on the next run?", then "go").
+
+- **What counts:** for each routine, what the founder said about its drafts in the last 30 days, newest first, at most 12 notes:
+  - a draft edited before approval (the agent's version, then the founder's);
+  - a rejection with a reason;
+  - a redo request (decision 115).
+  A bare rejection (Telegram's button), a batch let go, an expired draft and an untouched approval say nothing, and are left out.
+- **Where it goes:** after the instructions of the routine's drafting blocks (an AI block that gives each item its `answer`, one at a time), as the founder's own words. A check or a block that sorts a whole list does not hear it. The quoted drafts are marked as examples, not instructions. The prompt's recorded version carries a mark of what was heard, so the journal tells such a call apart.
+- **Shown, and taken back:** each routine on the Routines page shows "Learned from you", the notes its next drafts hear. **Forget** removes one, through an append-only log entry (`feedback forgotten`): the record stays, the agent no longer hears it.
+- Read from the queue through the database access layer (`Store::founder_feedback`). No new table: the queue already keeps each draft as written and as approved, and the log keeps why.
+- The rejection box under a routine's draft says what is true now: "the next drafts hear it". The earlier "the agent learns from it" was not.
+
+*Why:* the founder corrects drafts every morning. Without this, the same correction was needed the next day, and only a change to the prompt files, made by hand, carried over.
+
+*Cost:* a longer prompt for drafting blocks, by up to 12 notes. A note can be overtaken by a later one that says otherwise: the newest come first, and the founder can forget. Turning a note that keeps coming back into the prompt file is still done by hand, or by asking.
+
 ## 115. The founder asks for a draft again, saying what should change
 
 **Accepted** (founder, 10 November 2026: "go" on a Redo with a one-line instruction, in the app and on Telegram).

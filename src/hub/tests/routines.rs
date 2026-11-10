@@ -989,3 +989,103 @@ fn a_draft_is_redone_with_what_the_founder_asked() {
         "the draft it replaces"
     );
 }
+
+/// The posts routine of the redo and expiry tests: a feed, a drafting
+/// block, an approval (24 h) and an act.
+fn posts_routine(f: &mut Fixture) {
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/post-writer.md".to_string(), "Draft posts.".to_string()),
+        ("prompts/post.md".into(), "Draft a post.".into()),
+        ("prompts/post.schema.json".into(), r#"{"type": "object", "required": ["draft"], "properties": {"draft": {"type": "string"}}}"#.into()),
+        ("routines/posts.json".into(), json!({"agent": "post-writer", "trigger": {"manual": true}, "blocks": [
+            {"id": "news", "type": "read", "source": "rss", "feeds": ["http://127.0.0.1:9/feed"], "dedupe": "link"},
+            {"id": "draft", "type": "ai", "prompt": "prompts/post.md"},
+            {"id": "ok", "type": "approval", "show": "answer.draft", "editable": "answer.draft", "expires_after": 24},
+            {"id": "send", "type": "act", "action": "typefully.create_draft", "fields": {"content": "{{answer.draft}}"}}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    f.realm
+        .set_integration(crate::integration::Integration {
+            free_reads: false,
+            name: "typefully".into(),
+            description: String::new(),
+            base_url: "http://127.0.0.1:9".into(),
+            headers: Default::default(),
+            actions: vec![
+                serde_json::from_value(
+                    json!({"name": "create_draft", "method": "POST", "path": "/v1/drafts",
+                "fields": [{"name": "content", "place": "body"}], "class": "reversible"}),
+                )
+                .unwrap(),
+            ],
+        })
+        .unwrap();
+    f.realm.save().unwrap();
+}
+
+/// Decision 116: what the founder said about the routine's last drafts
+/// reaches its drafting block's next call, as the founder's words.
+#[test]
+fn the_next_draft_hears_what_the_founder_said() {
+    let mut f = fixture();
+    posts_routine(&mut f);
+    let (hub, _, systems) = make_hub(&f.home, vec![done(r#"{"draft": "New one."}"#)]);
+    let propose = |title: &str| {
+        Store::of(&f.realm)
+            .unwrap()
+            .propose(&crate::business::store::autonomy::NewItem {
+                kind: "approval",
+                title,
+                agent: Some("post-writer"),
+                routine: Some("posts"),
+                run: Some("r1"),
+                action: None,
+                args: &json!({"title": title, "link": "https://example.com/1", "source_id": format!("https://example.com/{title}"),
+                    "answer": {"draft": title}}).to_string(),
+                execute_at: None,
+                source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+                model_call: None,
+            })
+            .unwrap()
+    };
+    let a = propose("A long dry post about staking queues.");
+    hub.answer_item(
+        &f.realm,
+        a,
+        None,
+        Answer::Edit("Short. Punchy.".into()),
+        "app",
+        1,
+    )
+    .unwrap();
+    // The act fails here (nothing listens): the edit still counts.
+    let _ = hub.answer_item(&f.realm, a, None, Answer::Approve, "app", 1);
+    let b = propose("Another dry one.");
+    hub.answer_item(
+        &f.realm,
+        b,
+        None,
+        Answer::Reject("too much jargon".into()),
+        "app",
+        1,
+    )
+    .unwrap();
+    let c = propose("A third.");
+    hub.redo_item(&f.realm, c, None, "funnier", "app", 1)
+        .unwrap();
+    let system = systems.lock().unwrap()[0].clone();
+    assert!(
+        system.contains("What the founder said about your recent drafts"),
+        "{system}"
+    );
+    assert!(
+        system.contains("The founder's: <draft>Short. Punchy.</draft>"),
+        "{system}"
+    );
+    assert!(system.contains("Rejected: \"too much jargon\""), "{system}");
+}
