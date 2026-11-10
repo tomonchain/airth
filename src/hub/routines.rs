@@ -721,6 +721,61 @@ impl Hub {
         bail!("{}", event.result)
     }
 
+    /// How long each routine's approvals wait for the founder, by routine
+    /// and approval block: the graph's `expires_after`, in hours.
+    pub fn approval_windows(&self, realm: &Realm) -> BTreeMap<(String, String), u32> {
+        let Ok(graphs) = self.with_routine_checks(realm, crate::routine::load_all) else {
+            return BTreeMap::new();
+        };
+        let mut out = BTreeMap::new();
+        for (name, graph) in graphs {
+            let Ok(graph) = graph else { continue };
+            for block in &graph.blocks {
+                if let crate::routine::Kind::Approval {
+                    expires_after: Some(hours),
+                    ..
+                } = &block.kind
+                {
+                    out.insert((name.clone(), block.id.clone()), *hours);
+                }
+            }
+        }
+        out
+    }
+
+    /// Approvals the founder did not answer within their routine's
+    /// `expires_after` leave Needs you, across realms: a morning's drafts
+    /// are of no use the next day. How many, by realm.
+    pub fn expire_approvals(&self, now: DateTime<Utc>) -> Result<Vec<(String, usize)>> {
+        let mut out = Vec::new();
+        for realm in self.home.realms()? {
+            if realm.config.archived || !realm.dir().join(crate::business::store::FILE).exists() {
+                continue;
+            }
+            let windows = self.approval_windows(&realm);
+            if windows.is_empty() {
+                continue;
+            }
+            let mut store = Store::of(&realm)?;
+            let mut n = 0;
+            for item in store.queue(&["pending"])? {
+                let Some(hours) = expires_at(&item, &windows)
+                    .filter(|(at, _)| *at <= now)
+                    .map(|(_, h)| h)
+                else {
+                    continue;
+                };
+                if store.expire_item(item.id, &format!("not answered within {hours} h"))? {
+                    n += 1;
+                }
+            }
+            if n > 0 {
+                out.push((realm.name().to_string(), n));
+            }
+        }
+        Ok(out)
+    }
+
     /// Reports not seen within a week leave Needs you, across realms; how
     /// many, by realm.
     pub fn expire_reports(&self, now: DateTime<Utc>) -> Result<Vec<(String, usize)>> {
@@ -954,6 +1009,25 @@ const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [
     std::time::Duration::from_secs(60),
     std::time::Duration::from_secs(300),
 ];
+/// When an approval leaves Needs you unanswered, and its window in hours:
+/// its creation plus its routine's `expires_after`, if it has one.
+pub fn expires_at(
+    item: &crate::business::store::queue::Item,
+    windows: &BTreeMap<(String, String), u32>,
+) -> Option<(DateTime<Utc>, u32)> {
+    if item.kind != "approval" {
+        return None;
+    }
+    let routine = item.routine.clone()?;
+    let block = item.source["block"].as_str()?.to_string();
+    let hours = *windows.get(&(routine, block))?;
+    let created = DateTime::parse_from_rfc3339(&item.created_at).ok()?;
+    Some((
+        created.with_timezone(&Utc) + chrono::Duration::hours(hours.into()),
+        hours,
+    ))
+}
+
 #[cfg(test)]
 const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO; 2];
 

@@ -84,10 +84,15 @@ impl App {
         // An action a task of the founder's proposed (decision 56): the task
         // it came from, to open it.
         let titles = realm.run_titles();
+        // When each draft leaves unanswered, from its routine's graph.
+        let windows = self.hub.approval_windows(realm);
         let items: Vec<Value> = items
             .iter()
             .map(|i| {
                 let mut page = shown(i);
+                if let Some((at, _)) = crate::hub::expires_at(i, &windows) {
+                    page["expires_at"] = json!(at.to_rfc3339());
+                }
                 if let (None, Some(run)) = (&i.routine, &i.run) {
                     let title = titles
                         .get(run)
@@ -145,7 +150,15 @@ pub(super) fn shown(item: &Item) -> Value {
         "editable": item.source["editable"].is_string(),
         // A call shown as it would be made, not prose.
         "call": item.source["show"].is_null() && item.source["tool"] == "http_request",
-        "source": {"title": item.args["title"].as_str(), "link": link},
+        "source": {
+            "title": item.args["title"].as_str(),
+            "link": link,
+            // What the draft answers or is written from, to judge it without
+            // leaving the page: the post replied to, the article's summary.
+            "text": item.args["summary"].as_str().map(|t| t.chars().take(1200).collect::<String>()),
+        },
+        // The drafting step's one line on why this, when it gave one.
+        "angle": item.args["answer"]["angle"].as_str(),
     })
 }
 

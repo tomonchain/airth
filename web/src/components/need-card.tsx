@@ -106,6 +106,18 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
         </div>
       )}
 
+      {/* What the draft answers or is written from, to judge it here. */}
+      {page && it.kind === "approval" && (it.source?.text || it.source?.title) && (
+        <figure className="mt-4 rounded-xl border px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
+          <figcaption className="mb-1 flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
+            From the source
+            {it.source.link && <a href={it.source.link} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 normal-case tracking-normal hover:text-foreground"><ExternalLink className="size-3" /> Open</a>}
+          </figcaption>
+          {it.source.title && <p className="font-medium text-foreground">{it.source.title}</p>}
+          {it.source.text && it.source.text !== it.source.title && <p className="mt-0.5 line-clamp-6 whitespace-pre-wrap">{it.source.text}</p>}
+        </figure>
+      )}
+
       {mode === "edit" ? (
         <div className="mt-3">
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={page ? 9 : 6} className="text-sm leading-relaxed" autoFocus />
@@ -115,7 +127,10 @@ export function NeedCard({ realm, it, onDone, page, still, stream }: { realm: st
         page ? (
           <div className="mt-4 rounded-xl bg-bubble px-4 py-3.5">
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
-            <p className="mt-2 text-right text-xs tabular-nums text-muted-foreground">{it.text.length} characters</p>
+            <p className="mt-2 flex gap-3 text-xs text-muted-foreground">
+              {it.angle && <span className="min-w-0 flex-1"><b className="font-medium">Why:</b> {it.angle}</span>}
+              <span className="ml-auto shrink-0 tabular-nums">{it.text.length} characters</span>
+            </p>
           </div>
         ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : page && it.text && it.text !== it.title ? (
