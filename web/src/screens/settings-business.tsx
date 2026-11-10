@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, onPhone, pairingLink, raw, rekey, type Department } from "@/lib/api"
+import { api, enc, onPhone, raw, rekey, type Department } from "@/lib/api"
 import { pushState, turnOff, turnOn, type PushState } from "@/lib/push"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -386,6 +386,7 @@ export function Phone() {
     <>
       <Head title="Phone">Use Airth from your phone, at home or away. It stays on this Mac: Tailscale brings it to your own devices only, encrypted, and nothing is opened to the internet. Telegram and the phone's notifications tell you what needs you.</Head>
       <Notifications />
+      <Devices />
       <Panel className="mt-2.5 space-y-3 p-4">
         <ol className="list-decimal space-y-1.5 pl-5 text-sm">
           <li>Install Tailscale on this Mac and on your phone, signed in to the same account on both.</li>
@@ -399,9 +400,8 @@ export function Phone() {
       </Panel>
       {onPhone && (
         <Panel className="mt-2.5 space-y-2 p-4 text-sm">
-          <p className="font-medium">This phone is paired.</p>
-          <p className="text-muted-foreground">To open Airth as an app: Share, then Add to Home Screen. On its first opening it asks for the pairing link: copy it here, then paste it there.</p>
-          <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(pairingLink()).then(() => toast.success("Pairing link copied. Keep it to yourself."), () => toast.error("Could not copy."))}>Copy the pairing link</Button>
+          <p className="font-medium">Airth as an app</p>
+          <p className="text-muted-foreground">Share, then Add to Home Screen. On its first opening it asks for access: allow it here or on Telegram.</p>
         </Panel>
       )}
       {!onPhone && <NewKey onDone={refresh} />}
@@ -418,6 +418,55 @@ export function Phone() {
         </Panel>
       ))}
     </>
+  )
+}
+
+type DeviceList = {
+  devices: { id: string; name: string; added: string; seen: string | null; this: boolean }[]
+  asking: { id: string; name: string; code: string; at: string }[]
+}
+
+/** The founder's devices (decision 118): each with a key of its own,
+    revoked alone; and those asking for access. */
+function Devices() {
+  const { data, refresh } = usePoll<DeviceList>(() => api("devices"), 5000, [])
+  const [busy, setBusy] = useState("")
+  async function run(id: string, what: () => Promise<unknown>, done: string) {
+    setBusy(id)
+    try { await what(); toast.success(done); refresh() } catch (e) { toast.error((e as Error).message) } finally { setBusy("") }
+  }
+  if (!data) return null
+  return (
+    <Panel className="mt-2.5 p-4 text-sm">
+      <div className="flex items-center gap-1.5 font-medium"><Smartphone className="size-4 text-muted-foreground" /> Devices</div>
+      <p className="mt-1 text-muted-foreground">A new phone or browser opens Airth's address and asks for access. Allow it only when its code is on a device you hold.</p>
+      {data.asking.map((a) => (
+        <div key={a.id} className="mt-3 flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">{a.name} asks for access</div>
+            <div className="text-xs text-muted-foreground">Code <span className="font-mono font-semibold tracking-widest text-foreground">{a.code}</span> · {ago(a.at)}</div>
+          </div>
+          <Button size="sm" disabled={!!busy} onClick={() => run(a.id, () => api(`devices/asking/${enc(a.id)}/allow`, {}), `${a.name} is allowed.`)}>Allow</Button>
+          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run(a.id, () => api(`devices/asking/${enc(a.id)}/refuse`, {}), `${a.name} is refused.`)}>Refuse</Button>
+        </div>
+      ))}
+      {data.devices.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">No device has a key of its own yet.</p>
+      ) : (
+        <ul className="mt-3 divide-y">
+          {data.devices.map((d) => (
+            <li key={d.id} className="flex items-center gap-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate">{d.name}{d.this && <span className="ml-2 text-xs text-muted-foreground">This device</span>}</div>
+                <div className="text-xs text-muted-foreground">Added {ago(d.added)}{d.seen ? ` · used ${ago(d.seen)}` : ""}</div>
+              </div>
+              <Button size="sm" variant="ghost" disabled={!!busy}
+                onClick={() => run(d.id, () => api(`devices/${enc(d.id)}`, undefined, "DELETE"), `${d.name} can no longer open Airth.`)}>Revoke</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   )
 }
 

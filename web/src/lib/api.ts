@@ -43,11 +43,39 @@ function refused(r: Response, sent: string) {
   location.reload()
 }
 
+/** What this device calls itself when it asks for access: the founder
+    reads it on Telegram, and in the list of devices. */
+export function deviceName(): string {
+  const ua = navigator.userAgent
+  const device = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad"
+    : /Android/.test(ua) ? "Android" : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "A device"
+  const app = matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true
+  const browser = app ? "home screen app" : /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) || /CriOS/.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "browser"
+  return `${device} · ${browser}`
+}
+
+async function pairing<T>(step: "ask" | "status", body: unknown): Promise<T> {
+  const r = await fetch(`/pair/${step}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .catch(() => { throw new Error("Airth is not answering.") })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
+  return data as T
+}
+
+/** Ask the founder for access (decision 118): the code this device shows,
+    and the secret it keeps to collect its key once allowed. */
+export const askAccess = () => pairing<{ secret: string; code: string }>("ask", { name: deviceName() })
+
+/** Where the request stands; once allowed, the key is kept and this page works. */
+export async function accessStatus(secret: string): Promise<"waiting" | "allowed" | "gone"> {
+  const r = await pairing<{ status: "waiting" | "allowed" | "gone"; key?: string }>("status", { secret })
+  if (r.status === "allowed" && r.key) store()?.setItem(KEY, r.key)
+  return r.status
+}
+
 /** Keep the key Airth just made, so this page goes on working. */
 export const rekey = (key: string) => { store()?.setItem(KEY, key) }
 
-/** This page's pairing link, to pair the home-screen app from the browser. */
-export const pairingLink = () => `${location.origin}/#token=${token()}`
 
 export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number): Promise<T> {
   const verb = method ?? (body === undefined ? "GET" : "POST")

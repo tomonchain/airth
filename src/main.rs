@@ -8,6 +8,7 @@ mod cli;
 mod connectors;
 #[cfg(target_os = "macos")]
 mod desktop;
+mod devices;
 mod documents;
 mod drive;
 mod extract;

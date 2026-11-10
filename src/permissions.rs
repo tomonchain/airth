@@ -329,6 +329,7 @@ const SECURITY_CRITICAL: &[&str] = &[
     "src/tools/remote.rs",
     "src/realm.rs",
     "src/home.rs",
+    "src/devices.rs",
     "src/isolation.rs",
     "src/integration.rs",
     "src/github.rs",
@@ -585,6 +586,7 @@ mod tests {
             "src/github.rs",
             "src/actions.rs",
             "src/routine/mod.rs",
+            "src/devices.rs",
         ] {
             assert!(is_permission_critical(path), "{path}");
         }
