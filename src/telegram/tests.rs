@@ -394,6 +394,47 @@ fn a_blocked_item_offers_override_not_approve() {
     );
 }
 
+/// A title that is only the draft's first words, cut, is not shown above
+/// the draft: on the phone it read as a second, broken copy.
+#[test]
+fn a_draft_is_shown_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::business::store::Store::open(&dir.path().join("business.db")).unwrap();
+    let draft = "That's turnover, not usage. 122x off an $18B base says perps got busy.";
+    let args = serde_json::json!({"answer": {"draft": draft}}).to_string();
+    for title in [
+        "That's turnover, not usage. 122x off an $18B b",
+        "Reply to @route2fi",
+    ] {
+        store
+            .propose_flagged(
+                &NewItem {
+                    kind: "approval",
+                    title,
+                    agent: None,
+                    routine: Some("replies"),
+                    run: Some("r1"),
+                    action: None,
+                    args: &args,
+                    execute_at: None,
+                    source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+                    model_call: None,
+                },
+                None,
+                None,
+            )
+            .unwrap();
+    }
+    let items = store.queue(&["pending"]).unwrap();
+    let cut = item_text("hedgen", &items[0]);
+    assert_eq!(cut, format!("hedgen · Needs you\n\n{draft}"));
+    assert_eq!(cut.matches("turnover").count(), 1);
+    // A title that says something else stays.
+    assert!(
+        item_text("hedgen", &items[1]).starts_with("hedgen · Needs you\nReply to @route2fi\n\n")
+    );
+}
+
 /// An approved item whose send failed says so, with its reason in one
 /// line, never "done".
 #[test]
