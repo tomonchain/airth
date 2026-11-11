@@ -163,7 +163,7 @@ export type Business = {
 export type Item = {
   id: number
   status: "pending" | "approved" | "rejected" | "done" | "failed"
-  kind: "approval" | "incident" | "report" | "prepared" | "delayed" | "deadline"
+  kind: "approval" | "incident" | "report" | "prepared" | "delayed" | "deadline" | "idea"
   agent: string | null
   routine: string | null
   run: string | null

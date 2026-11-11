@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 export function rank(it: Item) {
   if (it.kind === "incident") return 0
   if (it.flag === "blocking" || (it.kind === "deadline" && it.overdue)) return 1
-  return { deadline: 2, approval: 3, prepared: 4, delayed: 5, report: 6, incident: 0 }[it.kind] ?? 6
+  return { deadline: 2, approval: 3, prepared: 4, delayed: 5, report: 6, idea: 7, incident: 0 }[it.kind] ?? 6
 }
 
 const SECTIONS = [

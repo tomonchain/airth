@@ -343,6 +343,8 @@ pub fn schema_hash(schema: &Value) -> String {
 const AIRTH: &[(&str, Class)] = &[
     ("launch_mission", Class::Reversible),
     ("report", Class::Read),
+    // An idea told to the founder (decision 119): nothing is done.
+    ("suggest", Class::Read),
     ("create_task", Class::Reversible),
     // Merging code never goes above 1 (`CLAUDE.md`).
     ("adopt_change", Class::Commits),

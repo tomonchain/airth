@@ -52,7 +52,9 @@ impl App {
         let since = chrono::Utc::now() - chrono::Duration::days(30);
         let costs = store.pipeline_costs(since)?;
         let seconds = store.owner_seconds_by_agent(since)?;
-        let waiting = store.queue(&["pending"])?;
+        // An idea waits for no answer (decision 119): it is not counted.
+        let mut waiting = store.queue(&["pending"])?;
+        waiting.retain(|i| i.kind != "idea");
         let tasks: Vec<_> = self
             .hub
             .runs(realm)?

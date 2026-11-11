@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
   delayed: { label: "Goes out unless you cancel", icon: Timer, tone: "text-amber-500 bg-amber-500/10" },
   deadline: { label: "Deadline", icon: CalendarClock, tone: "text-amber-500 bg-amber-500/10" },
   report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-muted" },
+  idea: { label: "Idea", icon: Lightbulb, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-300" },
 }
 
 export function kindOf(it: Item) {
@@ -95,6 +96,26 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
     }
   }
 
+  // An idea the founder takes up (decision 119): a task with the agent who
+  // had it, then the idea is marked useful.
+  const [going, setGoing] = useState(false)
+  async function go() {
+    if (!it.agent) return
+    setGoing(true)
+    try {
+      const text = `Go ahead with your idea: ${it.title}\n\n${it.text ?? ""}${it.angle ? `\n\nWhy now: ${it.angle}` : ""}\n\nPropose the first step; anything that goes out still comes to me first.`
+      const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text, agent: it.agent, watched: true })
+      await api(`realms/${enc(realm)}/queue/${it.id}`, { answer: "approve", text: "", revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000) })
+      toast.success("A task is open with the agent.")
+      onDone()
+      onTask?.(out.id)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setGoing(false)
+    }
+  }
+
   // The main answer A gives, when one is safe without a second look: never
   // an override, a cancellation or a retry the founder must check first.
   const key =
@@ -124,6 +145,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
     it.retry === "clear" ? <Button size="sm" disabled={busy} onClick={() => answer("retry")}><RotateCcw /> Retry</Button>
     : it.retry === "ambiguous" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setMode("confirm")}><RotateCcw /> Retry…</Button>
     : it.kind === "incident" || it.kind === "report" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen{hint("A")}</Button>
+    : it.kind === "idea" ? <Button size="sm" disabled={busy || going} onClick={go}>{going ? <Loader className="animate-spin" /> : <ArrowRight />} Go ahead</Button>
     : it.kind === "prepared" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Mark done{hint("A")}</Button>
     : it.kind === "deadline" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Filed{hint("A")}</Button>
     : it.kind === "delayed" ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => setMode("reject")}><X /> Cancel it{hint("R")}</Button>
@@ -178,6 +200,11 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             </p>
           </div>
         ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
+      ) : it.kind === "idea" && it.text ? (
+        <>
+          <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
+          {it.angle && <p className="mt-2 text-xs text-muted-foreground"><b className="font-medium">Why now:</b> {it.angle}</p>}
+        </>
       ) : page && it.text && it.text !== it.title ? (
         <pre className="mt-4 max-h-96 overflow-auto rounded-xl bg-bubble px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
       ) : it.note ? (
@@ -195,7 +222,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           disabled={busy} onKeyDown={(e) => e.key === "Enter" && redo()} />
       )}
       {mode === "reject" && (
-        <Input className="mt-3" placeholder={it.routine ? "Why? The next drafts hear it (optional)" : "Why? (optional)"} value={why} onChange={(e) => setWhy(e.target.value)} autoFocus
+        <Input className="mt-3" placeholder={it.kind === "idea" ? "Why not? Your team hears it (optional)" : it.routine ? "Why? The next drafts hear it (optional)" : "Why? (optional)"} value={why} onChange={(e) => setWhy(e.target.value)} autoFocus
           onKeyDown={(e) => e.key === "Enter" && answer("reject", why)} />
       )}
       {mode === "confirm" && (
@@ -217,7 +244,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           </>
         ) : mode === "reject" ? (
           <>
-            <Button size="sm" variant="destructive" disabled={busy} onClick={() => answer("reject", why)}><X /> {it.kind === "delayed" ? "Cancel it" : "Reject"}</Button>
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => answer("reject", why)}><X /> {it.kind === "delayed" ? "Cancel it" : it.kind === "idea" ? "Not for me" : "Reject"}</Button>
             <Button size="sm" variant="ghost" onClick={() => setMode(null)}>Keep it</Button>
           </>
         ) : mode === "confirm" ? (
@@ -234,6 +261,12 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             {redoable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
             {it.kind === "approval" && <Button size={page ? "sm" : "xs"} variant="ghost" className="text-muted-foreground" aria-label="Reject" title="Reject" onClick={() => setMode("reject")}><X /> <span className={cn(!page && "max-sm:hidden")}>Reject</span>{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
+            {it.kind === "idea" && (
+              <>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => answer("approve")}><Check /> Useful</Button>
+                <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => setMode("reject")}>Not for me</Button>
+              </>
+            )}
             {onTask && (it.kind === "deadline" || it.kind === "prepared") && (
               <Button size="sm" variant="outline" disabled={helping} onClick={help}>{helping ? <Loader className="animate-spin" /> : <LifeBuoy />} Get help</Button>
             )}

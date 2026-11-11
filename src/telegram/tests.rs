@@ -1069,3 +1069,37 @@ fn a_device_is_allowed_from_telegram_by_the_founder_only() {
     handle(&hub, &api, &mut config, &tap(7, &allow), &start).unwrap();
     assert_eq!(crate::devices::list(home.path()).len(), 1);
 }
+
+/// Decision 119: an idea says why now, and is answered Useful or Not for me.
+#[test]
+fn an_idea_says_why_now_and_is_useful_or_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::business::store::Store::open(&dir.path().join("business.db")).unwrap();
+    store
+        .add_idea(
+            &crate::business::store::reports::NewIdea {
+                key: "ideas/day/2026-11-11/tell",
+                agent: "writer",
+                routine: "ideas",
+                run: "r1",
+                title: "A year-end recap",
+                text: "Five steps of the year: worth a post.",
+                why: "50 days to the end of the year.",
+            },
+            Utc::now(),
+        )
+        .unwrap();
+    let item = &store.queue(&["pending"]).unwrap()[0];
+    let text = item_text("acme", item);
+    assert!(text.starts_with("acme · An idea"), "{text}");
+    assert!(text.contains("Five steps of the year: worth a post."));
+    assert!(text.ends_with("Why now: 50 days to the end of the year."));
+    let row = buttons("acme", item);
+    let labels: Vec<&str> = row[0]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(labels, ["Useful", "Not for me"]);
+}

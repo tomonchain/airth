@@ -16,6 +16,7 @@ use std::path::Path;
 /// Where a business's routines live, at the root of its folder.
 pub const DIR: &str = "routines";
 
+pub mod recent;
 pub mod run;
 pub mod week;
 pub mod x_post;
@@ -100,7 +101,8 @@ pub enum Kind {
     Read {
         source: String,
         /// What a `business` read reads: `week`, how the routines ran in
-        /// the last seven days.
+        /// the last seven days; `recent`, what the business did lately, for
+        /// an agent's ideas (decision 119).
         records: Option<String>,
         #[serde(default)]
         feeds: Vec<String>,
@@ -399,9 +401,9 @@ fn check_block(cx: &Checks, block: &Block, telegram: Option<&str>) -> Result<()>
             dedupe.as_deref().map(path).transpose()?;
             positive("max", *max)?;
             match (source.as_str(), records.as_deref()) {
-                ("business", Some("week")) => {}
-                ("business", Some(other)) => bail!("unknown records '{other}' (week)"),
-                ("business", None) => bail!("a business read names its records (week)"),
+                ("business", Some("week" | "recent")) => {}
+                ("business", Some(other)) => bail!("unknown records '{other}' (week, recent)"),
+                ("business", None) => bail!("a business read names its records (week, recent)"),
                 (_, Some(_)) => bail!("only a business read names records"),
                 _ => {}
             }
@@ -564,6 +566,7 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
                 // judge; a task for an agent becomes its instructions, so it
                 // is checked.
                 let for_founder = action == "airth.report"
+                    || action == "airth.suggest"
                     || action == "airth.create_task"
                         && fields.get("assignee").map(String::as_str) == Some("founder");
                 if outside && !for_founder && (cx.level)(&graph.agent, action) < 2 {

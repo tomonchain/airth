@@ -453,8 +453,18 @@ pub fn run(
         let mut waiting = 0usize;
         let mut block_dropped = Vec::new();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
+            Kind::Read {
+                source, records, ..
+            } if source == "business" && records.as_deref() == Some("recent") => {
+                let day = super::recent::read(dry.root, dry.store, now)?;
+                lines.push(format!(
+                    "what the business did lately, on {}",
+                    field_text(&day, "today")
+                ));
+                (vec![day], Vec::new())
+            }
             Kind::Read { source, .. } if source == "business" => {
-                // The graph check let only `records: week` through.
+                // The graph check let only `records: week` through here.
                 let week = super::week::read(dry.root, dry.store, now)?;
                 lines.push(format!(
                     "the week {} from the business's records",

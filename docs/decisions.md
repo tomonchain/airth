@@ -2,6 +2,28 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 119. An agent may speak up with an idea, once a day at most for the team
+
+**Accepted** (founder, 11 November 2026: "beyond the routines, it could send a message on its own: I saw this company working on a technology that could improve our sales; the year is ending, here are its big steps, post them"; then "okay").
+
+- **An idea is a routine like the others**, made of the six blocks; no new block:
+  - **Read** `business`, with `records: recent`, reads what the business did lately: the day and how far it is from the end of the year and of the quarter, the goal and its milestones, what the founder approved or saw in the last 30 days, the deadlines coming, and the ideas already given with how the founder took them (useful, not for them, no answer). Put into words by code. Its source id is the day, so a routine gives at most one idea a day.
+  - **AI** decides whether one thing deserves the founder's attention, and most days says no.
+  - **Condition** keeps only a yes.
+  - **Act** `airth.suggest` tells the founder: its `title`, `text` and `why`.
+- **`airth.suggest` is Airth's own action**, class read: it does nothing but tell. It is journaled under its act's key like a report, so a retried run tells nothing twice. Like a report, it is the founder's to judge, so content from outside reaches it without an approval.
+- **One idea a day for the whole team.** When an agent already spoke that day, a later idea is kept back, and the run says so. Ideas are noise if they come every hour.
+- **Where it shows.** A new kind of item, `idea`, outside Needs you: it is not counted there, it does not make the agent "waiting for you", and the HQ does not count it.
+  - In the agent's conversation, as its message, with **Go ahead**, **Useful** and **Not for me** (with an optional reason). Go ahead opens a task with that agent from the idea; anything the task would send out still comes to the founder first.
+  - On the phone (decision 117) as "An idea from …", on its own, never in a batch.
+  - On Telegram, with Useful and Not for me.
+  - An idea not answered within a week leaves the founder's view, as a report does.
+- **The team learns what is worth saying** from the ideas already given and how the founder took them, which the next read carries.
+
+*Why:* the routines do what was decided. An agent that notices something worth the founder's time (a season, a milestone, a technology, a figure) had no way to say it unless asked.
+
+*Cost:* a model call a day per agent that may speak, most of them ending in silence. A queue rebuilt once (migration 20) to accept the new kind. An idea is only as good as what the business records: what never went through Airth is not in it.
+
 ## 118. Each device asks for access, and gets a key of its own
 
 **Accepted** (founder, 10 November 2026: "can't we have a better way to sign in? how do OpenClaw or Hermes do it?", then "go" on device pairing approved from Telegram).

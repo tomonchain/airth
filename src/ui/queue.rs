@@ -177,7 +177,8 @@ pub(super) fn shown(item: &Item) -> Value {
             "text": item.args["summary"].as_str().map(|t| t.chars().take(1200).collect::<String>()),
         },
         // The drafting step's one line on why this, when it gave one.
-        "angle": item.args["answer"]["angle"].as_str(),
+        // A draft's angle, or why an idea is told now (decision 119).
+        "angle": item.args["answer"]["angle"].as_str().or(item.args["why"].as_str()),
     })
 }
 

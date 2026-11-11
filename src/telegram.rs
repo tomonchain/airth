@@ -257,6 +257,7 @@ fn item_text(realm: &str, item: &Item) -> String {
         "prepared" => "To do yourself",
         "incident" => "Incident",
         "report" => "Report",
+        "idea" => "An idea",
         "deadline" => "Legal deadline",
         "delayed" => "Will be done unless you cancel",
         "approval" if item.action.is_some() => "Asks to act",
@@ -290,7 +291,12 @@ fn item_text(realm: &str, item: &Item) -> String {
     } else {
         format!("\n{}", item.title)
     };
-    format!("{realm} · {what}{action}{title}{flag}{dropped}\n\n{whole}")
+    // An idea says why it is told now (decision 119).
+    let why = match item.args["why"].as_str() {
+        Some(why) if item.kind == "idea" && !why.trim().is_empty() => format!("\n\nWhy now: {why}"),
+        _ => String::new(),
+    };
+    format!("{realm} · {what}{action}{title}{flag}{dropped}\n\n{whole}{why}")
 }
 
 /// Whether an item's draft can be drafted again: a routine's draft.
@@ -311,6 +317,7 @@ fn buttons(realm: &str, item: &Item) -> Value {
             _ => json!([[button("Seen", "a")]]),
         },
         "report" => json!([[button("Seen", "a")]]),
+        "idea" => json!([[button("Useful", "a"), button("Not for me", "r")]]),
         // Decision 66: an overdue deadline stays until it is filed.
         "deadline" if item.args["overdue"] == true => json!([[button("Filed", "a")]]),
         "deadline" => json!([[button("Filed", "a"), button("Seen", "r")]]),

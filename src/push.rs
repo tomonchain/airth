@@ -363,6 +363,10 @@ fn items_message(realm: &str, items: &[crate::business::store::queue::Item]) -> 
             "prepared" => "To do yourself".to_string(),
             "delayed" => "Goes out unless you cancel".to_string(),
             "report" => "Report".to_string(),
+            "idea" => format!(
+                "An idea from {}",
+                one.agent.as_deref().unwrap_or("the team")
+            ),
             _ => "Needs you".to_string(),
         },
         many => format!("{} need you", many.len()),
@@ -400,6 +404,16 @@ pub fn push_new(home: &Home) -> Result<usize> {
                 new.push(item);
             }
             waiting.insert(key);
+        }
+        // An idea is told on its own (decision 119), never counted with
+        // what needs the founder.
+        let (ideas, new): (Vec<_>, Vec<_>) = new.into_iter().partition(|i| i.kind == "idea");
+        for idea in ideas {
+            let keys = vec![format!("{}/{}", realm.name(), idea.id)];
+            out.push((
+                keys,
+                items_message(realm.name(), std::slice::from_ref(&idea)),
+            ));
         }
         if !new.is_empty() {
             let keys = new
