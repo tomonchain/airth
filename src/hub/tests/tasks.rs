@@ -356,3 +356,106 @@ fn a_task_goes_on_with_what_its_agent_may_use_now() {
     let state = hub.follow_up(&f.realm, &task.id, "Without it").unwrap();
     assert_eq!(state.tools, Some(Vec::new()));
 }
+
+/// Decision 120: the founder's one interlocutor takes every order not
+/// named, puts a plan to the founder, and only their approval starts the
+/// other agents' tasks; once all have ended, it is told, once.
+#[test]
+fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
+    use crate::business::store::queue::Answer;
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    agent(&root, "developer", "title: Developer\n");
+    let (hub, seen, _) = make_hub(&f.home, vec![]);
+    let route = hub.route_order(&f.realm, "Prepare the year's end").unwrap();
+    assert_eq!(route.agent, "chief-of-staff");
+    assert!(seen.lock().unwrap().is_empty(), "no model call to route");
+
+    // Only the interlocutor's tasks get the tool, naming the others.
+    let writer = hub.start_task(&f.realm, "writer", "Outline").unwrap();
+    assert!(hub.dispatch_for(&f.realm, &writer).unwrap().is_none());
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Prepare the year's end")
+        .unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let team: Vec<&str> = dispatch.team.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(team, ["developer", "writer"]);
+
+    // Proposing starts nothing: the plan waits for the founder.
+    let steps = [
+        crate::tools::dispatch::Step {
+            agent: "writer".into(),
+            task: "A recap article".into(),
+        },
+        crate::tools::dispatch::Step {
+            agent: "developer".into(),
+            task: "A banner".into(),
+        },
+    ];
+    (dispatch.propose)(&steps, "Year-end").unwrap();
+    let before = hub.runs(&f.realm).unwrap().len();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(item.action.as_deref(), Some("airth.dispatch"));
+    assert!(
+        item.args["text"]
+            .as_str()
+            .unwrap()
+            .contains("- writer: A recap article")
+    );
+    assert_eq!(hub.runs(&f.realm).unwrap().len(), before);
+
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Approve,
+        "app",
+        3,
+    )
+    .unwrap();
+    let handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 2);
+    let mark = format!("{}/{}", chief.id, item.id);
+    for (_, s) in &handed {
+        assert_eq!(s.dispatched_by.as_deref(), Some(mark.as_str()));
+        assert!(s.objective.contains("approved this plan"));
+    }
+
+    // One task ends: the interlocutor waits for the other.
+    let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
+    chief_done.status = Status::Completed;
+    chief_done.save().unwrap();
+    let mut first = handed[0].1.clone();
+    first.status = Status::Completed;
+    first.report = Some("Article drafted.".into());
+    first.save().unwrap();
+    hub.dispatched_ended(&f.realm, &first).unwrap();
+    assert!(hub.take_hand_offs().unwrap().is_empty());
+    // The last ends: the interlocutor is told how each went, once.
+    let mut second = handed[1].1.clone();
+    second.status = Status::Failed;
+    second.report = Some("The build broke.".into());
+    second.save().unwrap();
+    hub.dispatched_ended(&f.realm, &second).unwrap();
+    hub.dispatched_ended(&f.realm, &second).unwrap();
+    let told = hub.take_hand_offs().unwrap();
+    assert_eq!(told.len(), 1);
+    assert_eq!(told[0].1.id, chief.id);
+    let last = format!("{:?}", told[0].1.messages.last().unwrap());
+    assert!(
+        last.contains("Article drafted.") && last.contains("The build broke."),
+        "{last}"
+    );
+}

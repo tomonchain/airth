@@ -532,6 +532,16 @@ impl Hub {
                 Some("allowed: the task goes on".into()),
             ));
         }
+        // A plan of the founder's interlocutor (decision 120): each agent
+        // gets its task.
+        if item.action.as_deref() == Some(super::dispatch::DISPATCH) {
+            let (status, detail) = match self.start_plan(realm, &item) {
+                Ok(what) => ("done", what),
+                Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+            };
+            store.close_item(id, status, &detail)?;
+            return Ok((item, Some(detail)));
+        }
         let routine_block = item.source["block"].as_str();
         let mut failed = Vec::new();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {

@@ -3,6 +3,7 @@
 
 pub mod catalog;
 pub mod delegate;
+pub mod dispatch;
 mod drive;
 mod fs;
 mod http;
@@ -70,6 +71,8 @@ pub struct RealmTools {
     pub allowed: Option<Vec<String>>,
     /// For a routine's run: the routines it may ask for work (decision 41).
     pub delegation: Option<delegate::Delegation>,
+    /// For the founder's interlocutor: passing an order on (decision 120).
+    pub dispatch: Option<dispatch::Dispatch>,
     /// Whether files and commands are offered. A task with no repository
     /// in its agent's scope has none (decision 64).
     pub files: bool,
@@ -137,6 +140,11 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         let delegation = std::sync::Arc::new(delegation);
         tools.push(Box::new(delegate::HandOff(delegation.clone())));
         tools.push(Box::new(delegate::AskAgent(delegation)));
+    }
+    if let Some(dispatch) = realm.dispatch {
+        tools.push(Box::new(dispatch::ProposePlan(std::sync::Arc::new(
+            dispatch,
+        ))));
     }
     // The Google Drive folder the founder shared (decision 85), to agents
     // whose file names it.
@@ -484,6 +492,7 @@ mod tests {
             skills_dir: skills.clone(),
             allowed,
             delegation: None,
+            dispatch: None,
             files: true,
         });
         let http = tools
@@ -520,6 +529,7 @@ mod tests {
                 skills_dir: skills,
                 allowed,
                 delegation: None,
+                dispatch: None,
                 files: false,
             })
             .iter()

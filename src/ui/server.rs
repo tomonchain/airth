@@ -280,6 +280,13 @@ pub(super) fn run_scheduler(runner: Runner) {
                         runner.spawn(realm, state, Job::Alone);
                         continue;
                     }
+                    // A task a plan passed on, or the interlocutor told how
+                    // its plan went (decision 120).
+                    if state.agent.is_some() && state.origin.is_none() {
+                        eprintln!("task {}/{} started", realm.name(), state.id);
+                        runner.spawn(realm, state, Job::Alone);
+                        continue;
+                    }
                     let Some(routine) = state.origin.as_ref().map(|o| o.objective.clone()) else {
                         continue;
                     };
