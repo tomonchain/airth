@@ -16,6 +16,7 @@ use std::path::Path;
 /// Where a business's routines live, at the root of its folder.
 pub const DIR: &str = "routines";
 
+pub mod morning;
 pub mod recent;
 pub mod run;
 pub mod week;
@@ -102,7 +103,8 @@ pub enum Kind {
         source: String,
         /// What a `business` read reads: `week`, how the routines ran in
         /// the last seven days; `recent`, what the business did lately, for
-        /// an agent's ideas (decision 119).
+        /// an agent's ideas (decision 119); `morning`, the founder's morning
+        /// brief (decision 121).
         records: Option<String>,
         #[serde(default)]
         feeds: Vec<String>,
@@ -401,9 +403,13 @@ fn check_block(cx: &Checks, block: &Block, telegram: Option<&str>) -> Result<()>
             dedupe.as_deref().map(path).transpose()?;
             positive("max", *max)?;
             match (source.as_str(), records.as_deref()) {
-                ("business", Some("week" | "recent")) => {}
-                ("business", Some(other)) => bail!("unknown records '{other}' (week, recent)"),
-                ("business", None) => bail!("a business read names its records (week, recent)"),
+                ("business", Some("week" | "recent" | "morning")) => {}
+                ("business", Some(other)) => {
+                    bail!("unknown records '{other}' (week, recent, morning)")
+                }
+                ("business", None) => {
+                    bail!("a business read names its records (week, recent, morning)")
+                }
                 (_, Some(_)) => bail!("only a business read names records"),
                 _ => {}
             }
