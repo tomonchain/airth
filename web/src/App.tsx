@@ -132,7 +132,8 @@ export default function App() {
   // On a phone the card takes the conversation's place: closed at first.
   const [details, setDetails] = useState(!narrow)
   const agents = data.data?.agents ?? []
-  const items = data.data?.items ?? []
+  // An agent's idea is told in its conversation, not in Needs you (decision 119).
+  const items = (data.data?.items ?? []).filter((i) => i.kind !== "idea")
 
   // Another business: its own agents' tabs. Not on the first render, which
   // opens what the address says.

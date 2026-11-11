@@ -337,6 +337,35 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX routine_blocks_by_start ON routine_blocks(started_at);
     CREATE INDEX actions_by_status ON actions(status, started_at);
     CREATE INDEX draft_log_by_at ON draft_log(at);",
+    // 20: an agent's idea is an item of the queue (decision 119): told to
+    // the founder, outside Needs you. The queue is rebuilt as in 18, ids kept.
+    "CREATE TABLE queue_new (
+        id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('approval', 'prepared', 'delayed', 'incident', 'promotion', 'report', 'deadline', 'idea')),
+        title TEXT NOT NULL,
+        agent TEXT,
+        routine TEXT,
+        run TEXT,
+        action TEXT,
+        args TEXT NOT NULL DEFAULT '{}',
+        original_args TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT '{}',
+        model_call INTEGER REFERENCES model_calls(id),
+        due_at TEXT,
+        execute_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired', 'done', 'failed')),
+        revision INTEGER NOT NULL DEFAULT 1,
+        flag TEXT CHECK (flag IN ('note', 'blocking', 'lifted', 'overridden')),
+        flag_reason TEXT,
+        note TEXT
+    );
+    INSERT INTO queue_new SELECT id, created_at, kind, title, agent, routine, run, action, args,
+        original_args, source, model_call, due_at, execute_at, status, revision, flag, flag_reason, note FROM queue;
+    DROP TABLE queue;
+    ALTER TABLE queue_new RENAME TO queue;
+    CREATE INDEX queue_by_status ON queue(status, created_at);
+    CREATE UNIQUE INDEX queue_deadline_once ON queue(json_extract(source, '$.key')) WHERE kind = 'deadline';",
 ];
 
 pub struct Store {

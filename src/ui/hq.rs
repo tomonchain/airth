@@ -107,7 +107,9 @@ impl App {
             .filter_map(|(name, g)| g.ok().map(|g| (name, g)))
             .collect();
         let week = store.routines_week(now - Duration::days(7))?;
-        let pending = store.queue(&["pending"])?;
+        // An idea waits for no answer (decision 119): it is not counted.
+        let mut pending = store.queue(&["pending"])?;
+        pending.retain(|i| i.kind != "idea");
         let root = realm.root().ok();
         let mut activity = Vec::new();
         for (routine, run) in store.latest_runs(ACTIVITY)? {

@@ -142,6 +142,28 @@ impl Hub {
                 reports.borrow_mut().push((key.to_string(), fields.clone()));
                 return Ok("reported in Needs you".into());
             }
+            if action == "airth.suggest" {
+                let get = |k: &str| fields.get(k).map_or("", String::as_str);
+                let idea = crate::business::store::reports::NewIdea {
+                    key,
+                    agent: &graph.agent,
+                    routine: name,
+                    run,
+                    title: get("title"),
+                    text: get("text"),
+                    why: get("why"),
+                };
+                anyhow::ensure!(
+                    !idea.text.trim().is_empty(),
+                    "an idea says something: its text is empty"
+                );
+                return Ok(
+                    match Store::of(realm)?.add_idea(&idea, chrono::Utc::now())? {
+                        Some(id) => format!("told the founder (item {id})"),
+                        None => "kept back: the team already spoke today".into(),
+                    },
+                );
+            }
             if action == crate::routine::run::LAUNCH_MISSION {
                 let launch = super::missions::Launch {
                     agent: &graph.agent,
@@ -469,6 +491,10 @@ impl Hub {
             store.record_filing(id)?;
             store.close_item(id, "done", "filed by the founder")?;
             return Ok((item, Some("filed".into())));
+        }
+        if item.kind == "idea" {
+            store.close_item(id, "done", "useful, said the founder")?;
+            return Ok((item, Some("useful".into())));
         }
         if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;

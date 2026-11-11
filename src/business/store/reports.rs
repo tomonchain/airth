@@ -15,6 +15,17 @@ use std::collections::BTreeMap;
 /// How long a report waits to be seen before it leaves Needs you.
 pub const KEPT_DAYS: i64 = 7;
 
+/// An agent's idea: what it noticed, and why it matters to the business.
+pub struct NewIdea<'a> {
+    pub key: &'a str,
+    pub agent: &'a str,
+    pub routine: &'a str,
+    pub run: &'a str,
+    pub title: &'a str,
+    pub text: &'a str,
+    pub why: &'a str,
+}
+
 pub struct NewReport<'a> {
     pub title: &'a str,
     pub agent: Option<&'a str>,
@@ -89,13 +100,55 @@ impl Store {
         })
     }
 
-    /// Reports created before `before` and still not seen leave Needs you,
-    /// marked expired; how many.
+    /// An agent's idea for the founder (decision 119), journaled under its
+    /// act's key: one item, unless that act already gave one, or the team
+    /// already spoke on `now`'s day (one idea a day, every agent counted).
+    pub fn add_idea(&mut self, idea: &NewIdea, now: DateTime<Utc>) -> Result<Option<i64>> {
+        self.write(|tx| {
+            let today = now.format("%Y-%m-%d").to_string();
+            let spoken: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM queue WHERE kind = 'idea' AND substr(created_at, 1, 10) = ?1",
+                params![today],
+                |r| r.get(0),
+            )?;
+            if spoken > 0 {
+                return Ok(None);
+            }
+            let at = now.to_rfc3339();
+            let fields = json!({"title": idea.title, "text": idea.text, "why": idea.why});
+            let added = tx.execute(
+                "INSERT OR IGNORE INTO actions (key, action, connector, agent, routine, run, level, approved, args, status, attempts, started_at, finished_at)
+                 VALUES (?1, 'airth.suggest', 'airth', ?2, ?3, ?4, 3, 0, ?5, 'confirmed', 1, ?6, ?6)",
+                params![idea.key, idea.agent, idea.routine, idea.run, fields.to_string(), at],
+            )?;
+            if added == 0 {
+                return Ok(None);
+            }
+            let action = tx.last_insert_rowid();
+            tx.execute(
+                "INSERT INTO action_log (action, at, status) VALUES (?1, ?2, 'confirmed')",
+                params![action, at],
+            )?;
+            let args = json!({"text": idea.text, "why": idea.why}).to_string();
+            tx.execute(
+                "INSERT INTO queue (created_at, kind, title, agent, routine, run, args, original_args, source, status)
+                 VALUES (?1, 'idea', ?2, ?3, ?4, ?5, ?6, ?6, ?7, 'pending')",
+                params![at, idea.title, idea.agent, idea.routine, idea.run, args, json!({"show": "text"}).to_string()],
+            )?;
+            let id = tx.last_insert_rowid();
+            log(tx, id, "proposed", "airth", None, "")?;
+            tx.execute("UPDATE actions SET item = ?2 WHERE id = ?1", params![action, id])?;
+            Ok(Some(id))
+        })
+    }
+
+    /// Reports and ideas created before `before` and still not answered
+    /// leave the founder's view, marked expired; how many.
     pub fn expire_reports(&mut self, before: DateTime<Utc>) -> Result<usize> {
         self.write(|tx| {
             let ids: Vec<i64> = tx
                 .prepare(
-                    "SELECT id FROM queue WHERE kind = 'report' AND status = 'pending' AND created_at < ?1",
+                    "SELECT id FROM queue WHERE kind IN ('report', 'idea') AND status = 'pending' AND created_at < ?1",
                 )?
                 .query_map(params![before.to_rfc3339()], |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
@@ -210,5 +263,57 @@ mod tests {
                 .any(|(action, by, _)| action == "expired" && by == "airth"),
             "{log:?}"
         );
+    }
+
+    /// Decision 119: the team speaks once a day, every agent counted; an
+    /// act retried gives no second idea; an idea left unanswered a week
+    /// leaves the founder's view.
+    #[test]
+    fn the_team_gives_one_idea_a_day_and_never_twice_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+        let idea = |key: &'static str, agent: &'static str| NewIdea {
+            key,
+            agent,
+            routine: "ideas",
+            run: "r1",
+            title: "A year-end recap",
+            text: "Five steps of Hedgen's year: worth a post.",
+            why: "50 days to the end of the year.",
+        };
+        let day = |d: u32| {
+            chrono::NaiveDate::from_ymd_opt(2026, 11, d)
+                .unwrap()
+                .and_hms_opt(9, 0, 0)
+                .unwrap()
+                .and_utc()
+        };
+        let first = store
+            .add_idea(&idea("ideas/day/2026-11-11/tell", "writer"), day(11))
+            .unwrap();
+        assert!(first.is_some());
+        // Another agent the same day: kept back.
+        assert_eq!(
+            store
+                .add_idea(&idea("ideas2/day/2026-11-11/tell", "watcher"), day(11))
+                .unwrap(),
+            None
+        );
+        // The next day, but the same act retried: nothing new.
+        assert_eq!(
+            store
+                .add_idea(&idea("ideas/day/2026-11-11/tell", "writer"), day(12))
+                .unwrap(),
+            None
+        );
+        let next = store
+            .add_idea(&idea("ideas2/day/2026-11-12/tell", "watcher"), day(12))
+            .unwrap();
+        assert!(next.is_some());
+        let pending = store.queue(&["pending"]).unwrap();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].kind, "idea");
+        assert_eq!(pending[0].args["why"], "50 days to the end of the year.");
+        assert_eq!(store.expire_reports(day(20)).unwrap(), 2);
     }
 }
