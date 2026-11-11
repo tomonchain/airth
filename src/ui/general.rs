@@ -91,6 +91,32 @@ impl App {
                 }
                 ok()
             }
+            // A connector's logo, fetched by Airth once and kept (decision 122).
+            (Method::Get, ["logos", id]) => {
+                let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                    .into_owned()
+                    .collect();
+                let domain = params.get("domain").map(String::as_str);
+                match crate::logos::logo(self.hub.home().dir(), id, domain)? {
+                    Some((bytes, kind)) => Response::from_data(bytes)
+                        .with_header(content_type(kind))
+                        .with_header(
+                            Header::from_bytes("Cache-Control", "private, max-age=86400").unwrap(),
+                        )
+                        .with_header(
+                            Header::from_bytes("X-Content-Type-Options", "nosniff").unwrap(),
+                        )
+                        // An image only: opened as a page, it runs nothing.
+                        .with_header(
+                            Header::from_bytes(
+                                "Content-Security-Policy",
+                                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                            )
+                            .unwrap(),
+                        ),
+                    None => json_response(404, json!({"error": "no logo found"})),
+                }
+            }
             (Method::Get, ["owner"]) => json_response(200, self.owner()?),
             (Method::Put, ["owner"]) => {
                 let owner: Owner =

@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 122. Connectors' logos fetched by Airth, not by the founder's devices
+
+**Accepted** (founder, 11 November 2026: "logos should load from a remote source without an update; Google Drive and Canva have none", then "go").
+
+- **A connector Airth carries no logo for** (decision 20's embedded marks) gets one from `GET /api/logos/<id>?domain=<its server's host>`. The server answers from what it kept in the home (`logos/`), else fetches it once:
+  1. Simple Icons (CC0) by the connector's name, `cdn.simpleicons.org/<slug>`;
+  2. else the service's own site, the server's host without `mcp.`, `api.`, `www.` or `app.`: `apple-touch-icon.png`, `favicon.svg`, then `favicon.ico`.
+
+  What is found is kept for good; that nothing was found is kept a week, then looked for again.
+- **The founder's devices never ask a third party.** The page reads the logo from Airth with its key and shows it from a local copy, so the page's rule against remote images (decision 20) stands, and no service learns what the founder looks at.
+- **What is fetched is bounded:**
+  - https only, from public addresses only: the same check as the agents' web reads (`tools::http::public_address`), applied to each redirect, with the address checked being the one connected to;
+  - an SVG, PNG or ICO of at most 256 kB; an SVG that holds a script is refused;
+  - served with `nosniff` and a sandbox policy, so it runs nothing even opened as a page.
+- Logos that ship with Airth stay first; the fetched ones fill the gaps, including connectors found in the MCP Registry.
+
+*Why:* every connector without a logo needed an Airth update. A registry of brand marks exists and every service has an icon; the server can get them without the devices leaking anything.
+
+*Cost:* the server makes outgoing requests to Simple Icons and to connectors' sites, once per connector. A site's icon may be poor or generic; it can be replaced by adding a mark to Airth.
+
 ## 121. The interlocutor's morning brief, in figures Airth keeps
 
 **Accepted** (founder, 11 November 2026: "a morning message from the Chief of staff", among the four next steps for one interlocutor, then "go, do all of it").
