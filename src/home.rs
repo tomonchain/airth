@@ -113,7 +113,9 @@ impl Home {
     }
 
     pub fn save_owner(&self, owner: &Owner) -> Result<()> {
+        owner.check()?;
         let mut owner = owner.clone();
+        owner.language = owner.language.trim().to_string();
         owner.updated_at = Some(Utc::now());
         write_atomic(
             &self.dir.join("owner.json"),

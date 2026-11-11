@@ -510,8 +510,9 @@ impl Hub {
     }
 
     fn briefing(&self, realm: &Realm, state: &State, ws: &Workspace) -> Result<Briefing> {
+        let profile = self.home.owner()?;
         let owner = if realm.config.share_owner_profile {
-            self.home.owner()?.prompt_section()
+            profile.prompt_section()
         } else {
             None
         };
@@ -520,6 +521,7 @@ impl Hub {
             realm: Some(realm.name().to_string()),
             realm_description: realm.config.description.clone(),
             owner,
+            language: profile.language().map(str::to_string),
             business: crate::business::briefing(&realm.root()?, &realm.config.departments)?,
             // With its id, so an agent can propose a decision that replaces it.
             memory: realm

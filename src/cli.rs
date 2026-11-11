@@ -101,9 +101,9 @@ pub enum RealmCmd {
 pub enum OwnerCmd {
     /// Show the profile
     Show,
-    /// Set your name or the "about" text
+    /// Set your name, the "about" text, or the language agents write to you in
     Set {
-        #[arg(value_parser = ["name", "about"])]
+        #[arg(value_parser = ["name", "about", "language"])]
         field: String,
         value: String,
     },
@@ -1287,6 +1287,7 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
             }
             println!("name         {}", owner.name);
             println!("about        {}", owner.about);
+            println!("language     {}", owner.language);
             for field in LIST_FIELDS {
                 let items = owner.list_mut(field).expect("known field");
                 println!("{field}");
@@ -1298,6 +1299,7 @@ pub fn owner(ctx: &Ctx, command: OwnerCmd) -> Result<bool> {
         }
         OwnerCmd::Set { field, value } => match field.as_str() {
             "name" => owner.name = value.trim().to_string(),
+            "language" => owner.language = value.trim().to_string(),
             _ => owner.about = value.trim().to_string(),
         },
         OwnerCmd::Add { field, item } => {
