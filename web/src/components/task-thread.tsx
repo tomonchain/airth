@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { BookmarkPlus, Check, ChevronRight, CircleAlert, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
+import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
@@ -114,7 +114,8 @@ type Part =
 // The task's messages as chat parts: the founder's words, the agent's words,
 // and what it did in between, grouped.
 function parts(view: RunView): Part[] {
-  const out: Part[] = [{ kind: "founder", text: view.state.objective }]
+  // A task a plan passed on carries a note for its agent: not shown.
+  const out: Part[] = [{ kind: "founder", text: view.state.objective.split("\n\n(Passed on by ")[0] }]
   const byId = new Map<string, Step>()
   view.state.messages.forEach((m, i) => {
     for (const b of m.content) {
@@ -126,6 +127,7 @@ function parts(view: RunView): Part[] {
         // the founder wrote after, before the agent answered, is theirs.
         else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
         else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it." })
+        else if (text.startsWith("The tasks of your plan ended")) out.push({ kind: "note", text: "The team's tasks ended." })
         else if (text.startsWith("[Airth runtime]") || text === "Go on with the order.") out.push({ kind: "note", text: "Picked up again." })
         else out.push({ kind: "founder", text })
       } else if (b.type === "tool_use") {
@@ -243,8 +245,16 @@ function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "
 /** One task with an agent, as a chat: the founder's messages on the right,
     the agent's words on the left, its steps folded in between, and its
     question to the founder when it has one. */
-export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange }: {
+/** A task one agent passed to another (decision 120), as the thread shows it. */
+export type Passed = { id: string; agent: string; title: string; order: string; status?: string }
+
+export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent }: {
   realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echoes?: string[]; onEcho?: (text: string) => void; onChange: () => void
+  /** Who passed this task on, when another agent did. */
+  from?: string
+  /** The tasks this one passed on to the team. */
+  passed?: Passed[]
+  onAgent?: (name: string) => void
 }) {
   const { view, draft, refresh } = useRun(realm, id, fresh || echoes.length > 0)
   // Words the founder already read as they were written are not written
@@ -320,6 +330,20 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       {shownTurns.map((t, i) => {
         const next = shownTurns[i + 1]
         const isNew = t.at >= (shown.current ?? 0)
+        // Passed on by another agent: its brief, not the founder's words.
+        if (t.kind === "founder" && t.at === 0 && from) {
+          return (
+            <div key={t.at} className={cn("mb-4", isNew && "fade-up")}>
+              <div className="rounded-2xl border border-dashed bg-surface px-4 py-3">
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CornerDownRight className="size-3.5" /> <b className="font-medium text-foreground">{from}</b> passed this on to <b className="font-medium text-foreground">{agent.title}</b>
+                  <span className="ml-auto">{stamp(startOf(id))}</span>
+                </div>
+                <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{t.text}</p>
+              </div>
+            </div>
+          )
+        }
         if (t.kind === "founder") {
           return (
             <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
@@ -390,6 +414,27 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
           <div className="fade-up"><Work items={[]} live saying={short} tail={timer} /></div>
         </Bubble>
+      )}
+      {/* What this task passed on to the team, and where each part is. */}
+      {passed.length > 0 && (
+        <div className="mb-4 rounded-2xl border bg-surface px-4 py-3 fade-up">
+          <div className="mb-2 text-xs font-medium text-muted-foreground">Passed on to the team</div>
+          <ul className="space-y-1">
+            {passed.map((p) => (
+              <li key={p.id}>
+                <button onClick={() => onAgent?.(p.agent)} className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-accent">
+                  <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1"><b className="font-medium">{p.title}</b> <span className="text-muted-foreground">{p.order.split("\n")[0]}</span></span>
+                  <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[11px]",
+                    p.status === "completed" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                    : p.status === "failed" ? "bg-red-500/10 text-red-500"
+                    : p.status === "running" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                    : "bg-muted text-muted-foreground")}>{p.status === "completed" ? "done" : p.status ?? "waiting"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {/* A task of a business that works in worktrees has a change from its
           start: shown only once it holds something to review. */}

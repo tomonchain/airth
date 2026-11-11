@@ -64,6 +64,11 @@ impl Hub {
                 plan_total: s.plan.len(),
                 asked_by: s.origin.as_ref().and_then(|o| o.chain.last().cloned()),
                 agent: s.agent.clone(),
+                dispatched_by: s
+                    .dispatched_by
+                    .as_deref()
+                    .and_then(|m| m.split('/').next())
+                    .map(str::to_string),
                 report: s
                     .report
                     .as_deref()
@@ -250,6 +255,8 @@ pub struct RunSummary {
     pub asked_by: Option<String>,
     /// A task's agent (decision 64).
     pub agent: Option<String>,
+    /// For a task a plan passed on: the interlocutor's run (decision 120).
+    pub dispatched_by: Option<String>,
     /// The first line of its report, if it has one.
     pub report: Option<String>,
 }

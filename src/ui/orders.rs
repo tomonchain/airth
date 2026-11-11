@@ -87,16 +87,24 @@ impl App {
             .into_iter()
             .filter_map(|i| i.run.map(|r| (r, i.id)))
             .collect();
-        let (mut groups, mut done) = (
-            json!({"waiting": [], "review": [], "running": []}),
-            Vec::new(),
-        );
-        for run in self
+        let runs: Vec<_> = self
             .hub
             .runs(realm)?
             .into_iter()
             .filter(|r| r.agent.is_some())
-        {
+            .collect();
+        // Who passed each task on, and its order without the note that
+        // says so (decision 120).
+        let agent_of = |id: &str| {
+            runs.iter()
+                .find(|r| r.id == id)
+                .and_then(|r| r.agent.clone())
+        };
+        let (mut groups, mut done) = (
+            json!({"waiting": [], "review": [], "running": []}),
+            Vec::new(),
+        );
+        for run in runs.iter().cloned() {
             let status = run.display_status();
             let line = run.report.clone().unwrap_or_else(|| match run.plan_total {
                 0 => String::new(),
@@ -104,7 +112,8 @@ impl App {
             });
             let task = json!({
                 "id": run.id,
-                "order": run.objective,
+                "order": run.objective.split("\n\n(Passed on by ").next().unwrap_or_default(),
+                "from": run.dispatched_by.as_deref().map(|t| json!({"task": t, "agent": agent_of(t)})),
                 "agent": run.agent,
                 "status": status,
                 "line": line,
@@ -209,5 +218,49 @@ mod tests {
         assert!(page["waiting"][0]["change"].is_null());
         let all = page.to_string();
         assert!(!all.contains("Just a chat"), "a chat is not a task");
+    }
+
+    /// Decision 120: a task a plan passed on says who passed it, and its
+    /// order reads without the note added for the agent.
+    #[test]
+    fn a_task_passed_on_says_who_passed_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        for name in ["chief", "writer"] {
+            std::fs::write(root.join(format!("agents/{name}.md")), "Work.").unwrap();
+        }
+        let app = super::super::tests::test_app(home, 0);
+        let chief = app
+            .hub
+            .start_task(&realm, "chief", "Prepare the year's end")
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut writer = app
+            .hub
+            .start_task(&realm, "writer", "A recap article\n\n(Passed on by chief, from an order of the founder's; the founder approved this plan.)")
+            .unwrap();
+        writer.dispatched_by = Some(format!("{}/7", chief.id));
+        writer.save().unwrap();
+        let page = app.tasks(&realm).unwrap();
+        let all: Vec<&serde_json::Value> = ["running", "waiting", "review", "done"]
+            .iter()
+            .flat_map(|g| page[*g].as_array().unwrap())
+            .collect();
+        let passed = all.iter().find(|t| t["agent"] == "writer").unwrap();
+        assert_eq!(passed["order"], "A recap article");
+        assert_eq!(passed["from"]["agent"], "chief");
+        assert_eq!(passed["from"]["task"], chief.id.as_str());
+        let own = all.iter().find(|t| t["agent"] == "chief").unwrap();
+        assert!(own["from"].is_null());
     }
 }

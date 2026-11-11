@@ -201,7 +201,9 @@ export type Run = { run: string; routine: string; blocks: Block[] }
 
 export type ThreadRun = { routine: string; run: string; sentence: string; at: string | null; blocks: Block[] }
 export type Thread = { runs: ThreadRun[]; items: Item[] }
-export type Task = { id: string; order?: string; line?: string; status?: string; agent?: string | null; updated_at?: string; at?: string; change?: string | null }
+export type Task = { id: string; order?: string; line?: string; status?: string; agent?: string | null; updated_at?: string; at?: string; change?: string | null
+  /** The task that passed it on, and its agent (decision 120). */
+  from?: { task: string; agent: string | null } | null }
 export type Tasks = Record<"running" | "waiting" | "review" | "done", Task[]>
 
 export type Finance = { source?: string; cash?: string; in?: string; out?: string; runway?: string; runway_months?: number | null; unknown?: string } | null
