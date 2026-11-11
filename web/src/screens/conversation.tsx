@@ -75,7 +75,15 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const units = useMemo(() => {
     const u: { side: "left" | "right" | "task"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
     for (const x of entries) {
-      if (x.kind === "task") u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }} /> })
+      if (x.kind === "task") {
+        // Who passed it on, and what it passed on (decision 120).
+        const all = Object.values(tasks.data ?? {}).flat()
+        const titleOf = (name: string | null | undefined) => { const a = agents.find((g) => g.name === name); return a ? called(a) : name ?? "An agent" }
+        const self = all.find((t) => t.id === x.id)
+        const passed = all.filter((t) => t.from?.task === x.id && t.agent).map((t) => ({ id: t.id, agent: t.agent!, title: titleOf(t.agent), order: t.order ?? "", status: t.status }))
+        u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }}
+          from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} /> })
+      }
       else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
       else {
         const it = x.item
@@ -88,7 +96,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     }
     return u
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, realm, agent])
+  }, [entries, realm, agent, tasks.data, agents])
   const firstNew = units.findIndex((x) => x.isNew)
   // What was there when the thread opened shows at once; what arrives while
   // the founder watches comes in, the agent's words written as they stream.
