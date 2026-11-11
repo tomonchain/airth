@@ -358,11 +358,13 @@ fn a_task_goes_on_with_what_its_agent_may_use_now() {
 }
 
 /// Decision 120: the founder's one interlocutor takes every order not
-/// named, puts a plan to the founder, and only their approval starts the
-/// other agents' tasks; once all have ended, it is told, once.
+/// named and puts a plan to the founder; nothing starts before their
+/// approval, a step that waits starts once the one before it has finished,
+/// with what it delivered, and the interlocutor is told, once, at the end.
 #[test]
 fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::Step;
     let f = fixture();
     let root = f.root.path().to_path_buf();
     agent(
@@ -390,13 +392,15 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
 
     // Proposing starts nothing: the plan waits for the founder.
     let steps = [
-        crate::tools::dispatch::Step {
+        Step {
             agent: "writer".into(),
             task: "A recap article".into(),
+            after: vec![],
         },
-        crate::tools::dispatch::Step {
+        Step {
             agent: "developer".into(),
-            task: "A banner".into(),
+            task: "A banner linking to it".into(),
+            after: vec!["writer".into()],
         },
     ];
     (dispatch.propose)(&steps, "Year-end").unwrap();
@@ -412,10 +416,11 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
         item.args["text"]
             .as_str()
             .unwrap()
-            .contains("- writer: A recap article")
+            .contains("- developer (after writer): A banner")
     );
     assert_eq!(hub.runs(&f.realm).unwrap().len(), before);
 
+    // Approved: the writer starts; the developer waits for it.
     hub.answer_item(
         &f.realm,
         item.id,
@@ -426,27 +431,33 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     )
     .unwrap();
     let handed = hub.take_hand_offs().unwrap();
-    assert_eq!(handed.len(), 2);
+    assert_eq!(handed.len(), 1);
     let mark = format!("{}/{}", chief.id, item.id);
-    for (_, s) in &handed {
-        assert_eq!(s.dispatched_by.as_deref(), Some(mark.as_str()));
-        assert!(s.objective.contains("approved this plan"));
-    }
-
-    // One task ends: the interlocutor waits for the other.
+    let mut first = handed[0].1.clone();
+    assert_eq!(first.agent.as_deref(), Some("writer"));
+    assert_eq!(first.dispatched_by.as_deref(), Some(mark.as_str()));
     let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
     chief_done.status = Status::Completed;
     chief_done.save().unwrap();
-    let mut first = handed[0].1.clone();
+
+    // The writer ends: the developer starts with what it delivered.
     first.status = Status::Completed;
-    first.report = Some("Article drafted.".into());
+    first.report = Some("Article drafted: hedgen.xyz/blog/2026".into());
     first.save().unwrap();
     hub.dispatched_ended(&f.realm, &first).unwrap();
-    assert!(hub.take_hand_offs().unwrap().is_empty());
+    let next = hub.take_hand_offs().unwrap();
+    assert_eq!(next.len(), 1, "the developer, not yet the interlocutor");
+    let mut second = next[0].1.clone();
+    assert_eq!(second.agent.as_deref(), Some("developer"));
+    assert!(
+        second.objective.contains("hedgen.xyz/blog/2026"),
+        "{}",
+        second.objective
+    );
+
     // The last ends: the interlocutor is told how each went, once.
-    let mut second = handed[1].1.clone();
-    second.status = Status::Failed;
-    second.report = Some("The build broke.".into());
+    second.status = Status::Completed;
+    second.report = Some("Pull request #42 opened.".into());
     second.save().unwrap();
     hub.dispatched_ended(&f.realm, &second).unwrap();
     hub.dispatched_ended(&f.realm, &second).unwrap();
@@ -455,7 +466,96 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     assert_eq!(told[0].1.id, chief.id);
     let last = format!("{:?}", told[0].1.messages.last().unwrap());
     assert!(
-        last.contains("Article drafted.") && last.contains("The build broke."),
+        last.contains("Article drafted") && last.contains("Pull request #42"),
+        "{last}"
+    );
+}
+
+/// Decision 120: the founder edits the plan before approving it, and the
+/// plan as edited is the one that runs; a step whose wait failed never
+/// starts, and the interlocutor hears why.
+#[test]
+fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
+    use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::Step;
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    agent(&root, "developer", "title: Developer\n");
+    agent(&root, "seo", "title: SEO\n");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Year-end")
+        .unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let steps = [
+        Step {
+            agent: "writer".into(),
+            task: "A recap".into(),
+            after: vec![],
+        },
+        Step {
+            agent: "seo".into(),
+            task: "Keywords".into(),
+            after: vec![],
+        },
+    ];
+    (dispatch.propose)(&steps, "Year-end").unwrap();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    // The founder drops SEO and adds the developer after the writer.
+    let edited = "Year-end\n\n- writer: A recap of 800 words\n- developer (after writer): A banner";
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Edit(edited.into()),
+        "app",
+        5,
+    )
+    .unwrap();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Approve,
+        "app",
+        1,
+    )
+    .unwrap();
+    let handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 1);
+    assert!(handed[0].1.objective.starts_with("A recap of 800 words"));
+    // The writer fails: the developer never starts, and the interlocutor hears why.
+    let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
+    chief_done.status = Status::Completed;
+    chief_done.save().unwrap();
+    let mut first = handed[0].1.clone();
+    first.status = Status::Failed;
+    first.report = Some("The model stopped answering.".into());
+    first.save().unwrap();
+    hub.dispatched_ended(&f.realm, &first).unwrap();
+    let told = hub.take_hand_offs().unwrap();
+    assert_eq!(told.len(), 1);
+    assert_eq!(told[0].1.id, chief.id);
+    let last = format!("{:?}", told[0].1.messages.last().unwrap());
+    assert!(
+        last.contains("developer (not started): writer ended failed"),
         "{last}"
     );
 }

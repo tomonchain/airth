@@ -6,6 +6,7 @@ import { StreamText } from "@/components/beautifui/stream-text"
 import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
 import { KeepButton } from "@/components/keep-decision"
+import { NeedCard } from "@/components/need-card"
 import { Rich } from "@/components/rich"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
@@ -415,6 +416,13 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           <div className="fade-up"><Work items={[]} live saying={short} tail={timer} /></div>
         </Bubble>
       )}
+      {/* Its plan for the team, waiting for the founder (decision 120):
+          approved, edited or rejected here as in Needs you. */}
+      {items.filter((i) => i.run === id && i.action === "airth.dispatch" && i.status === "pending").map((plan) => (
+        <div key={plan.id} className="mb-4 md:ml-10 md:max-w-[85%] fade-up">
+          <NeedCard realm={realm} it={plan} onDone={() => { refresh(); onChange() }} />
+        </div>
+      ))}
       {/* What this task passed on to the team, and where each part is. */}
       {passed.length > 0 && (
         <div className="mb-4 rounded-2xl border bg-surface px-4 py-3 fade-up">
