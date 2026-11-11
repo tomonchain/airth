@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 123. Bank statements imported from Revolut
+
+**Accepted** (founder, 11 November 2026: "I should be able to import a Revolut CSV to update it regularly").
+
+Revolut's API needs a plan upgrade (decision 68), and figures by hand were never entered. The founder exports a statement from Revolut and imports it on the Finance page.
+
+- **The CSV as Revolut exports it** (Statements, Transaction statement, CSV), business or personal. Columns are read by their header's name, so a column Revolut adds or moves changes nothing. A file with no date, amount or currency column is refused, saying which it lacks. Only completed transactions are kept; the others are counted and left out. At most 8 MB.
+- **Each transaction kept once**, in `business.db` (migration 21, table `bank_lines`), by Revolut's id, or a hash of the line when the export has none. Importing overlapping statements, or the same one twice, adds nothing twice. The database is in the Airth home: no run can write a figure the founder relies on.
+- **The figures, by code:** in the profile's currency when the business holds it, else the one most cash is in.
+  - Cash is the latest balance of each account in that currency.
+  - In and out are this calendar month's.
+  - Runway is cash over the monthly spending of the last three months, or of the months the statements cover when fewer.
+  - Exchanges between the business's own currencies are neither in nor out.
+- **Precedence:** a connected bank (decision 54), then imported statements, then figures by hand (decision 68).
+- **Never stale:** "Revolut statement · to 8 Nov" shows the day of the last transaction. More than 35 days after the last import, the figures turn to unknown, as figures by hand do.
+- Spending's chart shows what went out each day, from the statements, as it does from a bank.
+
+*Why:* a CSV the founder already knows how to export gives true figures, in and out included, without a plan upgrade or a credential. Keeping lines, not totals, makes a re-import harmless and lets the chart and the runway come from the same data.
+
+*Cost:* a new table and module (`src/statement.rs`). The figures are as fresh as the last import. A transfer between two of the business's own accounts in the same currency counts as out and in, as the export does not say it is internal.
 ## 122. Connectors' logos fetched by Airth, not by the founder's devices
 
 **Accepted** (founder, 11 November 2026: "logos should load from a remote source without an update; Google Drive and Canva have none", then "go").

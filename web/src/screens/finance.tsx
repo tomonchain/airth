@@ -1,16 +1,19 @@
-import { useState } from "react"
-import { ExternalLink, Landmark } from "lucide-react"
+import { useRef, useState } from "react"
+import { ExternalLink, FileUp, Landmark } from "lucide-react"
+import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
 import { Character } from "@/components/character"
 import { Empty, Figure, Loading, Page, Panel, Section, Seg } from "@/components/page"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Business, type Calendar, type Company, type Routine } from "@/lib/api"
+import { api, enc, raw, type Agent, type Business, type Calendar, type Company, type Routine } from "@/lib/api"
 import { usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 /** The business's money: cash and runway from the bank (read-only, decision
-    54) or entered by hand (decision 68), what the agents cost, and the tax
-    and filing dates its profile implies. Never a total across businesses. */
-export function Finance({ realm, business, agents }: { realm: string; business: Business | null; agents: Agent[] }) {
+    54), from the statements the founder imports (decision 123) or entered
+    by hand (decision 68), what the agents cost, and the tax and filing
+    dates its profile implies. Never a total across businesses. */
+export function Finance({ realm, business, agents, onImported }: { realm: string; business: Business | null; agents: Agent[]; onImported?: () => void }) {
   const cal = usePoll<Calendar>(() => api(`realms/${enc(realm)}/calendar`), 60000, [realm])
   const routines = usePoll<{ routines: Routine[] }>(() => api(`realms/${enc(realm)}/graphs`), 60000, [realm])
   const company = usePoll<Company>(() => api(`realms/${enc(realm)}/company`), 60000, [realm])
@@ -19,10 +22,11 @@ export function Finance({ realm, business, agents }: { realm: string; business: 
   const months = f?.runway_months
   const spend = agents.reduce((s, a) => s + a.cost_usd, 0)
   const max = Math.max(...agents.map((a) => a.cost_usd), 0.0001)
+  const [imported, setImported] = useState(0)
 
   return (
     <Page eyebrow={p?.legal_name ?? realm} title="Finance" lede={f?.runway ? `Runway ${f.runway}.` : "What the business has, spends and owes."}>
-      <Section title="Cash" note={f?.source}>
+      <Section title="Cash" note={<span className="flex items-center gap-2">{f?.source}{f && !f.unknown && <ImportStatement realm={realm} onDone={() => { setImported((n) => n + 1); onImported?.() }} small />}</span>}>
         {!business ? <Loading /> : f && !f.unknown ? (
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <Figure label="Cash" value={f.cash} />
@@ -32,12 +36,13 @@ export function Finance({ realm, business, agents }: { realm: string; business: 
           </div>
         ) : (
           <Empty icon={Landmark} title={f?.unknown ?? "No bank figures yet"}>
-            Connect {p?.bank ?? "the business's bank"} read-only, or write cash, spent and as_of in business/finance.md. Airth never moves money.
+            Export a statement from Revolut (Statements, Transaction statement, CSV) and import it here, each week or month: a transaction already in counts once. Airth never moves money.
+            <span className="mt-3 block"><ImportStatement realm={realm} onDone={() => { setImported((n) => n + 1); onImported?.() }} /></span>
           </Empty>
         )}
       </Section>
 
-      <Spending realm={realm} />
+      <Spending key={imported} realm={realm} />
 
       <Section title="What the agents cost" note="This week">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -98,6 +103,45 @@ export function Finance({ realm, business, agents }: { realm: string; business: 
   )
 }
 
+type Imported = { added: number; known: number; not_completed: number; from: string; to: string }
+
+/** A Revolut statement, as exported in CSV, read into the business's
+    figures. */
+function ImportStatement({ realm, onDone, small }: { realm: string; onDone: () => void; small?: boolean }) {
+  const input = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  async function send(file: File) {
+    setBusy(true)
+    try {
+      const r: Imported = await (await raw(`realms/${enc(realm)}/finance/statement`, { method: "POST", body: file })).json()
+      const added = r.added === 1 ? "1 new transaction" : `${r.added} new transactions`
+      toast.success(`Statement read: ${added}`, {
+        description: `${r.from} to ${r.to}${r.known ? ` · ${r.known} already in` : ""}${r.not_completed ? ` · ${r.not_completed} not completed, left out` : ""}`,
+      })
+      onDone()
+    } catch (e) {
+      toast.error("Statement not read", { description: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <input ref={input} type="file" accept=".csv,text/csv" hidden
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) send(f); e.target.value = "" }} />
+      {small ? (
+        <button className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50" disabled={busy} onClick={() => input.current?.click()}>
+          <FileUp className="size-3.5" /> Import statement
+        </button>
+      ) : (
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
+          <FileUp /> {busy ? "Reading…" : "Import a Revolut statement (CSV)"}
+        </Button>
+      )}
+    </>
+  )
+}
+
 type Spend = { currency: string | null; days: { date: string; agents: number; bank: number | null }[] }
 type Bucket = { label: string; title: string; from: string; agents: number; bank: number | null }
 
@@ -127,7 +171,7 @@ function Spending({ realm }: { realm: string }) {
           <Bars buckets={buckets} value={value} money={money} color={shown === "bank" ? "bg-rose-500/80" : "bg-sky-500"} />
         </Panel>
       )}
-      {data && !bank && <p className="mt-2 text-xs text-muted-foreground">What the agents cost. Connect the bank read-only to see what goes out of it each day.</p>}
+      {data && !bank && <p className="mt-2 text-xs text-muted-foreground">What the agents cost. Import a bank statement to see what goes out of it each day.</p>}
     </Section>
   )
 }
