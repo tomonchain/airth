@@ -369,7 +369,7 @@ impl Tool for HttpRequest {
 
 /// The address to connect to for `url`, if every address it resolves to is
 /// public. Returns the host name to pin (None for an IP literal).
-fn public_address(url: &Url) -> Result<(Option<String>, SocketAddr)> {
+pub(crate) fn public_address(url: &Url) -> Result<(Option<String>, SocketAddr)> {
     let port = url.port_or_known_default().context("URL without a port")?;
     let (name, addrs): (Option<String>, Vec<SocketAddr>) = match url.host() {
         Some(url::Host::Ipv4(ip)) => (None, vec![SocketAddr::new(IpAddr::V4(ip), port)]),

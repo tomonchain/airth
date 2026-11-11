@@ -23,6 +23,7 @@ mod integration;
 mod isolation;
 mod legal;
 mod library;
+mod logos;
 mod memory;
 mod models;
 mod notify;

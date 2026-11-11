@@ -7,6 +7,7 @@ pub mod dispatch;
 mod drive;
 mod fs;
 mod http;
+pub(crate) use http::public_address;
 pub use http::{CUT, NOT_SENT};
 pub mod mcp;
 mod memory;

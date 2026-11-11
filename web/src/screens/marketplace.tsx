@@ -7,7 +7,7 @@ import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc } from "@/lib/api"
+import { api, enc, raw } from "@/lib/api"
 import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
 import { DriveConnection } from "@/screens/settings-drive"
@@ -53,8 +53,32 @@ const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 
 
 /** A company's mark when Airth has it (Simple Icons, embedded), else its
     initial on a colour of its own. */
-function Logo({ name, id, size = 40 }: { name: string; id?: string; size?: number }) {
+// Logos Airth fetched and kept for connectors it carries none for
+// (decision 122): asked once per page load, by id.
+const fetched = new Map<string, Promise<string | null>>()
+function remoteLogo(id: string, domain?: string): Promise<string | null> {
+  if (!fetched.has(id)) {
+    fetched.set(id, raw(`logos/${enc(id)}${domain ? `?domain=${enc(domain)}` : ""}`)
+      .then((r) => r.blob()).then((b) => URL.createObjectURL(b), () => null))
+  }
+  return fetched.get(id)!
+}
+
+function Logo({ name, id, domain, size = 40 }: { name: string; id?: string; domain?: string; size?: number }) {
   const mark = id ? LOGOS[id] : undefined
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    if (!mark && id) remoteLogo(id, domain).then((u) => { if (live) setSrc(u) })
+    return () => { live = false }
+  }, [mark, id, domain])
+  if (!mark && src) {
+    return (
+      <span className="grid shrink-0 place-items-center overflow-hidden rounded-xl border bg-white shadow-xs" style={{ width: size, height: size }}>
+        <img src={src} alt="" style={{ width: size * 0.6, height: size * 0.6 }} className="object-contain" />
+      </span>
+    )
+  }
   if (mark) {
     return (
       <span className="grid shrink-0 place-items-center rounded-xl border bg-white shadow-xs dark:bg-white" style={{ width: size, height: size }}>
@@ -115,11 +139,11 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
 }
 
-function Card({ name, logo, title, description, meta, action, onOpen }: { name: string; logo?: string; title: string; description: string; meta?: React.ReactNode; action: React.ReactNode; onOpen?: () => void }) {
+function Card({ name, logo, domain, title, description, meta, action, onOpen }: { name: string; logo?: string; domain?: string; title: string; description: string; meta?: React.ReactNode; action: React.ReactNode; onOpen?: () => void }) {
   return (
     <div className="group flex flex-col rounded-xl bg-bubble p-4 transition-colors hover:bg-accent/70">
       <button onClick={onOpen} className="flex items-start gap-3 text-left" disabled={!onOpen}>
-        <Logo name={name} id={logo} />
+        <Logo name={name} id={logo} domain={domain} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{title}</span>
           {meta && <span className="block truncate text-xs text-muted-foreground">{meta}</span>}
@@ -234,7 +258,7 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <Grid>
         {(!q || "google drive documents docs sheets".includes(q.toLowerCase())) && <DriveCard realm={realm} />}
         {featured.map((c) => (
-          <Card key={c.id} name={c.name} logo={c.id} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
+          <Card key={c.id} name={c.name} logo={c.id} domain={host(c.url)} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
             action={(() => {
               const m: Method = { kind: "sign-in", name: c.id, title: c.name, url: c.url, description: c.description, logo: c.id, checked: true, tried: !c.untried }
               return status(c.url, m) ?? <Button size="sm" variant="outline" onClick={() => setMethod(m)}>Connect</Button>
@@ -247,7 +271,7 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       {!registry ? <Loading /> : !listed.length ? <Empty icon={Plug} title="Nothing found">Try another word.</Empty> : (
         <Grid>
           {listed.slice(0, 30).map((r) => (
-            <Card key={r.name} name={r.title} title={r.title} meta={host(r.url)} description={r.description ?? ""}
+            <Card key={r.name} name={r.title} logo={slug(r.title)} domain={host(r.url)} title={r.title} meta={host(r.url)} description={r.description ?? ""}
               action={(() => {
                 const m: Method = { kind: "sign-in", name: slug(r.title), title: r.title, url: r.url, description: r.description ?? "", checked: false, tried: false }
                 return status(r.url, m) ?? <Button size="sm" variant="outline" onClick={() => setMethod(m)}>Connect</Button>
@@ -267,7 +291,7 @@ function DriveCard({ realm }: { realm: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Card name="Google Drive" title="Google Drive" meta="Documents · read only"
+      <Card name="Google Drive" logo="googledrive" domain="drive.google.com" title="Google Drive" meta="Documents · read only"
         description={s.data?.connected ? `Agents given google-drive read the folder ${s.data.name ?? "you shared"}.` : "One folder of your Drive, read by the agents you choose: Docs, Sheets and Slides. Never written to."}
         action={s.data?.connected ? <Done>Connected</Done> : <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Connect</Button>} />
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) s.refresh() }}>
