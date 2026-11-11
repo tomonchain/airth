@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 121. The interlocutor's morning brief, in figures Airth keeps
+
+**Accepted** (founder, 11 November 2026: "a morning message from the Chief of staff", among the four next steps for one interlocutor, then "go, do all of it").
+
+- **Read `business`, `records: morning`** gives one item a day (source id `morning/<date>`), put into words by code, never by a model:
+  - what waits for the founder, by kind, the most pressing first (incidents, deadlines, plans, drafts and actions, things to do, reports);
+  - how the routines ran in the last 24 hours, and which failed;
+  - the routines still to run today, by time;
+  - the newest idea waiting (decision 119).
+- **A routine of the interlocutor's** sends it with `airth.report`, as any report: in Needs you, on the phone and on Telegram, once a day; a retried run does not send it twice. Hedgen's runs at 08:05, after the morning's drafts.
+- No model call: the founder reads these figures before anything else, so they come from Airth's records only.
+
+*Why:* the founder wants one interlocutor, also for what comes to them. One short message a day says where things stand, instead of opening each page.
+
+*Cost:* one more report a day in Needs you, which the founder marks Seen or lets expire after a week. It says only what Airth records: work done outside Airth is not in it.
+
 ## 120. One interlocutor for the founder, who passes orders on to the team
 
 **Accepted** (founder, 11 November 2026: "if I give it to the CEO, will it go down to the right agents?", then "yes, I want a single interlocutor").

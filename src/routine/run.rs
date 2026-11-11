@@ -455,6 +455,13 @@ pub fn run(
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
             Kind::Read {
                 source, records, ..
+            } if source == "business" && records.as_deref() == Some("morning") => {
+                let day = super::morning::read(dry.root, dry.store, now)?;
+                lines.push(format!("the morning of {}", field_text(&day, "day")));
+                (vec![day], Vec::new())
+            }
+            Kind::Read {
+                source, records, ..
             } if source == "business" && records.as_deref() == Some("recent") => {
                 let day = super::recent::read(dry.root, dry.store, now)?;
                 lines.push(format!(
