@@ -272,7 +272,7 @@ function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent 
           )}
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4 pt-5 pb-4 md:px-6 md:pt-6">
+          <div className="mx-auto max-w-3xl px-4 pt-5 pb-4 [overflow-wrap:anywhere] md:px-6 md:pt-6">
             <TaskThread realm={realm} id={run.id} agent={agent} items={items} fresh={false} onChange={onChange} />
           </div>
         </div>
