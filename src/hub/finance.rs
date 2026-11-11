@@ -113,34 +113,108 @@ pub(super) fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
 }
 
 /// What the HQ shows of a business's finance: a connected bank's figures,
-/// else those the founder entered by hand (decision 68), else None; as
-/// words, or why they are unknown.
+/// else the statements the founder imported (decision 123), else those
+/// entered by hand (decision 68), else None; as words, or why they are
+/// unknown.
 pub fn shown(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
     if !crate::bank::connected(&realm.skills_dir()) {
-        return by_hand(realm, now);
+        return match statements(realm, now) {
+            Some(Ok((finance, to))) => Some(read(
+                &finance,
+                format!("Revolut statement · to {}", day_month(&to)),
+            )),
+            Some(Err(why)) => Some(json!({"unknown": why})),
+            None => by_hand(realm, now),
+        };
     }
     Some(match kept(realm) {
-        Some(Kept::Read { finance }) if now - finance.read_at < Duration::days(1) => {
-            let money = |amount: f64| money(amount, &finance.currency);
-            json!({
-                "source": format!("Revolut Business · read-only · {}", finance.read_at.with_timezone(&chrono::Local).format("%H:%M")),
-                "cash": money(finance.cash),
-                "in": money(finance.money_in),
-                "out": money(finance.money_out),
-                "runway": finance.runway_months.map_or("No spending".to_string(), |m| format!("{} months", m.floor())),
-                "runway_months": finance.runway_months,
-            })
-        }
+        Some(Kept::Read { finance }) if now - finance.read_at < Duration::days(1) => read(
+            &finance,
+            format!(
+                "Revolut Business · read-only · {}",
+                finance
+                    .read_at
+                    .with_timezone(&chrono::Local)
+                    .format("%H:%M")
+            ),
+        ),
         Some(Kept::Read { .. }) => json!({"unknown": "Last read more than a day ago"}),
         Some(Kept::Unknown { why, .. }) => json!({"unknown": why}),
         None => json!({"unknown": "Not read yet"}),
     })
 }
 
+/// A bank's figures as the HQ shows them, `source` saying where from.
+fn read(finance: &Finance, source: String) -> Value {
+    let money = |amount: f64| money(amount, &finance.currency);
+    json!({
+        "source": source,
+        "cash": money(finance.cash),
+        "in": money(finance.money_in),
+        "out": money(finance.money_out),
+        "runway": finance.runway_months.map_or("No spending".to_string(), |m| format!("{} months", m.floor())),
+        "runway_months": finance.runway_months,
+    })
+}
+
+/// Statements are shown for this long after the last import, then as
+/// unknown: never stale (decision 123).
+const STATEMENT_DAYS: i64 = 35;
+
+/// The figures of the statements imported, and the day of their last line;
+/// None when none was ever imported, an error in words when the last import
+/// is too old to show.
+fn statements(realm: &Realm, now: DateTime<Utc>) -> Option<Result<(Finance, String), String>> {
+    let store = Store::of(realm).ok()?;
+    let imported = store.bank_imported_at().ok()??;
+    let imported = DateTime::parse_from_rfc3339(&imported).ok()?;
+    if now - imported.with_timezone(&Utc) > Duration::days(STATEMENT_DAYS) {
+        return Some(Err(format!(
+            "Statement imported more than {STATEMENT_DAYS} days ago"
+        )));
+    }
+    let lines = store.bank_lines().ok()?;
+    let to = lines.last()?.at.get(..10)?.to_string();
+    let currency = realm.root().ok().and_then(|root| profile_currency(&root));
+    let finance = crate::statement::figures(&lines, currency.as_deref(), now)?;
+    Some(Ok((finance, to)))
+}
+
+/// Keep a Revolut statement's completed lines (decision 123): what it
+/// added, what was kept already, and the days it covers.
+pub fn import_statement(realm: &Realm, text: &str, now: DateTime<Utc>) -> Result<Value> {
+    let statement = crate::statement::parse(text)?;
+    let (Some(first), Some(last)) = (statement.lines.first(), statement.lines.last()) else {
+        anyhow::bail!("this statement has no completed transaction");
+    };
+    let imported = Store::of(realm)?.import_bank_lines(&statement.lines, now)?;
+    Ok(json!({
+        "added": imported.added,
+        "known": imported.known,
+        "not_completed": statement.not_completed,
+        "from": day_month(&first.at),
+        "to": day_month(&last.at),
+    }))
+}
+
+/// "2026-11-09…" as "9 Nov".
+fn day_month(at: &str) -> String {
+    at.get(..10)
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .map_or_else(|| at.to_string(), |d| d.format("%-d %b").to_string())
+}
+
+/// The currency the business's profile names, if any.
+fn profile_currency(root: &std::path::Path) -> Option<String> {
+    let profile = std::fs::read_to_string(root.join("business/profile.md")).ok()?;
+    crate::frontmatter::parse(&profile).text("currency")
+}
+
 /// What the business spent each day of the last `days` days, oldest first,
 /// for the Finance page's chart: what the agents' model calls cost (tasks
-/// and routines, in dollars) and, with a bank read in the last day, what
-/// went out of it (in its currency). Figures entered by hand have no days.
+/// and routines, in dollars) and, with a bank read in the last day or a
+/// statement imported, what went out of it (in its currency). Figures
+/// entered by hand have no days.
 pub fn spend(hub: &Hub, realm: &Realm, days: u32, now: DateTime<Utc>) -> Result<Value> {
     let days = days.clamp(7, 90);
     let local = now.with_timezone(&chrono::Local);
@@ -150,14 +224,15 @@ pub fn spend(hub: &Hub, realm: &Realm, days: u32, now: DateTime<Utc>) -> Result<
         .model_cost_by_day(since)?
         .into_iter()
         .collect();
-    let bank = match kept(realm) {
-        Some(Kept::Read { finance })
-            if crate::bank::connected(&realm.skills_dir())
-                && now - finance.read_at < Duration::days(1) =>
-        {
-            Some(finance)
+    let bank = if crate::bank::connected(&realm.skills_dir()) {
+        match kept(realm) {
+            Some(Kept::Read { finance }) if now - finance.read_at < Duration::days(1) => {
+                Some(finance)
+            }
+            _ => None,
         }
-        _ => None,
+    } else {
+        statements(realm, now).and_then(Result::ok).map(|(f, _)| f)
     };
     let rows: Vec<Value> = report
         .by_day
@@ -198,10 +273,7 @@ fn by_hand(realm: &Realm, now: DateTime<Utc>) -> Option<Value> {
             json!({"unknown": format!("Entered by hand more than {BY_HAND_DAYS} days ago")}),
         );
     }
-    let currency = doc.text("currency").or_else(|| {
-        let profile = std::fs::read_to_string(root.join("business/profile.md")).ok()?;
-        crate::frontmatter::parse(&profile).text("currency")
-    });
+    let currency = doc.text("currency").or_else(|| profile_currency(&root));
     let money = |amount: f64| money(amount, currency.as_deref().unwrap_or_default());
     let runway = (spent > 0.0).then(|| cash / spent);
     Some(json!({
@@ -307,6 +379,56 @@ mod tests {
             shown(&realm, now).unwrap(),
             json!({"unknown": "Not read yet"}),
             "the bank, once connected, takes precedence"
+        );
+    }
+
+    /// Decision 123: an imported statement takes precedence over figures
+    /// entered by hand, a line imported twice counts once, and a last import
+    /// more than 35 days old shows as unknown.
+    #[test]
+    fn an_imported_statement_shows_its_figures_until_35_days_old() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("business")).unwrap();
+        std::fs::write(
+            root.join("business/finance.md"),
+            "---\ncash: 1\nspent: 1\nas_of: 2026-11-10\n---\n",
+        )
+        .unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-11T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let csv = "Date completed (UTC),ID,Type,State,Description,Payment currency,Total amount,Balance\n\
+2026-11-08 09:00:00,t3,CARD_PAYMENT,COMPLETED,OVH,GBP,-300.00,9700.00\n\
+2026-11-02 09:00:00,t2,TRANSFER,COMPLETED,Client,GBP,2000.00,10000.00\n\
+2026-08-20 09:00:00,t1,CARD_PAYMENT,COMPLETED,Lawyer,GBP,-600.00,8000.00\n";
+        let said = import_statement(&realm, csv, now).unwrap();
+        assert_eq!(
+            said,
+            json!({"added": 3, "known": 0, "not_completed": 0, "from": "20 Aug", "to": "8 Nov"})
+        );
+        assert_eq!(import_statement(&realm, csv, now).unwrap()["known"], 3);
+        let f = shown(&realm, now).unwrap();
+        assert_eq!(f["source"], "Revolut statement · to 8 Nov");
+        assert_eq!(
+            (f["cash"].as_str(), f["in"].as_str(), f["out"].as_str()),
+            (Some("£9,700"), Some("£2,000"), Some("£300"))
+        );
+        // 900 out since 20 August, 83 days: 325 a month, so 9700 / 325.
+        assert_eq!(f["runway"], "29 months");
+        assert!(import_statement(&realm, "Name\nA\n", now).is_err());
+        assert_eq!(
+            shown(&realm, now + Duration::days(36)).unwrap()["unknown"],
+            "Statement imported more than 35 days ago"
         );
     }
 

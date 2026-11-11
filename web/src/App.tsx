@@ -239,7 +239,7 @@ export default function App() {
           : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq shared={hq.data as Parameters<typeof Hq>[0]["shared"]} onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
-          : page === "finance" ? <Finance realm={realm} business={business} agents={agents} />
+          : page === "finance" ? <Finance realm={realm} business={business} agents={agents} onImported={hq.refresh} />
           : page === "settings" ? <Settings realm={realm} start={setting} />
           : page === "marketplace" ? <Marketplace realm={realm} />
           : page === "company" ? <Company realm={realm} description={business?.description ?? null}

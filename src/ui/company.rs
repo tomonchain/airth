@@ -10,7 +10,7 @@ impl App {
     /// Team and Business's routes; None when the request is not one of them.
     pub(super) fn company_routes(
         &self,
-        _request: &mut Request,
+        request: &mut Request,
         method: &Method,
         segments: &[&str],
         query: &str,
@@ -23,6 +23,20 @@ impl App {
                 json_response(
                     200,
                     crate::hub::finance::spend(&self.hub, &realm, days, chrono::Utc::now())?,
+                )
+            }
+            // A Revolut statement the founder imports (decision 123): CSV,
+            // as exported.
+            (Method::Post, ["realms", r, "finance", "statement"]) => {
+                let bytes = read_body(request, crate::statement::MAX_BYTES, "the statement")?;
+                let text = String::from_utf8_lossy(&bytes);
+                json_response(
+                    200,
+                    crate::hub::finance::import_statement(
+                        &self.realm(r)?,
+                        &text,
+                        chrono::Utc::now(),
+                    )?,
                 )
             }
             // "Keep this look" (decision 65): the founder's gesture.

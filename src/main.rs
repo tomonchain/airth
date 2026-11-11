@@ -46,6 +46,7 @@ mod scheduler;
 mod service;
 mod spend;
 mod state;
+mod statement;
 mod supervise;
 mod telegram;
 mod term;

@@ -8,6 +8,7 @@
 //! newer Airth is refused rather than guessed at.
 
 pub mod autonomy;
+pub mod bank;
 pub mod drafts;
 pub mod legal;
 pub mod pipelines;
@@ -366,6 +367,22 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE queue_new RENAME TO queue;
     CREATE INDEX queue_by_status ON queue(status, created_at);
     CREATE UNIQUE INDEX queue_deadline_once ON queue(json_extract(source, '$.key')) WHERE kind = 'deadline';",
+    // 21: the lines of the bank statements the founder imports (decision
+    // 123), kept once each by Revolut's id; `seq` orders lines of the same
+    // second as the statement did.
+    "CREATE TABLE bank_lines (
+        id TEXT PRIMARY KEY,
+        account TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        at TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        balance REAL,
+        imported_at TEXT NOT NULL
+    );
+    CREATE INDEX bank_lines_by_at ON bank_lines(at, seq);",
 ];
 
 pub struct Store {
