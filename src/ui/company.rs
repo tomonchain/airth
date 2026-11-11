@@ -25,6 +25,23 @@ impl App {
                     crate::hub::finance::spend(&self.hub, &realm, days, chrono::Utc::now())?,
                 )
             }
+            // The Home's "Today": the morning brief's words, as of now
+            // (decision 121), its greeting left out.
+            (Method::Get, ["realms", r, "today"]) => {
+                let realm = self.realm(r)?;
+                let day = crate::routine::morning::read(
+                    &realm.root()?,
+                    &Store::of(&realm)?,
+                    chrono::Utc::now(),
+                )?;
+                let lines: Vec<&str> = day["brief"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .lines()
+                    .skip(1)
+                    .collect();
+                json_response(200, json!({ "lines": lines }))
+            }
             // A Revolut statement the founder imports (decision 123): CSV,
             // as exported.
             (Method::Post, ["realms", r, "finance", "statement"]) => {
