@@ -231,8 +231,9 @@ export default function App() {
           <PageBoundary page={page}>
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
-            <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={business}
-              at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")} />
+            <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
+              at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")}
+              onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
