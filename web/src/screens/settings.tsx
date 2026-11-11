@@ -47,7 +47,11 @@ type Detail = {
 }
 type Providers = { default: string; providers: { id: string; name: string; configured: boolean; models: string[]; key: string | null; error: string | null }[] }
 type Connector = { connected: boolean; connector: { id: string; name: string; description: string; category: string } }
-type Owner = { name: string; about: string; avatar: string | null; preferences: string[]; updated_at?: string }
+type Owner = { name: string; about: string; avatar: string | null; preferences: string[]; language: string; updated_at?: string }
+
+/** The languages offered for the conversations; the agents read the name. */
+const LANGUAGES = ["English", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch"]
+const ANY = "any"
 
 /** Settings: the founder's account and the business's models, connections,
     keys, permissions, repositories and phone. */
@@ -133,14 +137,15 @@ function Account() {
   const [name, setName] = useState("")
   const [about, setAbout] = useState("")
   const [likes, setLikes] = useState("")
+  const [language, setLanguage] = useState("")
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (data) { setName(data.name); setAbout(data.about); setLikes(data.preferences.join("\n")) } }, [data])
+  useEffect(() => { if (data) { setName(data.name); setAbout(data.about); setLikes(data.preferences.join("\n")); setLanguage(data.language ?? "") } }, [data])
   const list = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean)
-  const changed = !!data && (name !== data.name || about !== data.about || list(likes).join("\n") !== data.preferences.join("\n"))
+  const changed = !!data && (name !== data.name || about !== data.about || language !== (data.language ?? "") || list(likes).join("\n") !== data.preferences.join("\n"))
   async function save() {
     if (!data) return
     setBusy(true)
-    try { await api("owner", { ...data, name: name.trim(), about: about.trim(), preferences: list(likes) }, "PUT"); toast.success("Saved."); refresh() }
+    try { await api("owner", { ...data, name: name.trim(), about: about.trim(), preferences: list(likes), language }, "PUT"); toast.success("Saved."); refresh() }
     catch (e) { toast.error((e as Error).message) }
     finally { setBusy(false) }
   }
@@ -157,8 +162,21 @@ function Account() {
             <Textarea id="owner-about" rows={3} value={about} onChange={(e) => setAbout(e.target.value)} placeholder="Who you are, what you do." />
           </div>
           <div className="space-y-1.5">
+            <Label>Language of your conversations</Label>
+            <Select value={language || ANY} onValueChange={(v) => setLanguage(v === ANY ? "" : String(v))}>
+              <SelectTrigger className="w-64 max-md:w-full" aria-label="Language of your conversations">
+                <SelectValue>{(v: string) => (v === ANY ? "The language you write in" : v)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>The language you write in</SelectItem>
+                {[...new Set([...LANGUAGES, ...(language ? [language] : [])])].map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Every agent answers, asks and reports to you in it, in every business. What they make for others, posts, articles, emails, code, stays in the business's own language.</p>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="owner-likes">Preferences</Label>
-            <Textarea id="owner-likes" rows={3} value={likes} onChange={(e) => setLikes(e.target.value)} placeholder={"Answer in French\nShort, direct answers"} />
+            <Textarea id="owner-likes" rows={3} value={likes} onChange={(e) => setLikes(e.target.value)} placeholder={"Short, direct answers\nFigures before opinions"} />
             <p className="text-xs text-muted-foreground">How you like things done, one per line.</p>
           </div>
           <div className="flex items-center justify-end gap-3">

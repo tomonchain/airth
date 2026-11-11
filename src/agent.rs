@@ -580,6 +580,9 @@ pub struct Briefing {
     pub realm_description: String,
     /// The owner profile, if this realm shares it.
     pub owner: Option<String>,
+    /// The language the owner wants to be written to in, whether or not the
+    /// realm shares the profile: it says nothing private.
+    pub language: Option<String>,
     /// The business this realm runs, from its `business/` folder.
     pub business: Option<String>,
     /// The realm's memory, one entry per line.
@@ -599,6 +602,7 @@ impl Briefing {
             realm: None,
             realm_description: String::new(),
             owner: None,
+            language: None,
             business: None,
             memory: Vec::new(),
             isolated: false,
@@ -667,6 +671,11 @@ pub fn run_context(b: &Briefing) -> String {
     out.push_str("\n\n");
     if let Some(owner) = &b.owner {
         out.push_str(&format!("About your owner:\n{owner}\n\n"));
+    }
+    if let Some(language) = &b.language {
+        out.push_str(&format!(
+            "Write to the owner in {language}: your answers, questions, plans and reports, whatever language the task or a tool's result is in. What you make for the business or for others (posts, articles, emails, pages, code, commit messages) stays in the language the business and the task ask for.\n\n"
+        ));
     }
     if let Some(business) = &b.business {
         out.push_str(&format!("The business this realm runs:\n{business}\n\n"));
@@ -983,6 +992,18 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn the_owner_is_written_to_in_their_language() {
+        let none = run_context(&Briefing::plain("/a"));
+        assert!(!none.contains("Write to the owner in"));
+        let french = run_context(&Briefing {
+            language: Some("French".into()),
+            ..Briefing::plain("/a")
+        });
+        assert!(french.contains("Write to the owner in French: your answers"));
+        assert!(french.contains("stays in the language the business and the task ask for"));
     }
 
     #[test]

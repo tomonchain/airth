@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 124. The language the agents write to the founder in
+
+**Accepted** (founder, 11 November 2026: "a preferred language for my chats with the agents").
+
+- **`language` in the founder's profile** (`owner.json`), set in Settings, Account, or `airth owner set language French`. Empty, the agents answer in the language of each message, as before. A name of one line, at most 30 characters: never instructions.
+- **Every run is told it**, in every business, whether or not the business shares the profile, since a language says nothing private: "Write to the owner in French: your answers, questions, plans and reports, whatever language the task or a tool's result is in."
+- **What is made for others keeps its own language.** The same line says posts, articles, emails, pages, code and commit messages stay in the language the business and the task ask for: Hedgen's posts stay in English while its agents talk to the founder in French.
+- The interface's own words stay in English (the glossary rule); only the agents' words change.
+
+*Why:* a preference line ("Answer in French") reached only the businesses sharing the profile, and read as one wish among others. A setting of its own is given to every run, and kept apart from the business's content.
+
+*Cost:* one field and one line in every run's briefing. The words Airth writes by code (the morning brief, notifications) stay in English.
 ## 123. Bank statements imported from Revolut
 
 **Accepted** (founder, 11 November 2026: "I should be able to import a Revolut CSV to update it regularly").
