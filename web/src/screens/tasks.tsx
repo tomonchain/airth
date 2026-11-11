@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
 import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { MicButton } from "@/components/mic"
-import { useRun, TaskThread } from "@/components/task-thread"
+import { useRun, TaskThread, type Passed } from "@/components/task-thread"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -52,7 +52,20 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   }, [tasks.data])
   const waiting = new Set((tasks.data?.waiting ?? []).map((t) => t.id))
   const list = (runs.data ?? []).filter((r) => r.archived === archived)
-  const groups = ORDER.map((g) => [g, list.filter((r) => group(r, waiting) === g)] as const).filter(([, l]) => l.length)
+  // A plan's tasks (decision 120) sit under the task that passed them on,
+  // which is grouped by the most pressing of them all.
+  const fromOf = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const g of Object.values(tasks.data ?? {})) for (const t of g) if (t.from?.task) m.set(t.id, t.from.task)
+    return m
+  }, [tasks.data])
+  const kids = (id: string) => list.filter((r) => fromOf.get(r.id) === id)
+  const top = list.filter((r) => { const p = fromOf.get(r.id); return !p || !list.some((x) => x.id === p) })
+  const planGroup = (r: Run) => ORDER[Math.min(...[r, ...kids(r.id)].map((x) => ORDER.indexOf(group(x, waiting))))]
+  const groups = ORDER.map((g) => [g, top.filter((r) => planGroup(r) === g)] as const).filter(([, l]) => l.length)
+  const titleOf = (n: string | null | undefined) => { const a = agents.find((x) => x.name === n); return a ? called(a) : n ?? "An agent" }
+  const passedOf = (id: string): Passed[] => kids(id).map((k) => ({ id: k.id, agent: agentOf.get(k.id) ?? "", title: titleOf(agentOf.get(k.id)), order: name(k), status: k.live ? "running" : k.status }))
+  const fromTitle = (id: string) => { const p = fromOf.get(id); return p ? titleOf(agentOf.get(p)) : undefined }
   const current = runs.data?.find((r) => r.id === open) ?? null
 
   return (
@@ -71,15 +84,19 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
             : groups.map(([g, l]) => (
               <section key={g} className="mb-2">
                 <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g} · {l.length}</h2>
-                {l.map((r) => {
+                {l.flatMap((parent) => [parent, ...kids(parent.id)]).map((r) => {
                   const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
+                  const child = fromOf.has(r.id) && list.some((x) => x.id === fromOf.get(r.id))
+                  const team = kids(r.id)
+                  const plan = team.length ? `plan ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
                   return (
-                    <button key={r.id} onClick={() => onOpen(r.id)} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", open === r.id && "bg-accent")}>
+                    <button key={r.id} onClick={() => onOpen(r.id)} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
+                      {child && <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />}
                       <Character agent={a} size={22} still={!r.live} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px]">{name(r)}</span>
                         <span className="block truncate text-[11px] text-muted-foreground">
-                          {[a.title, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}
+                          {[a.title, plan, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}
                         </span>
                       </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(r.updated_at)}</span>
@@ -92,6 +109,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       </aside>
       {current ? (
         <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
+          from={fromTitle(current.id)} passed={passedOf(current.id)} onOpenTask={onOpen}
           onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
       ) : (
         <div className="grid flex-1 place-items-center p-8 text-center max-md:hidden">
@@ -204,8 +222,10 @@ type Full = {
   }
 }
 
-function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent }: {
+function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent, from, passed, onOpenTask }: {
   realm: string; run: Run; agent: Agent; items: Item[]; onBack: () => void; onChange: () => void; onGone: () => void; onAgent: (name: string) => void
+  /** Who passed this task on, and what it passed on (decision 120). */
+  from?: string; passed?: Passed[]; onOpenTask?: (id: string) => void
 }) {
   const { view } = useRun(realm, run.id, run.live)
   const full = view as unknown as Full | null
@@ -273,7 +293,8 @@ function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent 
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-4 pt-5 pb-4 [overflow-wrap:anywhere] md:px-6 md:pt-6">
-            <TaskThread realm={realm} id={run.id} agent={agent} items={items} fresh={false} onChange={onChange} />
+            <TaskThread realm={realm} id={run.id} agent={agent} items={items} fresh={false} onChange={onChange}
+              from={from} passed={passed} onAgent={(a) => { const t = passed?.find((p) => p.agent === a); if (t && onOpenTask) onOpenTask(t.id); else onAgent(a) }} />
           </div>
         </div>
         <div className="mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
