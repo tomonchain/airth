@@ -238,6 +238,10 @@ pub struct State {
     /// A task the founder allowed to go on: the message it resumes with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<String>,
+    /// A task the founder's interlocutor passed on (decision 120): its run
+    /// and the plan's item, `run/item`, to tell it when the plan's tasks end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dispatched_by: Option<String>,
     /// How many times the run was sent back to correct its change to the
     /// business config (decision 93).
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -300,6 +304,7 @@ impl State {
             origin: None,
             agent: None,
             resume: None,
+            dispatched_by: None,
             config_fixes: 0,
             routine: None,
             tools: None,

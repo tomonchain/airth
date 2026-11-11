@@ -260,6 +260,7 @@ fn item_text(realm: &str, item: &Item) -> String {
         "idea" => "An idea",
         "deadline" => "Legal deadline",
         "delayed" => "Will be done unless you cancel",
+        "approval" if item.action.as_deref() == Some("airth.dispatch") => "A plan for the team",
         "approval" if item.action.is_some() => "Asks to act",
         _ => "Needs you",
     };

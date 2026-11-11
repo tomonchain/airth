@@ -247,6 +247,20 @@ pub struct Scope {
     pub repos: Vec<String>,
 }
 
+/// The founder's one interlocutor (decision 120): the first agent whose
+/// file says `dispatch: true`, if any.
+pub fn dispatcher(root: &Path) -> Option<String> {
+    bots(root)
+        .ok()?
+        .into_iter()
+        .map(|(name, _)| name)
+        .find(|name| {
+            std::fs::read_to_string(root.join(AGENTS).join(format!("{name}.md")))
+                .map(|t| crate::frontmatter::parse(&t).text("dispatch").as_deref() == Some("true"))
+                .unwrap_or(false)
+        })
+}
+
 pub fn scope(root: &Path, name: &str) -> Result<Scope> {
     crate::realm::validate_name(name).context("invalid agent name")?;
     let path = format!("{AGENTS}/{name}.md");

@@ -96,7 +96,7 @@ impl Hub {
     /// file changed since it was last read (decision 110): the pages and the
     /// scheduler list the runs every few seconds, and each file holds a
     /// whole transcript.
-    fn load_shared(&self, realm: &Realm) -> Result<Vec<Arc<State>>> {
+    pub(super) fn load_shared(&self, realm: &Realm) -> Result<Vec<Arc<State>>> {
         let dir = realm.runs_dir();
         if !dir.exists() {
             return Ok(Vec::new());

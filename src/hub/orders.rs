@@ -26,6 +26,15 @@ impl Hub {
     /// name one: an error that asks the founder to pick.
     pub fn route_order(&self, realm: &Realm, order: &str) -> Result<Route> {
         let root = realm.root()?;
+        // The founder's one interlocutor takes every order not named, and
+        // passes it on (decision 120).
+        if let Some(agent) = crate::business::dispatcher(&root) {
+            return Ok(Route {
+                agent,
+                why: "your interlocutor takes the order, and passes on what is another agent's"
+                    .into(),
+            });
+        }
         let agents = crate::business::bots(&root)?;
         match agents.as_slice() {
             [] => bail!("this business has no agent yet"),

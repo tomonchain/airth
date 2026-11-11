@@ -42,6 +42,8 @@ const AGENT: &[&str] = &[
     "title", "first_name", "department", "reports_to", "lines", "mailbox",
     // What its tasks may use (decision 64), and its character (decision 65).
     "integrations", "skills", "repos", "look", "accessory",
+    // The founder's one interlocutor, who passes orders on (decision 120).
+    "dispatch",
 ];
 
 #[derive(Debug, Default)]

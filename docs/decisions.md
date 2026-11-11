@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 120. One interlocutor for the founder, who passes orders on to the team
+
+**Accepted** (founder, 11 November 2026: "if I give it to the CEO, will it go down to the right agents?", then "yes, I want a single interlocutor").
+
+- **The interlocutor** is the agent whose file says `dispatch: true`: the Chief of staff in a business that has one. At most one per business; the first one found counts.
+- **Every order not named goes to it**, from the command bar and from Telegram, with no routing call (decision 64's routing stays for a business without one). An order that names an agent still goes straight to that agent.
+- **It passes on what is another agent's job.** Its tasks get one more tool, `propose_plan`: one task per agent, each written so the agent needs nothing else, six at most.
+  - The tool starts nothing. It puts the plan to the founder in Needs you (and on Telegram, as "A plan for the team"), as an item with the action `airth.dispatch`.
+  - Approved, each agent gets its task as an order of the founder's, within its own scope (decision 64); nothing of the interlocutor's rights passes on. Rejected, nothing starts.
+- **It reports back.** When every task of the plan has ended, the interlocutor's task is resumed, once, with how each went, and tells the founder where things stand: what is done, what waits in Needs you, what failed. It starts nothing new without the founder's order.
+- What each agent does goes through its own approvals: posts, pull requests and publications still come to the founder.
+
+*Why:* the founder wants one interlocutor. An order that spans several jobs (an article, a thread and a banner for the year's end) went to one agent, which could do only its part.
+
+*Cost:* a plan is one more approval, which keeps the founder in control of who works on what. The interlocutor's report is one more model call per plan. A plan cannot wait on one task's result before the next starts: its tasks run side by side.
+
 ## 119. An agent may speak up with an idea, once a day at most for the team
 
 **Accepted** (founder, 11 November 2026: "beyond the routines, it could send a message on its own: I saw this company working on a technology that could improve our sales; the year is ending, here are its big steps, post them"; then "okay").

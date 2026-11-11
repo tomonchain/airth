@@ -34,6 +34,7 @@ mod changes;
 mod config_check;
 mod delegation;
 mod delivery;
+mod dispatch;
 pub(crate) mod finance;
 pub(crate) mod incidents;
 mod legal;
@@ -258,6 +259,7 @@ impl Hub {
                 skills_dir: realm.skills_dir(),
                 allowed: state.tools.clone(),
                 delegation: self.delegation_for(realm, state)?,
+                dispatch: self.dispatch_for(realm, state)?,
                 // A task works on files only in a repository of its scope.
                 files: state.agent.is_none() || state.change.is_some(),
             }),
@@ -333,6 +335,12 @@ impl Hub {
         }
         if let Err(e) = self.task_ended(realm, state) {
             eprintln!("warning: could not tell how task {} ended: {e:#}", state.id);
+        }
+        if let Err(e) = self.dispatched_ended(realm, state) {
+            eprintln!(
+                "warning: the interlocutor of task {} was not told it ended: {e:#}",
+                state.id
+            );
         }
         if let Err(e) = self.mission_ended(realm, state) {
             eprintln!(
