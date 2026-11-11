@@ -11,12 +11,14 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 - **It passes on what is another agent's job.** Its tasks get one more tool, `propose_plan`: one task per agent, each written so the agent needs nothing else, six at most.
   - The tool starts nothing. It puts the plan to the founder in Needs you (and on Telegram, as "A plan for the team"), as an item with the action `airth.dispatch`.
   - Approved, each agent gets its task as an order of the founder's, within its own scope (decision 64); nothing of the interlocutor's rights passes on. Rejected, nothing starts.
-- **It reports back.** When every task of the plan has ended, the interlocutor's task is resumed, once, with how each went, and tells the founder where things stand: what is done, what waits in Needs you, what failed. It starts nothing new without the founder's order.
+- **A step may wait for another** (`after`, decision 120's second part): a thread that links to an article starts once the article's step has finished, and its task carries what the earlier step delivered (its report). A step whose wait failed never starts, and the interlocutor hears why. The approved plan is kept in the realm's directory (`plans/`) until its last step ends.
+- **The founder may edit the plan before approving it**, in Needs you, one step a line (`- agent: task`, or `- agent (after other): task`); removing a line drops a step. The plan as edited is the one that runs, checked again when approved: agents of the team only, six steps at most, a step waiting only for earlier ones.
+- **It reports back.** When every task of the plan has ended or been set aside, the interlocutor's task is resumed, once, with how each went, and tells the founder where things stand: what is done, what waits in Needs you, what failed. It starts nothing new without the founder's order.
 - What each agent does goes through its own approvals: posts, pull requests and publications still come to the founder.
 
 *Why:* the founder wants one interlocutor. An order that spans several jobs (an article, a thread and a banner for the year's end) went to one agent, which could do only its part.
 
-*Cost:* a plan is one more approval, which keeps the founder in control of who works on what. The interlocutor's report is one more model call per plan. A plan cannot wait on one task's result before the next starts: its tasks run side by side.
+*Cost:* a plan is one more approval, which keeps the founder in control of who works on what. The interlocutor's report is one more model call per plan. A step that waits takes only the earlier step's report, not its files: an agent that needs more asks for it in its own task.
 
 ## 119. An agent may speak up with an idea, once a day at most for the team
 

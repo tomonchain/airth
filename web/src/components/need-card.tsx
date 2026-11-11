@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, Users, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
 }
 
 export function kindOf(it: Item) {
+  if (it.action === "airth.dispatch") return { label: "Plan for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
   if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
   return KIND[it.kind] ?? KIND.report
 }
@@ -157,7 +158,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       {/* In a conversation, a draft to approve needs no label: its buttons
           say it, and the thread gives its time. Other kinds keep a short
           one, so an incident or a deadline is not read as a draft. */}
-      {!page && !(it.kind === "approval" && !blocked) && <header className="mb-2 flex items-center gap-2 text-xs">
+      {!page && !(it.kind === "approval" && !blocked && it.action !== "airth.dispatch") && <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
         </span>
@@ -188,7 +189,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       {mode === "edit" ? (
         <div className="mt-3">
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={page ? 9 : 6} className="text-sm leading-relaxed" autoFocus />
-          <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>
+          {it.action === "airth.dispatch"
+            ? <p className="mt-1 text-xs text-muted-foreground">One step a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a step.</p>
+            : <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>}
         </div>
       ) : it.text && it.kind === "approval" ? (
         page ? (

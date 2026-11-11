@@ -167,6 +167,8 @@ export type Item = {
   agent: string | null
   routine: string | null
   run: string | null
+  /** The action it asks for, if any: `airth.dispatch` is a plan for the team. */
+  action?: string | null
   title: string
   text: string | null
   note: string | null
