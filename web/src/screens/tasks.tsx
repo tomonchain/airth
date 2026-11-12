@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, FolderKanban, Pencil, SkipForward, Trash2, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, Ellipsis, FolderKanban, Pencil, SkipForward, Trash2, X } from "lucide-react"
 import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
@@ -176,6 +176,7 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
     requestAnimationFrame(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length } })
   }, [prefill])
   const [who, setWho] = useState<string>("route")
+  const [options, setOptions] = useState(false)
   const [why, setWhy] = useState<string | null>(null)
   const [model, setModel] = useState(AUTO)
   const [repo, setRepo] = useState("")
@@ -209,11 +210,24 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
 
   const whoLabel = (v: string) => (v === "route" ? "The agent that fits" : v === NOBODY ? "Airth itself" : agents.find((a) => a.name === v)?.title ?? v)
   return (
-    <div className="mx-3 rounded-xl bg-bubble p-2.5">
-      <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Ask the team for something…" aria-label="Ask the team for something"
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
-        className="w-full resize-none bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground" />
-      <div className="flex flex-wrap items-center gap-1.5">
+    <div className="mx-3">
+      {/* One line to ask, as on the Home; who does it and with what, under "…". */}
+      <div className="flex items-end gap-0.5 rounded-[22px] bg-bubble py-1 pr-1 pl-4">
+        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Ask the team…" aria-label="Ask the team for something"
+          onKeyDown={(e) => {
+            const wide = matchMedia("(min-width: 768px)").matches
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (wide || e.metaKey || e.ctrlKey)) { e.preventDefault(); send() }
+          }}
+          className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-sm leading-6 outline-none field-sizing-content placeholder:text-muted-foreground" />
+        <button type="button" onClick={() => setOptions(!options)} aria-label="Who does it" title="Who does it"
+          className={cn("mb-0.5 grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground", (options || who !== "route") && "bg-accent text-foreground")}>
+          <Ellipsis className="size-4" />
+        </button>
+        <MicButton value={text} onChange={setText} className="mb-0.5" />
+        <Button size="icon-sm" className="mb-0.5 size-8 shrink-0 rounded-full" disabled={!text.trim() || busy} onClick={send} aria-label="Start" title="Start (↵)"><ArrowUp /></Button>
+      </div>
+      {(options || who !== "route") && (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 px-1">
         <Select value={who} onValueChange={(v) => { setWho(String(v)); setWhy(null) }}>
           <SelectTrigger size="sm" className="h-7 max-w-40 text-xs"><SelectValue>{(v: string) => whoLabel(v)}</SelectValue></SelectTrigger>
           <SelectContent>
@@ -237,10 +251,8 @@ function Ask({ realm, agents, prefill, onStarted }: { realm: string; agents: Age
             <SelectContent>{repos.map((r) => <SelectItem key={r.name} value={r.name}>{r.name}</SelectItem>)}</SelectContent>
           </Select>
         )}
-        <span className="flex-1" />
-        <MicButton value={text} onChange={setText} />
-        <Button size="icon-sm" disabled={!text.trim() || busy} onClick={send} aria-label="Start" title="Start (⌘↵)"><ArrowUp /></Button>
       </div>
+      )}
       {why && <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">{why}</p>}
     </div>
   )

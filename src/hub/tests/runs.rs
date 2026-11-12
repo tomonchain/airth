@@ -680,18 +680,16 @@ fn runs_never_write_the_agents_or_the_goal() {
         )
         .unwrap();
     assert_eq!(state.status, Status::Completed);
-    for i in 0..3 {
+    // Indexing held the count; `take` alone would not.
+    assert!(state.events.len() >= 3, "{:?}", state.events.len());
+    for event in state.events.iter().take(3) {
         assert_ne!(
-            state.events[i].status,
+            event.status,
             crate::state::EventStatus::Ok,
             "{}",
-            state.events[i].result
+            event.result
         );
-        assert!(
-            state.events[i].result.contains("read-only"),
-            "{}",
-            state.events[i].result
-        );
+        assert!(event.result.contains("read-only"), "{}", event.result);
     }
     assert!(!root.join("routines").exists());
     // A command is only stopped by the sandbox.
@@ -763,12 +761,10 @@ fn runs_in_place_cannot_plant_git_hooks_or_config() {
         )
         .unwrap();
     assert_eq!(state.status, Status::Completed);
-    for i in 0..2 {
-        assert!(
-            state.events[i].result.contains("read-only"),
-            "{}",
-            state.events[i].result
-        );
+    // Indexing held the count; `take` alone would not.
+    assert!(state.events.len() >= 2, "{:?}", state.events.len());
+    for event in state.events.iter().take(2) {
+        assert!(event.result.contains("read-only"), "{}", event.result);
     }
     assert!(!root.join(".git/hooks/pre-commit").exists());
     // A command is only stopped by the sandbox.
