@@ -22,6 +22,25 @@ impl App {
                     .set_shared_anthropic_key(body["key"].as_str().unwrap_or_default())?;
                 json_response(200, self.setup()?)
             }
+            // A company's public record, for a new business (decision 126).
+            (Method::Get, ["registry"]) => {
+                let home = self.hub.home().dir();
+                json_response(200, json!({"gb_key": crate::registry::has_gb_key(home)}))
+            }
+            (Method::Put, ["registry", "key"]) => {
+                let body = read_json(request)?;
+                let home = self.hub.home().dir();
+                crate::registry::set_gb_key(home, body["key"].as_str().unwrap_or_default())?;
+                json_response(200, json!({"gb_key": crate::registry::has_gb_key(home)}))
+            }
+            (Method::Get, ["registry", country, number]) => json_response(
+                200,
+                json!(crate::registry::lookup(
+                    self.hub.home().dir(),
+                    country,
+                    number
+                )?),
+            ),
             // The name the founder gives this Airth (decision 113).
             (Method::Put, ["name"]) => {
                 let body = read_json(request)?;

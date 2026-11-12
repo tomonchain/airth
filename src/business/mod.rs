@@ -143,9 +143,27 @@ pub fn set_profile(root: &Path, text: &str) -> Result<()> {
     write_body(&dir(root).join(PROFILE), text)
 }
 
-/// The fields the first launch asks for, by file (decision 101).
+/// The fields the first launch and the new business's wizard ask for, by
+/// file (decisions 101 and 126): what a register says, checked as the
+/// config's own checks would.
 const FIRST_FIELDS: &[(&str, &[&str])] = &[
-    ("profile", &["name", "country", "legal_form"]),
+    (
+        "profile",
+        &[
+            "name",
+            "country",
+            "legal_form",
+            "legal_name",
+            "status",
+            "registration_number",
+            "registered_office",
+            "incorporated_on",
+            "fiscal_year_end",
+            "vat_number",
+            "currency",
+            "domain",
+        ],
+    ),
     ("goal", &["goal", "target", "by"]),
 ];
 
@@ -168,9 +186,19 @@ pub fn set_field(root: &Path, file: &str, key: &str, value: &str) -> Result<()> 
         "country" if !(value.len() == 2 && value.bytes().all(|b| b.is_ascii_uppercase())) => {
             bail!("country: two capital letters, like GB or FR")
         }
-        "by" => {
+        "by" | "incorporated_on" => {
             chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-                .with_context(|| format!("by '{value}' is not a date like 2027-11-30"))?;
+                .with_context(|| format!("{key} '{value}' is not a date like 2027-11-30"))?;
+        }
+        "fiscal_year_end" => {
+            chrono::NaiveDate::parse_from_str(&format!("2024-{value}"), "%Y-%m-%d")
+                .with_context(|| format!("fiscal_year_end '{value}' is not like 03-31"))?;
+        }
+        "status" if !matches!(value, "planned" | "registered") => {
+            bail!("status: planned or registered")
+        }
+        "currency" if !(value.len() == 3 && value.bytes().all(|b| b.is_ascii_uppercase())) => {
+            bail!("currency: three capital letters, like GBP or EUR")
         }
         _ => {}
     }
@@ -597,7 +625,17 @@ mod tests {
         let c = config::load(root.path(), &[]).unwrap();
         assert_eq!(c.goal.text("by").as_deref(), Some("2027-11-30"));
         assert_eq!(c.profile.text("country").as_deref(), Some("FR"));
+        // What a register gives (decision 126), checked as the config is.
+        set_field(root.path(), "profile", "incorporated_on", "2025-11-07").unwrap();
+        set_field(root.path(), "profile", "fiscal_year_end", "11-30").unwrap();
+        set_field(root.path(), "profile", "status", "registered").unwrap();
+        set_field(root.path(), "profile", "currency", "GBP").unwrap();
+        assert!(config::load(root.path(), &[]).is_ok());
         for (file, key, value) in [
+            ("profile", "incorporated_on", "7 Nov 2025"),
+            ("profile", "fiscal_year_end", "13-01"),
+            ("profile", "status", "open"),
+            ("profile", "currency", "pounds"),
             ("profile", "bank", "Revolut"),
             ("goal", "baseline_minutes", "10"),
             ("profile", "country", "France"),
