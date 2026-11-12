@@ -9,6 +9,13 @@ cargo build && git commit -am "Airth 0.2.0"
 git tag v0.2.0 && git push origin main v0.2.0
 ```
 
+Where a tag cannot be pushed (a cloud session pushes its working branch
+only), bump the version through a pull request as above, then run the
+**Tag a release** workflow (`.github/workflows/tag.yml`) with the version,
+from the Actions tab or the API: it checks main's `Cargo.toml` holds that
+version and that it is not tagged yet, tags main, and starts the Release
+workflow on the tag.
+
 The **Release** workflow (`.github/workflows/release.yml`) then:
 
 1. checks the tag matches `Cargo.toml`, runs the tests;

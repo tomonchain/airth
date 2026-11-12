@@ -9,6 +9,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Started on a tag by the Tag a release workflow (tag.yml).
+  workflow_dispatch:
 
 permissions:
   contents: write
