@@ -158,6 +158,54 @@ fn a_scheduled_routine_runs_at_its_time() {
     );
 }
 
+/// A restart that finds a run that left no trace and a time missed tells the
+/// founder once, both reasons together; a later miss while that incident
+/// waits adds nothing.
+#[test]
+fn a_late_routine_is_one_incident_until_seen() {
+    let f = fixture();
+    let root = f.root.path();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::create_dir_all(root.join("routines")).unwrap();
+    std::fs::write(root.join("agents/watcher.md"), "Watch.").unwrap();
+    std::fs::write(
+        root.join("routines/hourly.json"),
+        json!({"agent": "watcher", "trigger": {"schedule": "every 1h"}, "blocks": [
+            {"id": "tell", "type": "act", "action": "airth.report", "fields": {"title": "Hourly"}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let now = Utc::now();
+    let at = |minutes| now + chrono::Duration::minutes(minutes);
+    hub.due_routines(now).unwrap();
+    // Claimed at its time, then Airth stops before it leaves a heartbeat.
+    assert_eq!(hub.due_routines(at(61)).unwrap().len(), 1);
+    // Hours later: it ran silent, and its next time went by.
+    assert_eq!(hub.due_routines(at(300)).unwrap().len(), 1);
+    let late = |hub: &Hub| -> Vec<crate::business::store::queue::Item> {
+        let _ = hub;
+        Store::of(&f.realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .into_iter()
+            .filter(|i| i.title == "hourly did not run on time")
+            .collect()
+    };
+    let items = late(&hub);
+    assert_eq!(items.len(), 1, "one incident, not one per reason");
+    let detail = items[0].args["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("left no trace") && detail.contains("should have run"),
+        "{detail}"
+    );
+    // Missed again while it waits: nothing more.
+    hub.due_routines(at(600)).unwrap();
+    assert_eq!(late(&hub).len(), 1);
+}
+
 /// `CLAUDE.md`: an act the service refuses for what the agent wrote becomes
 /// an incident in Needs you, and its agent takes that action down a level
 /// (decision 55); the founder's "seen" closes it.

@@ -991,10 +991,21 @@ impl Hub {
                     silent.map(|at| format!("The run started at {} left no trace: Airth stopped during it. Running it again now.", at.to_rfc3339())),
                     missed.map(|at| format!("It should have run at {}; Airth was not running then. Running it now, once.", at.to_rfc3339())),
                 ];
-            for detail in late.into_iter().flatten() {
+            // One incident a routine, its reasons together (a restart can
+            // find a run that left no trace and a time missed at once), and
+            // none while the founder has not seen the last one.
+            let title = format!("{name} did not run on time");
+            let detail = late.into_iter().flatten().collect::<Vec<_>>().join("\n\n");
+            let told = !detail.is_empty()
+                && store.queue(&["pending"])?.iter().any(|i| {
+                    i.kind == "incident"
+                        && i.routine.as_deref() == Some(name.as_str())
+                        && i.title == title
+                });
+            if !detail.is_empty() && !told {
                 let incident = super::incidents::Incident {
                     run: None,
-                    title: &format!("{name} did not run on time"),
+                    title: &title,
                     detail: &detail,
                     agent: None,
                     routine: Some(&name),
