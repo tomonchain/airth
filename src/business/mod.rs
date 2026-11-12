@@ -484,6 +484,56 @@ pub fn keep_look(root: &Path, name: &str) -> Result<String> {
     Ok(seed)
 }
 
+/// Where the founder's lessons to an agent are kept, in its file's body
+/// (decision 127): read with its job by its tasks, and by its routines' AI
+/// blocks.
+const LESSONS: &str = "## Lessons from the founder";
+
+/// The founder's lessons to the agent `name`, oldest first.
+pub fn lessons(root: &Path, name: &str) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(root.join(AGENTS).join(format!("{name}.md"))) else {
+        return Vec::new();
+    };
+    let body = split(&text).1;
+    let Some(at) = body.find(LESSONS) else {
+        return Vec::new();
+    };
+    body[at + LESSONS.len()..]
+        .lines()
+        .take_while(|l| !l.starts_with("## "))
+        .filter_map(|l| l.trim().strip_prefix("- "))
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Keep a lesson the founder gives the agent `name`, at the end of its
+/// lessons (only the founder does: runs cannot write an agent's file).
+pub fn add_lesson(root: &Path, name: &str, lesson: &str) -> Result<()> {
+    crate::realm::validate_name(name).context("invalid agent name")?;
+    let lesson = lesson.split_whitespace().collect::<Vec<_>>().join(" ");
+    if lesson.is_empty() || lesson.chars().count() > 300 {
+        bail!("a lesson is one line of at most 300 characters");
+    }
+    let path = root.join(AGENTS).join(format!("{name}.md"));
+    let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
+    let body = split(&text).1.trim_end().to_string();
+    let line = format!("- {lesson}");
+    let body = match body.find(LESSONS) {
+        Some(at) => {
+            // The section ends where the next one begins.
+            let start = at + LESSONS.len();
+            let end = body[start..]
+                .find("\n## ")
+                .map_or(body.len(), |i| start + i);
+            let section = body[start..end].trim_end();
+            format!("{}{section}\n{line}\n{}", &body[..start], &body[end..])
+        }
+        None => format!("{body}\n\n{LESSONS}\n\n{line}"),
+    };
+    write_body(&path, &body)
+}
+
 /// Let the agent `name` go: its file is removed.
 pub fn remove_job(root: &Path, name: &str) -> Result<()> {
     crate::realm::validate_name(name).context("invalid agent name")?;
@@ -649,6 +699,43 @@ mod tests {
                 "{file} {key} {value}"
             );
         }
+    }
+
+    /// Decision 127: a lesson goes at the end of the agent's lessons,
+    /// keeping its job and its front matter, and is read back.
+    #[test]
+    fn a_lesson_is_kept_in_the_agents_file() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("agents/writer.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "---\ntitle: Writer\n---\nWrite the blog.\n\n## Voice\n\nCalm.\n",
+        )
+        .unwrap();
+        assert!(lessons(root.path(), "writer").is_empty());
+        add_lesson(root.path(), "writer", "Cite the source first.").unwrap();
+        add_lesson(root.path(), "writer", "  Never a price\ntarget. ").unwrap();
+        assert_eq!(
+            lessons(root.path(), "writer"),
+            ["Cite the source first.", "Never a price target."]
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.starts_with("---\ntitle: Writer\n---\nWrite the blog."),
+            "{text}"
+        );
+        assert!(text.contains("## Voice\n\nCalm.\n\n## Lessons from the founder\n\n- Cite the source first.\n- Never a price target.\n"), "{text}");
+        // A section after the lessons stays after them.
+        std::fs::write(&path, format!("{text}\n## Notes\n\nLater.\n")).unwrap();
+        add_lesson(root.path(), "writer", "Short titles.").unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("- Never a price target.\n- Short titles.\n\n## Notes"),
+            "{text}"
+        );
+        assert!(add_lesson(root.path(), "writer", "").is_err());
+        assert!(add_lesson(root.path(), "../x", "a").is_err());
     }
 
     /// The interface shows the profile's name; none, or one left to fill,

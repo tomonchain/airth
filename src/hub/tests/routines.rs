@@ -1089,3 +1089,46 @@ fn the_next_draft_hears_what_the_founder_said() {
     );
     assert!(system.contains("Rejected: \"too much jargon\""), "{system}");
 }
+
+/// Decision 127: a lesson the founder gave the routine's agent reaches its
+/// AI blocks, after their instructions.
+#[test]
+fn a_routines_ai_block_hears_its_agents_lessons() {
+    let mut f = fixture();
+    posts_routine(&mut f);
+    let root = f.realm.root().unwrap();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    if !root.join("agents/post-writer.md").exists() {
+        std::fs::write(
+            root.join("agents/post-writer.md"),
+            "---\ntitle: Post writer\n---\nWrite posts.\n",
+        )
+        .unwrap();
+    }
+    crate::business::add_lesson(&root, "post-writer", "Never a price target.").unwrap();
+    let (hub, _, systems) = make_hub(&f.home, vec![done(r#"{"draft": "New one."}"#)]);
+    let propose = Store::of(&f.realm)
+        .unwrap()
+        .propose(&crate::business::store::autonomy::NewItem {
+            kind: "approval",
+            title: "A post",
+            agent: Some("post-writer"),
+            routine: Some("posts"),
+            run: Some("r1"),
+            action: None,
+            args: &json!({"title": "A post", "link": "https://example.com/1", "source_id": "https://example.com/a",
+                "answer": {"draft": "A post"}}).to_string(),
+            execute_at: None,
+            source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+            model_call: None,
+        })
+        .unwrap();
+    hub.redo_item(&f.realm, propose, None, "shorter", "app", 1)
+        .unwrap();
+    let system = systems.lock().unwrap()[0].clone();
+    assert!(
+        system.contains("## The founder's lessons to you"),
+        "{system}"
+    );
+    assert!(system.contains("- Never a price target."), "{system}");
+}

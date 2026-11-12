@@ -236,8 +236,8 @@ export default function App() {
         onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
       <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
-      {/* On a phone, Ask floats above the tabs, but where a box to write in is already the page's own. */}
-      {narrow && page !== "home" && page !== "tasks" && page !== "agents" && (
+      {/* On a phone, Ask floats above the tabs, but not where a box to write in is already the page's own. */}
+      {narrow && page !== "home" && page !== "needs" && page !== "tasks" && page !== "agents" && (
         <button onClick={() => setAsking(true)} aria-label="Ask the team"
           className="fixed right-4 bottom-[calc(max(env(safe-area-inset-bottom),10px)+74px)] z-40 grid size-13 place-items-center rounded-full bg-foreground text-background shadow-lg active:scale-95">
           <PenLine className="size-5" />

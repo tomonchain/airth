@@ -56,6 +56,21 @@ impl App {
                     )?,
                 )
             }
+            // A lesson the founder gives an agent (decision 127): kept in
+            // its file, read by its tasks and its routines.
+            (Method::Post, ["realms", r, "agents", name, "lessons"]) => {
+                let body = read_json(request)?;
+                let root = self.realm(r)?.root()?;
+                crate::business::add_lesson(
+                    &root,
+                    name,
+                    body["text"].as_str().unwrap_or_default(),
+                )?;
+                json_response(
+                    200,
+                    json!({"lessons": crate::business::lessons(&root, name)}),
+                )
+            }
             // "Keep this look" (decision 65): the founder's gesture.
             (Method::Post, ["realms", r, "agents", name, "look"]) => {
                 let seed = crate::business::keep_look(&self.realm(r)?.root()?, name)?;
