@@ -4,7 +4,8 @@ import { Character } from "@/components/character"
 import { createBusiness, ISOLATION, slug } from "@/components/new-business"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Realm } from "@/lib/api"
 import { Connectors } from "@/screens/marketplace"
@@ -37,9 +38,15 @@ const REGISTER: { [country: string]: { name: string; number: string; example: st
   FR: { name: "the company directory", number: "SIREN or SIRET", example: "552032534" },
 }
 
-// Where the legal calendar knows the rules first; any other country is
-// written as its two letters, in the Company page.
-const COUNTRIES: [string, string][] = [["GB", "United Kingdom"], ["FR", "France"], ["", "Elsewhere"]]
+// Where a business is registered: the founder's three first, then every
+// country by its name. Airth reads the registers of the first two.
+const FIRST = ["FR", "GB", "US"]
+const OTHERS = ("AD AE AL AM AR AT AU AZ BA BD BE BG BH BR BY CA CH CL CN CO CR CY CZ DE DK DO DZ EC EE EG ES FI GE GH GR GT HK HR HU ID IE IL IN IQ IS IT JM JO JP KE KR KW KZ LB LI LK LT LU LV MA MC MD ME MK MT MU MX MY NG NL NO NZ OM PA PE PH PK PL PR PT PY QA RO RS RU SA SE SG SI SK SN TH TN TR TW UA UG UY UZ VE VN ZA").split(" ")
+const regions = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "region" }) : null
+const countryName = (code: string) => (code && regions?.of(code)) || code
+const OTHERS_BY_NAME = [...OTHERS].sort((a, b) => countryName(a).localeCompare(countryName(b)))
+// A currency the profile can take for the countries Airth knows best.
+const CURRENCY: { [country: string]: string } = { GB: "GBP", US: "USD", FR: "EUR", DE: "EUR", ES: "EUR", IT: "EUR", BE: "EUR", NL: "EUR", IE: "EUR", PT: "EUR", LU: "EUR", AT: "EUR", CH: "CHF", CA: "CAD" }
 
 // A face that stays the same for a name, before the agent has its own look.
 function look(name: string) {
@@ -62,12 +69,18 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
   const [folder, setFolder] = useState(false)
   const [rec, setRec] = useState<Record | null>(null)
   const [number, setNumber] = useState("")
-  const [planned, setPlanned] = useState(false)
+  // The business step in three: its country, its number, its details.
+  const [phase, setPhase] = useState<"country" | "number" | "details">("country")
+  const [found, setFound] = useState<Record | null>(null)
+  const [registered, setRegistered] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const blank: Record = { name: "", legal_name: "", legal_form: null, country: "", registration_number: "", registered_office: null, incorporated_on: null, fiscal_year_end: null, vat_number: null, currency: "", active: true, activity: null }
+  const [hand, setHand] = useState<Record>(blank)
   const [gbKey, setGbKey] = useState<boolean | null>(null)
   const [key, setKey] = useState("")
   const [looking, setLooking] = useState(false)
   const [q, setQ] = useState("")
-  const [f, setF] = useState({ key: "", name: "", what: "", country: "GB", root: "", isolation: "auto", goal: "", by: "" })
+  const [f, setF] = useState({ key: "", name: "", what: "", country: "", root: "", isolation: "auto", goal: "", by: "" })
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }))
   const existing = realms.filter((r) => !r.archived)
 
@@ -85,9 +98,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
         await api("registers/key", { key: key.trim() }, "PUT")
         setGbKey(true); setKey("")
       }
-      const r = await api<Record>(`registers/${f.country}/${encodeURIComponent(number.trim())}`)
-      setRec(r)
-      setF((x) => ({ ...x, name: x.name.trim() ? x.name : r.name }))
+      setFound(await api<Record>(`registers/${f.country}/${encodeURIComponent(number.trim())}`))
     } catch (e) { setError((e as Error).message) } finally { setLooking(false) }
   }
   useEffect(() => {
@@ -101,7 +112,12 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
   const at = shown.indexOf(step)
   const go = (s: Step) => { setError(null); setStep(s) }
   const next = () => go(shown[Math.min(at + 1, shown.length - 1)])
-  const back = () => go(shown[Math.max(at - 1, 0)])
+  // In the business step, Back goes to its earlier question first.
+  const inner = step === "business" && !realm && phase !== "country"
+  const back = () => {
+    if (inner) { setError(null); setPhase(phase === "details" && REGISTER[f.country] ? "number" : "country"); return }
+    go(shown[Math.max(at - 1, 0)])
+  }
   async function work(fn: () => Promise<void>) {
     setBusy(true); setError(null)
     try { await fn() } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
@@ -147,100 +163,129 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
       lead = "Its own folder, database, keys and team, apart from any other business."
       primary = <Button onClick={next}>Continue <ArrowRight /></Button>
     } else {
-      title = "Your business"
-      lead = "One company, one space. You can add others later."
-      body = (
-        <div className="space-y-5">
-          <Labelled group label="Where it is registered" note="Its legal calendar follows: filings, accounts, tax.">
-            <div role="radiogroup" className="grid grid-cols-3 gap-2">
-              {COUNTRIES.map(([code, label]) => (
-                <button key={label} type="button" role="radio" aria-checked={f.country === code} onClick={() => { setF((x) => ({ ...x, country: code })); setRec(null) }}
-                  className={cn("h-11 rounded-xl border text-sm transition-colors", f.country === code ? "border-foreground bg-foreground text-background" : "hover:bg-accent/60")}>{label}</button>
-              ))}
-            </div>
-          </Labelled>
-          {REGISTER[f.country] && !planned && (
-            <div className="space-y-2">
-              <span className="block text-sm font-medium">{REGISTER[f.country].number}</span>
-              <div className="flex gap-2">
-                <Input value={number} onChange={(e) => { setNumber(e.target.value); setRec(null) }} placeholder={REGISTER[f.country].example} spellCheck={false}
-                  aria-label={REGISTER[f.country].number} className="h-11 font-mono" onKeyDown={(e) => e.key === "Enter" && number.trim() && lookUp()} />
-                <Button variant="outline" className="h-11" disabled={looking || !number.trim() || (f.country === "GB" && !gbKey && !key.trim())} onClick={lookUp}>
-                  {looking ? <Loader className="animate-spin" /> : <Search />} Look it up
-                </Button>
-              </div>
-              {f.country === "GB" && gbKey === false && (
+      const register = REGISTER[f.country]
+      if (phase === "country") {
+        title = "Where is it registered?"
+        lead = "Its legal calendar follows: filings, accounts, tax. Not registered yet? Choose where it will be."
+        body = (
+          <Select value={f.country || null} onValueChange={(v) => { setF((x) => ({ ...x, country: String(v ?? "") })); setRec(null) }}>
+            <SelectTrigger className="h-12 w-full text-base" aria-label="Country"><SelectValue placeholder="Choose a country">{(v: string) => countryName(v)}</SelectValue></SelectTrigger>
+            <SelectContent className="max-h-80">
+              <SelectGroup>{FIRST.map((c) => <SelectItem key={c} value={c}>{countryName(c)}</SelectItem>)}</SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel>Other countries</SelectLabel>
+                {OTHERS_BY_NAME.map((c) => <SelectItem key={c} value={c}>{countryName(c)}</SelectItem>)}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        )
+        aside = !fresh && existing.length > 0 && <Button variant="ghost" onClick={() => { setRealm(existing[0].name); setF((x) => ({ ...x, name: x.name || existing[0].name })); next() }}>Use {existing[0].name}</Button>
+        primary = <Button disabled={!f.country} onClick={() => { setError(null); setRegistered(true); setPhase(register ? "number" : "details") }}>Continue <ArrowRight /></Button>
+      } else if (phase === "number" && register) {
+        title = "Its company number"
+        lead = <>Airth reads its record from {register.name}, and shows it for you to check.</>
+        body = (
+          <div className="space-y-3">
+            <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder={register.example} spellCheck={false} autoFocus
+              aria-label={register.number} className="h-12 font-mono text-base" onKeyDown={(e) => e.key === "Enter" && number.trim() && (f.country !== "GB" || gbKey || key.trim()) && lookUp()} />
+            <p className="text-xs text-muted-foreground">{register.number}, like {register.example}.</p>
+            {f.country === "GB" && gbKey === false && (
+              <>
                 <label className="flex h-11 items-center gap-3 rounded-xl border bg-surface px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
                   <KeyRound className="size-4 shrink-0 text-muted-foreground" />
                   <input type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder="Companies House API key" aria-label="Companies House API key"
                     className="min-w-0 flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground" />
                 </label>
-              )}
-              <span className="block text-xs text-muted-foreground">
-                {f.country === "GB" && gbKey === false
-                  ? <>Companies House needs a free key, once: create one at <a className="text-sky-500 hover:underline" href="https://developer.company-information.service.gov.uk/manage-applications" target="_blank" rel="noreferrer">developer.company-information.service.gov.uk</a>. It stays with Airth. </>
-                  : <>Airth reads its record from {REGISTER[f.country].name}, for you to check. </>}
-                <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={() => { setPlanned(true); setRec(null) }}>Not registered yet</button>
-              </span>
-            </div>
-          )}
-          {planned && (
-            <p className="text-xs text-muted-foreground">Not registered yet: add its number on the Company page once it is. <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={() => setPlanned(false)}>It is registered</button></p>
-          )}
-          {rec && (
-            <div className="rounded-2xl border bg-surface p-4">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Check className="size-3.5 text-emerald-500" /> From {REGISTER[rec.country]?.name ?? "its register"}{rec.activity ? ` · ${rec.activity}` : ""}
-                {!rec.active && <span className="ml-auto rounded-md bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-400">Not active</span>}
+                <p className="text-xs text-muted-foreground">Companies House needs a free key, once: create one at <a className="text-sky-500 hover:underline" href="https://developer.company-information.service.gov.uk/manage-applications" target="_blank" rel="noreferrer">developer.company-information.service.gov.uk</a>. It stays with Airth.</p>
+              </>
+            )}
+          </div>
+        )
+        aside = <Button variant="ghost" onClick={() => { setError(null); setRec(null); setRegistered(false); setPhase("details") }}>No number: by hand</Button>
+        primary = <Button disabled={looking || !number.trim() || (f.country === "GB" && !gbKey && !key.trim())} onClick={lookUp}>
+          {looking ? <><Loader className="animate-spin" /> Looking</> : <>Look it up <ArrowRight /></>}
+        </Button>
+      } else {
+        title = rec ? "Its details" : "Its details, by hand"
+        lead = rec
+          ? <>From {register?.name ?? "its register"}. Name it as people say it, and say what it does.</>
+          : registered ? "What its registration says. Leave empty what you do not know yet: the Company page keeps it." : "Not registered yet: its registration goes on the Company page once it is."
+        const fields = (r: Record, set: (r: Record) => void) => (
+          <dl className="grid gap-2">
+            {FIELDS.map(([k, label, hint]) => (
+              <div key={k} className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-2 max-sm:grid-cols-1 max-sm:gap-1">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd><Input value={(r[k] as string | null) ?? ""} placeholder={hint} onChange={(e) => set({ ...r, [k]: e.target.value })} className="h-8 text-sm" aria-label={label} /></dd>
               </div>
-              <dl className="mt-3 grid gap-2">
-                {FIELDS.map(([k, label, hint]) => (
-                  <div key={k} className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-2 max-sm:grid-cols-1 max-sm:gap-1">
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd><Input value={(rec[k] as string | null) ?? ""} placeholder={hint} onChange={(e) => setRec({ ...rec, [k]: e.target.value })} className="h-8 text-sm" aria-label={label} /></dd>
+            ))}
+          </dl>
+        )
+        body = (
+          <div className="space-y-5">
+            {rec ? (
+              <div className="rounded-2xl border bg-surface p-4">
+                <div className="flex items-start gap-3">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{rec.legal_name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{[rec.registration_number, rec.legal_form, rec.incorporated_on && `since ${rec.incorporated_on}`].filter(Boolean).join(" · ")}</p>
                   </div>
-                ))}
-              </dl>
-              <p className="mt-3 text-xs text-muted-foreground">Check them: they go to its profile, and its legal calendar reads them.</p>
-            </div>
-          )}
-          <Labelled label="Its name" note={id && id !== f.name.trim() ? <>Its folder: <span className="font-mono">{id}</span></> : undefined}>
-            <Input value={f.name} onChange={set("name")} placeholder="Northwind" className="h-11 text-base" />
-          </Labelled>
-          <Labelled label="What it does" note="For whom, and how it sounds. Every agent reads it.">
-            <Textarea rows={3} value={f.what} onChange={set("what")} className="text-[15px] leading-relaxed"
-              placeholder="A research media on X for crypto allocators. Calm, sourced, never hype." />
-          </Labelled>
-          {folder ? (
-            <>
-              <Labelled label="Its folder" note="Where its files and code already are. Empty: a private folder Airth makes.">
-                <Input value={f.root} onChange={set("root")} placeholder="~/code/northwind" spellCheck={false} className="font-mono" />
-              </Labelled>
-              <Labelled group label="How tasks work in it">
-                <Select value={f.isolation} onValueChange={(v) => setF((x) => ({ ...x, isolation: String(v ?? "auto") }))}>
-                  <SelectTrigger className="w-full"><SelectValue>{(v: string) => ISOLATION.find(([k]) => k === v)?.[1] ?? v}</SelectValue></SelectTrigger>
-                  <SelectContent>{ISOLATION.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-                </Select>
-              </Labelled>
-            </>
-          ) : (
-            <button type="button" onClick={() => setFolder(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ChevronDown className="size-3.5" /> It already has a folder</button>
-          )}
-        </div>
-      )
-      aside = !fresh && existing.length > 0 && <Button variant="ghost" onClick={() => { setRealm(existing[0].name); setF((x) => ({ ...x, name: x.name || existing[0].name })); next() }}>Use {existing[0].name}</Button>
-      primary = <Button disabled={busy || !id} onClick={() => work(async () => {
-        const r = await createBusiness({ name: id, what: f.what, root: f.root, isolation: f.isolation })
-        // What the register said, as the founder left it; empty fields are not written.
-        const record: { [k: string]: string } = {}
-        if (rec) {
-          for (const [k] of FIELDS) { const v = String(rec[k] ?? "").trim(); if (v) record[k] = v }
-          record.currency = rec.currency
-          record.status = "registered"
-        } else if (planned) record.status = "planned"
-        await api(`realms/${enc(r)}/business`, { profile: { name: f.name.trim(), ...(f.country ? { country: f.country } : {}), ...record } }, "PATCH")
-        setRealm(r); next()
-      })}>{busy ? <><Loader className="animate-spin" /> Creating</> : <>Create <ArrowRight /></>}</Button>
+                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit"}</button>
+                </div>
+                {editing && <div className="mt-3 border-t pt-3">{fields(rec, setRec)}</div>}
+              </div>
+            ) : (
+              <>
+                <div role="radiogroup" aria-label="Registered" className="grid grid-cols-2 gap-2">
+                  {([[true, "Registered"], [false, "Not yet registered"]] as const).map(([v, label]) => (
+                    <button key={label} type="button" role="radio" aria-checked={registered === v} onClick={() => setRegistered(v)}
+                      className={cn("h-10 rounded-xl border text-sm transition-colors", registered === v ? "border-foreground bg-foreground text-background" : "hover:bg-accent/60")}>{label}</button>
+                  ))}
+                </div>
+                {registered && (
+                  <div className="rounded-2xl border bg-surface p-4">
+                    {fields(rec ?? hand, setHand)}
+                  </div>
+                )}
+              </>
+            )}
+            <Labelled label="Its name" note={id && id !== f.name.trim() ? <>Its folder: <span className="font-mono">{id}</span></> : undefined}>
+              <Input value={f.name} onChange={set("name")} placeholder="Northwind" className="h-11 text-base" />
+            </Labelled>
+            <Labelled label="What it does" note="For whom, and how it sounds. Every agent reads it.">
+              <Textarea rows={3} value={f.what} onChange={set("what")} className="text-[15px] leading-relaxed"
+                placeholder="A research media on X for crypto allocators. Calm, sourced, never hype." />
+            </Labelled>
+            {folder ? (
+              <>
+                <Labelled label="Its folder" note="Where its files and code already are. Empty: a private folder Airth makes.">
+                  <Input value={f.root} onChange={set("root")} placeholder="~/code/northwind" spellCheck={false} className="font-mono" />
+                </Labelled>
+                <Labelled group label="How tasks work in it">
+                  <Select value={f.isolation} onValueChange={(v) => setF((x) => ({ ...x, isolation: String(v ?? "auto") }))}>
+                    <SelectTrigger className="w-full"><SelectValue>{(v: string) => ISOLATION.find(([k]) => k === v)?.[1] ?? v}</SelectValue></SelectTrigger>
+                    <SelectContent>{ISOLATION.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+                  </Select>
+                </Labelled>
+              </>
+            ) : (
+              <button type="button" onClick={() => setFolder(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ChevronDown className="size-3.5" /> It already has a folder</button>
+            )}
+          </div>
+        )
+        primary = <Button disabled={busy || !id} onClick={() => work(async () => {
+          const r = await createBusiness({ name: id, what: f.what, root: f.root, isolation: f.isolation })
+          // What the register said, or the founder wrote, as left: empty fields are not written.
+          const source = rec ?? (registered ? hand : null)
+          const record: { [k: string]: string } = { status: source ? "registered" : "planned" }
+          for (const [k] of FIELDS) { const v = String(source?.[k] ?? "").trim(); if (v) record[k] = v }
+          const currency = rec?.currency ?? CURRENCY[f.country]
+          if (currency) record.currency = currency
+          await api(`realms/${enc(r)}/business`, { profile: { name: f.name.trim(), country: f.country, ...record } }, "PATCH")
+          setRealm(r); next()
+        })}>{busy ? <><Loader className="animate-spin" /> Creating</> : <>Create <ArrowRight /></>}</Button>
+      }
     }
   } else if (step === "team") {
     title = "Hire its team"
@@ -351,21 +396,53 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
           {body && <div className="mt-8">{body}</div>}
           {error && <p className="mt-5 rounded-lg bg-red-500/10 px-3 py-2 text-xs break-words text-red-600 dark:text-red-300">{error}</p>}
           <div className="mt-9 flex flex-wrap items-center gap-2">
-            {at > 0 && step !== "ready" && <Button variant="ghost" size="icon" aria-label="Back" onClick={back}><ArrowLeft /></Button>}
+            {(at > 0 || inner) && step !== "ready" && <Button variant="ghost" size="icon" aria-label="Back" onClick={back}><ArrowLeft /></Button>}
             <span className="flex-1" />
             {aside}
             {primary}
           </div>
         </main>
       </div>
-      {step !== "connectors" && <Stage step={step} name={name} what={f.what} country={f.country} crew={crew} goal={f.goal} by={f.by} number={rec?.registration_number} />}
+      {/* The record found, to accept or not before anything is written. */}
+      <Dialog open={!!found} onOpenChange={(o) => { if (!o) setFound(null) }}>
+        <DialogContent className="sm:max-w-md">
+          {found && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{found.legal_name}</DialogTitle>
+                <DialogDescription>
+                  From {REGISTER[found.country]?.name ?? "its register"}{found.activity ? ` · ${found.activity}` : ""}
+                  {!found.active && <span className="ml-2 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-400">Not active</span>}
+                </DialogDescription>
+              </DialogHeader>
+              <dl className="grid gap-x-4 gap-y-2.5 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+                {FIELDS.filter(([k]) => k !== "legal_name").map(([k, label]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-muted-foreground max-sm:text-xs">{label}</dt>
+                    <dd className={cn("[overflow-wrap:anywhere] max-sm:mb-1", !found[k] && "text-muted-foreground/60")}>{(found[k] as string | null) || "Not given"}</dd>
+                  </div>
+                ))}
+              </dl>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setFound(null)}>Not this one</Button>
+                <Button onClick={() => {
+                  setRec(found); setEditing(false)
+                  setF((x) => ({ ...x, name: x.name.trim() ? x.name : found.name }))
+                  setFound(null); setPhase("details")
+                }}><Check /> Use these details</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      {step !== "connectors" && <Stage step={step} name={name} what={f.what} country={f.country} crew={crew} goal={f.goal} by={f.by} number={rec?.registration_number} planned={!rec && !registered && phase === "details"} />}
     </div>
   )
 }
 
 /** The business as it is being built, beside the questions. */
-function Stage({ step, name, what, country, crew, goal, by, number }: { step: Step; name: string; what: string; country: string; crew: TeamAgent[]; goal: string; by: string; number?: string }) {
-  const place = COUNTRIES.find(([c]) => c === country)?.[1]
+function Stage({ step, name, what, country, crew, goal, by, number, planned }: { step: Step; name: string; what: string; country: string; crew: TeamAgent[]; goal: string; by: string; number?: string; planned?: boolean }) {
+  const place = country ? countryName(country) : null
   const past = (s: Step) => STEPS.indexOf(step) >= STEPS.indexOf(s)
   const when = useMemo(() => (by ? new Date(`${by}T12:00`).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : null), [by])
   return (
@@ -377,7 +454,7 @@ function Stage({ step, name, what, country, crew, goal, by, number }: { step: St
             <span className="size-9 shrink-0 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
             <div className="min-w-0">
               <div className={cn("truncate text-lg font-semibold tracking-tight transition-colors", !name && "text-muted-foreground/50")}>{name || "Your business"}</div>
-              <div className="text-xs text-muted-foreground">{name && past("business") && place ? (country ? `${number ? `No ${number} · ` : ""}Registered in ${place}` : "A company") : " "}</div>
+              <div className="text-xs text-muted-foreground">{name && past("business") && place ? (country ? `${number ? `No ${number} · ` : ""}${planned ? "To be registered in" : "Registered in"} ${place}` : "A company") : " "}</div>
             </div>
           </div>
           <p className={cn("mt-4 line-clamp-3 min-h-[3lh] text-[13px] leading-relaxed", what ? "text-foreground/80" : "text-muted-foreground/40")}>{what || "What it does, for whom, and how it sounds."}</p>
