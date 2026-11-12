@@ -21,6 +21,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 - **A later plan adds to an open project** when the interlocutor gives its number. Its tasks join the project, a milestone of the same title is the same milestone, and a project that was done is active again.
 - **A project is done** once every task of every plan approved for it has ended or will never start. The founder can also rename it, rewrite its description, or close and reopen it (`PUT realms/<r>/projects/<id>`).
 - The plan's own file (decision 120) still runs the steps; the project is what the founder reads.
+- **Each task also keeps how its run ended** (`outcome`, migration 23), so what reads the database alone knows where a project stands. The morning brief (decision 121) says which open project has a task stuck, or a next milestone late or due within a week; otherwise how many are under way.
 
 *Why:* a plan was a one-off. Its name was lost once approved, and nothing could be added to it. The founder thinks in projects: a name, what it is for, where it stands against its dates.
 
