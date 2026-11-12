@@ -36,6 +36,7 @@ mod pipeline;
 mod prices;
 mod push;
 mod realm;
+mod registry;
 mod release;
 mod remote;
 mod routine;

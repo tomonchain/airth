@@ -2,6 +2,28 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 126. A new business's record comes from its official register
+
+**Accepted** (founder, 12 November 2026: "a wizard for creating a new business, filling as much as it can from official APIs: a company number loads everything; then a page to add the connectors it needs").
+
+- **`src/registry.rs` reads two registers, and only them:**
+  - **Companies House** (United Kingdom), `api.company-information.service.gov.uk/company/<number>`, with the founder's free API key.
+  - **The State's company directory** (France), `recherche-entreprises.api.gouv.fr`, by SIREN or SIRET, with no key.
+  - Another country is refused, saying so.
+  - Airth calls them from the server, never an agent, and without following redirects.
+  - The number is checked before any call: 8 characters for Companies House, 9 or 14 digits in France.
+- **What a record gives, in the profile's own fields:**
+  - name, legal name, legal form (`ltd`, `plc`, `llp`; `sas`, `sasu`, `sarl`, `sa`, `ei`, `sci`), registration number, registered office, date of incorporation, currency, and whether it is active;
+  - from Companies House, the fiscal year end, from its accounting reference date;
+  - in France, the VAT number, computed from the SIREN (FR, its key, the SIREN).
+  - The wizard shows them for the founder to check and change before anything is written.
+- **The key is kept in the home**, `registries.env`, readable by the founder only, beside the model keys. It is for every business, as a register is the same for all of them. It is set from the wizard or with `PUT /api/registry/key`. No model ever sees it.
+- **The wizard writes more fields than the first launch did** (decision 101): `set_field` takes the legal name, status, registration number, registered office, date of incorporation, fiscal year end, VAT number, currency and domain. Each is checked as the config checks it: dates as dates, `status` planned or registered, `currency` three capitals.
+
+*Why:* a company number is the one thing the founder knows by heart, and the register already holds what the legal calendar needs (decision 66). Typing it again is where mistakes come from.
+
+*Cost:* a Companies House key to create once. The French directory has no fiscal year end, so the founder adds it. The French legal forms are mapped for the commonest codes only; another is left for the founder to write.
+
 ## 125. A stopped task goes on with a remedy
 
 **Accepted** (founder, 12 November 2026, on a task stopped on its cost budget: "beyond Seen, a mitigation: the AI makes three proposals and the founder chooses, or a free field; then it applies the change and the task resumes, or cancel").
