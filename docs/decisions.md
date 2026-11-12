@@ -279,7 +279,7 @@ Revolut's API needs a plan upgrade (decision 68), and figures by hand were never
   - a draft edited before approval (the agent's version, then the founder's);
   - a rejection with a reason;
   - a redo request (decision 115).
-  A bare rejection (Telegram's button), a batch let go, an expired draft and an untouched approval say nothing, and are left out.
+  A bare rejection (Telegram's Skip: its Reject asks why first, and the founder's reply to the item is the reason, 12 November 2026), a batch let go, an expired draft and an untouched approval say nothing, and are left out.
 - **Where it goes:** after the instructions of the routine's drafting blocks (an AI block that gives each item its `answer`, one at a time), as the founder's own words. A check or a block that sorts a whole list does not hear it. The quoted drafts are marked as examples, not instructions. The prompt's recorded version carries a mark of what was heard, so the journal tells such a call apart.
 - **Shown, and taken back:** each routine on the Routines page shows "Learned from you", the notes its next drafts hear. **Forget** removes one, through an append-only log entry (`feedback forgotten`): the record stays, the agent no longer hears it.
 - Read from the queue through the database access layer (`Store::founder_feedback`). No new table: the queue already keeps each draft as written and as approved, and the log keeps why.
