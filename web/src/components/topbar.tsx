@@ -1,4 +1,4 @@
-import { Building, ChevronsUpDown, PanelRight, Plus, Server, Sparkles, X } from "lucide-react"
+import { Building, ChevronsUpDown, PanelRight, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
 import { mac, titleBar } from "@/lib/shell"
@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils"
 /** The window's top: the open conversations as tabs (on the Agents page),
     the update notice, the details toggle and, at the far right, the
     business. In the Mac app it is the title bar. */
-export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onHq, details, onDetails }: {
+export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onAsk, onHq, details, onDetails }: {
   server: string | null; realms: Realm[]; realm: string; onAgents: boolean; tabs: string[]; current: string | null; agents: Agent[]
-  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onHq: () => void; details: boolean; onDetails: () => void
+  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onAsk: () => void; onHq: () => void; details: boolean; onDetails: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   const closed = agents.filter((a) => !tabs.includes(a.name))
@@ -64,6 +64,13 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
           </DropdownMenu>
         )}
       </nav>
+      {/* Ask from anywhere (⌘J): to the interlocutor, without leaving the page. */}
+      <button onClick={onAsk} onMouseDown={(e) => e.stopPropagation()}
+        className="flex h-8 w-64 shrink-0 items-center gap-2 rounded-lg border bg-background/60 px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground max-lg:w-auto max-md:hidden">
+        <PenLine className="size-3.5 shrink-0" />
+        <span className="flex-1 truncate text-left max-lg:hidden">Ask the team…</span>
+        <kbd className="rounded bg-muted px-1.5 font-sans text-[10.5px] max-lg:hidden">⌘J</kbd>
+      </button>
       <UpdateNotice working={agents.filter((a) => a.state === "working").length} />
       {/* Which Airth this is, when the founder named it (Settings, About). */}
       {server && (
