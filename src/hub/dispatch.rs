@@ -5,8 +5,9 @@
 
 use super::*;
 use crate::business::store::Store;
+use crate::business::store::projects::{Additions, NewTask};
 use crate::supervise::Locked;
-use crate::tools::dispatch::{Dispatch, Step, render};
+use crate::tools::dispatch::{Dispatch, Proposal, render};
 use serde_json::json;
 
 /// The action of a plan's item in the queue.
@@ -44,35 +45,48 @@ impl Hub {
         if team.is_empty() {
             return Ok(None);
         }
+        // The open projects a plan may add to (decision 129).
+        let projects: Vec<(i64, String)> = Store::of(realm)?
+            .projects()?
+            .into_iter()
+            .filter(|p| p.status == "active")
+            .take(10)
+            .map(|p| (p.id, p.name))
+            .collect();
         let (realm, agent, run) = (realm.clone(), agent.clone(), state.id.clone());
-        let propose = std::sync::Arc::new(move |steps: &[Step], why: &str| -> Result<String> {
-            let text = render(steps, why);
-            let plan: Vec<serde_json::Value> = steps
-                .iter()
-                .map(|s| json!({"agent": s.agent, "task": s.task, "after": s.after}))
-                .collect();
-            let title = match why {
-                "" => format!("A plan for {} agents", steps.len()),
-                why => why.chars().take(80).collect(),
-            };
-            let id = Store::of(&realm)?.propose(&crate::business::store::autonomy::NewItem {
-                kind: "approval",
-                title: &title,
-                agent: Some(&agent),
-                routine: None,
-                run: Some(&run),
-                action: Some(DISPATCH),
-                args: &json!({"steps": plan, "text": text}).to_string(),
-                execute_at: None,
-                // The founder may edit the plan before approving it.
-                source: &json!({"show": "text", "editable": "text"}).to_string(),
-                model_call: None,
-            })?;
-            Ok(format!(
-                "The plan waits for the founder in Needs you (item {id}); they may edit it. Once they approve it, each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned."
-            ))
-        });
-        Ok(Some(Dispatch { team, propose }))
+        let propose = std::sync::Arc::new(
+            move |p: &Proposal, project: Option<i64>| -> Result<String> {
+                let text = render(p);
+                let plan: Vec<serde_json::Value> = p
+                    .steps
+                    .iter()
+                    .map(|s| json!({"agent": s.agent, "task": s.task, "after": s.after}))
+                    .collect();
+                let title: String = p.name.chars().take(80).collect();
+                let id =
+                    Store::of(&realm)?.propose(&crate::business::store::autonomy::NewItem {
+                        kind: "approval",
+                        title: &title,
+                        agent: Some(&agent),
+                        routine: None,
+                        run: Some(&run),
+                        action: Some(DISPATCH),
+                        args: &json!({"steps": plan, "text": text, "project": project}).to_string(),
+                        execute_at: None,
+                        // The founder may edit the plan before approving it.
+                        source: &json!({"show": "text", "editable": "text"}).to_string(),
+                        model_call: None,
+                    })?;
+                Ok(format!(
+                    "The plan waits for the founder in Needs you (item {id}); they may edit it. Once they approve it, each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned."
+                ))
+            },
+        );
+        Ok(Some(Dispatch {
+            team,
+            projects,
+            propose,
+        }))
     }
 
     /// The founder approved plan `item`, as its text now reads (they may
@@ -91,24 +105,64 @@ impl Hub {
             .map(|(name, _)| name)
             .filter(|name| *name != from)
             .collect();
-        let (steps, _) =
-            crate::tools::dispatch::parse(item.args["text"].as_str().unwrap_or_default());
-        crate::tools::dispatch::check(
-            &steps,
-            &team.iter().map(String::as_str).collect::<Vec<_>>(),
-        )?;
+        let mut p = crate::tools::dispatch::parse(item.args["text"].as_str().unwrap_or_default());
+        let project = item.args["project"].as_i64();
+        let mut store = Store::of(realm)?;
+        if let Some(id) = project {
+            // The project's name is the project's, whatever the text says.
+            p.name = store
+                .project(id)?
+                .map(|x| x.name)
+                .ok_or_else(|| anyhow::anyhow!("there is no project {id}"))?;
+        }
+        crate::tools::dispatch::check(&p, &team.iter().map(String::as_str).collect::<Vec<_>>())?;
+        // The plan's project, made or grown (decision 129), with every step
+        // kept from now on, started or not.
+        let milestones: Vec<(String, Option<String>)> = p
+            .milestones
+            .iter()
+            .map(|m| (m.title.clone(), m.due.clone()))
+            .collect();
+        let tasks: Vec<NewTask> = p
+            .steps
+            .iter()
+            .map(|s| NewTask {
+                agent: &s.agent,
+                task: &s.task,
+                milestone: s.milestone,
+            })
+            .collect();
+        let add = Additions {
+            milestones: &milestones,
+            tasks: &tasks,
+        };
+        let (project, slots) = match project {
+            Some(id) => (id, store.add_to_project(id, &add, chrono::Utc::now())?),
+            None => store.create_project(
+                &p.name,
+                &p.description,
+                &from,
+                item.run.as_deref(),
+                &add,
+                chrono::Utc::now(),
+            )?,
+        };
         let mark = format!("{}/{}", item.run.as_deref().unwrap_or_default(), item.id);
         let plan = Plan {
             from,
             mark: mark.clone(),
-            steps: steps
+            project: Some(project),
+            steps: p
+                .steps
                 .into_iter()
-                .map(|s| PlanStep {
+                .zip(slots)
+                .map(|(s, slot)| PlanStep {
                     agent: s.agent,
                     task: s.task,
                     after: s.after,
                     run: None,
                     skipped: None,
+                    slot: Some(slot),
                 })
                 .collect(),
             told: false,
@@ -163,6 +217,9 @@ impl Hub {
                 }
             }
             if let Some(why) = blocked {
+                if let Some(slot) = plan.steps[i].slot {
+                    Store::of(realm)?.skip_project_task(slot, &why)?;
+                }
                 plan.steps[i].skipped = Some(why);
                 continue;
             }
@@ -185,6 +242,9 @@ impl Hub {
             state.dispatched_by = Some(plan.mark.clone());
             state.save()?;
             self.queue_hand_off(realm, &state.id)?;
+            if let Some(slot) = step.slot {
+                Store::of(realm)?.set_project_task_run(slot, &state.id)?;
+            }
             let agent = step.agent.clone();
             plan.steps[i].run = Some(state.id.clone());
             started.push(agent);
@@ -227,6 +287,9 @@ impl Hub {
         }
         plan.told = true;
         save_plan(realm, &plan)?;
+        if let Some(id) = plan.project {
+            self.close_project(realm, id, &state.id)?;
+        }
         let lines: Vec<String> = plan
             .steps
             .iter()
@@ -258,6 +321,27 @@ impl Hub {
     }
 }
 
+impl Hub {
+    /// Project `id` is done once every task of every plan approved for it
+    /// has ended or will never start; `just` has just ended.
+    fn close_project(&self, realm: &Realm, id: i64, just: &str) -> Result<()> {
+        let mut store = Store::of(realm)?;
+        let Some(project) = store.project(id)? else {
+            return Ok(());
+        };
+        let over = project.tasks.iter().all(|t| {
+            t.skipped.is_some()
+                || t.run
+                    .as_deref()
+                    .is_some_and(|r| r == just || self.ended(realm, r).is_some())
+        });
+        if over && project.status == "active" {
+            store.edit_project(id, None, None, Some("done"), chrono::Utc::now())?;
+        }
+        Ok(())
+    }
+}
+
 /// One read-modify-write of a plan at a time.
 static PLANS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -267,6 +351,9 @@ static PLANS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Plan {
     from: String,
     mark: String,
+    /// Its project (decision 129); none for a plan approved before.
+    #[serde(default)]
+    project: Option<i64>,
     steps: Vec<PlanStep>,
     told: bool,
 }
@@ -280,6 +367,9 @@ struct PlanStep {
     run: Option<String>,
     /// Why it never started: a step it waited for failed.
     skipped: Option<String>,
+    /// Its task in the project.
+    #[serde(default)]
+    slot: Option<i64>,
 }
 
 fn plan_path(realm: &Realm, mark: &str) -> std::path::PathBuf {

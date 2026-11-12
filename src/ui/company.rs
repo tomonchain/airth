@@ -79,6 +79,28 @@ impl App {
             (Method::Get, ["realms", r, "company"]) => {
                 json_response(200, self.company(&self.realm(r)?)?)
             }
+            // The projects (decision 129), the one touched last first.
+            (Method::Get, ["realms", r, "projects"]) => {
+                let projects = Store::of(&self.realm(r)?)?.projects()?;
+                json_response(200, json!({ "projects": projects }))
+            }
+            // The founder renames a project, rewrites its description, or
+            // says it is done or open again.
+            (Method::Put, ["realms", r, "projects", id]) => {
+                let id: i64 = id
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("no project '{id}'"))?;
+                let body = read_json(request)?;
+                let mut store = Store::of(&self.realm(r)?)?;
+                store.edit_project(
+                    id,
+                    body["name"].as_str(),
+                    body["description"].as_str(),
+                    body["status"].as_str(),
+                    chrono::Utc::now(),
+                )?;
+                json_response(200, json!({ "project": store.project(id)? }))
+            }
             _ => return Ok(None),
         }))
     }

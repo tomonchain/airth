@@ -364,7 +364,7 @@ fn a_task_goes_on_with_what_its_agent_may_use_now() {
 #[test]
 fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     use crate::business::store::queue::Answer;
-    use crate::tools::dispatch::Step;
+    use crate::tools::dispatch::{Proposal, Step};
     let f = fixture();
     let root = f.root.path().to_path_buf();
     agent(
@@ -391,19 +391,25 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     assert_eq!(team, ["developer", "writer"]);
 
     // Proposing starts nothing: the plan waits for the founder.
-    let steps = [
-        Step {
-            agent: "writer".into(),
-            task: "A recap article".into(),
-            after: vec![],
-        },
-        Step {
-            agent: "developer".into(),
-            task: "A banner linking to it".into(),
-            after: vec!["writer".into()],
-        },
-    ];
-    (dispatch.propose)(&steps, "Year-end").unwrap();
+    let plan = Proposal {
+        name: "Year-end".into(),
+        steps: vec![
+            Step {
+                agent: "writer".into(),
+                task: "A recap article".into(),
+                after: vec![],
+                milestone: None,
+            },
+            Step {
+                agent: "developer".into(),
+                task: "A banner linking to it".into(),
+                after: vec!["writer".into()],
+                milestone: None,
+            },
+        ],
+        ..Default::default()
+    };
+    (dispatch.propose)(&plan, None).unwrap();
     let before = hub.runs(&f.realm).unwrap().len();
     let item = Store::of(&f.realm)
         .unwrap()
@@ -436,6 +442,21 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     let mut first = handed[0].1.clone();
     assert_eq!(first.agent.as_deref(), Some("writer"));
     assert_eq!(first.dispatched_by.as_deref(), Some(mark.as_str()));
+    // The approval made the project (decision 129), every step in it,
+    // the writer's with its run, the developer's still to come.
+    let project = Store::of(&f.realm)
+        .unwrap()
+        .projects()
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        (project.name.as_str(), project.status.as_str()),
+        ("Year-end", "active")
+    );
+    assert_eq!(project.run.as_deref(), Some(chief.id.as_str()));
+    let runs: Vec<Option<&str>> = project.tasks.iter().map(|t| t.run.as_deref()).collect();
+    assert_eq!(runs, [Some(first.id.as_str()), None]);
     let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
     chief_done.status = Status::Completed;
     chief_done.save().unwrap();
@@ -469,6 +490,15 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
         last.contains("Article drafted") && last.contains("Pull request #42"),
         "{last}"
     );
+    // Every task ended: the project is done.
+    let project = Store::of(&f.realm)
+        .unwrap()
+        .projects()
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(project.status, "done");
+    assert_eq!(project.tasks[1].run.as_deref(), Some(second.id.as_str()));
 }
 
 /// Decision 120: the founder edits the plan before approving it, and the
@@ -477,7 +507,7 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
 #[test]
 fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
     use crate::business::store::queue::Answer;
-    use crate::tools::dispatch::Step;
+    use crate::tools::dispatch::{Proposal, Step};
     let f = fixture();
     let root = f.root.path().to_path_buf();
     agent(
@@ -493,19 +523,25 @@ fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
         .start_task(&f.realm, "chief-of-staff", "Year-end")
         .unwrap();
     let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
-    let steps = [
-        Step {
-            agent: "writer".into(),
-            task: "A recap".into(),
-            after: vec![],
-        },
-        Step {
-            agent: "seo".into(),
-            task: "Keywords".into(),
-            after: vec![],
-        },
-    ];
-    (dispatch.propose)(&steps, "Year-end").unwrap();
+    let plan = Proposal {
+        name: "Year-end".into(),
+        steps: vec![
+            Step {
+                agent: "writer".into(),
+                task: "A recap".into(),
+                after: vec![],
+                milestone: None,
+            },
+            Step {
+                agent: "seo".into(),
+                task: "Keywords".into(),
+                after: vec![],
+                milestone: None,
+            },
+        ],
+        ..Default::default()
+    };
+    (dispatch.propose)(&plan, None).unwrap();
     let item = Store::of(&f.realm)
         .unwrap()
         .queue(&["pending"])
@@ -558,6 +594,24 @@ fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
         last.contains("developer (not started): writer ended failed"),
         "{last}"
     );
+    // The project holds the plan as edited, and why the developer's task
+    // never started.
+    let project = Store::of(&f.realm)
+        .unwrap()
+        .projects()
+        .unwrap()
+        .pop()
+        .unwrap();
+    let tasks: Vec<(&str, Option<&str>)> = project
+        .tasks
+        .iter()
+        .map(|t| (t.agent.as_str(), t.skipped.as_deref()))
+        .collect();
+    assert_eq!(
+        tasks,
+        [("writer", None), ("developer", Some("writer ended failed"))]
+    );
+    assert_eq!(project.status, "done");
 }
 
 /// Decision 125: a task stopped on its budget gets remedies from the fast
@@ -658,4 +712,101 @@ fn remedies_that_do_not_fit_are_refused() {
             .iter()
             .any(|c| c.pipeline == "remedy" && c.error.is_some())
     );
+}
+
+/// Decision 129: a later plan adds to an open project rather than making
+/// another, with its milestones, and the project is active again.
+#[test]
+fn a_later_plan_adds_to_the_open_project_it_names() {
+    use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::{Milestone, Proposal, Step};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Year-end")
+        .unwrap();
+    let step = |task: &str, milestone| Step {
+        agent: "writer".into(),
+        task: task.into(),
+        after: vec![],
+        milestone,
+    };
+    let approve = |hub: &Hub| {
+        let item = Store::of(&f.realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .pop()
+            .unwrap();
+        hub.answer_item(
+            &f.realm,
+            item.id,
+            Some(item.revision),
+            Answer::Approve,
+            "app",
+            1,
+        )
+        .unwrap();
+        item
+    };
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    assert!(dispatch.projects.is_empty());
+    let first = Proposal {
+        name: "Year-end recap".into(),
+        description: "Hedgen's 2026, told everywhere.".into(),
+        milestones: vec![Milestone {
+            title: "The article".into(),
+            due: Some("2026-12-15".into()),
+        }],
+        steps: vec![step("A recap article", Some(0))],
+    };
+    (dispatch.propose)(&first, None).unwrap();
+    let item = approve(&hub);
+    assert!(
+        item.args["text"]
+            .as_str()
+            .unwrap()
+            .contains("## The article (by 2026-12-15)")
+    );
+    let id = Store::of(&f.realm).unwrap().projects().unwrap()[0].id;
+
+    // The interlocutor's next task sees the open project and adds to it.
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    assert_eq!(dispatch.projects, [(id, "Year-end recap".to_string())]);
+    let more = Proposal {
+        name: "Year-end recap".into(),
+        milestones: vec![Milestone {
+            title: "Everywhere".into(),
+            due: None,
+        }],
+        steps: vec![step("A LinkedIn post", Some(0))],
+        ..Default::default()
+    };
+    (dispatch.propose)(&more, Some(id)).unwrap();
+    approve(&hub);
+    let projects = Store::of(&f.realm).unwrap().projects().unwrap();
+    assert_eq!(projects.len(), 1, "the same project, not another");
+    let p = &projects[0];
+    assert_eq!(p.description, "Hedgen's 2026, told everywhere.");
+    assert_eq!(p.milestones.len(), 2);
+    let tasks: Vec<(&str, Option<i64>)> = p
+        .tasks
+        .iter()
+        .map(|t| (t.task.as_str(), t.milestone))
+        .collect();
+    assert_eq!(
+        tasks,
+        [
+            ("A recap article", Some(p.milestones[0].id)),
+            ("A LinkedIn post", Some(p.milestones[1].id))
+        ]
+    );
+    assert!(p.tasks.iter().all(|t| t.run.is_some()));
 }

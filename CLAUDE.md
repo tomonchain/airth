@@ -43,7 +43,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | Routine | Recurring work of an agent, as a graph of blocks | objective + pipeline | scheduling exists; pipelines to build |
 | Mission | A one-off order executed by an agent | run, chat | exists |
 | Task | Work to do, assigned to the founder or an agent | task (`business.db`) | the page exists; its store is to rebuild, simply, in `business.db` |
-| Project | A task that passed work on to the team, with its tasks under it; the Projects page lists projects and tasks | a run whose plan was approved (decision 120); page `tasks` | exists (decision 128) |
+| Project | Work the founder asked of the team: a name, a description, milestones, and the tasks of every plan approved for it; the Projects page lists projects and tasks | `projects` (`business.db`, decision 129); page `tasks` | exists |
 | Skill | A tool an agent can use | skill, connector, MCP server | exists |
 | Goal | The business's objective and milestones | a field of the business config | to build |
 | Needs you | Everything waiting for the founder: approvals, code reviews, decisions, incidents | approval queue, inbox, pending permissions | queue to build |
