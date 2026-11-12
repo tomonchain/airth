@@ -2,6 +2,30 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 129. A project is kept: its name, its description, its milestones, its tasks
+
+**Accepted** (founder, 12 November 2026: "are projects a category of their own, with milestones, their tasks…, named and described automatically?", then "go" on the proposal).
+
+- **A project is stored in `business.db`, through the access layer**, never in the business folder: an agent must not be able to call its own project done. It holds:
+  - its name and a two-line description;
+  - its status, active or done;
+  - the interlocutor that leads it, and the task it was planned in;
+  - its milestones, each a title and an optional date;
+  - its tasks: every step of every plan approved for it, each with its run once started, or why it never started.
+- **The interlocutor names and describes it.** `propose_plan` takes a name, a description, milestones for work spread over weeks, and each task's milestone. The schema is checked in code: a project has a name, at most 6 milestones, dates as `YYYY-MM-DD`, and tasks listed milestone by milestone.
+- **The founder edits all of it before approving**, in the plan's text:
+  - the name on the first line, the description under it;
+  - a milestone as `## Title (by 2026-12-15)`, its tasks under it.
+
+  A plan written before projects reads its order line as the name.
+- **A later plan adds to an open project** when the interlocutor gives its number. Its tasks join the project, a milestone of the same title is the same milestone, and a project that was done is active again.
+- **A project is done** once every task of every plan approved for it has ended or will never start. The founder can also rename it, rewrite its description, or close and reopen it (`PUT realms/<r>/projects/<id>`).
+- The plan's own file (decision 120) still runs the steps; the project is what the founder reads.
+
+*Why:* a plan was a one-off. Its name was lost once approved, and nothing could be added to it. The founder thinks in projects: a name, what it is for, where it stands against its dates.
+
+*Cost:* three tables, and a project's tasks written both in the plan's file and in the database. The plan's file stays the engine's state, so its tasks are written twice.
+
 ## 128. Three pages and More: Chat, Needs you, Projects
 
 **Accepted** (founder, 12 November 2026: "less is more, a UI close to a chat bot", then "go" on the three steps: the Home as a chat, a reply in Needs you, a reduced navigation).

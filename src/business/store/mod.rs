@@ -12,6 +12,7 @@ pub mod bank;
 pub mod drafts;
 pub mod legal;
 pub mod pipelines;
+pub mod projects;
 pub mod queue;
 pub mod reports;
 pub mod retries;
@@ -383,6 +384,36 @@ const MIGRATIONS: &[&str] = &[
         imported_at TEXT NOT NULL
     );
     CREATE INDEX bank_lines_by_at ON bank_lines(at, seq);",
+    // 22: projects (decision 129): what the founder asked of the team, its
+    // milestones, and its tasks, each step of an approved plan, with its
+    // run once started or why it never was.
+    "CREATE TABLE projects (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('active', 'done')),
+        agent TEXT NOT NULL,
+        run TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE project_milestones (
+        id INTEGER PRIMARY KEY,
+        project INTEGER NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        due TEXT
+    );
+    CREATE TABLE project_tasks (
+        id INTEGER PRIMARY KEY,
+        project INTEGER NOT NULL REFERENCES projects(id),
+        milestone INTEGER REFERENCES project_milestones(id),
+        agent TEXT NOT NULL,
+        task TEXT NOT NULL,
+        run TEXT,
+        skipped TEXT,
+        added_at TEXT NOT NULL
+    );
+    CREATE INDEX project_tasks_by_project ON project_tasks(project, id);",
 ];
 
 pub struct Store {

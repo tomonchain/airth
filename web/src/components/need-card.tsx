@@ -194,7 +194,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
         <div className="mt-3">
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={page ? 9 : 6} className="text-sm leading-relaxed" autoFocus />
           {it.action === "airth.dispatch"
-            ? <p className="mt-1 text-xs text-muted-foreground">One step a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a step.</p>
+            ? <p className="mt-1 text-xs text-muted-foreground">The project's name on the first line, its description under it. A milestone: <code>## Title (by 2026-12-15)</code>, its tasks under it. One task a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a task.</p>
             : <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>}
         </div>
       ) : it.text && it.kind === "approval" ? (
