@@ -260,7 +260,7 @@ export default function App() {
               onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
-              at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")}
+              onAgent={open} onNeeds={() => setPage("needs")}
               onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} onProject={openProject} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} />

@@ -1,29 +1,21 @@
-import { useEffect, useState, type ReactNode } from "react"
-import { Activity as ActivityIcon, ArrowRight, CalendarClock, ChevronRight, CircleAlert, CircleCheck, CircleDollarSign, Clock3, Flag, FolderKanban, Hand, Landmark, Loader, Sun } from "lucide-react"
+import { type ReactNode } from "react"
+import { Activity as ActivityIcon, ArrowRight, ChevronRight, CircleCheck, CircleDollarSign, Clock3, Flag, FolderKanban, Hand, Landmark, Loader, Sun } from "lucide-react"
 import { Character } from "@/components/character"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePoll } from "@/hooks/use-poll"
-import { api, departmentName, enc, named, type Activity, type Agent, type AgentState, type Business, type Calendar, type Company, type Item, type Project, type Task, type Tasks } from "@/lib/api"
+import { api, enc, named, type Agent, type Business, type Company, type Item, type Project, type Task, type Tasks } from "@/lib/api"
 import { glance } from "@/screens/project"
 import { ImportStatement } from "@/components/import-statement"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
-const GROUPS: { state: AgentState; label: string }[] = [
-  { state: "needs", label: "Waiting for you" },
-  { state: "incident", label: "Stopped on an incident" },
-  { state: "working", label: "Working now" },
-  { state: "idle", label: "Between runs" },
-  { state: "asleep", label: "Nothing scheduled" },
-]
 
-/** A business's home: where things stand at a glance. Today in the
-    morning brief's words, the goal and its next milestone, the projects in
-    progress, the money, what is coming, then the team and what happened.
-    On a phone one column, in that order; on a wide screen the goal, the
-    money and what is coming sit in a column of their own. */
-export function Overview({ realm, agents, items, business, tasks, at, error, onAgent, onNeeds, onTask, onPage, onImported, onProject }: {
-  realm: string; agents: Agent[] | null; items: Item[]; business: Business | null; tasks: Tasks | null; at: number; error: string | null
+/** Where the business stands at a glance (decision 133): the figures,
+    today in the morning brief's words, what is in progress, the goal and
+    the money; the week in detail folded under them. The team, the calendar
+    and what failed have their own pages. */
+export function Overview({ realm, agents, items, business, tasks, onAgent, onNeeds, onTask, onPage, onImported, onProject }: {
+  realm: string; agents: Agent[] | null; items: Item[]; business: Business | null; tasks: Tasks | null
   onAgent: (name: string) => void; onNeeds: () => void; onTask: (id: string) => void; onPage: (page: "finance" | "tasks" | "calendar" | "company") => void; onImported: () => void; onProject: (id: number) => void
 }) {
   const b = business
@@ -31,11 +23,9 @@ export function Overview({ realm, agents, items, business, tasks, at, error, onA
   const week = usePoll<Steering>(() => api(`realms/${enc(realm)}/steering`), 60000, [realm]).data
   const today = usePoll<{ lines: string[] }>(() => api(`realms/${enc(realm)}/today`), 60000, [realm]).data
   const company = usePoll<Company>(() => api(`realms/${enc(realm)}/company`), 300000, [realm]).data
-  const cal = usePoll<Calendar>(() => api(`realms/${enc(realm)}/calendar`), 300000, [realm]).data
   const goal = company ? readGoal(company.goal) : null
   const goalCard = <GoalCard goal={goal} loading={!company} onOpen={() => onPage("company")} />
   const money = <MoneyCard realm={realm} business={b} onOpen={() => onPage("finance")} onImported={onImported} />
-  const coming = <ComingUp cal={cal ?? null} onOpen={() => onPage("calendar")} />
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-8 pt-9 pb-16 max-md:px-4 max-md:pt-6 lg:max-w-6xl">
@@ -57,38 +47,16 @@ export function Overview({ realm, agents, items, business, tasks, at, error, onA
         <TodayCard lines={today?.lines ?? null} />
         <div className="mt-7 space-y-7 lg:hidden">{goalCard}{money}</div>
         <Projects realm={realm} tasks={tasks} agents={agents ?? []} onTask={onTask} onProject={onProject} onAll={() => onPage("tasks")} />
-        <div className="mt-7 lg:hidden">{coming}</div>
 
-        <div className="mt-9 mb-2.5 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Team</h2>
-          <LiveTag at={at} error={error} />
-        </div>
 
-        {!agents ? (
-          <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
-        ) : (
-          <div className="space-y-5">
-            {GROUPS.map((g) => {
-              const list = agents.filter((a) => a.state === g.state)
-              if (!list.length) return null
-              return (
-                <section key={g.state}>
-                  <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    {g.label} <span className="tabular-nums opacity-60">{list.length}</span>
-                  </h3>
-                  <ul className="overflow-hidden rounded-xl bg-bubble">
-                    {list.map((a) => (
-                      <AgentRow key={a.name} agent={a} activity={b?.activity.find((x) => x.agent === a.name)} onOpen={() => onAgent(a.name)} />
-                    ))}
-                  </ul>
-                </section>
-              )
-            })}
-          </div>
-        )}
-
+        {/* The week in detail, for when the founder wants it (decision 133). */}
+        {(!!b?.activity.length || !!week?.delivered.length) && (
+        <details className="group mt-9">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+            <ChevronRight className="size-4 transition-transform group-open:rotate-90" /> The week in detail
+          </summary>
         {!!b?.activity.length && (
-          <section className="mt-9">
+          <section className="mt-6">
             <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><ActivityIcon className="size-4 text-muted-foreground" /> What happened</h2>
             <ol className="space-y-0.5">
               {b.activity.map((x, i) => {
@@ -110,22 +78,9 @@ export function Overview({ realm, agents, items, business, tasks, at, error, onA
           </section>
         )}
 
-        {!!week?.attention.length && (
-          <section className="mt-9">
-            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><CircleAlert className="size-4 text-red-500" /> Needs attention</h2>
-            <ol className="space-y-0.5">
-              {week.attention.map((x, i) => (
-                <li key={i} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                  <span className="min-w-0 flex-1 truncate text-sm text-red-600 dark:text-red-400" title={x.title}>{x.title.split("\n")[0]}</span>
-                  {x.at && <span className="w-14 shrink-0 text-right text-xs text-muted-foreground">{ago(x.at)}</span>}
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
 
         {!!week?.delivered.length && (
-          <section className="mt-9">
+          <section className="mt-7">
             <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><CircleCheck className="size-4 text-muted-foreground" /> Delivered this week</h2>
             <ol className="space-y-0.5">
               {week.delivered.map((x) => {
@@ -148,12 +103,14 @@ export function Overview({ realm, agents, items, business, tasks, at, error, onA
         )}
 
         {week && week.week.approved + week.week.rejected > 0 && (
-          <p className="mt-9 text-xs text-muted-foreground">
+          <p className="mt-7 text-xs text-muted-foreground">
             Drafts this week: {[`${week.week.approved} approved`, week.week.approved && `${Math.round((100 * week.week.unedited) / week.week.approved)}% of them unedited`, `${week.week.rejected} rejected`].filter(Boolean).join(", ")}.
           </p>
         )}
+        </details>
+        )}
         </div>
-        <aside className="mt-7 hidden space-y-7 lg:block">{goalCard}{money}{coming}</aside>
+        <aside className="mt-7 hidden space-y-7 lg:block">{goalCard}{money}</aside>
         </div>
       </div>
     </div>
@@ -306,38 +263,6 @@ function MoneyCard({ realm, business, onOpen, onImported }: { realm: string; bus
   )
 }
 
-/** Tax and filing dates, nearest first: the goal's milestones are in its
-    own card. */
-function ComingUp({ cal, onOpen }: { cal: Calendar | null; onOpen: () => void }) {
-  const list = (cal?.deadlines.items ?? [])
-    .filter((d) => !d.filed && d.days_left >= 0)
-    .map((d) => ({ title: d.title, note: `${d.authority} · due ${d.due}`, days: d.days_left, legal: true }))
-    .sort((a, b) => a.days - b.days)
-    .slice(0, 4)
-  return (
-    <section>
-      <Head icon={CalendarClock} title="Coming up" more="Calendar" onMore={onOpen} />
-      <Card>
-        {!cal ? <Skeleton className="h-12" /> : !list.length ? <p className="text-sm text-muted-foreground">No tax or filing date ahead.</p> : (
-          <ul className="space-y-2.5">
-            {list.map((x, i) => (
-              <li key={i} className="flex items-center gap-3">
-                <div className={cn("w-10 shrink-0 text-center", x.days <= 30 && x.legal && "text-amber-500")}>
-                  <div className="text-base font-semibold leading-none tabular-nums">{x.days}</div>
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">days</div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px]" title={x.title}>{x.title}</div>
-                  <div className="text-[11px] text-muted-foreground">{x.note}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </section>
-  )
-}
 
 const STATUS: Record<keyof Tasks, { label: string; tone: string }> = {
   waiting: { label: "Needs your answer", tone: "text-amber-600 dark:text-amber-400" },
@@ -454,57 +379,4 @@ function Stat({ icon: Icon, label, value, tone, spin, onClick }: {
   )
 }
 
-function LiveTag({ at, error }: { at: number; error: string | null }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-  if (error) return <span className="text-xs text-red-500">Airth is not answering: {error}</span>
-  const s = at ? Math.round((Date.now() - at) / 1000) : null
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className="relative flex size-2">
-        <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/60" />
-        <span className="relative size-2 rounded-full bg-emerald-400" />
-      </span>
-      Live{s != null && s > 5 ? ` · ${s}s ago` : ""}
-    </span>
-  )
-}
 
-function AgentRow({ agent, activity, onOpen }: { agent: Agent; activity?: Activity; onOpen: () => void }) {
-  const next = agent.routines.find((r) => r.schedule)
-  return (
-    <li className="border-b last:border-b-0">
-      <button onClick={onOpen} className="group flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-accent/50">
-        <Character agent={agent} size={34} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{agent.title}</span>
-            <span className="text-xs text-muted-foreground">{departmentName(agent.department)}</span>
-          </div>
-          {agent.state === "working" ? (
-            <div className="mt-1 flex items-center gap-2">
-              <span className="relative h-1 w-24 overflow-hidden rounded-full bg-emerald-500/15">
-                <span className="absolute inset-y-0 w-1/3 animate-[slide_1.4s_ease-in-out_infinite] rounded-full bg-emerald-400" />
-              </span>
-              <span className="text-xs text-emerald-600 dark:text-emerald-300">Running {next?.name ?? "a mission"}…</span>
-            </div>
-          ) : (
-            <p className="truncate text-[13px] text-muted-foreground">
-              {activity ? <>{activity.sentence} <span className="opacity-70">· {ago(activity.at)}</span></> : agent.job}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {next?.schedule && <span className="hidden font-mono text-[11px] text-muted-foreground md:inline">{next.schedule}</span>}
-          {agent.waiting > 0 && (
-            <span className="rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">{agent.waiting}</span>
-          )}
-          <ChevronRight className="size-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
-        </div>
-      </button>
-    </li>
-  )
-}
