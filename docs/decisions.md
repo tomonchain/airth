@@ -17,7 +17,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - from Companies House, the fiscal year end, from its accounting reference date;
   - in France, the VAT number, computed from the SIREN (FR, its key, the SIREN).
   - The wizard shows them for the founder to check and change before anything is written.
-- **The key is kept in the home**, `registries.env`, readable by the founder only, beside the model keys. It is for every business, as a register is the same for all of them. It is set from the wizard or with `PUT /api/registry/key`. No model ever sees it.
+- **The key is kept in the home**, `registries.env`, readable by the founder only, beside the model keys. It is for every business, as a register is the same for all of them. It is set from the wizard or with `PUT /api/registers/key`. No model ever sees it.
 - **The wizard writes more fields than the first launch did** (decision 101): `set_field` takes the legal name, status, registration number, registered office, date of incorporation, fiscal year end, VAT number, currency and domain. Each is checked as the config checks it: dates as dates, `status` planned or registered, `currency` three capitals.
 
 *Why:* a company number is the one thing the founder knows by heart, and the register already holds what the legal calendar needs (decision 66). Typing it again is where mistakes come from.

@@ -22,18 +22,19 @@ impl App {
                     .set_shared_anthropic_key(body["key"].as_str().unwrap_or_default())?;
                 json_response(200, self.setup()?)
             }
-            // A company's public record, for a new business (decision 126).
-            (Method::Get, ["registry"]) => {
+            // A company's public record, for a new business (decision 126):
+            // `registers`, as `registry` is the MCP Registry's search.
+            (Method::Get, ["registers"]) => {
                 let home = self.hub.home().dir();
                 json_response(200, json!({"gb_key": crate::registry::has_gb_key(home)}))
             }
-            (Method::Put, ["registry", "key"]) => {
+            (Method::Put, ["registers", "key"]) => {
                 let body = read_json(request)?;
                 let home = self.hub.home().dir();
                 crate::registry::set_gb_key(home, body["key"].as_str().unwrap_or_default())?;
                 json_response(200, json!({"gb_key": crate::registry::has_gb_key(home)}))
             }
-            (Method::Get, ["registry", country, number]) => json_response(
+            (Method::Get, ["registers", country, number]) => json_response(
                 200,
                 json!(crate::registry::lookup(
                     self.hub.home().dir(),

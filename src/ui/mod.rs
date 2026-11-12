@@ -420,6 +420,32 @@ mod tests {
         }
     }
 
+    /// The Marketplace's MCP Registry search (`GET registry?search=`) is the
+    /// extensions' route: no route tried before it may claim `registry`, as
+    /// the company registers once did (decision 126 uses `registers`).
+    #[test]
+    fn the_mcp_registry_search_is_not_taken_by_an_earlier_route() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let app = test_app(crate::home::Home::at(home_dir.path()).unwrap(), 0);
+        let mut request: Request = tiny_http::TestRequest::new()
+            .with_method(Method::Get)
+            .with_path("/api/registry?search=notion")
+            .into();
+        for routes in [App::general_routes, App::realms_routes, App::runs_routes] {
+            let answered = routes(
+                &app,
+                &mut request,
+                &Method::Get,
+                &["registry"],
+                "search=notion",
+            );
+            assert!(
+                matches!(answered, Ok(None)),
+                "registry taken before the extensions"
+            );
+        }
+    }
+
     #[test]
     fn an_answer_goes_to_the_owner_time_ledger() {
         let home_dir = tempfile::tempdir().unwrap();
