@@ -1,0 +1,53 @@
+# Tag a version from the Actions tab or the API, for when a tag cannot be
+# pushed from where Airth is worked on (a cloud session pushes its branch
+# only): checks the version is main's Cargo.toml's and not tagged yet, tags
+# main, and starts the Release workflow on that tag. See docs/RELEASING.md.
+
+name: Tag a release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version main's Cargo.toml holds, e.g. 0.2.0"
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not a version like 0.2.0"; exit 1
+          fi
+          if ! grep -q "^version = \"$VERSION\"" Cargo.toml; then
+            echo "::error::main's Cargo.toml is not at $VERSION"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION is tagged already"; exit 1
+          fi
+
+      # A tag pushed with this workflow's token starts no other workflow, so
+      # the release is started by hand, on the tag.
+      - name: Tag main and start the release
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Airth $VERSION"
+          git push origin "v$VERSION"
+          gh workflow run release.yml --ref "v$VERSION"
