@@ -12,20 +12,35 @@ import { api, enc, type Agent, type Item } from "@/lib/api"
 import { ago, day, left, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
-// Most pressing first: what broke, what the check holds, what is due.
+// What needs the founder's decision first, what the check holds and what
+// is overdue at its head; what broke last, folded by kind (decision 131).
 export function rank(it: Item) {
-  if (it.kind === "incident") return 0
-  if (it.flag === "blocking" || (it.kind === "deadline" && it.overdue)) return 1
-  return { deadline: 2, approval: 3, prepared: 4, delayed: 5, report: 6, idea: 7, incident: 0 }[it.kind] ?? 6
+  if (it.flag === "blocking" || (it.kind === "deadline" && it.overdue)) return 0
+  return { approval: 1, deadline: 2, prepared: 3, delayed: 4, report: 5, idea: 6, incident: 7 }[it.kind] ?? 5
 }
 
 const SECTIONS = [
-  { label: "Urgent", ranks: [0, 1] },
-  { label: "To decide", ranks: [2, 3] },
-  { label: "To do yourself", ranks: [4] },
-  { label: "Going out", ranks: [5] },
-  { label: "To read", ranks: [6] },
+  { label: "To decide", ranks: [0, 1, 2] },
+  { label: "To do yourself", ranks: [3] },
+  { label: "Going out", ranks: [4] },
+  { label: "To read", ranks: [5] },
+  { label: "Problems", ranks: [7] },
 ]
+
+// Incidents that say the same thing (a routine late again, the same act
+// failing) are one line: the newest stands for the others.
+const same = (a: Item, b: Item) => a.kind === "incident" && b.kind === "incident" && a.title === b.title && a.routine === b.routine
+const seen = (realm: string, it: Item) => api(`realms/${enc(realm)}/queue/${it.id}`, { answer: "approve", text: "", revision: it.revision, seconds: 0 })
+
+/** Mark incidents seen, all at once; how many were. */
+async function seeAll(realm: string, list: Item[]) {
+  let done = 0
+  for (const it of list) {
+    try { await seen(realm, it); done++ } catch (e) { toast.error((e as Error).message) }
+  }
+  if (done) toast.success(`${done} marked seen.`)
+  return done
+}
 
 /** A routine's name as a person says it: "daily-posts" is "Daily posts". */
 const named = (routine: string) => {
@@ -101,9 +116,14 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
       || a.created_at.slice(0, 10).localeCompare(b.created_at.slice(0, 10))
       || (a.routine ?? "").localeCompare(b.routine ?? "")
       || a.created_at.localeCompare(b.created_at))
-      .filter((it) => !q || `${preview(it)} ${it.agent} ${it.routine}`.toLowerCase().includes(q.toLowerCase())),
+      .filter((it) => !q || `${preview(it)} ${it.agent} ${it.routine}`.toLowerCase().includes(q.toLowerCase()))
+      // An incident like a newer one is folded into it.
+      .filter((it, _, all) => !all.some((o) => o !== it && same(o, it) && o.created_at > it.created_at)),
     [items, q],
   )
+  // The incidents each line stands for, itself included.
+  const like = (it: Item) => items.filter((o) => o === it || same(o, it))
+  const [sweeping, setSweeping] = useState(false)
   const [sel, setSel] = useState<number | null>(null)
   const pos = sorted.findIndex((i) => i.id === sel)
   // On a phone the list comes first, and an item opens when picked.
@@ -161,12 +181,21 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
             if (!list.length) return null
             return (
               <section key={s.label} className="mt-2">
-                <h2 className="flex items-center justify-between px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                  {s.label} <span className="tabular-nums">{list.length}</span>
+                <h2 className="flex items-center gap-2 px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  <span className="flex-1">{s.label}</span>
+                  {/* What broke goes in one gesture, once read. */}
+                  {s.label === "Problems" && (sweeping ? (
+                    <span className="flex items-center gap-1 normal-case tracking-normal">
+                      <Button size="xs" onClick={async () => { await seeAll(realm, items.filter((i) => i.kind === "incident")); setSweeping(false); onDone() }}>Mark all seen</Button>
+                      <Button size="xs" variant="ghost" onClick={() => setSweeping(false)}>Keep</Button>
+                    </span>
+                  ) : <Button size="xs" variant="ghost" className="h-5 px-1.5 normal-case tracking-normal" onClick={() => setSweeping(true)}>Seen all</Button>)}
+                  <span className="tabular-nums">{items.filter((i) => s.ranks.includes(rank(i))).length}</span>
                 </h2>
                 {batches(list).map((b) => (
                 <div key={b.key}>
-                {b.label && b.items.length > 1 && <Batch realm={realm} label={b.label} items={b.items} onDone={onDone} />}
+                {/* A routine's batch has a header; incidents are already one line a kind. */}
+                {b.label && b.items.length > 1 && s.label !== "Problems" && <Batch realm={realm} label={b.label} items={b.items} onDone={onDone} />}
                 <ul className="space-y-0.5">
                   {b.items.map((it) => {
                     const a = agent(it.agent)
@@ -181,6 +210,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
                               <span className="truncate text-[13px] font-medium">{a?.title ?? "Airth"}</span>
+                              {like(it).length > 1 && <span className="shrink-0 rounded bg-foreground/[0.07] px-1 text-[10.5px] font-medium tabular-nums">×{like(it).length}</span>}
                               <span className={cn("inline-flex shrink-0 items-center gap-1 rounded px-1 text-[10.5px] font-medium", k.tone)}><k.icon className="size-3" />{k.label}</span>
                               <span className={cn("ml-auto shrink-0 text-[11px] text-muted-foreground", soon(it) && "text-amber-600 dark:text-amber-400")}
                                 title={it.expires_at ? `Leaves Needs you unanswered ${ago(it.expires_at).replace(" ago", "")}` : undefined}>
@@ -240,6 +270,12 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
             >
               <div className="mx-auto max-w-2xl px-4 py-5 md:px-8 md:py-7">
                 <Header it={open} agent={agent(open.agent)} onAgent={onAgent} onTask={onTask} />
+                {like(open).length > 1 && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-bubble px-3 py-2 text-xs text-muted-foreground">
+                    <span className="flex-1">The same happened {like(open).length} times; this is the latest.</span>
+                    <Button size="xs" variant="ghost" onClick={async () => { await seeAll(realm, like(open)); const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}>Seen all {like(open).length}</Button>
+                  </div>
+                )}
                 <NeedCard
                   key={`${open.id}-${open.revision}`} realm={realm} it={open} page onTask={onTask}
                   onDone={() => { const n = sorted[at + 1] ?? sorted[at - 1]; setAfter(n?.id ?? null); onDone() }}

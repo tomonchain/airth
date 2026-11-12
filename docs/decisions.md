@@ -2,6 +2,24 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 131. Needs you: what to decide first, what broke folded and last
+
+**Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", then "go" on Needs you first).
+
+- **The order is the founder's:**
+  - **To decide** comes first: what the check holds, an overdue date, drafts and plans, dates coming;
+  - then **To do yourself**, **Going out** and **To read**;
+  - **Problems** (incidents) come last.
+
+  An item opens on the first decision, not on the first incident.
+- **Incidents that say the same thing are one line.** Same title, same routine: the newest stands for the others, marked ×N. Its card says how many times it happened, with **Seen all N**.
+- **Problems has Seen all**, after a confirmation, for every incident at once.
+- Nothing is removed: each incident stays one item in the queue, and Seen marks each one as before.
+
+*Why:* the founder opened Needs you on a wall of "did not run on time", with the drafts and the plan to approve below them.
+
+*Cost:* an incident's own words show only for the newest of a kind; the older ones are in its run and the routine's history.
+
 ## 130. The rail in groups; no line around a block; a conversation in time order
 
 **Accepted** (founder, 12 November 2026: "for the menu, I would leave more items, maybe in groups"; "remove all the borders of the divs"; the morning brief "has nothing to do there, after the last message").
