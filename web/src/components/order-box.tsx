@@ -112,22 +112,22 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
 
   return (
     <div>
-      <div className="mb-1.5 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted-foreground">
-        {working ? <span>{title} is working. It reads what you write at its next step.<span className="hidden md:inline"> <kbd className="font-sans">Esc</kbd> stops it.</span></span>
-          : continuing ? (
-            <>
-              <span>Continues the current task</span>
-              <button onClick={() => setFresh(true)} className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.05] px-1.5 py-0.5 hover:bg-accent hover:text-foreground"><Plus className="size-3" /> New task</button>
-            </>
-          ) : task ? (
-            <>
-              <span>Starts a new task</span>
-              <button onClick={() => setFresh(false)} className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 hover:bg-accent hover:text-foreground"><X className="size-3" /> Keep the current one</button>
-            </>
-          ) : closed ? <span>The last task is closed (its change was {closed}): this starts a new one.</span>
-          : <span>Starts a task<span className="hidden md:inline">: {title} asks you here before anything that needs your OK</span>.</span>}
-      </div>
-      <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-2 rounded-2xl bg-bubble p-2">
+      {/* Only what the founder must know before writing: the agent is at work.
+          Whether this goes on with the task or starts one is the box's own. */}
+      {working && (
+        <div className="mb-1.5 px-3 text-xs text-muted-foreground">
+          {title} is working. It reads what you write at its next step.<span className="hidden md:inline"> <kbd className="font-sans">Esc</kbd> stops it.</span>
+        </div>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-1.5 rounded-[26px] bg-bubble py-1.5 pr-1.5 pl-2">
+        {/* A new task, or back to the current one: one small button. */}
+        {task && !working && !closed && (fresh ? (
+          <button type="button" onClick={() => setFresh(false)} title="Keep the current task" aria-label="Keep the current task"
+            className="mb-1 inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-2.5 text-xs font-medium hover:bg-accent">New task <X className="size-3" /></button>
+        ) : (
+          <button type="button" onClick={() => setFresh(true)} title="Start a new task" aria-label="Start a new task"
+            className="mb-1 grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"><Plus className="size-4" /></button>
+        ))}
         {shown.length > 0 && (
           <div role="listbox" aria-label={at?.kind === "/" ? "Tools" : "Agents"} className="absolute bottom-full left-2 z-20 mb-1.5 w-72 overflow-hidden rounded-xl border bg-popover p-1 shadow-lg">
             {shown.map((c, i) => (
@@ -162,11 +162,11 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
             else if (e.key === "Escape" && working && task) { e.preventDefault(); stop() }
           }}
           rows={1}
-          placeholder={`Write to ${title}${tools.length ? " · / a tool" : ""}${others.length ? " · @ another agent" : ""}`}
-          className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] outline-none placeholder:text-muted-foreground field-sizing-content"
+          placeholder={continuing ? `Reply to ${title}` : `Ask ${title}${others.length ? " · @ another agent" : ""}`}
+          className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] leading-6 outline-none placeholder:text-muted-foreground field-sizing-content"
         />
         <MicButton value={text} onChange={setText} className="mb-0.5" />
-        <Button type="submit" size="icon" className="rounded-full" disabled={busy || !text.trim()} aria-label="Send"><ArrowUp /></Button>
+        <Button type="submit" size="icon" className="size-10 shrink-0 rounded-full" disabled={busy || !text.trim()} aria-label="Send"><ArrowUp /></Button>
       </form>
     </div>
   )
