@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
-import { AppWindow, ChevronRight, Eye, File, FileImage, FilePlus, FileText, Folder, FolderOpen, FolderPlus, Pencil, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
+import { AppWindow, ChevronRight, Table2, Eye, File, FileImage, FilePlus, FileText, Folder, FolderOpen, FolderPlus, Pencil, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
 import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { selection } from "@/lib/editor-selection"
 import { Rich } from "@/components/rich"
+import { CsvTable } from "@/components/csv-table"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { api, enc, raw } from "@/lib/api"
@@ -20,6 +21,8 @@ const CodeEditor = lazy(() => import("@/components/code-editor"))
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|heic)$/i
 const PDF = /\.pdf$/i
 const MD = /\.(md|markdown)$/i
+// Shown as a table first, as Markdown is shown rendered.
+const CSV = /\.(csv|tsv)$/i
 // What is not shown as text: opened with the Mac's app instead.
 const BINARY = /\.(zip|gz|tgz|dmg|pkg|docx?|xlsx?|pptx?|key|numbers|pages|mp3|mp4|mov|wav|woff2?|ttf|otf|sqlite|db)$/i
 const MAX_UPLOAD = 50 << 20
@@ -96,7 +99,7 @@ export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text
     try {
       if (kind === "text") {
         const r = await api<{ text: string; version: string }>(`${base_}/text?path=${enc(path)}`)
-        patch(path, { text: r.text, saved: r.text, version: r.version, preview: MD.test(path) })
+        patch(path, { text: r.text, saved: r.text, version: r.version, preview: MD.test(path) || CSV.test(path) })
       } else if (kind === "image") {
         patch(path, { url: URL.createObjectURL(await (await raw(`${base_}/raw?path=${enc(path)}`)).blob()) })
       } else if (kind === "pdf") {
@@ -414,6 +417,7 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
                 <Button className="mt-3" size="sm" variant="outline" onClick={onApp}><AppWindow /> Open with the Mac's app</Button></div>
             </div>
           ) : t.text === undefined ? <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+          : t.preview && CSV.test(t.path) ? <CsvTable text={t.text} tsv={/\.tsv$/i.test(t.path)} />
           : t.preview ? <div className="mx-auto max-w-3xl px-8 py-8 text-sm leading-relaxed"><Rich text={t.text} /></div>
           : (
             <div className="h-full">
@@ -432,7 +436,7 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
         </>}
         <span className="flex-1" />
         {t.kind === "text" && dirty && <Button size="xs" onClick={onSave}>Save</Button>}
-        {t.kind === "text" && MD.test(t.path) && <Button size="xs" variant="ghost" onClick={() => onPreview(!t.preview)}>{t.preview ? <><Pencil /> Edit</> : <><Eye /> Preview</>}</Button>}
+        {t.kind === "text" && (MD.test(t.path) || CSV.test(t.path)) && <Button size="xs" variant="ghost" onClick={() => onPreview(!t.preview)}>{t.preview ? <><Pencil /> Edit</> : CSV.test(t.path) ? <><Table2 /> Table</> : <><Eye /> Preview</>}</Button>}
         <Button size="xs" variant="ghost" title="Ask the team about this file, or the selected lines (⌘L)" onClick={onAsk}><Sparkles /> Ask about it</Button>
         <Button size="icon-xs" variant="ghost" title="Open with the Mac's app" aria-label="Open with the Mac's app" onClick={onApp}><AppWindow /></Button>
         <Button size="icon-xs" variant="ghost" title="Show in the Finder" aria-label="Show in the Finder" onClick={onFinder}><Folder /></Button>
