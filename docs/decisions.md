@@ -2,6 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 133. The Overview: where things stand, the week folded
+
+**Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", the fourth after Needs you, the conversation and Projects).
+
+- **The Overview keeps** the four figures, Today in the morning brief's words, In progress (projects first), the goal and the money.
+- **The week in detail is folded** under them: what happened, what was delivered, how the drafts fared.
+- **The page no longer repeats what has a page of its own:**
+  - the team by state is on Team;
+  - the dates coming are on Calendar;
+  - what needs attention is in Needs you's Problems.
+
+  Nothing leaves Airth (decision 42).
+
+*Why:* the page ran to two screens of lists, the founder's three questions (what waits, what moves, where the money and the goal stand) answered at its top.
+
+*Cost:* the agents' states are a click away, on Team.
+
 ## 132. A conversation with an agent is the thread alone
 
 **Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", then "go" after Needs you).
