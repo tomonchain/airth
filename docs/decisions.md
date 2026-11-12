@@ -2,6 +2,27 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 127. The founder answers in words, and teaches the agents lessons
+
+**Accepted** (founder, 12 November 2026: "Needs you should have a reply / feedback field to improve the agents", then "go" on the proposal).
+
+- **A reply box under each item of Needs you**, when the item has an agent. Where the founder's words go depends on the item:
+  - **a routine's draft:** it is drafted again with them, as a Redo (decision 115), and they reach its next drafts (decision 116);
+  - **a task's item** (its question, its plan): the words go to that task, which goes on with them;
+  - **anything else** (an incident, a report, a deadline, an idea): a new task for the agent, about the item.
+- **"Keep it as a lesson"** also writes the words into the agent's file, in a section `## Lessons from the founder`, one line each, at its end. The rules for a lesson:
+  - **What it is:** one line of at most 300 characters, added only by the founder's gesture; runs cannot write an agent's file.
+  - **Where it lives:** in the business folder, versioned in git, so the founder reads it, edits it or takes it back by editing the file, from the agent's page or the folder.
+  - **Who reads it:**
+    - the agent's tasks, with its job, which is the file's body;
+    - every AI block of its routines, after the block's instructions, under "The founder's lessons to you".
+
+    The prompt's recorded version carries a mark of the lessons heard.
+
+*Why:* a correction given once should not be needed again. Decision 116 carries the founder's words to a routine's next drafts, for 30 days. A lesson is the standing kind: what the founder wants of this agent, everywhere, until they take it back.
+
+*Cost:* a longer prompt for the agent's AI blocks, by its lessons. The lessons are not pruned: the founder keeps the list short by editing the file.
+
 ## 126. A new business's record comes from its official register
 
 **Accepted** (founder, 12 November 2026: "a wizard for creating a new business, filling as much as it can from official APIs: a company number loads everything; then a page to add the connectors it needs").

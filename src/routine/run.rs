@@ -208,6 +208,28 @@ fn with_feedback(mut p: Prompt, said: &[crate::business::store::queue::Feedback]
     p
 }
 
+/// The founder's standing lessons to the routine's agent (decision 127),
+/// after the block's instructions: they hold for every block of its
+/// routines, as for its tasks, which read them with its job.
+fn with_lessons(mut p: Prompt, lessons: &[String]) -> Prompt {
+    if lessons.is_empty() {
+        return p;
+    }
+    let mut text = String::from(
+        "\n\n## The founder's lessons to you\n\nRules the founder gave you, to follow every time unless the task says otherwise:\n",
+    );
+    for l in lessons {
+        text.push_str(&format!("\n- {l}"));
+    }
+    p.version = format!(
+        "{}+ls{}",
+        p.version,
+        &crate::update::sha256_hex(text.as_bytes())[..12]
+    );
+    p.text.push_str(&text);
+    p
+}
+
 /// What an act would call: an integration's declared action as its method
 /// and URL, anything else as its fields.
 fn describe(
@@ -560,6 +582,7 @@ pub fn run(
                 model,
             } => {
                 let mut p = prompt(dry.root, path, dry.context)?;
+                p = with_lessons(p, &crate::business::lessons(dry.root, &graph.agent));
                 let into = into.as_deref().unwrap_or("answer");
                 // A block that drafts one item at a time hears what the
                 // founder said about this routine's last drafts (decision 116).

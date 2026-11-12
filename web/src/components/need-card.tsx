@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { RemedyPanel } from "@/components/remedy"
+import { ReplyBox } from "@/components/reply-box"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
@@ -61,12 +62,12 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
 
   // A new version of the draft: the agent drafts again with what to change.
   // It takes a model call, so it says it is working until the new one is in.
-  async function redo() {
-    if (!ask.trim()) return
+  async function redo(said: string = ask) {
+    if (!said.trim()) return
     setBusy(true)
     try {
       const out = await api<{ report: string }>(`realms/${enc(realm)}/queue/${it.id}`, {
-        answer: "redo", text: ask, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000),
+        answer: "redo", text: said, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000),
       }, undefined, 180000)
       toast.success(out.report)
       setMode(null)
@@ -247,7 +248,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           </>
         ) : mode === "redo" ? (
           <>
-            <Button size="sm" disabled={busy || !ask.trim()} onClick={redo}>{busy ? <><Loader className="animate-spin" /> Drafting again…</> : <><Sparkles /> Draft again</>}</Button>
+            <Button size="sm" disabled={busy || !ask.trim()} onClick={() => redo()}>{busy ? <><Loader className="animate-spin" /> Drafting again…</> : <><Sparkles /> Draft again</>}</Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setMode(null)}>Cancel</Button>
           </>
         ) : mode === "reject" ? (
@@ -282,6 +283,8 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           </>
         )}
       </footer>}
+      {/* On the page of Needs you, the founder answers in words too (decision 127). */}
+      {page && !mode && <ReplyBox realm={realm} it={it} redo={redo} onDone={onDone} />}
     </article>
   )
 }
