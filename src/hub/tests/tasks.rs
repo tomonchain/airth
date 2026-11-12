@@ -511,6 +511,13 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
             .iter()
             .all(|t| hub.project_task_state(&f.realm, t) == "done")
     );
+    // How each ended is kept, for what reads the database alone.
+    assert!(
+        project
+            .tasks
+            .iter()
+            .all(|t| t.outcome.as_deref() == Some("completed"))
+    );
 }
 
 /// Decision 120: the founder edits the plan before approving it, and the

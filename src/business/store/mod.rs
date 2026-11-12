@@ -414,6 +414,9 @@ const MIGRATIONS: &[&str] = &[
         added_at TEXT NOT NULL
     );
     CREATE INDEX project_tasks_by_project ON project_tasks(project, id);",
+    // 23: how a project's task ended (its run's status), so what reads the
+    // database alone (the morning brief) knows a project's state.
+    "ALTER TABLE project_tasks ADD COLUMN outcome TEXT;",
 ];
 
 pub struct Store {

@@ -27,6 +27,10 @@ pub struct Task {
     pub run: Option<String>,
     /// Why it never started: a task it waited for failed.
     pub skipped: Option<String>,
+    /// How its run ended (`completed`, `failed`, …); none while it runs
+    /// or before it starts.
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -122,6 +126,17 @@ impl Store {
         })
     }
 
+    /// Project task `task`'s run ended, as `outcome`.
+    pub fn end_project_task(&mut self, task: i64, outcome: &str) -> Result<()> {
+        self.write(|tx| {
+            tx.execute(
+                "UPDATE project_tasks SET outcome = ?2 WHERE id = ?1",
+                params![task, outcome],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Project task `task` will not start, and why.
     pub fn skip_project_task(&mut self, task: i64, why: &str) -> Result<()> {
         self.write(|tx| {
@@ -202,7 +217,7 @@ impl Store {
             })?
             .collect::<rusqlite::Result<_>>()?;
         let mut stmt = self.conn.prepare(
-            "SELECT id, milestone, agent, task, run, skipped FROM project_tasks WHERE project = ?1 ORDER BY id",
+            "SELECT id, milestone, agent, task, run, skipped, outcome FROM project_tasks WHERE project = ?1 ORDER BY id",
         )?;
         p.tasks = stmt
             .query_map([p.id], |r| {
@@ -213,6 +228,7 @@ impl Store {
                     task: r.get(3)?,
                     run: r.get(4)?,
                     skipped: r.get(5)?,
+                    outcome: r.get(6)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -329,6 +345,7 @@ mod tests {
             .unwrap();
         assert_eq!(ids.len(), 2);
         store.set_project_task_run(ids[0], "r2").unwrap();
+        store.end_project_task(ids[0], "completed").unwrap();
         store.skip_project_task(ids[1], "writer failed").unwrap();
         store
             .edit_project(id, None, None, Some("done"), now)
@@ -381,6 +398,8 @@ mod tests {
         );
         assert_eq!(p.tasks.len(), 4);
         assert_eq!(p.tasks[0].run.as_deref(), Some("r2"));
+        assert_eq!(p.tasks[0].outcome.as_deref(), Some("completed"));
+        assert_eq!(p.tasks[2].outcome, None);
         assert_eq!(p.tasks[1].skipped.as_deref(), Some("writer failed"));
         assert_eq!(p.tasks[2].milestone, Some(p.milestones[1].id));
         assert_eq!(p.tasks[3].milestone, Some(p.milestones[0].id));

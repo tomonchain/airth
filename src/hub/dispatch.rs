@@ -274,6 +274,15 @@ impl Hub {
         let Some(mut plan) = load_plan(realm, mark) else {
             return Ok(());
         };
+        // Its project keeps how it ended, for what reads the database alone.
+        if let Some(slot) = plan
+            .steps
+            .iter()
+            .find(|s| s.run.as_deref() == Some(state.id.as_str()))
+            .and_then(|s| s.slot)
+        {
+            Store::of(realm)?.end_project_task(slot, state.status.as_str())?;
+        }
         self.advance(realm, &mut plan)?;
         let over = plan.steps.iter().all(|s| {
             s.skipped.is_some()

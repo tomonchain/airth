@@ -1,6 +1,6 @@
 //! The read of a business's morning, for its interlocutor's brief (decision
 //! 121): what waits for the founder, what ran since yesterday, what runs
-//! today, and the idea waiting. Put into words here, by code, never by a
+//! today, where the projects stand (decision 129), and the idea waiting. Put into words here, by code, never by a
 //! model: the founder relies on these figures before anything else.
 
 use crate::business::store::Store;
@@ -27,6 +27,7 @@ pub fn read(root: &Path, store: &Store, now: DateTime<Utc>) -> Result<Item> {
         waiting(&pending),
         overnight(&week.routines),
         today(root, now),
+        projects(&store.projects()?, now.date_naive()),
         idea(&pending),
     ];
     set(
@@ -133,6 +134,51 @@ fn today(root: &Path, now: DateTime<Utc>) -> String {
     }
 }
 
+/// The open projects: each one with a task stuck, or whose next milestone
+/// is late or due within a week, says so; otherwise how many are under way.
+fn projects(all: &[crate::business::store::projects::Project], today: chrono::NaiveDate) -> String {
+    let plural = |n: i64, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
+    let open: Vec<_> = all.iter().filter(|p| p.status == "active").collect();
+    let notes: Vec<String> = open
+        .iter()
+        .filter_map(|p| {
+            let mut said = Vec::new();
+            let reached = |m: i64| {
+                let of: Vec<_> = p.tasks.iter().filter(|t| t.milestone == Some(m)).collect();
+                !of.is_empty() && of.iter().all(|t| t.outcome.as_deref() == Some("completed"))
+            };
+            let due = p.milestones.iter().find(|m| !reached(m.id)).and_then(|m| {
+                let date = chrono::NaiveDate::parse_from_str(m.due.as_deref()?, "%Y-%m-%d").ok()?;
+                Some((m.title.as_str(), (date - today).num_days()))
+            });
+            match due {
+                Some((title, d)) if d < 0 => {
+                    said.push(format!("{title} {} late", plural(-d, "day")))
+                }
+                Some((title, 0)) => said.push(format!("{title} due today")),
+                Some((title, d)) if d <= 7 => {
+                    said.push(format!("{title} due in {}", plural(d, "day")))
+                }
+                _ => {}
+            }
+            let stuck = p
+                .tasks
+                .iter()
+                .filter(|t| t.outcome.as_deref().is_some_and(|o| o != "completed"))
+                .count() as i64;
+            if stuck > 0 {
+                said.push(format!("{} stuck", plural(stuck, "task")));
+            }
+            (!said.is_empty()).then(|| format!("{}: {}", p.name, said.join(", ")))
+        })
+        .collect();
+    match (open.len(), notes.as_slice()) {
+        (0, _) => String::new(),
+        (n, []) => format!("Projects: {n} under way, nothing late."),
+        (_, notes) => format!("Projects: {}.", notes.join("; ")),
+    }
+}
+
 /// The newest idea still waiting, if any (decision 119).
 fn idea(pending: &[QueueItem]) -> String {
     pending
@@ -225,7 +271,80 @@ mod tests {
     }
 
     #[test]
+    fn the_brief_says_which_project_is_late_near_or_stuck() {
+        use crate::business::store::projects::{Additions, NewTask};
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("business.db")).unwrap();
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap();
+        let now = Utc::now();
+        let task = |milestone| NewTask {
+            agent: "writer",
+            task: "x",
+            milestone,
+        };
+        let project = |store: &mut Store, name: &str, dues: &[&str], tasks: &[NewTask]| {
+            let milestones: Vec<(String, Option<String>)> = dues
+                .iter()
+                .enumerate()
+                .map(|(i, d)| (format!("M{i}"), Some(d.to_string())))
+                .collect();
+            store
+                .create_project(
+                    name,
+                    "",
+                    "cos",
+                    None,
+                    &Additions {
+                        milestones: &milestones,
+                        tasks,
+                    },
+                    now,
+                )
+                .unwrap()
+        };
+        // Nothing to say: a milestone far off.
+        project(&mut store, "Calm", &["2026-12-31"], &[task(Some(0))]);
+        assert_eq!(
+            projects(&store.projects().unwrap(), today),
+            "Projects: 1 under way, nothing late."
+        );
+        // Its first milestone reached, the next due in 3 days.
+        let (_, near) = project(
+            &mut store,
+            "Recap",
+            &["2026-11-01", "2026-11-14"],
+            &[task(Some(0)), task(Some(1))],
+        );
+        store.end_project_task(near[0], "completed").unwrap();
+        // A milestone two days late, and a task that failed.
+        let (_, late) = project(
+            &mut store,
+            "Launch",
+            &["2026-11-09"],
+            &[task(Some(0)), task(None)],
+        );
+        store.end_project_task(late[1], "failed").unwrap();
+        // Done projects are left out.
+        let (done, _) = project(&mut store, "Old", &["2026-01-01"], &[task(Some(0))]);
+        store
+            .edit_project(done, None, None, Some("done"), now)
+            .unwrap();
+        let line = projects(&store.projects().unwrap(), today);
+        assert!(line.starts_with("Projects: "), "{line}");
+        assert!(line.contains("Recap: M1 due in 3 days"), "{line}");
+        assert!(
+            line.contains("Launch: M0 2 days late, 1 task stuck"),
+            "{line}"
+        );
+        assert!(!line.contains("Calm") && !line.contains("Old"), "{line}");
+    }
+
+    #[test]
     fn an_empty_morning_says_so() {
+        assert_eq!(
+            projects(&[], chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap()),
+            ""
+        );
         assert_eq!(waiting(&[]), "Nothing waits for you.");
         assert_eq!(idea(&[]), "");
     }
