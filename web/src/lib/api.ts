@@ -124,6 +124,8 @@ export type Agent = {
   title: string
   /** Its first name, besides its title (decision 94). */
   first_name?: string | null
+  /** The founder's one interlocutor, who passes orders on (decision 120). */
+  dispatch?: boolean
   department: string | null
   job: string | null
   body: string

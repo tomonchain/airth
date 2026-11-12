@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
-import { PanelRight } from "lucide-react"
+import { PanelRight, PenLine } from "lucide-react"
+import { QuickAsk } from "@/components/quick-ask"
 import { AgentList, type Last } from "@/components/agent-list"
 import { Details } from "@/components/details"
 import { Rail, TabBar, type Page } from "@/components/rail"
@@ -58,19 +59,21 @@ export default function App() {
   const [founding, setFounding] = useState(false)
   const [task, setTask] = useState<string | null>(null)
   const [palette, setPalette] = useState(false)
+  // Ask from anywhere: the order goes, the page stays.
+  const [asking, setAsking] = useState(false)
   // Pages opened on something from another page: a file, a settings section.
   const [doc, setDoc] = useState<{ path: string; at: number } | null>(null)
   const [setting, setSetting] = useState<{ section: SettingsSection; at: number } | null>(null)
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
-  // ⌘K goes anywhere; ⌘⇧O asks the team (the classic interface's keys).
+  // ⌘K goes anywhere; ⌘J, or ⌘⇧O (the classic interface's key), asks the team.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return
       const k = e.key.toLowerCase()
       if (k === "k" && !e.shiftKey) { e.preventDefault(); setPalette((o) => !o) }
-      if (k === "o" && e.shiftKey) { e.preventDefault(); ask() }
+      if ((k === "j" && !e.shiftKey) || (k === "o" && e.shiftKey)) { e.preventDefault(); setAsking(true) }
     }
     addEventListener("keydown", key)
     return () => removeEventListener("keydown", key)
@@ -229,10 +232,18 @@ export default function App() {
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
       <TopBar
         server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-        onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
+        onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
       />
+      <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
+      {/* On a phone, Ask floats above the tabs, but where a box to write in is already the page's own. */}
+      {narrow && page !== "tasks" && page !== "agents" && (
+        <button onClick={() => setAsking(true)} aria-label="Ask the team"
+          className="fixed right-4 bottom-[calc(max(env(safe-area-inset-bottom),10px)+74px)] z-40 grid size-13 place-items-center rounded-full bg-foreground text-background shadow-lg active:scale-95">
+          <PenLine className="size-5" />
+        </button>
+      )}
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
-        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
+        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
         {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
