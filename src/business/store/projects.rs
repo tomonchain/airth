@@ -17,7 +17,7 @@ pub struct Milestone {
     pub due: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 pub struct Task {
     pub id: i64,
     pub milestone: Option<i64>,

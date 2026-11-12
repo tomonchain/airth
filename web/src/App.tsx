@@ -66,6 +66,9 @@ export default function App() {
   const [doc, setDoc] = useState<{ path: string; at: number } | null>(null)
   const [setting, setSetting] = useState<{ section: SettingsSection; at: number } | null>(null)
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
+  // A project opened from the Home or the Overview (decision 129).
+  const [project, setProject] = useState<{ id: number; at: number } | null>(null)
+  const openProject = (id: number) => { setTask(null); setProject({ id, at: Date.now() }); setPage("tasks") }
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
   // ⌘K goes anywhere; ⌘J, or ⌘⇧O (the classic interface's key), asks the team.
@@ -253,13 +256,13 @@ export default function App() {
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} tasks={data.data?.tasks ?? null}
-              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} />
+              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")}
-              onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} />
+              onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} onProject={openProject} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
-          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
           : page === "usage" ? <Usage realm={realm} />

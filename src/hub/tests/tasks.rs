@@ -457,6 +457,12 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
     assert_eq!(project.run.as_deref(), Some(chief.id.as_str()));
     let runs: Vec<Option<&str>> = project.tasks.iter().map(|t| t.run.as_deref()).collect();
     assert_eq!(runs, [Some(first.id.as_str()), None]);
+    let states: Vec<&str> = project
+        .tasks
+        .iter()
+        .map(|t| hub.project_task_state(&f.realm, t))
+        .collect();
+    assert_eq!(states, ["running", "to come"]);
     let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
     chief_done.status = Status::Completed;
     chief_done.save().unwrap();
@@ -499,6 +505,12 @@ fn the_interlocutor_passes_an_order_on_once_the_founder_approves_its_plan() {
         .unwrap();
     assert_eq!(project.status, "done");
     assert_eq!(project.tasks[1].run.as_deref(), Some(second.id.as_str()));
+    assert!(
+        project
+            .tasks
+            .iter()
+            .all(|t| hub.project_task_state(&f.realm, t) == "done")
+    );
 }
 
 /// Decision 120: the founder edits the plan before approving it, and the
@@ -612,6 +624,12 @@ fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
         [("writer", None), ("developer", Some("writer ended failed"))]
     );
     assert_eq!(project.status, "done");
+    let states: Vec<&str> = project
+        .tasks
+        .iter()
+        .map(|t| hub.project_task_state(&f.realm, t))
+        .collect();
+    assert_eq!(states, ["failed", "not started"]);
 }
 
 /// Decision 125: a task stopped on its budget gets remedies from the fast

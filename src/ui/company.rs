@@ -81,7 +81,16 @@ impl App {
             }
             // The projects (decision 129), the one touched last first.
             (Method::Get, ["realms", r, "projects"]) => {
-                let projects = Store::of(&self.realm(r)?)?.projects()?;
+                let realm = self.realm(r)?;
+                let mut projects = serde_json::to_value(Store::of(&realm)?.projects()?)?;
+                // Each task says where it stands, read from its run.
+                for p in projects.as_array_mut().into_iter().flatten() {
+                    for t in p["tasks"].as_array_mut().into_iter().flatten() {
+                        let task: crate::business::store::projects::Task =
+                            serde_json::from_value(t.clone())?;
+                        t["state"] = self.hub.project_task_state(&realm, &task).into();
+                    }
+                }
                 json_response(200, json!({ "projects": projects }))
             }
             // The founder renames a project, rewrites its description, or

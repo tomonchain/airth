@@ -273,5 +273,7 @@ export type Project = {
   id: number; name: string; description: string; status: "active" | "done"; agent: string; run: string | null
   created_at: string; updated_at: string
   milestones: { id: number; title: string; due: string | null }[]
-  tasks: { id: number; milestone: number | null; agent: string; task: string; run: string | null; skipped: string | null }[]
+  tasks: { id: number; milestone: number | null; agent: string; task: string; run: string | null; skipped: string | null
+    /** Where it stands, read from its run by Airth. */
+    state?: "to come" | "running" | "done" | "failed" | "stopped" | "not started" }[]
 }
