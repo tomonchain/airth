@@ -210,7 +210,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
         title = rec ? "Its details" : "Its details, by hand"
         lead = rec
           ? <>From {register?.name ?? "its register"}. Name it as people say it, and say what it does.</>
-          : registered ? "What its registration says. Leave empty what you do not know yet: the Company page keeps it." : "Not registered yet: its registration goes on the Company page once it is."
+          : registered ? "What its registration says. Leave empty what you do not know yet: the Business page keeps it." : "Not registered yet: its registration goes on the Business page once it is."
         const fields = (r: Record, set: (r: Record) => void) => (
           <dl className="grid gap-2">
             {FIELDS.map(([k, label, hint]) => (

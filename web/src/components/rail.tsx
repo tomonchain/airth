@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow, LayoutDashboard } from "lucide-react"
+import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, FolderOpen, Inbox, MessageCircle, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow, LayoutDashboard } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
@@ -34,25 +35,37 @@ function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   )
 }
 
-/** The app's rail: the pages of a business. */
+// Less is more: the founder talks, answers what waits, follows the projects;
+// every other page is one step away, under More. Nothing left Airth
+// (decision 42): only where it is found moved (decision 128).
+export const MAIN: [Page, string, LucideIcon][] = [["home", "Chat", MessageCircle], ["needs", "Needs you", Inbox], ["tasks", "Projects", FolderKanban]]
+export const MORE: [Page, string, LucideIcon][] = [
+  ["agents", "Team", Bot], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
+  ["overview", "Overview", LayoutDashboard], ["company", "Business", Building2], ["marketplace", "Marketplace", Store], ["usage", "Usage", ChartColumn], ["settings", "Settings", Settings],
+]
+
+/** The app's rail: the three pages the founder lives in, and More. */
 export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean }) {
   const { theme, setTheme } = useTheme()
+  const under = MORE.find(([p]) => p === page && p !== "settings")
+  const Shown = under ? under[2] : Ellipsis
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 pt-1 pb-3">
-      <RailButton icon={House} label="Home" active={page === "home"} onClick={() => onPage("home")} />
-      <RailButton icon={Bot} label="Agents" active={page === "agents"} onClick={() => onPage("agents")} />
-      <RailButton icon={Inbox} label="Needs you" active={page === "needs"} badge={needs} onClick={() => onPage("needs")} />
-      <span className="my-1.5 h-px w-6 bg-border" />
-      <RailButton icon={LayoutDashboard} label="Overview" active={page === "overview"} onClick={() => onPage("overview")} />
-      <RailButton icon={Workflow} label="Routines" active={page === "routines"} onClick={() => onPage("routines")} />
-      <RailButton icon={ListChecks} label="Tasks" active={page === "tasks"} onClick={() => onPage("tasks")} />
-      <RailButton icon={CalendarClock} label="Calendar" active={page === "calendar"} onClick={() => onPage("calendar")} />
-      <RailButton icon={FolderOpen} label="Documents" active={page === "documents"} onClick={() => onPage("documents")} />
-      <span className="my-1.5 h-px w-6 bg-border" />
-      <RailButton icon={Wallet} label="Finance" active={page === "finance"} onClick={() => onPage("finance")} />
-      <RailButton icon={ChartColumn} label="Usage" active={page === "usage"} onClick={() => onPage("usage")} />
-      <RailButton icon={Building2} label="Company" active={page === "company"} onClick={() => onPage("company")} />
-      <RailButton icon={Store} label="Marketplace" active={page === "marketplace"} onClick={() => onPage("marketplace")} />
+      {MAIN.map(([p, label, Icon]) => <RailButton key={p} icon={Icon} label={label} active={page === p} badge={p === "needs" ? needs : 0} onClick={() => onPage(p)} />)}
+      <DropdownMenu>
+        {/* On a page under More, the button wears that page's icon. */}
+        <DropdownMenuTrigger render={<button aria-label={under ? `More: ${under[1]}` : "More"} title={under ? under[1] : "More"}
+          className={cn("grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-popup-open:bg-accent", under && "bg-accent text-foreground")} />}>
+          <Shown className="size-[19px]" strokeWidth={1.8} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-52">
+          {MORE.filter(([p]) => p !== "settings").map(([p, label, Icon]) => (
+            <DropdownMenuItem key={p} onClick={() => onPage(p)} className={cn(page === p && "bg-accent")}>
+              <Icon /> {label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div className="mt-auto flex flex-col items-center gap-1.5">
         <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
@@ -61,13 +74,6 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
     </nav>
   )
 }
-
-// On a phone, the bar holds what the founder opens most; the rest is under More.
-const MAIN: [Page, string, LucideIcon][] = [["home", "Home", House], ["agents", "Agents", Bot], ["needs", "Needs you", Inbox], ["tasks", "Tasks", ListChecks]]
-const MORE: [Page, string, LucideIcon][] = [
-  ["overview", "Overview", LayoutDashboard], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
-  ["usage", "Usage", ChartColumn], ["company", "Company", Building2], ["marketplace", "Marketplace", Store], ["settings", "Settings", Settings],
-]
 
 /** The rail on a phone: a bar at the bottom, within the thumb's reach. */
 export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) => void; needs: number }) {
@@ -82,9 +88,9 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
   const known = open >= 0
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),10px)]">
-      <div className="glass pointer-events-auto relative mx-auto grid h-[62px] max-w-md grid-cols-5 rounded-[31px] p-1">
-        {/* One fifth of the bar, moved under the open tab. */}
-        <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/5)] rounded-[27px]", !known && "opacity-0")}
+      <div className="glass pointer-events-auto relative mx-auto grid h-[62px] max-w-md grid-cols-4 rounded-[31px] p-1">
+        {/* One quarter of the bar, moved under the open tab. */}
+        <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-[27px]", !known && "opacity-0")}
           style={{ transform: `translateX(${open * 100}%)` }} />
         {tabs.map(([p, label, Icon], i) => {
           const active = known && i === open

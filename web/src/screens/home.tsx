@@ -84,7 +84,7 @@ function Start({ realm, lead, first, suggestions, onPage, onSent }: {
     try {
       const out = await sendOrder(realm, t, lead?.name ?? "route")
       setText("")
-      if (!lead) toast.success("Sent", { description: "It goes on in Tasks." })
+      if (!lead) toast.success("Sent", { description: "It goes on in Projects." })
       onSent(out.id)
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
@@ -145,7 +145,7 @@ const inDays = (iso: string) => Math.ceil((new Date(`${iso}T12:00:00`).getTime()
 function suggest(items: Item[], agents: Agent[], company: Company | null | undefined, cal: Calendar | null | undefined): Suggestion[] {
   const out: Suggestion[] = []
   const plan = items.find((i) => i.action === "airth.dispatch")
-  if (plan) out.push({ key: `plan${plan.id}`, icon: Users, label: `Review the plan: ${plan.title}`, page: "needs" })
+  if (plan) out.push({ key: `plan${plan.id}`, icon: Users, label: `Review the project: ${plan.title}`, page: "needs" })
   const waiting = items.filter((i) => i.kind !== "idea" && i.action !== "airth.dispatch").length
   if (waiting) out.push({ key: "needs", icon: Inbox, label: `Go through what waits for you (${waiting})`, page: "needs" })
   for (const idea of items.filter((i) => i.kind === "idea").slice(0, 2)) {

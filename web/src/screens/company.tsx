@@ -43,7 +43,7 @@ export function Company({ realm, description, onFile, onRepos }: {
   const text = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? (o[k] as string) : null)
   const status = text(p, "status")
   return (
-    <Page wide eyebrow="Company" title={text(p, "legal_name") ?? text(p, "name") ?? realm} lede={description}
+    <Page wide eyebrow="Business" title={text(p, "legal_name") ?? text(p, "name") ?? realm} lede={description}
       actions={status && (
         <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium capitalize", status === "registered" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400")}>
           {status === "registered" ? "Registered" : status.replace(/_/g, " ")}

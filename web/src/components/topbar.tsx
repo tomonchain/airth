@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { named, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-/** The window's top: the open conversations as tabs (on the Agents page),
+/** The window's top: the open conversations as tabs (on the Team page),
     the update notice, the details toggle and, at the far right, the
     business. In the Mac app it is the title bar. */
 export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onAsk, onHq, details, onDetails }: {
