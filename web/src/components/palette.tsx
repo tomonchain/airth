@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Building2, CalendarClock, ChartColumn, FolderOpen, House, Inbox, ListChecks, Moon, PanelRight, PenLine, Search, Settings, Sparkles, Store, Sun, Wallet, Workflow, type LucideIcon } from "lucide-react"
+import { Building2, CalendarClock, ChartColumn, FolderOpen, House, Inbox, ListChecks, Moon, PanelRight, PenLine, Search, Settings, Sparkles, Store, Sun, Wallet, Workflow, type LucideIcon, LayoutDashboard } from "lucide-react"
 import { Character } from "@/components/character"
 import type { Page } from "@/components/rail"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -13,7 +13,7 @@ type Run = { id: string; title: string | null; objective: string; archived: bool
 export const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
 
 const PAGES: [Page, string, LucideIcon][] = [
-  ["home", "Home", House], ["agents", "Agents", Sparkles], ["needs", "Needs you", Inbox], ["routines", "Routines", Workflow],
+  ["home", "Home", House], ["overview", "Overview", LayoutDashboard], ["agents", "Agents", Sparkles], ["needs", "Needs you", Inbox], ["routines", "Routines", Workflow],
   ["tasks", "Tasks", ListChecks], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
   ["usage", "Usage", ChartColumn], ["company", "Company", Building2], ["marketplace", "Marketplace", Store], ["settings", "Settings", Settings], ["hq", "HQ: all businesses", Building2],
 ]

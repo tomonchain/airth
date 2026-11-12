@@ -1,12 +1,12 @@
 import { useState } from "react"
-import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
+import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderOpen, House, Inbox, ListChecks, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow, LayoutDashboard } from "lucide-react"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
-export type Page = "home" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "documents" | "finance" | "usage" | "hq" | "company" | "settings" | "marketplace"
+export type Page = "home" | "overview" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "documents" | "finance" | "usage" | "hq" | "company" | "settings" | "marketplace"
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
@@ -43,6 +43,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
       <RailButton icon={Bot} label="Agents" active={page === "agents"} onClick={() => onPage("agents")} />
       <RailButton icon={Inbox} label="Needs you" active={page === "needs"} badge={needs} onClick={() => onPage("needs")} />
       <span className="my-1.5 h-px w-6 bg-border" />
+      <RailButton icon={LayoutDashboard} label="Overview" active={page === "overview"} onClick={() => onPage("overview")} />
       <RailButton icon={Workflow} label="Routines" active={page === "routines"} onClick={() => onPage("routines")} />
       <RailButton icon={ListChecks} label="Tasks" active={page === "tasks"} onClick={() => onPage("tasks")} />
       <RailButton icon={CalendarClock} label="Calendar" active={page === "calendar"} onClick={() => onPage("calendar")} />
@@ -64,7 +65,7 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
 // On a phone, the bar holds what the founder opens most; the rest is under More.
 const MAIN: [Page, string, LucideIcon][] = [["home", "Home", House], ["agents", "Agents", Bot], ["needs", "Needs you", Inbox], ["tasks", "Tasks", ListChecks]]
 const MORE: [Page, string, LucideIcon][] = [
-  ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
+  ["overview", "Overview", LayoutDashboard], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
   ["usage", "Usage", ChartColumn], ["company", "Company", Building2], ["marketplace", "Marketplace", Store], ["settings", "Settings", Settings],
 ]
 
