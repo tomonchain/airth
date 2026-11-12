@@ -28,6 +28,25 @@ The **Release** workflow (`.github/workflows/release.yml`) then:
    - `Airth-<version>.zip`, the app the updater downloads;
    - `latest.json`, what running apps check.
 
+## When to release
+
+The founder's Airth on the VPS follows `main` (decision 100), so a merge
+reaches it without a release. A release is for what only a release
+reaches: the Mac app installed from a DMG, and anyone installing Airth from
+GitHub. Claude says a release is due, after the merge that makes it so,
+when one of these holds:
+
+- **A change to the Mac app itself:** `desktop.rs`, `update.rs`, the app
+  bundle, the menu bar, `airth app …` or the Mac service. The Mac app gets
+  it from a release only.
+- **A security fix**, or a fix to updating itself: soon, alone if need be.
+- **About two weeks, or ten changes the founder would notice**, since the
+  last release, and nothing left half done: a feature's back end merged
+  without its screen waits for the screen.
+
+A version is `0.MINOR.PATCH` until the beta: a fix alone bumps PATCH, new
+features bump MINOR.
+
 ## How apps update
 
 A release build (built with `AIRTH_CHANNEL=release`) checks
