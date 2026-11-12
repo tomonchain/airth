@@ -199,6 +199,7 @@ Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass.
 - **Model steps are covered by evaluations, not unit tests:** replay a reference set when a prompt or model changes.
 - `main` moves only through pull requests: open one per branch and let it merge itself once the check is green (`gh pr merge --auto`). Never push to `main`. Push your working branch at the end of every session, even unfinished. Before any push, check that no secret is in the commits (keys, tokens, .env files, real mailbox credentials). The repository is public.
 - **End every session with:** what changed, why, which files, what you tested, what you did not do and why.
+- **Say when a release is due** (founder, 12 November 2026), by the rules in `docs/RELEASING.md`, "When to release": after a merge that makes one due, say so in one line, with why. Releasing stays the founder's word; the version bump and "Tag a release" are then yours.
 
 ## Architecture rules
 
