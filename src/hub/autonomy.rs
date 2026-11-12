@@ -307,6 +307,7 @@ impl Authority for BusinessAuthority {
             let detail =
                 format!("Action {journal} ended, but its outcome could not be recorded: {e:#}");
             let incident = super::incidents::Incident {
+                run: None,
                 title: "An action's outcome was not recorded",
                 detail: &detail,
                 agent: Some(&self.agent),

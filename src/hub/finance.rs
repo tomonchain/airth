@@ -99,6 +99,7 @@ pub(super) fn tell(realm: &Realm, title: &str, detail: &str) -> Result<()> {
         super::incidents::record(
             realm,
             &super::incidents::Incident {
+                run: None,
                 title,
                 detail,
                 agent: None,

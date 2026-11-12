@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, Users, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, Users, Wrench, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
+import { RemedyPanel } from "@/components/remedy"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
@@ -29,7 +30,7 @@ export function kindOf(it: Item) {
     what an answer does; this only asks. As a card in a thread, or as the
     page of Needs you, where A, E and R answer from the keyboard. */
 export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { realm: string; it: Item; onDone: () => void; page?: boolean; still?: boolean; stream?: boolean; onTask?: (id: string) => void }) {
-  const [mode, setMode] = useState<"edit" | "reject" | "confirm" | "redo" | null>(null)
+  const [mode, setMode] = useState<"edit" | "reject" | "confirm" | "redo" | "fix" | null>(null)
   const [ask, setAsk] = useState("")
   const [text, setText] = useState(it.text ?? "")
   const [why, setWhy] = useState("")
@@ -39,6 +40,8 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
   const blocked = it.flag === "blocking"
   // A routine's draft can be drafted again; a task's proposed call cannot.
   const redoable = it.kind === "approval" && !!it.routine && it.editable
+  // A task stopped on its budget can go on with a remedy (decision 125).
+  const fixable = it.kind === "incident" && !!it.run && !it.routine
 
   async function answer(kind: string, body = "", extra: object = {}) {
     setBusy(true)
@@ -234,7 +237,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
 
       {page && it.note && it.kind === "approval" && <p className="mt-3 text-xs text-muted-foreground">{it.note}</p>}
 
-      <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
+      {mode === "fix" ? (
+        <RemedyPanel realm={realm} it={it} shown={shown} onDone={() => { setMode(null); onDone() }} onCancel={() => setMode(null)} onTask={onTask} />
+      ) : <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
@@ -259,6 +264,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           <>
             {main}
             {it.retry === "ambiguous" && <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Seen</Button>}
+            {fixable && <Button size="sm" variant="outline" disabled={busy} onClick={() => setMode("fix")}><Wrench /> Fix and resume…</Button>}
             {/* In a conversation the other answers stay quiet, beside Approve. */}
             {it.editable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("edit")}><Pencil /> Edit{hint("E")}</Button>}
             {redoable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
@@ -275,7 +281,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             )}
           </>
         )}
-      </footer>
+      </footer>}
     </article>
   )
 }

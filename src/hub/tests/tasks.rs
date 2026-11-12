@@ -559,3 +559,103 @@ fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
         "{last}"
     );
 }
+
+/// Decision 125: a task stopped on its budget gets remedies from the fast
+/// model, journaled; the one the founder applies raises its budget within
+/// the bound, tells its agent, closes the incident, and the task goes on.
+#[test]
+fn a_stopped_task_goes_on_with_the_remedy_the_founder_chose() {
+    let f = fixture();
+    agent(f.root.path(), "writer", "");
+    let answer = r#"{"remedies": [
+        {"title": "Write from what you have", "message": "Stop researching and write the article from your notes."},
+        {"title": "Raise to $3", "message": "Finish the article.", "budget_usd": 3}
+    ]}"#;
+    let (hub, seen, _) = make_hub(&f.home, vec![done(answer)]);
+    let mut state = hub
+        .start_task(&f.realm, "writer", "Write the year-end article")
+        .unwrap();
+    state.status = Status::Stopped;
+    state.report = Some("Stopped: reached its cost budget ($1.05 of $1.00).".into());
+    state.save().unwrap();
+    hub.task_ended(&f.realm, &state).unwrap();
+    let item = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap()[0].clone();
+    assert_eq!(item.run.as_deref(), Some(state.id.as_str()));
+
+    let remedies = hub.remedies(&f.realm, item.id).unwrap();
+    assert_eq!(remedies.len(), 2);
+    assert_eq!(remedies[1].budget_usd, Some(3.0));
+    let asked = format!("{:?}", seen.lock().unwrap().last().unwrap());
+    assert!(
+        asked.contains("the most it may be raised to: $5.00"),
+        "{asked}"
+    );
+    let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.pipeline == "remedy" && c.error.is_none())
+    );
+
+    // Beyond the bound, refused; within it, applied.
+    let err = hub
+        .apply_remedy(&f.realm, item.id, "Finish it.", Some(50.0), "app", 0)
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("$5.00 at most"), "{err:#}");
+    assert!(
+        hub.apply_remedy(&f.realm, item.id, "  ", None, "app", 0)
+            .is_err()
+    );
+    let resumed = hub
+        .apply_remedy(
+            &f.realm,
+            item.id,
+            "Finish the article.",
+            Some(3.0),
+            "app",
+            0,
+        )
+        .unwrap();
+    assert_eq!(resumed.status, Status::Running);
+    assert_eq!(resumed.budget.max_cost_usd, Some(3.0));
+    let last = format!("{:?}", resumed.messages.last().unwrap());
+    assert!(
+        last.contains("The founder raised its cost budget to $3.00 and says: Finish the article."),
+        "{last}"
+    );
+    let store = Store::of(&f.realm).unwrap();
+    assert!(store.queue(&["pending"]).unwrap().is_empty());
+    assert_eq!(store.queue(&["done"]).unwrap()[0].id, item.id);
+    // Answered once: a second remedy is refused.
+    assert!(
+        hub.apply_remedy(&f.realm, item.id, "Again.", None, "app", 0)
+            .is_err()
+    );
+}
+
+/// A remedy that does not fit is recorded and refused, never repaired.
+#[test]
+fn remedies_that_do_not_fit_are_refused() {
+    let f = fixture();
+    agent(f.root.path(), "writer", "");
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![done(
+            r#"{"remedies": [{"title": "Raise", "message": "Go on.", "budget_usd": 40}]}"#,
+        )],
+    );
+    let mut state = hub.start_task(&f.realm, "writer", "Write").unwrap();
+    state.status = Status::Stopped;
+    state.report = Some("Stopped: reached its cost budget ($1.05 of $1.00).".into());
+    state.save().unwrap();
+    hub.task_ended(&f.realm, &state).unwrap();
+    let item = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap()[0].clone();
+    let err = hub.remedies(&f.realm, item.id).unwrap_err();
+    assert!(format!("{err:#}").contains("did not fit"), "{err:#}");
+    let calls = Store::of(&f.realm).unwrap().model_calls().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.pipeline == "remedy" && c.error.is_some())
+    );
+}

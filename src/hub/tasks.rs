@@ -48,6 +48,7 @@ impl Hub {
         super::incidents::record(
             realm,
             &super::incidents::Incident {
+                run: Some(&state.id),
                 title: &format!("Task stopped: {}", first_line(&state.objective, 60)),
                 detail: &format!(
                     "{agent} stopped the task \"{}\": {}",

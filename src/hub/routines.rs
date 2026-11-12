@@ -815,6 +815,7 @@ impl Hub {
         super::incidents::record(
             realm,
             &super::incidents::Incident {
+                run: None,
                 title: &format!("{action} failed"),
                 detail: &format!(
                     "{action}, approved in item {}, failed: {}\n\nNot tried again: whether the server did part of it is unknown. Check, then ask the agent again.",
@@ -992,6 +993,7 @@ impl Hub {
                 ];
             for detail in late.into_iter().flatten() {
                 let incident = super::incidents::Incident {
+                    run: None,
                     title: &format!("{name} did not run on time"),
                     detail: &detail,
                     agent: None,
@@ -1089,6 +1091,7 @@ impl Hub {
         }
         if let Some(e) = &error {
             let incident = super::incidents::Incident {
+                run: None,
                 title: &format!("{name} failed"),
                 detail: e,
                 agent: None,

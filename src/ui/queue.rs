@@ -45,6 +45,40 @@ impl App {
                 Store::of(&realm)?.forget_feedback(id)?;
                 json_response(200, json!({"ok": true}))
             }
+            // A stopped task's remedies (decision 125): proposed by the fast
+            // model, then the one the founder chose or wrote, applied.
+            (Method::Post, ["realms", r, "queue", id, "remedies"]) => {
+                let realm = self.realm(r)?;
+                let id: i64 = id.parse().context("no such item")?;
+                let ceiling = self.hub.remedy_ceiling(&realm)?;
+                match self.hub.remedies(&realm, id) {
+                    Ok(remedies) => {
+                        json_response(200, json!({"remedies": remedies, "ceiling": ceiling}))
+                    }
+                    // The founder can still write one: the ceiling comes back.
+                    Err(e) => json_response(
+                        200,
+                        json!({"remedies": [], "ceiling": ceiling, "error": format!("{e:#}")}),
+                    ),
+                }
+            }
+            (Method::Post, ["realms", r, "queue", id, "remedy"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let id: i64 = id.parse().context("no such item")?;
+                self.hub.model_for(&realm).context("no model available")?;
+                let state = self.hub.apply_remedy(
+                    &realm,
+                    id,
+                    body["message"].as_str().unwrap_or_default(),
+                    body["budget_usd"].as_f64(),
+                    "app",
+                    body["seconds"].as_u64().unwrap_or(0),
+                )?;
+                let run = state.id.clone();
+                self.spawn(realm, state, Job::Drive);
+                json_response(200, json!({"run": run}))
+            }
             (Method::Post, ["realms", r, "queue", id]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;

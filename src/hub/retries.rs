@@ -173,6 +173,7 @@ impl Hub {
         super::incidents::record(
             realm,
             &super::incidents::Incident {
+                run: None,
                 title: &f.title,
                 detail: &format!("{}\n\nNot tried again: {why}.", f.detail),
                 agent: f.agent,
