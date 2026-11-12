@@ -15,11 +15,12 @@ export type RunLite = { id: string; status: string; live: boolean }
 type Said = "to come" | "running" | "done" | "failed" | "stopped" | "not started"
 
 /** Where a task of the project stands, from its run. */
-export function said(t: Project["tasks"][number], runs: Map<string, RunLite>): Said {
+export function said(t: Project["tasks"][number], runs?: Map<string, RunLite>): Said {
+  // The runs this page polls are the freshest; Airth's word otherwise.
   if (t.skipped) return "not started"
+  if (!runs || (t.run && !runs.has(t.run))) return t.state ?? (t.run ? "done" : "to come")
   const r = t.run ? runs.get(t.run) : undefined
-  if (!t.run) return "to come"
-  if (!r) return "done"
+  if (!t.run || !r) return "to come"
   if (r.live) return "running"
   if (r.status === "completed") return "done"
   return r.status === "failed" ? "failed" : "stopped"
@@ -32,6 +33,25 @@ const TONE: Record<Said, string> = {
   failed: "bg-red-500/10 text-red-500",
   stopped: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
   "not started": "bg-muted text-muted-foreground line-through",
+}
+
+/** A project at a glance: tasks done of all, the first milestone not
+    reached with its date, and how many tasks failed or stopped. */
+export function glance(p: Project, runs?: Map<string, RunLite>) {
+  const states = p.tasks.map((t) => said(t, runs))
+  const reached = (m: number) => {
+    const of = p.tasks.map((t, i) => [t, states[i]] as const).filter(([t]) => t.milestone === m)
+    return of.length > 0 && of.every(([, s]) => s === "done")
+  }
+  const next = p.milestones.find((m) => !reached(m.id)) ?? null
+  return {
+    done: states.filter((s) => s === "done").length,
+    total: p.tasks.length,
+    running: states.includes("running"),
+    stuck: states.filter((s) => s === "failed" || s === "stopped").length,
+    next,
+    when: next?.due ? due(next.due, false) : null,
+  }
 }
 
 const DAY = 86400000

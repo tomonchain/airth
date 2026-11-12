@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePoll } from "@/hooks/use-poll"
 import { api, called, enc, type Agent, type Item, type Project, type Tasks as TasksData } from "@/lib/api"
-import { due, ProjectView, said } from "@/screens/project"
+import { glance, ProjectView } from "@/screens/project"
 import { ago, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -38,10 +38,12 @@ const ORDER = ["Waiting for you", "Running", "To review", "Done"]
     its routines started; a task that passed work on to the team is a
     project, its tasks under it. Ask the team for something; follow, rename,
     archive or delete a task; read its plan and details. */
-export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks }: {
+export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks, startProject }: {
   realm: string; agents: Agent[]; items: Item[]; open: string | null; onOpen: (id: string | null) => void; onAgent: (name: string) => void
   tasks: TasksData | null; onTasks: () => void
   prefill?: { text: string; at: number } | null
+  /** A project opened from another page. */
+  startProject?: { id: number; at: number } | null
 }) {
   const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 5000, [realm])
   // The app's list, refreshed every few seconds: not asked again here.
@@ -52,6 +54,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
   const [shown, setShown] = useState<number | null>(null)
   useEffect(() => setShown(null), [realm])
+  useEffect(() => { if (startProject) { setShown(startProject.id); onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
   const byRun = useMemo(() => new Map((runs.data ?? []).map((r) => [r.id, r])), [runs.data])
   const all = projects.data?.projects ?? []
   const ours = new Set(all.flatMap((p) => [p.run, ...p.tasks.map((t) => t.run)]).filter((x): x is string => !!x))
@@ -96,17 +99,14 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
             <section className="mb-2">
               <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{archived ? "Done projects" : "Projects"} · {listed.length}</h2>
               {listed.map((p) => {
-                const ended = p.tasks.filter((t) => said(t, byRun) === "done").length
-                const reached = (m: number) => { const ts = p.tasks.filter((t) => t.milestone === m); return ts.length > 0 && ts.every((t) => said(t, byRun) === "done") }
-                const next = p.milestones.find((m) => !reached(m.id))
-                const running = p.tasks.some((t) => said(t, byRun) === "running")
+                const { done: ended, next, when, running } = glance(p, byRun)
                 return (
                   <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", shown === p.id && !current && "bg-accent")}>
                     <span className={cn("grid size-[22px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-3.5" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium">{p.name}</span>
                       <span className="block truncate text-[11px] text-muted-foreground">
-                        {[`${ended}/${p.tasks.length} done`, next && `next: ${next.title}${next.due ? `, ${due(next.due, false).text.split(" · ")[0]}` : ""}`].filter(Boolean).join(" · ")}
+                        {[`${ended}/${p.tasks.length} done`, next && `next: ${next.title}${when ? `, ${when.text.split(" · ")[0]}` : ""}`].filter(Boolean).join(" · ")}
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(p.updated_at)}</span>

@@ -3,7 +3,8 @@ import { Activity as ActivityIcon, ArrowRight, CalendarClock, ChevronRight, Circ
 import { Character } from "@/components/character"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePoll } from "@/hooks/use-poll"
-import { api, departmentName, enc, named, type Activity, type Agent, type AgentState, type Business, type Calendar, type Company, type Item, type Task, type Tasks } from "@/lib/api"
+import { api, departmentName, enc, named, type Activity, type Agent, type AgentState, type Business, type Calendar, type Company, type Item, type Project, type Task, type Tasks } from "@/lib/api"
+import { glance } from "@/screens/project"
 import { ImportStatement } from "@/components/import-statement"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -21,9 +22,9 @@ const GROUPS: { state: AgentState; label: string }[] = [
     progress, the money, what is coming, then the team and what happened.
     On a phone one column, in that order; on a wide screen the goal, the
     money and what is coming sit in a column of their own. */
-export function Overview({ realm, agents, items, business, tasks, at, error, onAgent, onNeeds, onTask, onPage, onImported }: {
+export function Overview({ realm, agents, items, business, tasks, at, error, onAgent, onNeeds, onTask, onPage, onImported, onProject }: {
   realm: string; agents: Agent[] | null; items: Item[]; business: Business | null; tasks: Tasks | null; at: number; error: string | null
-  onAgent: (name: string) => void; onNeeds: () => void; onTask: (id: string) => void; onPage: (page: "finance" | "tasks" | "calendar" | "company") => void; onImported: () => void
+  onAgent: (name: string) => void; onNeeds: () => void; onTask: (id: string) => void; onPage: (page: "finance" | "tasks" | "calendar" | "company") => void; onImported: () => void; onProject: (id: number) => void
 }) {
   const b = business
   const working = agents?.filter((a) => a.state === "working").length ?? 0
@@ -55,7 +56,7 @@ export function Overview({ realm, agents, items, business, tasks, at, error, onA
         <div className="min-w-0">
         <TodayCard lines={today?.lines ?? null} />
         <div className="mt-7 space-y-7 lg:hidden">{goalCard}{money}</div>
-        <Projects tasks={tasks} agents={agents ?? []} onTask={onTask} onAll={() => onPage("tasks")} />
+        <Projects realm={realm} tasks={tasks} agents={agents ?? []} onTask={onTask} onProject={onProject} onAll={() => onPage("tasks")} />
         <div className="mt-7 lg:hidden">{coming}</div>
 
         <div className="mt-9 mb-2.5 flex items-center justify-between">
@@ -346,10 +347,16 @@ const STATUS: Record<keyof Tasks, { label: string; tone: string }> = {
 }
 const RANK: (keyof Tasks)[] = ["waiting", "review", "running", "done"]
 
-/** What the team is on: each open task, a plan's tasks (decision 120)
-    counted under the one that passed them on, the most pressing first. */
-function Projects({ tasks, agents, onTask, onAll }: { tasks: Tasks | null; agents: Agent[]; onTask: (id: string) => void; onAll: () => void }) {
-  const all: (Task & { group: keyof Tasks })[] = tasks ? RANK.flatMap((g) => tasks[g].map((t) => ({ ...t, group: g }))) : []
+/** What the team is on: the open projects first (decision 129), each with
+    its progress and next milestone; then each open task not in one, a
+    plan's tasks (decision 120) counted under the one that passed them on,
+    the most pressing first. */
+function Projects({ realm, tasks, agents, onTask, onProject, onAll }: {
+  realm: string; tasks: Tasks | null; agents: Agent[]; onTask: (id: string) => void; onProject: (id: number) => void; onAll: () => void
+}) {
+  const projects = (usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 60000, [realm]).data?.projects ?? []).filter((p) => p.status === "active")
+  const ours = new Set(projects.flatMap((p) => [p.run, ...p.tasks.map((t) => t.run)]))
+  const all: (Task & { group: keyof Tasks })[] = tasks ? RANK.flatMap((g) => tasks[g].map((t) => ({ ...t, group: g }))).filter((t) => !ours.has(t.id)) : []
   const has = new Set(all.map((t) => t.id))
   const kids = (id: string) => all.filter((t) => t.from?.task === id)
   const rank = (t: Task & { group: keyof Tasks }) => Math.min(...[t, ...kids(t.id)].map((x) => RANK.indexOf(x.group)))
@@ -360,11 +367,35 @@ function Projects({ tasks, agents, onTask, onAll }: { tasks: Tasks | null; agent
   return (
     <section className="mt-7">
       <Head icon={FolderKanban} title="In progress" more="Projects" onMore={onAll} />
-      {!tasks ? <Skeleton className="h-20 rounded-xl" /> : !open.length ? (
+      {!tasks ? <Skeleton className="h-20 rounded-xl" /> : !open.length && !projects.length ? (
         <Card><p className="text-sm text-muted-foreground">Nothing in progress. Ask the Chief of staff for something, and the team's tasks show here.</p></Card>
       ) : (
         <ul className="overflow-hidden rounded-xl bg-bubble">
-          {open.slice(0, 6).map((t) => {
+          {projects.slice(0, 6).map((p) => {
+            const g = glance(p)
+            return (
+              <li key={`p${p.id}`} className="border-b last:border-b-0">
+                <button onClick={() => onProject(p.id)} className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-accent/50">
+                  <span className={cn("grid size-[26px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", g.running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-3.5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{p.name}</span>
+                    <span className="mt-1 flex items-center gap-2">
+                      <span className="h-1 w-28 shrink-0 overflow-hidden rounded-full bg-muted">
+                        <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${g.total ? (100 * g.done) / g.total : 0}%` }} />
+                      </span>
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {g.done}/{g.total} done{g.next && ` · next: ${g.next.title}`}
+                        {g.when && <span className={cn(g.when.late && "text-red-500")}>{`, ${g.when.text}`}</span>}
+                        {g.stuck > 0 && <span className="text-red-500">{` · ${g.stuck} stuck`}</span>}
+                      </span>
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
+                </button>
+              </li>
+            )
+          })}
+          {open.slice(0, Math.max(0, 6 - projects.length)).map((t) => {
             const team = kids(t.id)
             const done = team.filter((k) => k.group === "done").length
             const a = agents.find((x) => x.name === t.agent)
@@ -395,7 +426,7 @@ function Projects({ tasks, agents, onTask, onAll }: { tasks: Tasks | null; agent
           })}
         </ul>
       )}
-      {open.length > 6 && <p className="mt-1.5 text-xs text-muted-foreground">And {open.length - 6} more in Projects.</p>}
+      {open.length + projects.length > 6 && <p className="mt-1.5 text-xs text-muted-foreground">And {open.length + projects.length - 6} more in Projects.</p>}
     </section>
   )
 }

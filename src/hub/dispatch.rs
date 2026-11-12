@@ -322,6 +322,33 @@ impl Hub {
 }
 
 impl Hub {
+    /// Where a project's task stands, in the founder's words: to come,
+    /// running, done, failed, stopped, or not started.
+    pub fn project_task_state(
+        &self,
+        realm: &Realm,
+        task: &crate::business::store::projects::Task,
+    ) -> &'static str {
+        if task.skipped.is_some() {
+            return "not started";
+        }
+        let Some(run) = task.run.as_deref() else {
+            return "to come";
+        };
+        if self.is_live(realm, run) {
+            return "running";
+        }
+        match self.load_run(realm, run).map(|s| s.status) {
+            Ok(Status::Completed) => "done",
+            Ok(Status::Failed) => "failed",
+            // Started, waiting for a worker: running, as `ended` says.
+            Ok(Status::Running) => "running",
+            Ok(_) => "stopped",
+            // A run deleted since: what it did is behind it.
+            Err(_) => "done",
+        }
+    }
+
     /// Project `id` is done once every task of every plan approved for it
     /// has ended or will never start; `just` has just ended.
     fn close_project(&self, realm: &Realm, id: i64, just: &str) -> Result<()> {

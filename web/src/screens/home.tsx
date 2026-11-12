@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowUp, CalendarClock, Flag, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
+import { ArrowUp, CalendarClock, Flag, FolderKanban, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
 import { toast } from "sonner"
 import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/use-poll"
-import { api, called, enc, type Agent, type Calendar, type Company, type Item, type Tasks } from "@/lib/api"
+import { api, called, enc, type Agent, type Calendar, type Company, type Item, type Project, type Tasks } from "@/lib/api"
+import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
 import { Conversation } from "@/screens/conversation"
 import type { Page } from "@/components/rail"
 
-/** What a suggestion does: fill the box with words to send, or open a page. */
-type Suggestion = { key: string; icon: typeof Inbox; label: string; text?: string; page?: Page }
+/** What a suggestion does: fill the box with words to send, or open a page
+    or a project. */
+type Suggestion = { key: string; icon: typeof Inbox; label: string; text?: string; page?: Page; project?: number }
 
 const EVERY = 6000
 
@@ -21,15 +23,16 @@ const EVERY = 6000
     asked goes on as a task or a project (a plan). What waits and what is
     under way are the tabs' and the rail's; the figures are the Overview
     page's. */
-export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage }: {
+export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject }: {
   realm: string; agents: Agent[] | null; items: Item[]; tasks: Tasks | null
-  onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void
+  onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void; onProject: (id: number) => void
 }) {
   const team = agents ?? []
   const lead = team.find((a) => a.dispatch) ?? null
   const owner = usePoll<{ name: string }>(() => api("owner"), 600000, []).data
   const company = usePoll<Company>(() => api(`realms/${enc(realm)}/company`), 300000, [realm]).data
   const cal = usePoll<Calendar>(() => api(`realms/${enc(realm)}/calendar`), 300000, [realm]).data
+  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 300000, [realm]).data?.projects
   const first = owner?.name?.trim().split(/\s+/)[0] || null
 
   // The conversation opens when the interlocutor already has today's task;
@@ -54,7 +57,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
         <Button size="sm" variant="ghost" className="absolute top-2 right-3 h-8 text-muted-foreground" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>
       )}
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 md:px-6 md:pb-24">
-        <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal)} onPage={onPage}
+        <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>
     </div>
@@ -62,8 +65,8 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
 }
 
 /** The greeting, the one line to ask, and the suggestion under it. */
-function Start({ realm, lead, first, suggestions, onPage, onSent }: {
-  realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onSent: (id: string) => void
+function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
+  realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onProject: (id: number) => void; onSent: (id: string) => void
 }) {
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
@@ -89,6 +92,7 @@ function Start({ realm, lead, first, suggestions, onPage, onSent }: {
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
   function use(s: Suggestion) {
+    if (s.project !== undefined) { onProject(s.project); return }
     if (s.page) { onPage(s.page); return }
     setText(s.text ?? s.label)
     requestAnimationFrame(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length } })
@@ -139,15 +143,22 @@ const DAY = 86400000
 const inDays = (iso: string) => Math.ceil((new Date(`${iso}T12:00:00`).getTime() - Date.now()) / DAY)
 
 /** What to suggest, from what Airth knows, the most pressing first: what
-    waits for the founder, an agent's idea, a date coming, the goal's next
+    waits for the founder, a project late, stuck or near its milestone
+    (decision 129), an agent's idea, a date coming, the goal's next
     milestone, then what any business may want. Written by code: nothing
     here is a model's guess. */
-function suggest(items: Item[], agents: Agent[], company: Company | null | undefined, cal: Calendar | null | undefined): Suggestion[] {
+function suggest(items: Item[], agents: Agent[], company: Company | null | undefined, cal: Calendar | null | undefined, projects: Project[] | undefined): Suggestion[] {
   const out: Suggestion[] = []
   const plan = items.find((i) => i.action === "airth.dispatch")
   if (plan) out.push({ key: `plan${plan.id}`, icon: Users, label: `Review the project: ${plan.title}`, page: "needs" })
   const waiting = items.filter((i) => i.kind !== "idea" && i.action !== "airth.dispatch").length
   if (waiting) out.push({ key: "needs", icon: Inbox, label: `Go through what waits for you (${waiting})`, page: "needs" })
+  for (const p of (projects ?? []).filter((p) => p.status === "active")) {
+    const g = glance(p)
+    const soon = g.next?.due && inDays(g.next.due) <= 14
+    if (g.stuck) out.push({ key: `stuck${p.id}`, icon: FolderKanban, label: `${p.name}: ${g.stuck} task${g.stuck > 1 ? "s" : ""} stuck`, project: p.id })
+    else if (g.next && g.when && (g.when.late || soon)) out.push({ key: `next${p.id}`, icon: Flag, label: `${p.name}: ${g.next.title}, ${g.when.text.split(" · ")[1]}`, project: p.id })
+  }
   for (const idea of items.filter((i) => i.kind === "idea").slice(0, 2)) {
     const a = agents.find((x) => x.name === idea.agent)
     out.push({ key: `idea${idea.id}`, icon: Lightbulb, label: idea.title, text: `Go ahead with ${a ? `${called(a)}'s idea` : "this idea"}: ${idea.title}` })
