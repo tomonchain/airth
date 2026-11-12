@@ -359,7 +359,7 @@ function Projects({ tasks, agents, onTask, onAll }: { tasks: Tasks | null; agent
     .sort((a, b) => rank(a) - rank(b))
   return (
     <section className="mt-7">
-      <Head icon={FolderKanban} title="In progress" more="Tasks" onMore={onAll} />
+      <Head icon={FolderKanban} title="In progress" more="Projects" onMore={onAll} />
       {!tasks ? <Skeleton className="h-20 rounded-xl" /> : !open.length ? (
         <Card><p className="text-sm text-muted-foreground">Nothing in progress. Ask the Chief of staff for something, and the team's tasks show here.</p></Card>
       ) : (
@@ -395,7 +395,7 @@ function Projects({ tasks, agents, onTask, onAll }: { tasks: Tasks | null; agent
           })}
         </ul>
       )}
-      {open.length > 6 && <p className="mt-1.5 text-xs text-muted-foreground">And {open.length - 6} more in Tasks.</p>}
+      {open.length > 6 && <p className="mt-1.5 text-xs text-muted-foreground">And {open.length - 6} more in Projects.</p>}
     </section>
   )
 }

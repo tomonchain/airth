@@ -22,7 +22,7 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
 }
 
 export function kindOf(it: Item) {
-  if (it.action === "airth.dispatch") return { label: "Plan for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
+  if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
   if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
   return KIND[it.kind] ?? KIND.report
 }

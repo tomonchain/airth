@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, ListChecks, Pencil, SkipForward, Trash2, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, FolderKanban, Pencil, SkipForward, Trash2, X } from "lucide-react"
 import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
@@ -33,8 +33,9 @@ function group(r: Run, waiting: Set<string>) {
 }
 const ORDER = ["Waiting for you", "Running", "To review", "Done"]
 
-/** Every task of the business (the classic interface's Tasks): yours and
-    those its routines started. Ask the team for something; follow, rename,
+/** Projects (decision 128): every task of the business, yours and those
+    its routines started; a task that passed work on to the team is a
+    project, its tasks under it. Ask the team for something; follow, rename,
     archive or delete a task; read its plan and details. */
 export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks }: {
   realm: string; agents: Agent[]; items: Item[]; open: string | null; onOpen: (id: string | null) => void; onAgent: (name: string) => void
@@ -71,7 +72,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   return (
     <div className="flex min-w-0 flex-1">
       <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", current && "max-md:hidden")}>
-        <SideHead title="Tasks" />
+        <SideHead title="Projects" />
         <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
         <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
           {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
@@ -80,7 +81,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           {!runs.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-            : !groups.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No task yet."}</p>
+            : !groups.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No project or task yet."}</p>
             : groups.map(([g, l]) => (
               <section key={g} className="mb-2">
                 <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g} · {l.length}</h2>
@@ -88,13 +89,13 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
                   const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
                   const child = fromOf.has(r.id) && list.some((x) => x.id === fromOf.get(r.id))
                   const team = kids(r.id)
-                  const plan = team.length ? `plan ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
+                  const plan = team.length ? `project ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
                   return (
                     <button key={r.id} onClick={() => onOpen(r.id)} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
                       {child && <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />}
                       <Character agent={a} size={22} still={!r.live} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px]">{name(r)}</span>
+                        <span className={cn("block truncate text-[13px]", team.length > 0 && "font-medium")}>{name(r)}</span>
                         <span className="block truncate text-[11px] text-muted-foreground">
                           {[a.title, plan, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}
                         </span>
@@ -114,8 +115,8 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       ) : (
         <div className="grid flex-1 place-items-center p-8 text-center max-md:hidden">
           <div>
-            <ListChecks className="mx-auto size-8 text-muted-foreground/50" />
-            <p className="mt-3 text-sm font-medium">Choose a task, or ask the team for something.</p>
+            <FolderKanban className="mx-auto size-8 text-muted-foreground/50" />
+            <p className="mt-3 text-sm font-medium">Choose a project or a task, or ask the team for something.</p>
             <p className="mt-1 text-sm text-muted-foreground">Each one shows here with what was done, its plan and its change.</p>
           </div>
         </div>
@@ -273,7 +274,7 @@ function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent,
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:px-3">
-          <Back label="All tasks" onClick={onBack} />
+          <Back label="Projects" onClick={onBack} />
           {renaming !== null ? (
             <>
               <Input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") setRenaming(null) }} className="h-8" aria-label="Task name" />

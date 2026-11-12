@@ -43,6 +43,7 @@ The interface speaks product words only. The code keeps its own. This table is t
 | Routine | Recurring work of an agent, as a graph of blocks | objective + pipeline | scheduling exists; pipelines to build |
 | Mission | A one-off order executed by an agent | run, chat | exists |
 | Task | Work to do, assigned to the founder or an agent | task (`business.db`) | the page exists; its store is to rebuild, simply, in `business.db` |
+| Project | A task that passed work on to the team, with its tasks under it; the Projects page lists projects and tasks | a run whose plan was approved (decision 120); page `tasks` | exists (decision 128) |
 | Skill | A tool an agent can use | skill, connector, MCP server | exists |
 | Goal | The business's objective and milestones | a field of the business config | to build |
 | Needs you | Everything waiting for the founder: approvals, code reviews, decisions, incidents | approval queue, inbox, pending permissions | queue to build |
@@ -143,7 +144,7 @@ Each business can have developer agents working on its own platforms, using the 
 ## The interface
 
 - **HQ** on top: all businesses, what needs the founder in each, founder time and cost per business, create a business.
-- **In each business:** Needs you, Team (org chart by department, one card per agent), Calendar (routines and deadlines, legal ones included), Tasks, Business (profile, legal identity, lines, repositories, documents).
+- **In each business:** Chat, Needs you and Projects on the rail; under More, Team (org chart by department, one card per agent), Calendar (routines and deadlines, legal ones included), Business (profile, legal identity, lines, repositories, documents) and the other pages (decision 128).
 - **A command bar** on every page: a one-off order, routed to the right agent or the one named. What follows goes through Tasks and Needs you.
 - **Routine editor:** the graph with the six blocks, parameters, dry run, the state of each block.
 - **Settings:** connectors, mailboxes, permissions, keys, models.

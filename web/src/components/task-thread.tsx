@@ -128,7 +128,7 @@ function parts(view: RunView): Part[] {
         // the founder wrote after, before the agent answered, is theirs.
         else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
         else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it." })
-        else if (text.startsWith("The tasks of your plan ended")) out.push({ kind: "note", text: "The team's tasks ended." })
+        else if (text.startsWith("The tasks of your plan ended")) out.push({ kind: "note", text: "The project's tasks ended." })
         else if (text.startsWith("[Airth runtime]") || text === "Go on with the order.") out.push({ kind: "note", text: "Picked up again." })
         else out.push({ kind: "founder", text })
       } else if (b.type === "tool_use") {
@@ -426,7 +426,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       {/* What this task passed on to the team, and where each part is. */}
       {passed.length > 0 && (
         <div className="mb-4 rounded-2xl border bg-surface px-4 py-3 fade-up">
-          <div className="mb-2 text-xs font-medium text-muted-foreground">Passed on to the team</div>
+          <div className="mb-2 text-xs font-medium text-muted-foreground">The project's tasks</div>
           <ul className="space-y-1">
             {passed.map((p) => (
               <li key={p.id}>

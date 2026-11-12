@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 128. Three pages and More: Chat, Needs you, Projects
+
+**Accepted** (founder, 12 November 2026: "less is more, a UI close to a chat bot", then "go" on the three steps: the Home as a chat, a reply in Needs you, a reduced navigation).
+
+- **The rail and the phone's bar hold three pages:**
+  - **Chat:** the Home, the conversation with the founder's interlocutor (decision 120);
+  - **Needs you:** what waits for the founder;
+  - **Projects:** the former Tasks page.
+- **More holds every other page:** Team (the former Agents page), Routines, Calendar, Documents, Finance, Overview, Business (the former Company page), Marketplace, Usage and Settings.
+  - On a computer, More is a menu off the rail. Its button wears the open page's icon.
+  - Settings, the theme and the spending ring stay at the rail's foot.
+  - The ⌘K palette reaches every page by the same names.
+- **A project is a task that passed work on to the team** (decision 120's plan), shown with its tasks under it. The interface says "project" where it said "plan for the team". An agent's own steps inside a task stay its plan.
+- Nothing is removed (decision 42). The addresses keep their code names (`#/b/<business>/tasks`, `/agents`, `/company`), so links still open.
+
+*Why:* the founder lives in three places. They talk to the team, answer what waits, and follow what is under way. Ten icons on the rail said everything was as important as everything else.
+
+*Cost:* a page under More is one click further. The code names (`tasks`, `agents`, `company`) differ from the words on screen; the glossary is the bridge.
+
 ## 127. The founder answers in words, and teaches the agents lessons
 
 **Accepted** (founder, 12 November 2026: "Needs you should have a reply / feedback field to improve the agents", then "go" on the proposal).

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
-import { Building2, CalendarClock, ChartColumn, FolderOpen, House, Inbox, ListChecks, Moon, PanelRight, PenLine, Search, Settings, Sparkles, Store, Sun, Wallet, Workflow, type LucideIcon, LayoutDashboard } from "lucide-react"
+import { Building2, ListChecks, Moon, PanelRight, PenLine, Search, Sparkles, Sun, type LucideIcon } from "lucide-react"
 import { Character } from "@/components/character"
-import type { Page } from "@/components/rail"
+import { MAIN, MORE, type Page } from "@/components/rail"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useTheme } from "@/hooks/use-theme"
 import { api, called, enc, type Agent, type Realm } from "@/lib/api"
@@ -12,11 +12,7 @@ type Run = { id: string; title: string | null; objective: string; archived: bool
 
 export const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
 
-const PAGES: [Page, string, LucideIcon][] = [
-  ["home", "Home", House], ["overview", "Overview", LayoutDashboard], ["agents", "Agents", Sparkles], ["needs", "Needs you", Inbox], ["routines", "Routines", Workflow],
-  ["tasks", "Tasks", ListChecks], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
-  ["usage", "Usage", ChartColumn], ["company", "Company", Building2], ["marketplace", "Marketplace", Store], ["settings", "Settings", Settings], ["hq", "HQ: all businesses", Building2],
-]
+const PAGES: [Page, string, LucideIcon][] = [...MAIN, ...MORE, ["hq", "HQ: all businesses", Building2]]
 
 /** ⌘K (the classic interface's palette): go anywhere, open an agent or a
     task, switch business, and the few actions worth a key. */
