@@ -2,6 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 132. A conversation with an agent is the thread alone
+
+**Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", then "go" after Needs you).
+
+- **The agent's card is closed at first**, on a computer as on a phone. It opens from the top bar's Details button.
+- **The box to write in says what it does:**
+  - "Reply to …" goes on with the current task;
+  - **+** starts a new task, shown as a "New task ×" chip that goes back;
+  - "Ask …" when there is no task to go on with.
+
+  It replaces the line of text above the box. That line stays only while the agent is working ("… is working. Esc stops it").
+- The box has the Home's shape: one line that grows, the same send button.
+
+*Why:* the founder reads and answers; the card, the routines and the figures are a click away.
+
+*Cost:* what the agent can use and its routines are no longer in view at first.
+
 ## 131. Needs you: what to decide first, what broke folded and last
 
 **Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", then "go" on Needs you first).
