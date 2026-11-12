@@ -1103,3 +1103,91 @@ fn an_idea_says_why_now_and_is_useful_or_not() {
         .collect();
     assert_eq!(labels, ["Useful", "Not for me"]);
 }
+
+/// Reject asks why (decision 116): the founder's reply to the item rejects
+/// it with that reason, which its agent's next drafts hear; Skip rejects it
+/// without one; a stale Reject is refused.
+#[test]
+fn a_reject_asks_why_and_skip_rejects_without_a_word() {
+    let (_home, _root, hub, realm) = business();
+    // Two drafts of the routine `posts`, whose next drafts hear the reasons.
+    for draft in ["ETH left the queue.", "BTC too."] {
+        Store::of(&realm)
+            .unwrap()
+            .propose(&NewItem {
+                kind: "approval",
+                title: draft,
+                agent: Some("post-writer"),
+                routine: Some("posts"),
+                run: None,
+                action: None,
+                args: &json!({"answer": {"draft": draft}}).to_string(),
+                execute_at: None,
+                source: r#"{"show": "answer.draft", "editable": "answer.draft"}"#,
+                model_call: None,
+            })
+            .unwrap();
+    }
+    let api = Fake::default();
+    let mut config = Config {
+        chat: Some(5),
+        user: Some(7),
+        ..Config::default()
+    };
+    push(&hub, &api, &mut config).unwrap();
+    let first = config.sent["acme/1"].messages[0];
+    let none = |_: crate::realm::Realm, _: crate::state::State| {};
+    // A stale button is refused; the tap itself rejects nothing.
+    handle(&hub, &api, &mut config, &tap(7, "r/acme/1/9"), &none).unwrap();
+    assert_eq!(config.rejecting, None);
+    handle(&hub, &api, &mut config, &tap(7, "r/acme/1/1"), &none).unwrap();
+    assert_eq!(config.rejecting.as_deref(), Some("acme/1"));
+    let asked = api.sent().last().unwrap().clone();
+    assert!(
+        asked["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Why reject it?")
+    );
+    assert_eq!(
+        asked["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
+        "s/acme/1/1"
+    );
+    assert_eq!(
+        Store::of(&realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .len(),
+        2
+    );
+    // The reply to the item is the reason, not a new task.
+    let started = std::cell::Cell::new(false);
+    handle(
+        &hub,
+        &api,
+        &mut config,
+        &reply(first, "too much jargon"),
+        &|_, _| started.set(true),
+    )
+    .unwrap();
+    assert!(!started.get());
+    assert_eq!(config.rejecting, None);
+    let store = Store::of(&realm).unwrap();
+    assert_eq!(store.queue(&["rejected"]).unwrap().len(), 1);
+    let since = Utc::now() - chrono::Duration::days(1);
+    let heard: Vec<String> = store
+        .founder_feedback("posts", since, 5)
+        .unwrap()
+        .into_iter()
+        .map(|f| f.said)
+        .collect();
+    assert_eq!(heard, ["too much jargon"]);
+    // Skip rejects the other without a word.
+    handle(&hub, &api, &mut config, &tap(7, "r/acme/2/1"), &none).unwrap();
+    handle(&hub, &api, &mut config, &tap(7, "s/acme/2/1"), &none).unwrap();
+    assert_eq!(config.rejecting, None);
+    let store = Store::of(&realm).unwrap();
+    assert!(store.queue(&["pending"]).unwrap().is_empty());
+    assert_eq!(store.founder_feedback("posts", since, 5).unwrap().len(), 1);
+}

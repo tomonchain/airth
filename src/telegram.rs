@@ -48,6 +48,11 @@ pub struct Config {
     /// it says what should change.
     #[serde(default)]
     pub redoing: Option<String>,
+    /// The item the founder tapped Reject on: their next reply to it says
+    /// why, which its agent's next drafts hear (decision 116); Skip rejects
+    /// it without a word.
+    #[serde(default)]
+    pub rejecting: Option<String>,
     /// How many times Telegram refused to take each item, by `realm/id`.
     pub refused: BTreeMap<String, u32>,
     /// The business the founder's plain messages go to (decision 109); the
@@ -534,6 +539,33 @@ pub fn handle(
     if let Some(rest) = text.strip_prefix("/business") {
         return choose_business(hub, api, config, rest.trim());
     }
+    // The founder said why they reject an item: it is rejected with it.
+    if let Some(key) = config.rejecting.clone() {
+        let replied = message["reply_to_message"]["message_id"].as_i64();
+        if let Some(sent) = config
+            .sent
+            .get(&key)
+            .cloned()
+            .filter(|s| replied.is_some_and(|r| s.messages.contains(&r)))
+        {
+            config.rejecting = None;
+            let (realm, id) = item_of(hub, &key)?;
+            let answer = crate::business::store::queue::Answer::Reject(text.trim().to_string());
+            let said = match hub.answer_item(
+                &realm,
+                id,
+                Some(sent.revision),
+                answer,
+                "telegram",
+                answer_seconds(&sent),
+            ) {
+                Ok((item, report)) => answered(realm.name(), &item, report.as_deref()),
+                Err(e) => format!("Not done: {e:#}"),
+            };
+            send(api, chat, &said, None)?;
+            return Ok(());
+        }
+    }
     // The founder said what should change in a draft: it is drafted again.
     if let Some(key) = config.redoing.clone() {
         let replied = message["reply_to_message"]["message_id"].as_i64();
@@ -750,6 +782,7 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
             }
             config.editing = Some(key.to_string());
             config.redoing = None;
+            config.rejecting = None;
             let last = sent.messages.last().copied().unwrap_or_default();
             let body = json!({"chat_id": chat, "text": "Reply to the item's message with the new text.",
                 "reply_to_message_id": last, "reply_markup": {"force_reply": true}});
@@ -774,6 +807,7 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
             }
             config.redoing = Some(key.to_string());
             config.editing = None;
+            config.rejecting = None;
             let last = sent.messages.last().copied().unwrap_or_default();
             let body = json!({"chat_id": chat, "text": "What should change? Reply here: shorter, funnier, another angle…",
                 "reply_to_message_id": last, "reply_markup": {"force_reply": true}});
@@ -794,11 +828,43 @@ fn tap(hub: &Hub, api: &dyn Api, config: &mut Config, query: &Value) -> Result<(
             api.call("sendMessage", &body)?;
             return Ok(());
         }
+        // Reject asks why first: the reason reaches the agent's next drafts
+        // (decision 116). Skip rejects without one.
+        "r" => {
+            if sent.revision != revision {
+                send(
+                    api,
+                    chat,
+                    "That button is out of date: use the item's latest message.",
+                    None,
+                )?;
+                return Ok(());
+            }
+            config.rejecting = Some(key.to_string());
+            config.editing = None;
+            config.redoing = None;
+            let last = sent.messages.last().copied().unwrap_or_default();
+            let skip = format!("s/{key}/{revision}");
+            let body = json!({"chat_id": chat, "text": "Why reject it? Reply here, and its agent hears it for its next drafts. Or skip.",
+                "reply_to_message_id": last,
+                "reply_markup": {"inline_keyboard": [[{"text": "Skip: reject it", "callback_data": skip}]]}});
+            let asked = api.call("sendMessage", &body)?["message_id"]
+                .as_i64()
+                .unwrap_or_default();
+            // A reply to this question is a reply to the item.
+            if let Some(s) = config.sent.get_mut(key) {
+                s.messages.push(asked);
+            }
+            return Ok(());
+        }
         "a" => Answer::Approve,
         "o" => Answer::Override,
         "t" => Answer::Retry { checked: false },
         "c" => Answer::Retry { checked: true },
-        "r" => Answer::Reject("from Telegram".into()),
+        "s" => {
+            config.rejecting = None;
+            Answer::Reject("from Telegram".into())
+        }
         // An unknown button does nothing, never a rejection.
         _ => return Ok(()),
     };
