@@ -144,7 +144,7 @@ Each business can have developer agents working on its own platforms, using the 
 ## The interface
 
 - **HQ** on top: all businesses, what needs the founder in each, founder time and cost per business, create a business.
-- **In each business:** Chat, Needs you and Projects on the rail; under More, Team (org chart by department, one card per agent), Calendar (routines and deadlines, legal ones included), Business (profile, legal identity, lines, repositories, documents) and the other pages (decision 128).
+- **In each business:** on the rail, in groups (decisions 128 and 130): Chat, Needs you and Projects; Team (org chart by department, one card per agent), Routines and Calendar (routines and deadlines, legal ones included); Overview, Finance, Documents, Business (profile, legal identity, lines, repositories) and Marketplace.
 - **A command bar** on every page: a one-off order, routed to the right agent or the one named. What follows goes through Tasks and Needs you.
 - **Routine editor:** the graph with the six blocks, parameters, dry run, the state of each block.
 - **Settings:** connectors, mailboxes, permissions, keys, models.

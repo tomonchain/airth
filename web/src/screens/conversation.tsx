@@ -65,9 +65,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     // A task's questions show in its own chat, not as items.
     for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine)) e.push({ kind: "item", at: i.created_at, item: i })
     for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
-    // What waits for the founder comes last, as unread messages do.
-    const waits = (x: Entry) => (x.kind === "item" && x.item.status === "pending" ? 1 : 0)
-    return e.sort((a, b) => waits(a) - waits(b) || a.at.localeCompare(b.at))
+    // In time order, as a chat is: what waits for the founder stays where
+    // it was sent, marked new, not moved after later messages.
+    return e.sort((a, b) => a.at.localeCompare(b.at))
   }, [thread.data, taskIds])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the

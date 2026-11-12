@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, FolderOpen, Inbox, MessageCircle, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow, LayoutDashboard } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
@@ -35,37 +34,31 @@ function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   )
 }
 
-// Less is more: the founder talks, answers what waits, follows the projects;
-// every other page is one step away, under More. Nothing left Airth
-// (decision 42): only where it is found moved (decision 128).
+// The founder talks, answers what waits, follows the projects: those three
+// first; then the team, then the business, in groups (decisions 128, 130).
+// Nothing left Airth (decision 42): only where it is found moved.
 export const MAIN: [Page, string, LucideIcon][] = [["home", "Chat", MessageCircle], ["needs", "Needs you", Inbox], ["tasks", "Projects", FolderKanban]]
-export const MORE: [Page, string, LucideIcon][] = [
-  ["agents", "Team", Bot], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock], ["documents", "Documents", FolderOpen], ["finance", "Finance", Wallet],
-  ["overview", "Overview", LayoutDashboard], ["company", "Business", Building2], ["marketplace", "Marketplace", Store], ["usage", "Usage", ChartColumn], ["settings", "Settings", Settings],
+export const GROUPS: { title: string; pages: [Page, string, LucideIcon][] }[] = [
+  { title: "Team", pages: [["agents", "Team", Bot], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock]] },
+  { title: "Business", pages: [["overview", "Overview", LayoutDashboard], ["finance", "Finance", Wallet], ["documents", "Documents", FolderOpen], ["company", "Business", Building2], ["marketplace", "Marketplace", Store]] },
+  { title: "Airth", pages: [["usage", "Usage", ChartColumn], ["settings", "Settings", Settings]] },
 ]
+export const MORE = GROUPS.flatMap((g) => g.pages)
 
-/** The app's rail: the three pages the founder lives in, and More. */
+/** The app's rail: the three pages the founder lives in, then the team's
+    and the business's, a group each; Settings at its foot. */
 export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean }) {
   const { theme, setTheme } = useTheme()
-  const under = MORE.find(([p]) => p === page && p !== "settings")
-  const Shown = under ? under[2] : Ellipsis
   return (
-    <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 pt-1 pb-3">
+    <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 overflow-y-auto pt-1 pb-3">
       {MAIN.map(([p, label, Icon]) => <RailButton key={p} icon={Icon} label={label} active={page === p} badge={p === "needs" ? needs : 0} onClick={() => onPage(p)} />)}
-      <DropdownMenu>
-        {/* On a page under More, the button wears that page's icon. */}
-        <DropdownMenuTrigger render={<button aria-label={under ? `More: ${under[1]}` : "More"} title={under ? under[1] : "More"}
-          className={cn("grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-popup-open:bg-accent", under && "bg-accent text-foreground")} />}>
-          <Shown className="size-[19px]" strokeWidth={1.8} />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-52">
-          {MORE.filter(([p]) => p !== "settings").map(([p, label, Icon]) => (
-            <DropdownMenuItem key={p} onClick={() => onPage(p)} className={cn(page === p && "bg-accent")}>
-              <Icon /> {label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Usage is the spending ring's; Settings, the foot's. */}
+      {GROUPS.slice(0, 2).map((g) => (
+        <div key={g.title} role="group" aria-label={g.title} className="flex flex-col items-center gap-1.5">
+          <span className="my-1.5 h-px w-6 bg-foreground/10" />
+          {g.pages.map(([p, label, Icon]) => <RailButton key={p} icon={Icon} label={label} active={page === p} onClick={() => onPage(p)} />)}
+        </div>
+      ))}
       <div className="mt-auto flex flex-col items-center gap-1.5">
         <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
@@ -123,16 +116,25 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
               </span>
             </button>
           )}
-          {!spending && <div className="grid grid-cols-4 gap-1">
-            {MORE.map(([p, label, Icon]) => (
-              <button key={p} onClick={() => { onPage(p); setMore(false) }}
-                className={cn("flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
-                <Icon className="size-[22px]" strokeWidth={1.8} /> {label}
-              </button>
+          {!spending && <div className="max-h-[62svh] overflow-y-auto">
+            {GROUPS.map((g, i) => (
+              <section key={g.title} className="mt-2">
+                <h3 className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g.title}</h3>
+                <div className="grid grid-cols-4 gap-1">
+                  {g.pages.map(([p, label, Icon]) => (
+                    <button key={p} onClick={() => { onPage(p); setMore(false) }}
+                      className={cn("flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
+                      <Icon className="size-[22px]" strokeWidth={1.8} /> {label}
+                    </button>
+                  ))}
+                  {i === GROUPS.length - 1 && (
+                    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
+                      {theme === "dark" ? <Sun className="size-[22px]" strokeWidth={1.8} /> : <Moon className="size-[22px]" strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
+                    </button>
+                  )}
+                </div>
+              </section>
             ))}
-            <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
-              {theme === "dark" ? <Sun className="size-[22px]" strokeWidth={1.8} /> : <Moon className="size-[22px]" strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
-            </button>
           </div>}
         </SheetContent>
       </Sheet>

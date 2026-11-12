@@ -308,7 +308,7 @@ function Tree({ path, depth, dirs, expanded, active, folder, onToggle, onFile, o
 function NewName({ kind, where, onDone }: { kind: "file" | "folder"; where: string; onDone: (name: string) => void }) {
   const [v, setV] = useState("")
   return (
-    <div className="mx-2 mb-2 flex items-center gap-1.5 rounded-md border bg-surface px-2 py-1">
+    <div className="mx-2 mb-2 flex items-center gap-1.5 rounded-md bg-bubble px-2 py-1">
       {kind === "folder" ? <Folder className="size-4 text-sky-500" /> : <File className="size-4 text-muted-foreground" />}
       <input autoFocus value={v} onChange={(e) => setV(e.target.value)} aria-label={kind === "folder" ? "New folder name" : "New file name"}
         placeholder={kind === "folder" ? "Folder name" : "notes.md"} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"

@@ -136,6 +136,12 @@
   * {
     @apply border-border outline-ring/50;
     }
+  /* Less is more (founder, 12 November 2026): no line around or between
+     blocks; a block stands out by its background. Fields and buttons, and
+     a line given a colour on purpose, keep theirs. */
+  :where(div, aside, header, main, nav, section, ul, ol, li, article, footer, figure, span, form) {
+    border-color: transparent;
+    }
   body {
     @apply bg-background text-foreground;
     }

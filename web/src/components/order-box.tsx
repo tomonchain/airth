@@ -117,7 +117,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
           : continuing ? (
             <>
               <span>Continues the current task</span>
-              <button onClick={() => setFresh(true)} className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 hover:bg-accent hover:text-foreground"><Plus className="size-3" /> New task</button>
+              <button onClick={() => setFresh(true)} className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.05] px-1.5 py-0.5 hover:bg-accent hover:text-foreground"><Plus className="size-3" /> New task</button>
             </>
           ) : task ? (
             <>
@@ -127,7 +127,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
           ) : closed ? <span>The last task is closed (its change was {closed}): this starts a new one.</span>
           : <span>Starts a task<span className="hidden md:inline">: {title} asks you here before anything that needs your OK</span>.</span>}
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-2 rounded-2xl border bg-bubble/60 p-2 shadow-sm focus-within:border-ring/50">
+      <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-2 rounded-2xl bg-bubble p-2">
         {shown.length > 0 && (
           <div role="listbox" aria-label={at?.kind === "/" ? "Tools" : "Agents"} className="absolute bottom-full left-2 z-20 mb-1.5 w-72 overflow-hidden rounded-xl border bg-popover p-1 shadow-lg">
             {shown.map((c, i) => (

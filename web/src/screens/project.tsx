@@ -147,7 +147,7 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
           {describing !== null ? (
             <div className="mt-3">
               <textarea autoFocus value={describing} onChange={(e) => setDescribing(e.target.value)} rows={3} aria-label="Description"
-                className="w-full resize-none rounded-xl border bg-surface px-3 py-2 text-[15px] leading-relaxed outline-none focus:border-ring" />
+                className="w-full resize-none rounded-xl bg-bubble px-3 py-2 text-[15px] leading-relaxed outline-none focus:border-ring" />
               <div className="mt-2 flex gap-2">
                 <Button size="sm" onClick={async () => { if (await save({ description: describing })) setDescribing(null) }}>Save</Button>
                 <Button size="sm" variant="ghost" onClick={() => setDescribing(null)}>Cancel</Button>
@@ -182,7 +182,7 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
                   </h3>
                 )}
                 {tasks.length ? (
-                  <ul className="divide-y rounded-xl border bg-surface">
+                  <ul className="divide-y rounded-xl bg-bubble">
                     {tasks.map(({ t, s }) => {
                       const a = ofAgent(t.agent)
                       return (
@@ -208,7 +208,7 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
         </div>
       </div>
       <div className="dock-lift mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
-        <div className="flex items-end gap-1.5 rounded-[22px] border bg-surface py-1 pr-1 pl-4 shadow-[0_2px_10px_-4px_rgb(0_0_0/0.08)] focus-within:border-ring">
+        <div className="flex items-end gap-1.5 rounded-[22px] bg-bubble py-1 pr-1 pl-4">
           <textarea ref={box} value={more} onChange={(e) => setMore(e.target.value)} rows={1} disabled={busy}
             placeholder="Add to this project…" aria-label="Add to this project"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); add() } }}

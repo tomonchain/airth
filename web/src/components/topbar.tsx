@@ -66,7 +66,7 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
       </nav>
       {/* Ask from anywhere (⌘J): to the interlocutor, without leaving the page. */}
       <button onClick={onAsk} onMouseDown={(e) => e.stopPropagation()}
-        className="flex h-8 w-64 shrink-0 items-center gap-2 rounded-lg border bg-background/60 px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground max-lg:w-auto max-md:hidden">
+        className="flex h-8 w-64 shrink-0 items-center gap-2 rounded-lg bg-foreground/[0.05] px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground max-lg:w-auto max-md:hidden">
         <PenLine className="size-3.5 shrink-0" />
         <span className="flex-1 truncate text-left max-lg:hidden">Ask the team…</span>
         <kbd className="rounded bg-muted px-1.5 font-sans text-[10.5px] max-lg:hidden">⌘J</kbd>
@@ -80,7 +80,7 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
       )}
       {onAgents && <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground max-md:hidden", details && "bg-accent text-foreground")} aria-label="Details" title="Details" onClick={onDetails}><PanelRight /></Button>}
       <DropdownMenu>
-        <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg border bg-background/60 pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>
+        <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg bg-foreground/[0.05] pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>
           <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
           <span>{named(realm, realms.find((r) => r.name === realm)?.title)}</span>
           {/* Another business waits for the founder: said here, wherever they are. */}
