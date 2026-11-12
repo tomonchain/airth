@@ -11,6 +11,7 @@ import { api, called, enc, named, onPhone, paired, type Agent, type Business, ty
 import { failure } from "@/components/task-thread"
 import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
+import { Overview } from "@/screens/overview"
 import { Inbox } from "@/screens/inbox"
 import type { Section as SettingsSection } from "@/screens/settings"
 import { PageBoundary } from "@/components/error-boundary"
@@ -35,7 +36,7 @@ const Settings = lazy(() => import("@/screens/settings").then((m) => ({ default:
 const Tasks = lazy(() => import("@/screens/tasks").then((m) => ({ default: m.Tasks })))
 const Welcome = lazy(() => import("@/screens/welcome").then((m) => ({ default: m.Welcome })))
 
-const PAGES: Page[] = ["home", "agents", "needs", "routines", "tasks", "calendar", "documents", "finance", "usage", "hq", "company", "settings", "marketplace"]
+const PAGES: Page[] = ["home", "overview", "agents", "needs", "routines", "tasks", "calendar", "documents", "finance", "usage", "hq", "company", "settings", "marketplace"]
 
 function route(): string | null {
   const m = location.hash.match(/^#\/b\/([^/?&]+)/)
@@ -236,7 +237,7 @@ export default function App() {
       />
       <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
       {/* On a phone, Ask floats above the tabs, but where a box to write in is already the page's own. */}
-      {narrow && page !== "tasks" && page !== "agents" && (
+      {narrow && page !== "home" && page !== "tasks" && page !== "agents" && (
         <button onClick={() => setAsking(true)} aria-label="Ask the team"
           className="fixed right-4 bottom-[calc(max(env(safe-area-inset-bottom),10px)+74px)] z-40 grid size-13 place-items-center rounded-full bg-foreground text-background shadow-lg active:scale-95">
           <PenLine className="size-5" />
@@ -252,6 +253,9 @@ export default function App() {
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
+              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} />
+          ) : page === "overview" ? (
+            <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               at={data.at} error={data.error} onAgent={open} onNeeds={() => setPage("needs")}
               onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />

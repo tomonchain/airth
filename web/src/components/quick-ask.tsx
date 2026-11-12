@@ -6,7 +6,8 @@ import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { api, called, enc, type Agent } from "@/lib/api"
+import { called, type Agent } from "@/lib/api"
+import { sendOrder } from "@/lib/orders"
 
 const ROUTE = "route"
 
@@ -33,15 +34,9 @@ export function QuickAsk({ open, onOpenChange, realm, agents, onTask }: {
     if (!t || busy) return
     setBusy(true)
     try {
-      let agent = who
-      if (who === ROUTE) {
-        const r = await api<{ agent: string | null; error?: string }>(`realms/${enc(realm)}/orders/route`, { text: t })
-        if (!r.agent) throw new Error(r.error ?? "No agent fits: choose one.")
-        agent = r.agent
-      }
-      const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text: t, agent, watched: true })
-      const a = agents.find((x) => x.name === agent)
-      toast.success(`Sent to ${a ? called(a) : agent}`, { action: { label: "Open", onClick: () => onTask(out.id) } })
+      const out = await sendOrder(realm, t, who)
+      const a = agents.find((x) => x.name === out.agent)
+      toast.success(`Sent to ${a ? called(a) : out.agent}`, { action: { label: "Open", onClick: () => onTask(out.id) } })
       setText("")
       onOpenChange(false)
     } catch (e) {
