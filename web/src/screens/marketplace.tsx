@@ -225,7 +225,10 @@ function Skills({ realm, q }: { realm: string; q: string }) {
   )
 }
 
-function Connectors({ realm, q }: { realm: string; q: string }) {
+/** The connectors to add, official first. With `hint` (what a team says it
+    needs), those it names come first, marked suggested: the new business's
+    wizard shows them so. */
+export function Connectors({ realm, q, hint }: { realm: string; q: string; hint?: string }) {
   const servers = usePoll<Server[]>(() => api(`realms/${enc(realm)}/mcp`), 15000, [realm])
   const [registry, setRegistry] = useState<Listed[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -239,7 +242,9 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
   }, [q])
   const host = (u: string) => { try { return new URL(u).host } catch { return u } }
   const byHost = useMemo(() => new Map((servers.data ?? []).filter((s) => s.url).map((s) => [host(s.url!), s])), [servers.data])
+  const wanted = (id: string, name: string) => !!hint && (hint.includes(id) || hint.includes(name.toLowerCase()))
   const featured = FEATURED.filter((c) => !q || `${c.name} ${c.description} ${c.category}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => Number(wanted(b.id, b.name)) - Number(wanted(a.id, a.name)))
   const featuredHosts = new Set(FEATURED.map((c) => host(c.url)))
   const listed = (registry ?? []).filter((r) => !featuredHosts.has(host(r.url)))
 
@@ -258,14 +263,14 @@ function Connectors({ realm, q }: { realm: string; q: string }) {
       <Grid>
         {(!q || "google drive documents docs sheets".includes(q.toLowerCase())) && <DriveCard realm={realm} />}
         {featured.map((c) => (
-          <Card key={c.id} name={c.name} logo={c.id} domain={host(c.url)} title={c.name} meta={c.untried ? `${c.category} · not tried with Airth yet` : c.category} description={c.description}
+          <Card key={c.id} name={c.name} logo={c.id} domain={host(c.url)} title={c.name} meta={[wanted(c.id, c.name) && "Suggested", c.category, c.untried && "not tried with Airth yet"].filter(Boolean).join(" · ")} description={c.description}
             action={(() => {
               const m: Method = { kind: "sign-in", name: c.id, title: c.name, url: c.url, description: c.description, logo: c.id, checked: true, tried: !c.untried }
               return status(c.url, m) ?? <Button size="sm" variant="outline" onClick={() => setMethod(m)}>Connect</Button>
             })()} />
         ))}
       </Grid>
-      <WithKey realm={realm} q={q} skip={new Set(FEATURED.map((c) => c.id))} />
+      <WithKey realm={realm} q={q} skip={new Set(FEATURED.map((c) => c.id))} wanted={wanted} />
       <h2 className="mt-9 mb-1 flex items-center gap-2 text-sm font-semibold">From the MCP Registry {searching && <Loader className="size-3.5 animate-spin text-muted-foreground" />}</h2>
       <p className="mb-4 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"><ShieldAlert className="size-3.5" /> Not checked by Airth. Connect only what the company itself publishes: look at the address.</p>
       {!registry ? <Loading /> : !listed.length ? <Empty icon={Plug} title="Nothing found">Try another word.</Empty> : (
@@ -465,11 +470,12 @@ type Preset = { connected: boolean; connector: { id: string; name: string; descr
 
 /** Services connected with an API key the founder creates on their side
     (decision 19): the key goes to the business's secrets, never to a model. */
-function WithKey({ realm, q, skip }: { realm: string; q: string; skip: Set<string> }) {
+function WithKey({ realm, q, skip, wanted }: { realm: string; q: string; skip: Set<string>; wanted: (id: string, name: string) => boolean }) {
   const { data, refresh } = usePoll<{ connectors: Preset[] }>(() => api(`realms/${enc(realm)}/connectors`), 600000, [realm])
   const [method, setMethod] = useState<Method | null>(null)
   const list = (data?.connectors ?? []).filter((c) => !skip.has(c.connector.id) || c.connected)
     .filter((c) => !q || `${c.connector.name} ${c.connector.description} ${c.connector.category}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => Number(wanted(b.connector.id, b.connector.name)) - Number(wanted(a.connector.id, a.connector.name)))
   async function disconnect(c: Preset) {
     try { await api(`realms/${enc(realm)}/connectors/${enc(c.connector.id)}`, undefined, "DELETE"); toast.success(`${c.connector.name} disconnected.`); refresh() }
     catch (e) { toast.error((e as Error).message) }
@@ -481,7 +487,7 @@ function WithKey({ realm, q, skip }: { realm: string; q: string; skip: Set<strin
       <p className="mb-4 text-xs text-muted-foreground">For services without a sign-in page: create a key on their side and paste it here. It is kept in this business's secrets and never reaches a model.</p>
       <Grid>
         {list.map((c) => (
-          <Card key={c.connector.id} name={c.connector.name} logo={c.connector.id} title={c.connector.name} meta={c.connector.category} description={c.connector.description}
+          <Card key={c.connector.id} name={c.connector.name} logo={c.connector.id} title={c.connector.name} meta={[wanted(c.connector.id, c.connector.name) && "Suggested", c.connector.category].filter(Boolean).join(" · ")} description={c.connector.description}
             action={c.connected
               ? <><Done>Connected</Done><Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => disconnect(c)}>Disconnect</Button></>
               : <Button size="sm" variant="outline" onClick={() => setMethod({ kind: "key", id: c.connector.id, title: c.connector.name, description: c.connector.description, help: c.connector.token_help, keyUrl: c.connector.token_url })}>Add a key</Button>} />

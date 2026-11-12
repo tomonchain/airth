@@ -16,7 +16,6 @@ import { PageBoundary } from "@/components/error-boundary"
 import { Back } from "@/components/page"
 import { Character } from "@/components/character"
 import { Button } from "@/components/ui/button"
-import { NewBusiness } from "@/components/new-business"
 import { Pair } from "@/components/pair"
 import { DeviceAsks } from "@/components/device-asks"
 import { Palette } from "@/components/palette"
@@ -211,6 +210,17 @@ export default function App() {
     )
   }
 
+  // A new business, from the business menu: the same guide, from its
+  // business step, with its register and its connectors (decision 126).
+  if (founding) {
+    return (
+      <Suspense fallback={null}>
+        <Welcome fresh realms={realms.data ?? []} onCancel={() => setFounding(false)}
+          onDone={(r) => { setFounding(false); realms.refresh(); if (r) { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") } }} />
+      </Suspense>
+    )
+  }
+
   if (!realm) {
     return <div className="grid h-svh place-items-center text-sm text-muted-foreground">{realms.error ? `Airth is not answering: ${realms.error}` : "Loading…"}</div>
   }
@@ -224,7 +234,6 @@ export default function App() {
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => ask()} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
       <DeviceAsks />
-      <NewBusiness open={founding} onOpenChange={setFounding} onCreated={(name) => { realms.refresh(); location.hash = `#/b/${encodeURIComponent(name)}`; setPage("home") }} />
       <div className="flex min-h-0 flex-1">
         {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
         <main className="flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm">
