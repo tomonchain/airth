@@ -1,29 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowRight, ArrowUp, CalendarClock, Flag, Inbox, LayoutDashboard, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
+import { ArrowUp, CalendarClock, Flag, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
 import { toast } from "sonner"
-import { Character } from "@/components/character"
 import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/use-poll"
-import { api, called, enc, type Agent, type Business, type Calendar, type Company, type Item, type Tasks } from "@/lib/api"
+import { api, called, enc, type Agent, type Calendar, type Company, type Item, type Tasks } from "@/lib/api"
 import { sendOrder } from "@/lib/orders"
-import { cn } from "@/lib/utils"
 import { Conversation } from "@/screens/conversation"
 import type { Page } from "@/components/rail"
 
 /** What a suggestion does: fill the box with words to send, or open a page. */
 type Suggestion = { key: string; icon: typeof Inbox; label: string; text?: string; page?: Page }
 
-const SHOWN = 4
-const EVERY = 8000
+const EVERY = 6000
 
 /** The Home is a conversation with the founder's interlocutor (decision
-    120), as a chat app's: on a new day, a greeting, one box to ask, and a few
-    suggestions drawn from what Airth knows; once asked, the conversation
-    itself. Whatever is asked goes on as a task or a project (a plan). The
-    figures are one line at the top; the rest is the Overview page. */
-export function Home({ realm, agents, items, business, tasks, onTasks, onAgent, onTask, onPage }: {
-  realm: string; agents: Agent[] | null; items: Item[]; business: Business | null; tasks: Tasks | null
+    120), as a chat app's: on a new day, a greeting, one line to ask that
+    grows as it is written, and under it one suggestion at a time, drawn
+    from what Airth knows; once asked, the conversation itself. Whatever is
+    asked goes on as a task or a project (a plan). What waits and what is
+    under way are the tabs' and the rail's; the figures are the Overview
+    page's. */
+export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage }: {
+  realm: string; agents: Agent[] | null; items: Item[]; tasks: Tasks | null
   onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void
 }) {
   const team = agents ?? []
@@ -41,23 +40,20 @@ export function Home({ realm, agents, items, business, tasks, onTasks, onAgent, 
   useEffect(() => setMode(null), [realm])
   const shown = lead && (mode ?? (leadTasks[leadTasks.length - 1]?.startsWith(today) ? "thread" : "start")) === "thread" ? "thread" : "start"
 
-  const status = <StatusLine items={items} tasks={tasks} business={business} onPage={onPage}
-    action={shown === "thread"
-      ? <Button size="sm" variant="ghost" className="h-7 text-muted-foreground" onClick={() => setMode("start")}><Plus /> New request</Button>
-      : lead && leadTasks.length > 0 && <Button size="sm" variant="ghost" className="h-7 text-muted-foreground" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>} />
-
   if (shown === "thread" && lead) {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="border-b px-4 py-2 md:px-6">{status}</div>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <Button size="sm" variant="ghost" className="absolute top-2 right-3 z-10 h-8 text-muted-foreground" onClick={() => setMode("start")}><Plus /> New request</Button>
         <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} />
       </div>
     )
   }
   return (
-    <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 pt-4 pb-28 md:px-6 md:pb-10">
-        {status}
+    <div className="relative min-w-0 flex-1 overflow-y-auto">
+      {lead && leadTasks.length > 0 && (
+        <Button size="sm" variant="ghost" className="absolute top-2 right-3 h-8 text-muted-foreground" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>
+      )}
+      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 md:px-6 md:pb-24">
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal)} onPage={onPage}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>
@@ -65,34 +61,7 @@ export function Home({ realm, agents, items, business, tasks, onTasks, onAgent, 
   )
 }
 
-/** The figures that matter, in one line: each opens its page. */
-function StatusLine({ items, tasks, business, onPage, action }: {
-  items: Item[]; tasks: Tasks | null; business: Business | null; onPage: (p: Page) => void; action?: React.ReactNode
-}) {
-  const waiting = items.length
-  const running = (tasks?.running.length ?? 0) + (tasks?.waiting.length ?? 0)
-  const f = business?.finance
-  const bits: [string, Page, boolean][] = [
-    [waiting ? `${waiting} waiting for you` : "Nothing waits for you", "needs", waiting > 0],
-    [running ? `${running} in progress` : "Nothing in progress", "tasks", false],
-    ...(f && !f.unknown && f.runway ? [[`Runway ${f.runway}`, "finance", false] as [string, Page, boolean]] : []),
-  ]
-  return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
-      {bits.map(([label, page, hot], i) => (
-        <span key={page} className="flex items-center gap-1">
-          {i > 0 && <span aria-hidden>·</span>}
-          <button onClick={() => onPage(page)} className={cn("rounded px-1 py-0.5 hover:bg-accent hover:text-foreground", hot && "font-medium text-amber-600 dark:text-amber-400")}>{label}</button>
-        </span>
-      ))}
-      <button onClick={() => onPage("overview")} className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent hover:text-foreground"><LayoutDashboard className="size-3.5" /> Overview</button>
-      <span className="flex-1" />
-      {action}
-    </div>
-  )
-}
-
-/** The greeting, the one box and the suggestions under it. */
+/** The greeting, the one line to ask, and the suggestion under it. */
 function Start({ realm, lead, first, suggestions, onPage, onSent }: {
   realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onSent: (id: string) => void
 }) {
@@ -100,6 +69,13 @@ function Start({ realm, lead, first, suggestions, onPage, onSent }: {
   const [busy, setBusy] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { if (matchMedia("(min-width: 768px)").matches) box.current?.focus() }, [])
+  // One line that grows with what is written, up to a few.
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [text])
 
   async function send() {
     const t = text.trim()
@@ -119,54 +95,43 @@ function Start({ realm, lead, first, suggestions, onPage, onSent }: {
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-center py-10">
-      <div className="flex flex-col items-center text-center">
-        {lead && <Character agent={lead} size={56} />}
-        <h1 className="mt-4 text-[28px] leading-tight font-semibold tracking-tight text-balance md:text-[32px]">
-          What shall we do today{first ? `, ${first}` : ""}?
-        </h1>
-        {lead && <p className="mt-2 text-sm text-muted-foreground">{called(lead)} takes it, and passes on what is another's.</p>}
-      </div>
-      <div className="mt-7 rounded-3xl border bg-surface p-3 shadow-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
-        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={3} disabled={busy}
-          placeholder="Ask for anything: a post, a plan, a figure, a fix…" aria-label="What to ask"
+    <div>
+      <h1 className="text-center text-[26px] leading-tight font-medium tracking-tight text-balance md:text-[30px]">
+        What shall we do today{first ? `, ${first}` : ""}?
+      </h1>
+      <div className="mt-8 flex items-end gap-1.5 rounded-[26px] border bg-surface py-1.5 pr-1.5 pl-5 shadow-[0_2px_12px_-4px_rgb(0_0_0/0.08)] transition-shadow focus-within:shadow-[0_4px_18px_-6px_rgb(0_0_0/0.14)]">
+        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} disabled={busy}
+          placeholder={lead ? `Ask ${lead.first_name ?? lead.title}` : "Ask the team"} aria-label="What to ask"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(min-width: 768px)").matches) { e.preventDefault(); send() } }}
-          className="w-full resize-none bg-transparent px-1.5 pt-1 text-[16px] leading-relaxed outline-none placeholder:text-muted-foreground" />
-        <div className="flex items-center justify-end gap-2">
-          <MicButton value={text} onChange={setText} />
-          <Button size="icon" className="rounded-full" disabled={busy || !text.trim()} onClick={send} aria-label="Send">
-            {busy ? <Loader className="animate-spin" /> : <ArrowUp />}
-          </Button>
-        </div>
+          className="max-h-[200px] min-h-10 flex-1 resize-none bg-transparent py-2 text-[16px] leading-6 outline-none placeholder:text-muted-foreground" />
+        <MicButton value={text} onChange={setText} />
+        <Button size="icon" className="size-10 shrink-0 rounded-full" disabled={busy || !text.trim()} onClick={send} aria-label="Send">
+          {busy ? <Loader className="animate-spin" /> : <ArrowUp />}
+        </Button>
       </div>
-      <Suggestions list={suggestions} onUse={use} />
+      <Suggestion list={suggestions} onUse={use} />
     </div>
   )
 }
 
-/** A few suggestions at a time, the next coming in every few seconds; held
-    still while the pointer is on them. */
-function Suggestions({ list, onUse }: { list: Suggestion[]; onUse: (s: Suggestion) => void }) {
+/** One suggestion at a time, in a quiet line, the next coming in every few
+    seconds; held still while the pointer is on it. */
+function Suggestion({ list, onUse }: { list: Suggestion[]; onUse: (s: Suggestion) => void }) {
   const [at, setAt] = useState(0)
   const [held, setHeld] = useState(false)
   useEffect(() => {
-    if (held || list.length <= SHOWN) return
+    if (held || list.length < 2) return
     const t = setInterval(() => setAt((n) => (n + 1) % list.length), EVERY)
     return () => clearInterval(t)
   }, [held, list.length])
   if (!list.length) return null
-  const some = list.length <= SHOWN ? list : Array.from({ length: SHOWN }, (_, i) => list[(at + i) % list.length])
+  const s = list[at % list.length]
   return (
-    <div className="mt-4 grid gap-2 sm:grid-cols-2" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}>
-      {some.map((s) => (
-        <button key={s.key} onClick={() => onUse(s)}
-          className="group flex items-center gap-2.5 rounded-2xl border px-3.5 py-3 text-left text-sm fade-up transition-colors hover:bg-accent/60">
-          <s.icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 leading-snug">{s.label}</span>
-          {s.page && <ArrowRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
-        </button>
-      ))}
-    </div>
+    <button key={s.key} onClick={() => onUse(s)} onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}
+      className="mt-5 flex w-full items-center gap-3 rounded-xl px-5 py-2 text-left text-[15px] text-muted-foreground fade-up hover:text-foreground">
+      <s.icon className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{s.label}</span>
+    </button>
   )
 }
 
