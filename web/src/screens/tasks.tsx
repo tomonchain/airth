@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePoll } from "@/hooks/use-poll"
-import { api, called, enc, type Agent, type Item, type Tasks as TasksData } from "@/lib/api"
+import { api, called, enc, type Agent, type Item, type Project, type Tasks as TasksData } from "@/lib/api"
+import { due, ProjectView, said } from "@/screens/project"
 import { ago, stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -46,13 +47,24 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   // The app's list, refreshed every few seconds: not asked again here.
   const tasks = { data: shared, refresh: onTasks }
   const [archived, setArchived] = useState(false)
+  // The projects (decision 129): the open ones first in the list, the done
+  // ones with what is archived.
+  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
+  const [shown, setShown] = useState<number | null>(null)
+  useEffect(() => setShown(null), [realm])
+  const byRun = useMemo(() => new Map((runs.data ?? []).map((r) => [r.id, r])), [runs.data])
+  const all = projects.data?.projects ?? []
+  const ours = new Set(all.flatMap((p) => [p.run, ...p.tasks.map((t) => t.run)]).filter((x): x is string => !!x))
+  const listed = all.filter((p) => (p.status === "done") === archived)
+  const project = all.find((p) => p.id === shown) ?? null
   const agentOf = useMemo(() => {
     const m = new Map<string, string>()
     for (const g of Object.values(tasks.data ?? {})) for (const t of g) if (t.agent) m.set(t.id, t.agent)
     return m
   }, [tasks.data])
   const waiting = new Set((tasks.data?.waiting ?? []).map((t) => t.id))
-  const list = (runs.data ?? []).filter((r) => r.archived === archived)
+  // A project's tasks and the task it was planned in show in the project.
+  const list = (runs.data ?? []).filter((r) => r.archived === archived && !ours.has(r.id))
   // A plan's tasks (decision 120) sit under the task that passed them on,
   // which is grouped by the most pressing of them all.
   const fromOf = useMemo(() => {
@@ -71,17 +83,40 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
 
   return (
     <div className="flex min-w-0 flex-1">
-      <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", current && "max-md:hidden")}>
+      <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", (current || project) && "max-md:hidden")}>
         <SideHead title="Projects" />
-        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); onOpen(id) }} />
+        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); onOpen(id) }} />
         <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
           {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
             <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("rounded-md px-2 py-1", archived === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l as string}</button>
           ))}
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
+          {listed.length > 0 && (
+            <section className="mb-2">
+              <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{archived ? "Done projects" : "Projects"} · {listed.length}</h2>
+              {listed.map((p) => {
+                const ended = p.tasks.filter((t) => said(t, byRun) === "done").length
+                const reached = (m: number) => { const ts = p.tasks.filter((t) => t.milestone === m); return ts.length > 0 && ts.every((t) => said(t, byRun) === "done") }
+                const next = p.milestones.find((m) => !reached(m.id))
+                const running = p.tasks.some((t) => said(t, byRun) === "running")
+                return (
+                  <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", shown === p.id && !current && "bg-accent")}>
+                    <span className={cn("grid size-[22px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-3.5" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium">{p.name}</span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {[`${ended}/${p.tasks.length} done`, next && `next: ${next.title}${next.due ? `, ${due(next.due, false).text.split(" · ")[0]}` : ""}`].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(p.updated_at)}</span>
+                  </button>
+                )
+              })}
+            </section>
+          )}
           {!runs.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-            : !groups.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No project or task yet."}</p>
+            : !groups.length ? (!listed.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No project or task yet."}</p>)
             : groups.map(([g, l]) => (
               <section key={g} className="mb-2">
                 <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g} · {l.length}</h2>
@@ -91,7 +126,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
                   const team = kids(r.id)
                   const plan = team.length ? `project ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
                   return (
-                    <button key={r.id} onClick={() => onOpen(r.id)} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
+                    <button key={r.id} onClick={() => { setShown(null); onOpen(r.id) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
                       {child && <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />}
                       <Character agent={a} size={22} still={!r.live} />
                       <span className="min-w-0 flex-1">
@@ -110,8 +145,12 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       </aside>
       {current ? (
         <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
+          backLabel={project ? project.name : "Projects"}
           from={fromTitle(current.id)} passed={passedOf(current.id)} onOpenTask={onOpen}
           onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
+      ) : project ? (
+        <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} onBack={() => setShown(null)}
+          onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
       ) : (
         <div className="grid flex-1 place-items-center p-8 text-center max-md:hidden">
           <div>
@@ -223,8 +262,8 @@ type Full = {
   }
 }
 
-function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent, from, passed, onOpenTask }: {
-  realm: string; run: Run; agent: Agent; items: Item[]; onBack: () => void; onChange: () => void; onGone: () => void; onAgent: (name: string) => void
+function TaskView({ realm, run, agent, items, onBack, backLabel = "Projects", onChange, onGone, onAgent, from, passed, onOpenTask }: {
+  realm: string; run: Run; agent: Agent; items: Item[]; onBack: () => void; backLabel?: string; onChange: () => void; onGone: () => void; onAgent: (name: string) => void
   /** Who passed this task on, and what it passed on (decision 120). */
   from?: string; passed?: Passed[]; onOpenTask?: (id: string) => void
 }) {
@@ -274,7 +313,7 @@ function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent,
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:px-3">
-          <Back label="Projects" onClick={onBack} />
+          <Back label={backLabel} onClick={onBack} />
           {renaming !== null ? (
             <>
               <Input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") setRenaming(null) }} className="h-8" aria-label="Task name" />
@@ -292,13 +331,13 @@ function TaskView({ realm, run, agent, items, onBack, onChange, onGone, onAgent,
             </>
           )}
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="no-dock min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-4 pt-5 pb-4 [overflow-wrap:anywhere] md:px-6 md:pt-6">
             <TaskThread realm={realm} id={run.id} agent={agent} items={items} fresh={false} onChange={onChange}
               from={from} passed={passed} onAgent={(a) => { const t = passed?.find((p) => p.agent === a); if (t && onOpenTask) onOpenTask(t.id); else onAgent(a) }} />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
+        <div className="dock-lift mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
           <div className="flex items-end gap-2 rounded-2xl border bg-surface px-3 py-2">
             <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={1} placeholder={run.live ? "Add to what it is doing…" : "Go on with this task…"} aria-label="Follow up"
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); follow() } }}

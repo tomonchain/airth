@@ -267,3 +267,11 @@ export function departmentName(d: string | null | undefined) {
   const spaced = d.replace(/-/g, " ")
   return NINE[d] ?? spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
+
+/** A project (decision 129): its milestones and the tasks of every plan approved for it. */
+export type Project = {
+  id: number; name: string; description: string; status: "active" | "done"; agent: string; run: string | null
+  created_at: string; updated_at: string
+  milestones: { id: number; title: string; due: string | null }[]
+  tasks: { id: number; milestone: number | null; agent: string; task: string; run: string | null; skipped: string | null }[]
+}
