@@ -13,6 +13,9 @@ pub struct Incident<'a> {
     pub detail: &'a str,
     pub agent: Option<&'a str>,
     pub routine: Option<&'a str>,
+    /// The task that stopped, for the founder to go on with it (decision
+    /// 125).
+    pub run: Option<&'a str>,
     /// The action that failed.
     pub action: Option<&'a str>,
     /// Whether `agent` takes `action` down a level: only when the failure
@@ -53,7 +56,7 @@ pub fn record(realm: &Realm, incident: &Incident) -> Result<i64> {
         title: incident.title,
         agent: incident.agent,
         routine: incident.routine,
-        run: None,
+        run: incident.run,
         action: incident.action,
         args: &json!({
             "detail": detail,

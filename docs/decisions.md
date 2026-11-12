@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 125. A stopped task goes on with a remedy
+
+**Accepted** (founder, 12 November 2026, on a task stopped on its cost budget: "beyond Seen, a mitigation: the AI makes three proposals and the founder chooses, or a free field; then it applies the change and the task resumes, or cancel").
+
+- **A task's incident keeps its run.** When a task stops on its budget (decision 64), its incident in Needs you names the task, so it shows in the task's thread and can be acted on there.
+- **Fix and resume…** beside Seen opens the remedies:
+  - Up to three come from the fast model, with Airth's versioned prompt (`src/prompts/remedy.md`). It is given the order, why the task stopped, its budget and spend, and the agent's last words, all as data.
+  - The answer is checked against a schema and journaled like any model call (`remedy`). An answer that does not fit is recorded and refused, never repaired; the founder then writes their own.
+  - Each remedy is a message to the agent, and a larger cost budget when the work needs it. Picking one fills the editor, which the founder may change, or the founder writes their own.
+- **Resume the task** applies it. The cost budget is raised when asked, the message is given to the agent with why it stopped, the incident is closed as "resumed by the founder", and the task goes on unwatched. **Cancel** leaves the incident as it was, and Seen still closes it.
+- **Bounded by code, not by the model:**
+  - a raised budget must be above what the task spent, and at most five times the business's task budget (`task_max_cost_usd`, $1 by default, so $5);
+  - the schema says the same to the model;
+  - a task out of money cannot go on without a raise.
+- Only a stopped task's incident offers this. A routine's incident keeps its Retry (decision 62).
+
+*Why:* an incident with only Seen leaves the founder to rewrite the order from scratch. The agent's work so far is in the run; a remedy keeps it and spends a little more, or asks for less, at the founder's word.
+
+*Cost:* one fast-model call when the founder opens the remedies. The ceiling is a fixed multiple of the task budget; a business that needs more raises its `task_max_cost_usd`.
+
 ## 124. The language the agents write to the founder in
 
 **Accepted** (founder, 11 November 2026: "a preferred language for my chats with the agents").
