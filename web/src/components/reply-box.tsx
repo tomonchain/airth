@@ -56,7 +56,7 @@ export function ReplyBox({ realm, it, redo, onDone }: {
   if (!it.agent) return null
   return (
     <div className="mt-4">
-      <div className="flex items-end gap-1.5 rounded-[22px] border bg-surface py-1 pr-1 pl-4 shadow-[0_2px_10px_-4px_rgb(0_0_0/0.08)] focus-within:border-ring">
+      <div className="flex items-end gap-1.5 rounded-[22px] bg-bubble py-1 pr-1 pl-4">
         <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} disabled={busy}
           placeholder="Reply to the agent…" aria-label="Reply to the agent"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }}

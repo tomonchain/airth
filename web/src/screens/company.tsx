@@ -166,7 +166,7 @@ function Goal({ g, text, onFile }: { g: Record<string, unknown>; text: (o: Recor
                 return (
                   <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
                     {i < steps.length - 1 && <span className="absolute top-5 bottom-0 left-[9px] w-px bg-border" />}
-                    <span className={cn("relative z-10 mt-0.5 grid size-[19px] shrink-0 place-items-center rounded-full border bg-surface",
+                    <span className={cn("relative z-10 mt-0.5 grid size-[19px] shrink-0 place-items-center rounded-full bg-bubble",
                       past && "border-muted-foreground/40 text-muted-foreground", i === next && "border-sky-500 bg-sky-500 text-white")}>
                       {past ? <Check className="size-3" /> : <span className={cn("size-1.5 rounded-full", i === next ? "bg-white" : "bg-muted-foreground/50")} />}
                     </span>

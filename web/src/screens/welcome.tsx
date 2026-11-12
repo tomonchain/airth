@@ -144,7 +144,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
     lead = <>Your agents think with a model you pay for directly, at its price. Paste an Anthropic API key, from <a className="text-sky-500 hover:underline" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.</>
     body = (
       <div className="space-y-3">
-        <label className="flex h-12 items-center gap-3 rounded-xl border bg-surface px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+        <label className="flex h-12 items-center gap-3 rounded-xl bg-bubble px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
           <KeyRound className="size-4 text-muted-foreground" />
           <input type="password" autoComplete="off" spellCheck={false} value={f.key} onChange={set("key")} placeholder="sk-ant-…" aria-label="Anthropic API key" autoFocus
             className="flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground" />
@@ -192,7 +192,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
             <p className="text-xs text-muted-foreground">{register.number}, like {register.example}.</p>
             {f.country === "GB" && gbKey === false && (
               <>
-                <label className="flex h-11 items-center gap-3 rounded-xl border bg-surface px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+                <label className="flex h-11 items-center gap-3 rounded-xl bg-bubble px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
                   <KeyRound className="size-4 shrink-0 text-muted-foreground" />
                   <input type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder="Companies House API key" aria-label="Companies House API key"
                     className="min-w-0 flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground" />
@@ -224,7 +224,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
         body = (
           <div className="space-y-5">
             {rec ? (
-              <div className="rounded-2xl border bg-surface p-4">
+              <div className="rounded-2xl bg-bubble p-4">
                 <div className="flex items-start gap-3">
                   <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
                   <div className="min-w-0 flex-1">
@@ -244,7 +244,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
                   ))}
                 </div>
                 {registered && (
-                  <div className="rounded-2xl border bg-surface p-4">
+                  <div className="rounded-2xl bg-bubble p-4">
                     {fields(rec ?? hand, setHand)}
                   </div>
                 )}
@@ -343,7 +343,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
     const hint = [...(installed?.connectors ?? []), ...(installed?.setup ?? [])].join(" ").toLowerCase() + (f.country === "FR" ? " qonto" : "")
     body = realm && (
       <div className="space-y-4">
-        <label className="flex h-10 items-center gap-2 rounded-xl border bg-surface px-3 text-sm text-muted-foreground focus-within:border-ring">
+        <label className="flex h-10 items-center gap-2 rounded-xl bg-bubble px-3 text-sm text-muted-foreground focus-within:border-ring">
           <Search className="size-4" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search connectors" className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
         </label>
@@ -449,7 +449,7 @@ function Stage({ step, name, what, country, crew, goal, by, number, planned }: {
     <aside aria-hidden className="relative hidden overflow-hidden border-l bg-background lg:block">
       <div className="absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_40%,rgb(109_93_252/0.16),transparent_70%),radial-gradient(40%_40%_at_70%_60%,rgb(45_212_191/0.10),transparent_70%)]" />
       <div className="relative flex h-full items-center justify-center p-12">
-        <div className="w-full max-w-sm rounded-3xl border bg-surface/90 p-7 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.45)] backdrop-blur">
+        <div className="w-full max-w-sm rounded-3xl bg-bubble/90 p-7 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.45)] backdrop-blur">
           <div className="flex items-center gap-3">
             <span className="size-9 shrink-0 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />
             <div className="min-w-0">

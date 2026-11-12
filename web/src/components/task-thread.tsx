@@ -335,7 +335,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         if (t.kind === "founder" && t.at === 0 && from) {
           return (
             <div key={t.at} className={cn("mb-4", isNew && "fade-up")}>
-              <div className="rounded-2xl border border-dashed bg-surface px-4 py-3">
+              <div className="rounded-2xl bg-bubble px-4 py-3">
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <CornerDownRight className="size-3.5" /> <b className="font-medium text-foreground">{from}</b> passed this on to <b className="font-medium text-foreground">{agent.title}</b>
                   <span className="ml-auto">{stamp(startOf(id))}</span>
@@ -425,7 +425,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
       ))}
       {/* What this task passed on to the team, and where each part is. */}
       {passed.length > 0 && (
-        <div className="mb-4 rounded-2xl border bg-surface px-4 py-3 fade-up">
+        <div className="mb-4 rounded-2xl bg-bubble px-4 py-3 fade-up">
           <div className="mb-2 text-xs font-medium text-muted-foreground">The project's tasks</div>
           <ul className="space-y-1">
             {passed.map((p) => (

@@ -339,7 +339,7 @@ function Drafts({ realm }: { realm: string }) {
             <div key={d.id} className="rounded-xl bg-bubble p-3">
               <div className="text-[11px] text-muted-foreground">{d.kind} · {d.pipeline} · {stamp(d.created_at)}</div>
               {editing?.id === d.id
-                ? <textarea value={editing.text} onChange={(e) => setEditing({ id: d.id, text: e.target.value })} rows={5} className="mt-1.5 w-full rounded-md border bg-surface p-2 text-[12.5px] outline-none" />
+                ? <textarea value={editing.text} onChange={(e) => setEditing({ id: d.id, text: e.target.value })} rows={5} className="mt-1.5 w-full rounded-md bg-bubble p-2 text-[12.5px] outline-none" />
                 : <p className="mt-1 text-[12.5px] leading-snug whitespace-pre-wrap">{d.text}</p>}
               {link && <a href={link} target="_blank" rel="noreferrer" className="mt-1 block truncate text-[11px] text-sky-500 hover:underline">{d.source?.title || link}</a>}
               <div className="mt-2 flex gap-1.5">

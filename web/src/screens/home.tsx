@@ -103,7 +103,7 @@ function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
       <h1 className="text-center text-[26px] leading-tight font-medium tracking-tight text-balance md:text-[30px]">
         What shall we do today{first ? `, ${first}` : ""}?
       </h1>
-      <div className="mt-8 flex items-end gap-1.5 rounded-[26px] border bg-surface py-1.5 pr-1.5 pl-5 shadow-[0_2px_12px_-4px_rgb(0_0_0/0.08)] transition-shadow focus-within:shadow-[0_4px_18px_-6px_rgb(0_0_0/0.14)]">
+      <div className="mt-8 flex items-end gap-1.5 rounded-[26px] bg-bubble py-1.5 pr-1.5 pl-5">
         <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} disabled={busy}
           placeholder={lead ? `Ask ${lead.first_name ?? lead.title}` : "Ask the team"} aria-label="What to ask"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(min-width: 768px)").matches) { e.preventDefault(); send() } }}

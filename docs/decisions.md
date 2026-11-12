@@ -2,6 +2,26 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 130. The rail in groups; no line around a block; a conversation in time order
+
+**Accepted** (founder, 12 November 2026: "for the menu, I would leave more items, maybe in groups"; "remove all the borders of the divs"; the morning brief "has nothing to do there, after the last message").
+
+- **The rail shows its pages in groups**, replacing decision 128's More menu on a computer:
+  - Chat, Needs you, Projects;
+  - Team, Routines, Calendar;
+  - Overview, Finance, Documents, Business, Marketplace.
+
+  Usage is the spending ring's and Settings the rail's foot, as before. The phone keeps its four tabs; its More sheet shows the same groups under their titles (Team, Business, Airth).
+- **No line around or between blocks.** A block stands out by its background:
+  - the base styles make the borders of blocks (`div`, `aside`, `header`, `section`, lists…) transparent;
+  - fields, buttons and a line given a colour on purpose keep theirs;
+  - the boxes to write in, cards and the top bar's pills take a filled background instead.
+- **A conversation is in time order.** What waits for the founder stays where it was sent, marked new; it no longer moves after later messages.
+
+*Why:* the founder wants a calmer screen and finds three pages and a menu too few to move around in.
+
+*Cost:* a page's parts are told apart by shades alone, so a background chosen wrong makes a block vanish. A screen is checked in light and dark before it merges.
+
 ## 129. A project is kept: its name, its description, its milestones, its tasks
 
 **Accepted** (founder, 12 November 2026: "are projects a category of their own, with milestones, their tasks…, named and described automatically?", then "go" on the proposal).
