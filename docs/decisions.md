@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 136. The interlocutor may ask the founder to hire an agent
+
+**Accepted** (founder, 13 November 2026: "the CEO cannot create new agents despite a formal request from me. It should be possible. It must not create them when it wants, only when it is useful, with my approval").
+
+- **The interlocutor gets a second tool, `propose_agent`:** a name, a title, a department, the job written as the agent's file, and why the team needs it. It is told to use it only when the goal or the founder's order needs a job no agent covers, never to share work an agent already does.
+- **The tool writes nothing.** The hiring waits in Needs you (and on Telegram) as an item with the action `airth.hire`, its reason shown beside it. The founder approves it, edits the job first, or rejects it.
+- **Approved, Airth writes `agents/<name>.md`** as the founder's own hiring on Team does: the job, the title, the department. Checked again then: a name already taken, a department the business does not have, are refused.
+- **A new agent has no tools and no routine.** Its scope is empty: the founder gives it its connectors, skills and repositories on Team. Nothing of the interlocutor's rights passes on.
+- An interlocutor alone in its business gets the tool too; `propose_plan` still needs another agent to name.
+- Hiring stays at level 1 (propose) for good: it changes the team, which only the founder does.
+
+*Why:* agents cannot write `agents/` (decision 44), so the interlocutor could only describe the agent it wanted, and the founder had to write it on Team by hand.
+
+*Cost:* one more tool in the interlocutor's tasks. The file is written in the business folder and not committed, as a hiring on Team is: it reaches the folder's remote only once the founder commits it. A new file does not stop the folder's sync (decision 114).
+
 ## 135. X as a read-only connector
 
 **Accepted** (founder, 13 November 2026: "can we integrate an X Platform connector?", to draft replies to the accounts Hedgen follows).

@@ -50,15 +50,36 @@ pub struct Proposal {
 /// given; what it says back to the agent.
 pub type Propose = Arc<dyn Fn(&Proposal, Option<i64>) -> Result<String> + Send + Sync>;
 
+/// An agent the interlocutor asks the founder to hire (decision 136).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hiring {
+    /// Its file's name: `agents/<name>.md`.
+    pub name: String,
+    pub title: String,
+    pub department: String,
+    /// Its job, as its file's body.
+    pub job: String,
+    /// Why the team needs it.
+    pub why: String,
+}
+
+/// Put the hiring to the founder; what it says back to the agent.
+pub type Hire = Arc<dyn Fn(&Hiring) -> Result<String> + Send + Sync>;
+
 pub struct Dispatch {
     /// The agents a plan may name, with a line on each one's job.
     pub team: Vec<(String, String)>,
     /// The open projects a plan may add to: number and name.
     pub projects: Vec<(i64, String)>,
     pub propose: Propose,
+    pub hire: Hire,
 }
 
 pub struct ProposePlan(pub Arc<Dispatch>);
+
+/// The interlocutor asks the founder to hire an agent (decision 136): it
+/// only proposes; the founder approves, edits the job or rejects.
+pub struct ProposeAgent(pub Arc<Dispatch>);
 
 fn text(v: &Value) -> String {
     v.as_str().unwrap_or_default().trim().to_string()
@@ -295,6 +316,34 @@ pub fn render(p: &Proposal) -> String {
     out.join("\n")
 }
 
+fn hiring(input: &Value, d: &Dispatch) -> Result<Hiring> {
+    let h = Hiring {
+        name: text(&input["name"]).to_lowercase(),
+        title: text(&input["title"]),
+        department: text(&input["department"]),
+        job: text(&input["job"]),
+        why: text(&input["why"]),
+    };
+    crate::realm::validate_name(&h.name).map_err(|_| {
+        anyhow::anyhow!("an agent's name is lowercase letters, digits and dashes (e.g. sales-lead)")
+    })?;
+    if d.team.iter().any(|(n, _)| *n == h.name) {
+        bail!(
+            "{} is already an agent of the team: give its task in a plan instead",
+            h.name
+        );
+    }
+    for (what, value) in [("title", &h.title), ("job", &h.job), ("why", &h.why)] {
+        if value.is_empty() {
+            bail!("say the agent's {what}");
+        }
+    }
+    if h.title.contains('\n') {
+        bail!("a title is one line");
+    }
+    Ok(h)
+}
+
 impl Tool for ProposePlan {
     fn spec(&self) -> ToolSpec {
         let team: Vec<String> = self
@@ -374,6 +423,45 @@ impl Tool for ProposePlan {
     }
 }
 
+impl Tool for ProposeAgent {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "propose_agent".into(),
+            description: "Ask the founder to hire a new agent, when the goal or the founder's order needs a job no agent of the team covers, and only then: never to share work an agent already does. Say why in two lines. Write its job as its file's body: its mission, how it works, what it delivers and how often, what it never does. The founder approves, edits the job or rejects it in Needs you. A new agent starts with no tools and no routine: the founder gives it its connectors and skills. After proposing, end your turn, saying in one line whom you proposed.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for its file, lowercase with dashes (sales-lead)"},
+                    "title": {"type": "string", "description": "Its title, as the founder will read it (Sales lead)"},
+                    "department": {"type": "string", "description": "leadership, marketing, sales, support, tech, operations, finance, legal or data"},
+                    "job": {"type": "string", "description": "Its job, in Markdown: mission, how it works, what it delivers, what it never does"},
+                    "why": {"type": "string", "description": "Two lines: what the team cannot do without it, and for which goal"}
+                },
+                "required": ["name", "title", "department", "job", "why"]
+            }),
+        }
+    }
+
+    // It only puts the hiring to the founder; nothing is written before
+    // they approve.
+    fn capability(&self) -> Capability {
+        Capability::Internal
+    }
+
+    fn preview(&self, input: &Value, _: &Workspace) -> Result<String> {
+        let h = hiring(input, &self.0)?;
+        Ok(format!(
+            "propose to the founder to hire {} ({})",
+            h.title, h.name
+        ))
+    }
+
+    fn execute(&self, input: &Value, _: &Workspace, _: &CancelToken) -> Result<String> {
+        let h = hiring(input, &self.0)?;
+        (self.0.hire)(&h)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,7 +474,34 @@ mod tests {
             ],
             projects: vec![(3, "Year-end recap".into())],
             propose: Arc::new(|_, _| Ok(String::new())),
+            hire: Arc::new(|_| Ok(String::new())),
         }
+    }
+
+    #[test]
+    fn a_hiring_has_a_new_name_a_title_a_job_and_a_reason() {
+        let d = dispatch();
+        let ok = json!({"name": "Sales-Lead", "title": "Sales lead", "department": "sales", "job": "Find the firms.", "why": "Nobody sells."});
+        let h = hiring(&ok, &d).unwrap();
+        assert_eq!(
+            (h.name.as_str(), h.title.as_str()),
+            ("sales-lead", "Sales lead")
+        );
+        // An agent of the team is given a task, not hired again.
+        let mut taken = ok.clone();
+        taken["name"] = json!("writer");
+        assert!(format!("{:#}", hiring(&taken, &d).unwrap_err()).contains("already"));
+        let mut odd = ok.clone();
+        odd["name"] = json!("../x");
+        assert!(hiring(&odd, &d).is_err());
+        for field in ["title", "job", "why"] {
+            let mut blank = ok.clone();
+            blank[field] = json!(" ");
+            assert!(hiring(&blank, &d).is_err(), "{field}");
+        }
+        let mut two = ok.clone();
+        two["title"] = json!("Sales\nlead");
+        assert!(hiring(&two, &d).is_err());
     }
 
     #[test]

@@ -12,6 +12,8 @@ use serde_json::json;
 
 /// The action of a plan's item in the queue.
 pub const DISPATCH: &str = "airth.dispatch";
+/// The action of a hiring's item in the queue (decision 136).
+pub const HIRE: &str = "airth.hire";
 
 impl Hub {
     /// The tool a task of the business's interlocutor gets: the other
@@ -42,9 +44,6 @@ impl Hub {
                 (name, line)
             })
             .collect();
-        if team.is_empty() {
-            return Ok(None);
-        }
         // The open projects a plan may add to (decision 129).
         let projects: Vec<(i64, String)> = Store::of(realm)?
             .projects()?
@@ -53,6 +52,7 @@ impl Hub {
             .take(10)
             .map(|p| (p.id, p.name))
             .collect();
+        let hire = self.hire_for(realm, agent, &state.id);
         let (realm, agent, run) = (realm.clone(), agent.clone(), state.id.clone());
         let propose = std::sync::Arc::new(
             move |p: &Proposal, project: Option<i64>| -> Result<String> {
@@ -86,7 +86,72 @@ impl Hub {
             team,
             projects,
             propose,
+            hire,
         }))
+    }
+
+    /// How the interlocutor asks the founder to hire (decision 136): the
+    /// hiring is checked as the founder's own would be, then waits in
+    /// Needs you, where the founder may edit the job.
+    fn hire_for(&self, realm: &Realm, agent: &str, run: &str) -> crate::tools::dispatch::Hire {
+        let (realm, agent, run) = (realm.clone(), agent.to_string(), run.to_string());
+        std::sync::Arc::new(
+            move |h: &crate::tools::dispatch::Hiring| -> Result<String> {
+                let own = &realm.config.departments;
+                crate::business::check_agent_field("title", &h.title, own)?;
+                let department = crate::business::config::department(&h.department, own)?;
+                if crate::business::job(&realm.root()?, &h.name).is_ok() {
+                    bail!("{} is already an agent of the team", h.name);
+                }
+                let id = Store::of(&realm)?.propose(&crate::business::store::autonomy::NewItem {
+                kind: "approval",
+                title: &format!("Hire a {}", h.title),
+                agent: Some(&agent),
+                routine: None,
+                run: Some(&run),
+                action: Some(HIRE),
+                args: &json!({"name": h.name, "title": h.title, "department": department, "text": h.job, "why": h.why}).to_string(),
+                execute_at: None,
+                // The founder may edit the job before approving it.
+                source: &json!({"show": "text", "editable": "text"}).to_string(),
+                model_call: None,
+            })?;
+                Ok(format!(
+                    "The hiring waits for the founder in Needs you (item {id}); they may edit the job. Once they approve it, {} joins the team, with no tools until they give them. End your turn now, saying in one line whom you proposed.",
+                    h.title
+                ))
+            },
+        )
+    }
+
+    /// The founder approved hiring `item`, its job as it now reads: the
+    /// agent's file is written, with no tools and no routine (decision
+    /// 136). What it did.
+    pub(super) fn hire(
+        &self,
+        realm: &Realm,
+        item: &crate::business::store::queue::Item,
+    ) -> Result<String> {
+        let root = realm.root()?;
+        let (name, title) = (
+            item.args["name"].as_str().unwrap_or_default(),
+            item.args["title"].as_str().unwrap_or_default(),
+        );
+        let own = &realm.config.departments;
+        let department = item.args["department"].as_str().unwrap_or_default();
+        crate::business::check_agent_field("title", title, own)?;
+        crate::business::check_agent_field("department", department, own)?;
+        crate::realm::validate_name(name).context("invalid agent name")?;
+        // Hired meanwhile, by the founder or an earlier approval.
+        if crate::business::job(&root, name).is_ok() {
+            bail!("{name} is already an agent of the team");
+        }
+        crate::business::set_job(&root, name, item.args["text"].as_str().unwrap_or_default())?;
+        crate::business::set_agent_field(&root, name, "title", title, own)?;
+        crate::business::set_agent_field(&root, name, "department", department, own)?;
+        Ok(format!(
+            "{title} joined the team: give it its connectors and skills on Team"
+        ))
     }
 
     /// The founder approved plan `item`, as its text now reads (they may
