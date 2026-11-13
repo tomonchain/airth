@@ -17,9 +17,10 @@ pub const HIRE: &str = "airth.hire";
 
 impl Hub {
     /// The tool a task of the business's interlocutor gets: the other
-    /// agents, and the founder's approval to ask for.
+    /// agents, and the founder's approval to ask for. A mission its own
+    /// routine launched gets it too: the day's plan (decision 137).
     pub(super) fn dispatch_for(&self, realm: &Realm, state: &State) -> Result<Option<Dispatch>> {
-        let (Some(agent), None) = (&state.agent, &state.routine) else {
+        let Some(agent) = &state.agent else {
             return Ok(None);
         };
         let Ok(root) = realm.root() else {
@@ -63,23 +64,54 @@ impl Hub {
                     .map(|s| json!({"agent": s.agent, "task": s.task, "after": s.after}))
                     .collect();
                 let title: String = p.name.chars().take(80).collect();
-                let id =
-                    Store::of(&realm)?.propose(&crate::business::store::autonomy::NewItem {
-                        kind: "approval",
-                        title: &title,
-                        agent: Some(&agent),
-                        routine: None,
-                        run: Some(&run),
-                        action: Some(DISPATCH),
-                        args: &json!({"steps": plan, "text": text, "project": project}).to_string(),
-                        execute_at: None,
-                        // The founder may edit the plan before approving it.
-                        source: &json!({"show": "text", "editable": "text"}).to_string(),
-                        model_call: None,
-                    })?;
-                Ok(format!(
-                    "The plan waits for the founder in Needs you (item {id}); they may edit it. Once they approve it, each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned."
-                ))
+                let mut store = Store::of(&realm)?;
+                // At the level the founder gave the interlocutor's plans
+                // (decision 137): 1 waits for their approval, 2 starts
+                // unless they cancel it in time, 3 starts at once.
+                let declared = crate::actions::all(&realm.config.integrations, &[]);
+                let (ceiling, start) = declared
+                    .iter()
+                    .find(|d| d.id == DISPATCH)
+                    .map_or((1, 1), |d| (d.ceiling, d.start));
+                let level = store.level(&agent, DISPATCH, ceiling, start).unwrap_or(1);
+                let now = chrono::Utc::now();
+                let (kind, at) = match level {
+                    0 | 1 => ("approval", None),
+                    2 => (
+                        "delayed",
+                        Some(
+                            now + chrono::Duration::minutes(super::autonomy::CANCEL_MINUTES.into()),
+                        ),
+                    ),
+                    _ => ("delayed", Some(now)),
+                };
+                let id = store.propose(&crate::business::store::autonomy::NewItem {
+                    kind,
+                    title: &title,
+                    agent: Some(&agent),
+                    routine: None,
+                    run: Some(&run),
+                    action: Some(DISPATCH),
+                    args: &json!({"steps": plan, "text": text, "project": project}).to_string(),
+                    execute_at: at,
+                    // The founder may edit the plan before approving it.
+                    source: &json!({"show": "text", "editable": "text", "tool": DISPATCH})
+                        .to_string(),
+                    model_call: None,
+                })?;
+                Ok(match kind {
+                    "approval" => format!(
+                        "The plan waits for the founder in Needs you (item {id}); they may edit it. Once they approve it, each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned."
+                    ),
+                    _ => format!(
+                        "The plan starts {} (item {id}), unless the founder cancels it in Needs you; each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned.",
+                        if level == 2 {
+                            format!("in {} minutes", super::autonomy::CANCEL_MINUTES)
+                        } else {
+                            "now".into()
+                        }
+                    ),
+                })
             },
         );
         Ok(Some(Dispatch {
