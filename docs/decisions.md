@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 134. A report is not a message in the conversation
+
+**Accepted** (founder, 13 November 2026: "remove these report notifications that come over the conversation; maybe in a panel, or only in the inbox").
+
+- An agent's report (its morning brief, a weekly report) no longer shows in its conversation. It is read where it already goes: Needs you (To read), the phone and Telegram.
+- The routine's run that sent it stays in the conversation as one line, with its steps.
+- Drafts, questions, plans and ideas stay in the conversation, where the founder answers them.
+
+*Why:* a report is something to read, not a turn in a conversation. Coming each morning after the last message, it pushed the conversation up and asked to be marked seen there.
+
+*Cost:* an agent's past reports are no longer in its conversation; Needs you keeps them until seen.
+
 ## 133. The Overview: where things stand, the week folded
 
 **Accepted** (founder, 12 November 2026: "simplify the most useful pages as we did the Home", the fourth after Needs you, the conversation and Projects).

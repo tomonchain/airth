@@ -63,7 +63,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     const e: Entry[] = []
     for (const r of thread.data?.runs ?? []) if (r.at) e.push({ kind: "run", at: r.at, run: r })
     // A task's questions show in its own chat, not as items.
-    for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine)) e.push({ kind: "item", at: i.created_at, item: i })
+    // A report is read in Needs you, on the phone and on Telegram; in the
+    // conversation it came between the founder and the agent (decision 134).
+    for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
     for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
     // In time order, as a chat is: what waits for the founder stays where
     // it was sent, marked new, not moved after later messages.
