@@ -261,6 +261,21 @@ pub fn catalog() -> Vec<Connector> {
                 token_help: "API Keys → Create (Sending access is enough to send).",
             },
         },
+        // Read only: an app's bearer token cannot post, so Airth never
+        // publishes to X through the API (CLAUDE.md), whatever is asked.
+        // Each post or user read is billed by X: no read is free here.
+        Connector {
+            id: "x", name: "X", category: "Marketing",
+            description: "Read posts, accounts and who an account follows. Read only: it cannot post.",
+            agent_hint: "X API v2, read only (an app token: any post, like or follow is refused). Each post and user read is billed, so ask for few: GET 2/users/by/username/{username}, GET 2/users/{id}/following?max_results=100, GET 2/users/{id}/tweets?max_results=10&exclude=replies,retweets&tweet.fields=created_at,public_metrics, GET 2/tweets/search/recent?query=from:{username}&max_results=10.",
+            docs: "https://docs.x.com/x-api/introduction",
+            kind: Http {
+                base_url: "https://api.x.com", secret: "X_BEARER_TOKEN", auth: ("Authorization", "Bearer {}"),
+                extra: &[], check: get("/2/usage/tweets"),
+                token_url: "https://developer.x.com/en/portal/dashboard",
+                token_help: "Developer portal → your project's app → Keys and tokens → Bearer Token (app-only). Reads are billed: add credit to the project.",
+            },
+        },
     ]
 }
 
@@ -412,6 +427,23 @@ pub fn check(realm: &Realm, c: &Connector) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// X's reads are billed per post: none goes without the agent's
+    /// permission rules, unlike a free read (decision 135).
+    #[test]
+    fn x_reads_are_not_free_and_go_to_x_only() {
+        assert!(!FREE_READS.contains(&"x"));
+        let x = find("x").unwrap();
+        let i = integration_for(&x).unwrap();
+        assert_eq!(i.secret_names(), vec!["X_BEARER_TOKEN".to_string()]);
+        assert!(matches!(
+            x.kind,
+            Kind::Http {
+                base_url: "https://api.x.com",
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn every_connector_makes_a_valid_integration() {
