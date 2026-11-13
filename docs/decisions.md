@@ -2,6 +2,24 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 137. The day's plan: each weekday, the interlocutor gives the team its tasks toward the goal
+
+**Accepted** (founder, 13 November 2026: "the agents are not autonomous enough. I gave the CEO a yearly goal, it broke it down into quarterly and monthly objectives. I want a rhythm where every day tasks are done toward that one goal").
+
+- **A routine of the interlocutor's, `daily-plan`, written in the business folder like any other:** each weekday morning, it reads the morning's records (decision 121) and launches a mission (`airth.launch_mission`, level 3 by default) with them. The mission reads the goal and the goal's project, chooses the few tasks that move the nearest milestone, one per agent at most, and proposes them with `propose_plan`, adding to that project. With nothing worth doing, it says so and proposes nothing.
+- **The year's goal is a project** (decision 129): its milestones are the quarters and the months ahead. The interlocutor proposes it once, as any plan; each day's tasks are added to it, so Projects shows how the goal moves. No new store.
+- **A mission the interlocutor's own routine launched gets `propose_plan` and `propose_agent`**, as its tasks do. Before, only the tasks the founder ordered did.
+- **A plan now has an autonomy level, per interlocutor (`airth.dispatch`, a reversible write, up to 3).** It starts at 1, as plans always were (decision 120), not at its ceiling (decision 96):
+  - 1: the plan waits for the founder's approval;
+  - 2: it starts after the cancellation window (30 minutes) unless the founder cancels it;
+  - 3: it starts at the next turn, and the founder reads it in Needs you.
+  The founder raises it: `airth actions level chief-of-staff airth.dispatch 2`. A plan cancelled in its window takes the level down one (decision 45).
+- What each agent then does still goes through its own approvals: a plan starts work, never a publication, a payment or a merge.
+
+*Why:* every task started from an order of the founder's or a fixed routine; nothing turned the goal into the day's work. The interlocutor already knew how to plan and the founder how to approve one; what was missing was the daily occasion, and a way to let the plan run without a tap each morning.
+
+*Cost:* one mission a weekday (one model task, more for the tasks it starts). At level 1, one more approval each morning. The routine lives in each business's folder: a business without it gets no day's plan.
+
 ## 136. The interlocutor may ask the founder to hire an agent
 
 **Accepted** (founder, 13 November 2026: "the CEO cannot create new agents despite a formal request from me. It should be possible. It must not create them when it wants, only when it is useful, with my approval").

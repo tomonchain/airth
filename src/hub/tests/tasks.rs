@@ -915,3 +915,108 @@ fn the_interlocutor_proposes_a_hiring_the_founder_approves() {
     // Hired, it is one of the team: a second hiring of it is refused.
     assert!((dispatch.hire)(&h).is_err());
 }
+
+/// Decision 137: the interlocutor's own routine launches the day's plan as
+/// a mission, which may propose it; at the level the founder gave its plans,
+/// it waits for them (1), starts unless they cancel it in time (2), or starts
+/// at once (3).
+#[test]
+fn the_days_plan_starts_at_the_level_the_founder_gave_it() {
+    use crate::tools::dispatch::{Proposal, Step};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    // A mission its routine launched gets the tool.
+    let mut chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Plan today's work")
+        .unwrap();
+    chief.routine = Some(crate::state::RoutineWait {
+        routine: "daily-plan".into(),
+        run: "daily-plan-1".into(),
+        block: "plan".into(),
+        item: Default::default(),
+        resumed: false,
+    });
+    chief.save().unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let plan = |task: &str| Proposal {
+        name: "Today".into(),
+        steps: vec![Step {
+            agent: "writer".into(),
+            task: task.into(),
+            after: vec![],
+            milestone: None,
+        }],
+        ..Default::default()
+    };
+    let last = || {
+        Store::of(&f.realm)
+            .unwrap()
+            .queue(&["pending"])
+            .unwrap()
+            .pop()
+            .unwrap()
+    };
+    // Level 1, as a plan always was: the founder approves it.
+    assert!(
+        (dispatch.propose)(&plan("One"), None)
+            .unwrap()
+            .contains("waits for the founder")
+    );
+    let first = last();
+    assert_eq!((first.kind.as_str(), first.execute_at), ("approval", None));
+    hub.answer_item(
+        &f.realm,
+        first.id,
+        Some(first.revision),
+        crate::business::store::queue::Answer::Approve,
+        "app",
+        1,
+    )
+    .unwrap();
+    assert_eq!(hub.take_hand_offs().unwrap().len(), 1);
+    // Level 2: it starts once the cancellation window has passed.
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("chief-of-staff", "airth.dispatch", 2, 3, "founder", "")
+        .unwrap();
+    assert!(
+        (dispatch.propose)(&plan("Two"), None)
+            .unwrap()
+            .contains("in 30 minutes")
+    );
+    let delayed = last();
+    assert_eq!(delayed.kind, "delayed");
+    let now = chrono::Utc::now();
+    assert!(hub.release_delayed(now).unwrap().is_empty(), "not yet");
+    assert!(hub.take_hand_offs().unwrap().is_empty());
+    let released = hub
+        .release_delayed(now + chrono::Duration::minutes(31))
+        .unwrap();
+    assert_eq!(released.len(), 1, "{released:?}");
+    let handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 1);
+    assert_eq!(handed[0].1.agent.as_deref(), Some("writer"));
+    assert!(handed[0].1.objective.starts_with("Two"));
+    // Level 3: it starts at the next turn, and the founder reads it after.
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("chief-of-staff", "airth.dispatch", 3, 3, "founder", "")
+        .unwrap();
+    assert!(
+        (dispatch.propose)(&plan("Three"), None)
+            .unwrap()
+            .contains("starts now")
+    );
+    let released = hub
+        .release_delayed(chrono::Utc::now() + chrono::Duration::seconds(1))
+        .unwrap();
+    assert_eq!(released.len(), 1, "{released:?}");
+    assert_eq!(hub.take_hand_offs().unwrap().len(), 1);
+}

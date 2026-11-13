@@ -348,7 +348,14 @@ const AIRTH: &[(&str, Class)] = &[
     ("create_task", Class::Reversible),
     // Merging code never goes above 1 (`CLAUDE.md`).
     ("adopt_change", Class::Commits),
+    // The interlocutor's plan for the team (decisions 120 and 137).
+    ("dispatch", Class::Reversible),
 ];
+
+/// Airth's actions that start below their ceiling: a plan was always put to
+/// the founder (decision 120), so it stays so until the founder raises it
+/// (decision 137).
+const STARTS_AT_ONE: &[&str] = &["dispatch"];
 
 /// An action as the engine sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,7 +390,13 @@ fn declared(id: String, class: Option<Class>, max_level: Option<u8>) -> Declared
 pub fn all(integrations: &[Integration], servers: &[McpServer]) -> Vec<Declared> {
     let mut out: Vec<Declared> = AIRTH
         .iter()
-        .map(|(name, class)| declared(format!("airth.{name}"), Some(*class), None))
+        .map(|(name, class)| {
+            let mut d = declared(format!("airth.{name}"), Some(*class), None);
+            if STARTS_AT_ONE.contains(name) {
+                d.start = 1;
+            }
+            d
+        })
         .collect();
     for i in integrations {
         for a in &i.actions {
@@ -607,6 +620,8 @@ mod tests {
         assert_eq!(find(&all1, "airth.create_task").start, 3);
         assert_eq!(find(&all1, "airth.adopt_change").start, 1);
         assert_eq!(find(&all1, "airth.launch_mission").ceiling, 3);
+        let plan = find(&all1, "airth.dispatch");
+        assert_eq!((plan.ceiling, plan.start), (3, 1));
         let p = find(&all1, "typefully.publish");
         assert_eq!(
             (p.class, p.ceiling, p.confirmed, p.start),

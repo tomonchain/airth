@@ -691,6 +691,11 @@ impl Hub {
         if tool == crate::routine::run::LAUNCH_MISSION {
             return self.launch_approved(realm, item).map(Approved::Done);
         }
+        // A plan the interlocutor may start alone, once its window passed
+        // (decision 137).
+        if tool == super::dispatch::DISPATCH {
+            return self.start_plan(realm, item).map(Approved::Done);
+        }
         if tool.starts_with("mcp__") {
             return self.do_approved_mcp(realm, item, action, tool);
         }
