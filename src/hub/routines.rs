@@ -542,6 +542,15 @@ impl Hub {
             store.close_item(id, status, &detail)?;
             return Ok((item, Some(detail)));
         }
+        // An agent the interlocutor asked to hire (decision 136).
+        if item.action.as_deref() == Some(super::dispatch::HIRE) {
+            let (status, detail) = match self.hire(realm, &item) {
+                Ok(what) => ("done", what),
+                Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+            };
+            store.close_item(id, status, &detail)?;
+            return Ok((item, Some(detail)));
+        }
         let routine_block = item.source["block"].as_str();
         let mut failed = Vec::new();
         let outcome = match (&item.routine, routine_block, item.source["tool"].as_str()) {

@@ -835,3 +835,83 @@ fn a_later_plan_adds_to_the_open_project_it_names() {
     );
     assert!(p.tasks.iter().all(|t| t.run.is_some()));
 }
+
+/// Decision 136: the interlocutor asks the founder to hire an agent, alone
+/// in the team or not; nothing is written before the founder approves, the
+/// job as they edited it, and the new agent has no tools.
+#[test]
+fn the_interlocutor_proposes_a_hiring_the_founder_approves() {
+    use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::Hiring;
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "We need someone to sell")
+        .unwrap();
+    // Alone in the team, it may still ask for help.
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    assert!(dispatch.team.is_empty());
+    let mut h = Hiring {
+        name: "sales-lead".into(),
+        title: "Sales lead".into(),
+        department: "astrology".into(),
+        job: "Find the firms.".into(),
+        why: "Nobody sells.".into(),
+    };
+    // A department the business does not have is refused, saying which it has.
+    let err = format!("{:#}", (dispatch.hire)(&h).unwrap_err());
+    assert!(err.contains("sales"), "{err}");
+    h.department = "Business development".into();
+    (dispatch.hire)(&h).unwrap();
+    assert!(
+        crate::business::job(&root, "sales-lead").is_err(),
+        "nothing yet"
+    );
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(item.action.as_deref(), Some("airth.hire"));
+    assert_eq!(item.title, "Hire a Sales lead");
+    // The founder rewrites the job, then approves.
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Edit("Find ten firms a month.".into()),
+        "app",
+        2,
+    )
+    .unwrap();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Approve,
+        "app",
+        1,
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("agents/sales-lead.md")).unwrap(),
+        "---\ntitle: Sales lead\ndepartment: sales\n---\nFind ten firms a month.\n"
+    );
+    let scope = crate::business::scope(&root, "sales-lead").unwrap();
+    assert!(scope.skills.is_empty() && scope.integrations.is_empty());
+    // Hired, it is one of the team: a second hiring of it is refused.
+    assert!((dispatch.hire)(&h).is_err());
+}

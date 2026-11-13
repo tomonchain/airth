@@ -143,9 +143,13 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
         tools.push(Box::new(delegate::AskAgent(delegation)));
     }
     if let Some(dispatch) = realm.dispatch {
-        tools.push(Box::new(dispatch::ProposePlan(std::sync::Arc::new(
-            dispatch,
-        ))));
+        let dispatch = std::sync::Arc::new(dispatch);
+        // Alone, it has no one to pass work on to, but may still ask for
+        // help (decision 136).
+        if !dispatch.team.is_empty() {
+            tools.push(Box::new(dispatch::ProposePlan(dispatch.clone())));
+        }
+        tools.push(Box::new(dispatch::ProposeAgent(dispatch)));
     }
     // The Google Drive folder the founder shared (decision 85), to agents
     // whose file names it.
