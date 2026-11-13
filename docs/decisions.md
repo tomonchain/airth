@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 135. X as a read-only connector
+
+**Accepted** (founder, 13 November 2026: "can we integrate an X Platform connector?", to draft replies to the accounts Hedgen follows).
+
+- **X joins the connector catalog** with an app-only bearer token, pasted once and kept in the business's secrets like any other key.
+- **Read only.** An app's token cannot post, like or follow: X refuses it. Airth never publishes to X through the API; this holds by X's rule as well as ours. Replies stay at level 0: Airth drafts, the founder posts.
+- **Reads are not free reads** (decision 84). X bills each post and user read, so an agent's reads follow its permission rules.
+- The connection check reads X's usage, which reads no post.
+- The routine that reads the followed accounts each day and drafts replies is the next step. It needs the routine engine to read a connector.
+
+*Why:* the founder sends each post to answer by Telegram, one link at a time (decision 63). That is the bottleneck of the replies routine. The founder now has an X developer account.
+
+*Cost:* X's reads cost money, paid by the business on its X project. A careless agent could spend it, which is why its reads are not free.
+
 ## 134. A report is not a message in the conversation
 
 **Accepted** (founder, 13 November 2026: "remove these report notifications that come over the conversation; maybe in a panel, or only in the inbox").
