@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 // bold and italic, tables (Markdown, or a ```csv block), charts (a ```chart
 // block) and code. Headings, quotes and images are dropped, never shown raw.
 
-const INLINE = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|(\*\*([^*]+)\*\*|__([^_]+)__)|(\*([^*\s][^*]*?)\*|_([^_\s][^_]*?)_)|(`([^`]+)`)/g
+const INLINE = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|(\*\*([^*]+)\*\*|(?<![\w])__([^_]+)__(?![\w]))|(\*([^*\s][^*]*?)\*|(?<![\w])_([^_\s][^_]*?)_(?![\w]))|(`([^`]+)`)/g
 
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = []

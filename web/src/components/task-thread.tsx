@@ -238,7 +238,9 @@ function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "
   return (
     <div className={cn("flex items-end gap-2.5", last ? "mb-4" : "mb-1.5")}>
       <span className="hidden w-8 shrink-0 md:block">{last && <Character agent={agent} size={32} still />}</span>
-      <div className="flex min-w-0 flex-1 items-start gap-1">{children}{aside}</div>
+      {/* min-w-0: a long line (a command, a link) scrolls in its own box
+          instead of widening the bubble past the screen. */}
+      <div className="flex min-w-0 flex-1 items-start gap-1"><div className="min-w-0 max-w-full">{children}</div>{aside}</div>
     </div>
   )
 }
