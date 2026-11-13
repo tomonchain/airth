@@ -13,7 +13,8 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - 1: the plan waits for the founder's approval;
   - 2: it starts after the cancellation window (30 minutes) unless the founder cancels it;
   - 3: it starts at the next turn, and the founder reads it in Needs you.
-  The founder raises it: `airth actions level chief-of-staff airth.dispatch 2`. A plan cancelled in its window takes the level down one (decision 45).
+  The founder raises it: `airth actions level chief-of-staff airth.dispatch 2`.
+- **Why it starts below its ceiling, unlike other reversible writes (decision 96):** a plan sets the whole team to work and spends on every agent it names; until now the founder approved each one, and taking that away without their word would change decision 120 behind their back. Level 0, as for a mission (decision 49), is asked as 1: the founder cannot start a plan by hand. A plan cancelled in its window takes the level down one (decision 45).
 - What each agent then does still goes through its own approvals: a plan starts work, never a publication, a payment or a merge.
 
 *Why:* every task started from an order of the founder's or a fixed routine; nothing turned the goal into the day's work. The interlocutor already knew how to plan and the founder how to approve one; what was missing was the daily occasion, and a way to let the plan run without a tap each morning.
