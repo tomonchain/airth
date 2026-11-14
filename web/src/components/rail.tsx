@@ -81,19 +81,21 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
   const known = open >= 0
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),10px)]">
-      <div className="glass pointer-events-auto relative mx-auto grid h-[62px] max-w-md grid-cols-4 rounded-[31px] p-1">
+      {/* Icons alone, as most apps' bars now: compact, the open tab under
+          the lens. Each says its name to a screen reader and on a long press. */}
+      <div className="glass pointer-events-auto relative mx-auto grid h-[54px] max-w-sm grid-cols-4 rounded-[27px] p-1">
         {/* One quarter of the bar, moved under the open tab. */}
-        <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-[27px]", !known && "opacity-0")}
+        <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-[23px]", !known && "opacity-0")}
           style={{ transform: `translateX(${open * 100}%)` }} />
         {tabs.map(([p, label, Icon], i) => {
           const active = known && i === open
           const badge = p === "needs" ? needs : 0
           return (
             <button key={label} onClick={() => p === "more" ? setMore(true) : onPage(p)} aria-current={active ? "page" : undefined}
-              className={cn("relative flex flex-col items-center justify-center gap-0.5 rounded-[27px] text-[10px] font-medium text-foreground/60 transition-colors active:scale-95", active && "text-foreground")}>
-              <Icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
-              {label}
-              {badge > 0 && <span className="absolute top-1 left-[calc(50%+5px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{badge}</span>}
+              aria-label={badge > 0 ? `${label}, ${badge} waiting` : label} title={label}
+              className={cn("relative grid place-items-center rounded-[23px] text-foreground/55 transition-colors active:scale-95", active && "text-foreground")}>
+              <Icon className="size-6" strokeWidth={active ? 2.2 : 1.8} />
+              {badge > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{badge}</span>}
             </button>
           )
         })}

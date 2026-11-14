@@ -129,12 +129,23 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     setAway(!pinned.current)
   }
 
+  // The box floats over the thread, which scrolls under it: the thread
+  // ends with room for the box, as tall as the box is now.
+  const dock = useRef<HTMLDivElement>(null)
+  const [room, setRoom] = useState(96)
+  useEffect(() => {
+    if (!dock.current) return
+    const o = new ResizeObserver(([e]) => setRoom(Math.ceil(e.target.getBoundingClientRect().height)))
+    o.observe(dock.current)
+    return () => o.disconnect()
+  }, [])
+
   function refresh() { thread.refresh(); onDone() }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroller} onScroll={scrolled} className="no-dock min-h-0 flex-1 overflow-y-auto">
-        <div ref={content} className={cn("mx-auto px-3 pt-4 pb-4 [overflow-wrap:anywhere] md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1 }}>
+        <div ref={content} className={cn("mx-auto px-3 pt-4 [overflow-wrap:anywhere] md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1, paddingBottom: room + 16 }}>
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (
@@ -173,7 +184,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
           {thread.data && busy && !outbox.length && <Working agent={agent} />}
         </div>
       </div>
-      <div className={cn("dock-lift relative mx-auto w-full px-3 pb-3 md:px-6 md:pb-5", WIDTH[prefs.width] ?? WIDTH.normal)}>
+      <div ref={dock} className={cn("dock-lift pointer-events-none absolute inset-x-0 bottom-0 mx-auto w-full px-3 pb-3 md:px-6 md:pb-5 [&>*]:pointer-events-auto", WIDTH[prefs.width] ?? WIDTH.normal)}>
         {away && (
           <button onClick={() => { pinned.current = true; setAway(false); toBottom(true) }} aria-label="Newest messages"
             className="absolute -top-11 right-4 grid size-8 place-items-center md:right-auto md:left-1/2 md:-translate-x-1/2 rounded-full border bg-popover text-muted-foreground shadow-md fade-up hover:text-foreground">
