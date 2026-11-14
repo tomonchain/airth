@@ -83,7 +83,7 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),10px)]">
       {/* Icons alone, as most apps' bars now: compact, the open tab under
           the lens. Each says its name to a screen reader and on a long press. */}
-      <div className="glass pointer-events-auto relative mx-auto grid h-[54px] max-w-sm grid-cols-4 rounded-[27px] p-1">
+      <div className="glass pointer-events-auto relative mx-auto grid h-[54px] max-w-[272px] grid-cols-4 rounded-[27px] p-1">
         {/* One quarter of the bar, moved under the open tab. */}
         <span aria-hidden className={cn("glass-lens absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-[23px]", !known && "opacity-0")}
           style={{ transform: `translateX(${open * 100}%)` }} />
