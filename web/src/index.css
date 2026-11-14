@@ -297,6 +297,9 @@
     backdrop-filter: blur(24px) saturate(1.9);
   }
 }
+/* A glass button still answers the pointer: `.glass` sets the background,
+   which a utility's hover would not win over. */
+button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transparent); }
 .dark .glass {
   border-color: rgb(255 255 255 / 0.09);
   box-shadow:
