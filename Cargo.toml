@@ -25,6 +25,13 @@ serde_json = "1.0.151"
 similar = "3.2.0"
 tiny_http = "0.12.0"
 url = "2"
+# Agent mail (decision 70). Already built (reqwest's TLS stack): used
+# directly for IMAP over TLS, with the system's certificates.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls-platform-verifier = "0.7"
+# Reads what senders send (MIME, encodings, charsets): hand-written MIME
+# parsing is where mail goes wrong.
+mail-parser = "1.0.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.190"

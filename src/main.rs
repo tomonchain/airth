@@ -24,6 +24,7 @@ mod isolation;
 mod legal;
 mod library;
 mod logos;
+mod mail;
 mod memory;
 mod models;
 mod notify;
@@ -237,6 +238,11 @@ enum Cmd {
     Time {
         #[command(subcommand)]
         command: cli::TimeCmd,
+    },
+    /// A role's mailbox (decision 70): fetch what is new, or list what was kept
+    Mail {
+        #[command(subcommand)]
+        command: cli::MailCmd,
     },
     /// Show or edit the realm's long-term memory
     Memory {
@@ -515,6 +521,7 @@ fn dispatch(ctx: &Ctx, command: Option<Cmd>) -> Result<bool> {
         Some(Cmd::Pipeline { command }) => cli::pipeline(ctx, command),
         Some(Cmd::Phone { command }) => cli::phone(ctx, command),
         Some(Cmd::Time { command }) => cli::time(ctx, command),
+        Some(Cmd::Mail { command }) => cli::mail(ctx, command),
         Some(Cmd::Memory { command }) => cli::memory(ctx, command),
         Some(Cmd::Secret { command }) => cli::secret(ctx, command),
         Some(Cmd::Integration { command }) => cli::integration(ctx, command),

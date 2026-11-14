@@ -468,8 +468,11 @@ impl Realm {
     /// and the GitHub token when the runtime uses it to open pull requests:
     /// chats never push themselves).
     pub fn command_env(&self) -> Result<Vec<(String, String)>> {
+        // A mailbox's password is Airth's alone (decision 70): no command
+        // gets it, whatever the realm's rules.
         let runtime_only = |k: &str| {
             PROVIDER_KEYS.contains(&k)
+                || k.starts_with(crate::mail::SECRET_PREFIX)
                 || (k == crate::github::TOKEN && self.delivers_pull_requests())
         };
         Ok(self
@@ -797,6 +800,11 @@ mod tests {
         realm.set_secret("GITHUB_TOKEN", "ghp_x=y").unwrap();
         realm.set_secret("ANTHROPIC_API_KEY", "sk-work").unwrap();
         realm.set_secret("GITHUB_TOKEN", "ghp_z").unwrap();
+        // A mailbox's password is Airth's alone: no command gets it
+        // (decision 70).
+        realm
+            .set_secret("MAIL_PASSWORD_SUPPORT", "mail-pass")
+            .unwrap();
         assert_eq!(realm.secret("GITHUB_TOKEN").as_deref(), Some("ghp_z"));
         assert_eq!(
             realm.command_env().unwrap(),
