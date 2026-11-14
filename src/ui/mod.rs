@@ -284,6 +284,13 @@ impl App {
         crate::phone::host_allowed(&host, self.port, &phone)
     }
 
+    /// Where a connector's sign-in sends the browser back (decision 138).
+    fn callback_url(&self, request: &Request) -> String {
+        let host = header(request, "Host").unwrap_or_default();
+        let phone = crate::phone::hosts(self.hub.home().dir()).unwrap_or_default();
+        crate::phone::callback_url(&host, self.port, &phone)
+    }
+
     /// The main key, or the key of a device the founder allowed (decision 118).
     fn token_valid(&self, request: &Request) -> bool {
         header(request, "X-Airth-Token").is_some_and(|t| {

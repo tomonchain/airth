@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 138. A connector's sign-in comes back to the address the founder used
+
+**Accepted** (founder, 14 November 2026: "I cannot connect to Linear. The same for PostHog, Supabase…", on the VPS).
+
+- **A connector's sign-in page now sends the browser back to the name the browser reached Airth by**, over HTTPS (`https://<name>.ts.net/oauth/callback`), when that name is one the founder allowed for the phone (decision 37). Tailscale's HTTPS brings it to the app as any other page.
+- **Any other name, and loopback, still come back to `http://127.0.0.1:<port>/oauth/callback`**, as on a Mac where the browser and Airth are one machine. A name the founder did not allow never becomes the way back.
+- A connector registered with the old address registers again with the new one at its next sign-in (`tools::remote::start` already does so when the address changes).
+- Google Drive keeps loopback: a "Desktop app" OAuth client accepts no other address. On a server, Drive needs a "Web application" client with the server's address; not done here.
+
+*Why:* since Airth moved to the VPS (decision 106), every sign-in sent the founder's browser to `127.0.0.1` on the Mac or the phone, where no Airth answers, so no OAuth connector could be connected.
+
+*Cost:* none for the Mac. On the server, the redirect names the server's Tailscale address, which the service then knows.
+
 ## 137. The day's plan: each weekday, the interlocutor gives the team its tasks toward the goal
 
 **Accepted** (founder, 13 November 2026: "the agents are not autonomous enough. I gave the CEO a yearly goal, it broke it down into quarterly and monthly objectives. I want a rhythm where every day tasks are done toward that one goal").
