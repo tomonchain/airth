@@ -430,8 +430,10 @@ fn check_block(cx: &Checks, block: &Block, telegram: Option<&str>) -> Result<()>
                 "x_post" if telegram != Some("x_post") => {
                     bail!("an x_post read needs the trigger {{\"telegram\": \"x_post\"}}")
                 }
-                "rss" | "web" | "business" | "x_post" => {}
-                other => bail!("unknown source '{other}' (rss, web, connector, business, x_post)"),
+                "rss" | "web" | "business" | "x_post" | "mailbox" => {}
+                other => bail!(
+                    "unknown source '{other}' (rss, web, connector, business, x_post, mailbox)"
+                ),
             }
             if *max_age_days == Some(0) {
                 bail!("max_age_days is at least 1");
@@ -556,14 +558,20 @@ fn check_flags(graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
 /// Content from outside (a read of rss, web or a connector, a mission's
 /// result, a webhook's body) reaches no `act` without an `approval` on the
 /// way, unless the founder set the agent's level for that action to at least
-/// 2 (decision 96).
+/// 2 (decision 96). Mail is stricter (decision 70): what comes of a mail
+/// reaches no `act` without an `approval`, whatever the level.
 fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
     let mut seen = HashSet::new();
-    let mut todo = vec![(0usize, graph.trigger.webhook.is_some())];
-    while let Some((i, outside)) = todo.pop() {
-        if !seen.insert((i, outside)) {
+    let mut todo = vec![(0usize, graph.trigger.webhook.is_some(), false)];
+    while let Some((i, outside, mail)) = todo.pop() {
+        if !seen.insert((i, outside, mail)) {
             continue;
         }
+        let mail_after = match &graph.blocks[i].kind {
+            Kind::Read { source, .. } => mail || source == "mailbox",
+            Kind::Approval { .. } => false,
+            _ => mail,
+        };
         let after = match &graph.blocks[i].kind {
             Kind::Read { source, .. } => outside || source != "business",
             Kind::Approval { .. } => false,
@@ -575,6 +583,12 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
                     || action == "airth.suggest"
                     || action == "airth.create_task"
                         && fields.get("assignee").map(String::as_str) == Some("founder");
+                if mail && !for_founder {
+                    bail!(
+                        "block '{}': what comes of a mail reaches {action} without an approval: mail always needs one (decision 70)",
+                        graph.blocks[i].id
+                    );
+                }
                 if outside && !for_founder && (cx.level)(&graph.agent, action) < 2 {
                     bail!(
                         "block '{}': content from outside reaches {action} without an approval, and {} may not take it alone (level {})",
@@ -587,7 +601,7 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
             }
             _ => outside,
         };
-        todo.extend(edges[i].iter().map(|&j| (j, after)));
+        todo.extend(edges[i].iter().map(|&j| (j, after, mail_after)));
     }
     Ok(())
 }

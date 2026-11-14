@@ -1147,6 +1147,9 @@ Decision 57 grew a new interface next to the classic one, to replace it at miles
 - **Another provider.** The agent's file may name its server (`mail_server:`); OVH's is the default.
 - **The crates.** `mail-parser` comes with two small crates of its own (`encodify`, `hashify`). TLS uses `rustls` with `rustls-platform-verifier`, both already built for reqwest, so certificates are checked against the system's roots.
 - **Limits.** A line from the server is at most 64 KB and a message at most 25 MB; anything larger is refused, not cut. A message's text is kept up to 100,000 characters.
+- **Routines read mail** with `{"type": "read", "source": "mailbox"}`: the routine's agent's mailbox, each mail once per routine, oldest first, `max` at a time. Each mail is an item: from, to, subject, text, thread, attachments' names, and `bank_details`. The service reads every mailbox every five minutes; a mailbox without its password waits, silently.
+- **What comes of a mail** reaches no act without an approval, a mission included: a mission is given tools, and a mail's words would be its brief. Only a report or a task for the founder may follow a mail directly.
+- **Bank details.** The check matches words in English and French, whole words only, and any IBAN whose check digits hold (modulo 97), so a parcel's tracking number is not one. A flagged mail raises an incident at once, and whatever its routine asks about it is flagged blocking: approving it needs the founder to override the flag, from the app or Telegram.
 
 Milestone 7: at least one role handles mail under `CLAUDE.md`'s six rules. IMAP and SMTP are a new kind of integration (integrations are HTTP-only, decision 10), so they are security code with a decision and tests of their own.
 

@@ -1208,3 +1208,114 @@ fn a_story_covered_in_the_last_days_is_not_covered_again() {
     assert!(!asked.contains("<covered>"), "{asked}");
     assert!(report.contains("asked the founder (item 3): D"), "{report}");
 }
+
+/// Decision 70: a routine reads its agent's mailbox, each mail once; what
+/// comes of a mail that speaks of bank details waits for the founder,
+/// flagged, and cannot be approved without overriding the flag.
+#[test]
+fn a_routine_reads_its_mailbox_once_and_holds_a_bank_mail() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("agents")).unwrap();
+    std::fs::write(
+        root.path().join("agents/support.md"),
+        "---\ntitle: Support\nmailbox: support@n.example\n---\nAnswer.\n",
+    )
+    .unwrap();
+    let graph: Graph = serde_json::from_value(
+        json!({"agent": "support", "trigger": {"manual": true}, "blocks": [
+            {"id": "inbox", "type": "read", "source": "mailbox", "max": 1},
+            {"id": "ok", "type": "approval", "show": "subject"}
+        ]}),
+    )
+    .unwrap();
+    let mut store = Store::open(&root.path().join(FILE)).unwrap();
+    for (uid, subject, text) in [
+        (1, "Nouveau RIB", "Merci de virer sur le nouveau compte."),
+        (2, "Où est mon lot ?", "Bonjour."),
+    ] {
+        let mail = crate::mail::Mail {
+            from: "x@y.example".into(),
+            subject: subject.into(),
+            text: text.into(),
+            ..Default::default()
+        };
+        store
+            .keep_mail(&crate::business::store::mail::NewMail {
+                mailbox: "support@n.example",
+                agent: "support",
+                uid_validity: 1,
+                uid,
+                mail: &mail,
+                at: Utc::now(),
+            })
+            .unwrap();
+    }
+    let mut fetch =
+        |_: &str| -> anyhow::Result<crate::pipeline::run::Fetched> { unreachable!("no web") };
+    let mut ask = |_: &crate::models::ModelRequest| -> anyhow::Result<ModelResponse> {
+        unreachable!("no AI block")
+    };
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+        fast: None,
+    };
+    let mut act = |_: &str,
+                   _: &BTreeMap<String, String>,
+                   _: &str,
+                   _: bool,
+                   _: &str,
+                   _: &Item|
+     -> anyhow::Result<String> { unreachable!("no act") };
+    let mut report = |store: &mut Store, io: &mut Io| {
+        let dry = Dry {
+            root: root.path(),
+            context: "",
+            store,
+            io,
+            integrations: &[],
+        };
+        run(
+            "mail",
+            &graph,
+            dry,
+            Some(Real {
+                run: "r",
+                act: &mut act,
+            }),
+            Start::Trigger,
+            Utc::now(),
+        )
+        .unwrap()
+        .to_string()
+    };
+    // The max reads one, oldest first; the next run reads the other.
+    let first = report(&mut store, &mut io);
+    assert!(
+        first.contains("1 new mail in support@n.example, 1 left for the next run"),
+        "{first}"
+    );
+    assert!(
+        first.contains("[flagged blocking: the mail speaks of bank details"),
+        "{first}"
+    );
+    let second = report(&mut store, &mut io);
+    assert!(second.contains("Où est mon lot"), "{second}");
+    let third = report(&mut store, &mut io);
+    assert!(third.contains("0 new mail"), "{third}");
+    let queued = store.queue(&["pending"]).unwrap();
+    assert_eq!(queued.len(), 2);
+    let flagged = queued.iter().find(|i| i.title == "Nouveau RIB").unwrap();
+    assert_eq!(flagged.flag.as_deref(), Some("blocking"));
+    let err = store
+        .answer(
+            flagged.id,
+            Some(flagged.revision),
+            crate::business::store::queue::Answer::Approve,
+            "app",
+            1,
+        )
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("flagged"), "{err:#}");
+}

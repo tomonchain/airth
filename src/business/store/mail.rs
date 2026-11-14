@@ -36,11 +36,11 @@ impl Store {
         )?)
     }
 
-    /// Keep a message; false when it was kept already.
-    pub fn keep_mail(&mut self, m: &NewMail) -> Result<bool> {
+    /// Keep a message; its id, or None when it was kept already.
+    pub fn keep_mail(&mut self, m: &NewMail) -> Result<Option<i64>> {
         let mail = m.mail;
         self.write(|tx| {
-            Ok(tx.execute(
+            let added = tx.execute(
                 "INSERT OR IGNORE INTO mail_messages
                  (mailbox, agent, uid_validity, uid, message_id, thread, sender, recipients,
                   subject, sent_at, text, attachments, fetched_at)
@@ -60,7 +60,8 @@ impl Store {
                     serde_json::to_string(&mail.attachments)?,
                     m.at.to_rfc3339(),
                 ],
-            )? == 1)
+            )? == 1;
+            Ok(added.then(|| tx.last_insert_rowid()))
         })
     }
 

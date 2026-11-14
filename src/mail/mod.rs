@@ -104,8 +104,8 @@ fn connect(host: &str, port: u16) -> Result<impl std::io::Read + std::io::Write>
     Ok(rustls::StreamOwned::new(conn, tcp))
 }
 
-/// Fetch what is new in `mailbox` and keep it; how many were kept.
-pub fn fetch(mailbox: &Mailbox, password: &str, store: &mut Store) -> Result<usize> {
+/// Fetch what is new in `mailbox` and keep it; what was kept, by id.
+pub fn fetch(mailbox: &Mailbox, password: &str, store: &mut Store) -> Result<Vec<(i64, Mail)>> {
     let stream = connect(&mailbox.imap_host, mailbox.imap_port)?;
     fetch_over(stream, mailbox, password, store)
 }
@@ -117,18 +117,18 @@ fn fetch_over<S: std::io::Read + std::io::Write>(
     mailbox: &Mailbox,
     password: &str,
     store: &mut Store,
-) -> Result<usize> {
+) -> Result<Vec<(i64, Mail)>> {
     let mut imap = imap::Imap::open(stream)?;
     imap.login(&mailbox.address, password)?;
     let validity = imap.select_inbox()?;
     let from = store.last_mail_uid(&mailbox.address, validity)? + 1;
-    let mut kept = 0;
+    let mut kept = Vec::new();
     for uid in imap.uids_from(from)? {
         let Some(raw) = imap.fetch(uid)? else {
             continue;
         };
         let mail = read(&raw);
-        if store.keep_mail(&NewMail {
+        if let Some(id) = store.keep_mail(&NewMail {
             mailbox: &mailbox.address,
             agent: &mailbox.agent,
             uid_validity: validity,
@@ -136,7 +136,7 @@ fn fetch_over<S: std::io::Read + std::io::Write>(
             mail: &mail,
             at: Utc::now(),
         })? {
-            kept += 1;
+            kept.push((id, mail));
         }
     }
     imap.logout();
@@ -157,6 +157,195 @@ pub struct Mail {
     pub date: Option<String>,
     pub text: String,
     pub attachments: Vec<String>,
+}
+
+/// Each kept mail that speaks of a change of bank details goes to the
+/// founder in Needs you (and so on Telegram), without exception (rule 4).
+/// What the mail asks is never done on its word: the founder checks it.
+pub fn flag_bank_changes(store: &mut Store, mailbox: &Mailbox, kept: &[(i64, Mail)]) -> Result<()> {
+    for (id, mail) in kept.iter().filter(|(_, m)| bank_change(m)) {
+        let detail = format!(
+            "From {}, \"{}\". It speaks of bank details. Change nothing on a mail's word: check by phone, with a number you already had.",
+            if mail.from.is_empty() {
+                "an unknown sender"
+            } else {
+                &mail.from
+            },
+            mail.subject
+        );
+        store.propose(&crate::business::store::autonomy::NewItem {
+            kind: "incident",
+            title: &format!("A mail to {} speaks of bank details", mailbox.address),
+            agent: Some(&mailbox.agent),
+            routine: None,
+            run: None,
+            action: None,
+            args: &serde_json::json!({"detail": detail, "mail": id, "from": mail.from, "subject": mail.subject})
+                .to_string(),
+            execute_at: None,
+            source: &serde_json::json!({"mail": id, "bank": true}).to_string(),
+            model_call: None,
+        })?;
+    }
+    Ok(())
+}
+
+/// How often each mailbox is read.
+const EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// The loop the service runs: every mailbox of every business is read
+/// every few minutes; what stops one is told once, until it clears.
+pub fn run(home: crate::home::Home) {
+    let mut last: std::collections::HashMap<String, std::time::Instant> = Default::default();
+    loop {
+        if let Ok(realms) = home.realms() {
+            for realm in realms.iter().filter(|r| !r.config.archived) {
+                let Ok(root) = realm.root() else { continue };
+                let agents = crate::business::bots(&root).unwrap_or_default();
+                for (agent, _) in agents {
+                    let Ok(Some(mailbox)) = Mailbox::of(&root, &agent) else {
+                        continue;
+                    };
+                    let key = format!("mail/{}/{}", realm.name(), agent);
+                    if last.get(&key).is_some_and(|at| at.elapsed() < EVERY) {
+                        continue;
+                    }
+                    last.insert(key.clone(), std::time::Instant::now());
+                    // A mailbox without its password waits for it, silently:
+                    // Settings says what is missing.
+                    let Some(password) = realm.secret(&mailbox.secret()) else {
+                        continue;
+                    };
+                    let outcome = Store::of(realm).and_then(|mut store| {
+                        let kept = fetch(&mailbox, &password, &mut store)?;
+                        flag_bank_changes(&mut store, &mailbox, &kept)
+                    });
+                    crate::supervise::report(
+                        &home.inbox(),
+                        &key,
+                        realm.name(),
+                        &format!("Reading {}", mailbox.address),
+                        outcome,
+                    );
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}
+
+/// Whether a mail speaks of a change of bank details (rule 4, decision 70):
+/// words in English and French, or an IBAN. A check in code, never a model,
+/// so no mail can talk its way past it; it errs on the side of the founder.
+pub fn bank_change(mail: &Mail) -> bool {
+    const WORDS: &[&str] = &[
+        "iban",
+        "bic",
+        "swift",
+        "sort code",
+        "account number",
+        "routing number",
+        "bank details",
+        "banking details",
+        "bank account",
+        "new account",
+        "payment details",
+        "rib",
+        "coordonnées bancaires",
+        "coordonnees bancaires",
+        "relevé d'identité bancaire",
+        "releve d'identite bancaire",
+        "nouveau compte",
+        "changement de banque",
+        "nouvelles coordonnées",
+        "nouvelles coordonnees",
+        "compte bancaire",
+        "virement sur",
+    ];
+    let text = format!("{} {}", mail.subject, mail.text).to_lowercase();
+    let word = |w: &str| {
+        text.match_indices(w).any(|(i, _)| {
+            let before = text[..i].chars().next_back();
+            let after = text[i + w.len()..].chars().next();
+            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        })
+    };
+    WORDS.iter().any(|w| word(w)) || has_iban(&text)
+}
+
+/// Whether the text holds an IBAN: two letters and two digits at the start
+/// of a word, then letters and digits (single spaces allowed), whose check
+/// digits hold (ISO 13616, modulo 97).
+fn has_iban(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    (0..chars.len()).any(|i| {
+        let starts = i == 0 || !chars[i - 1].is_alphanumeric();
+        let head = chars.get(i..i + 4).is_some_and(|h| {
+            h[0].is_ascii_alphabetic()
+                && h[1].is_ascii_alphabetic()
+                && h[2].is_ascii_digit()
+                && h[3].is_ascii_digit()
+        });
+        if !starts || !head {
+            return false;
+        }
+        let mut code = Vec::new();
+        let mut j = i;
+        while j < chars.len() && code.len() < 34 {
+            let c = chars[j];
+            if c.is_ascii_alphanumeric() {
+                code.push(c.to_ascii_uppercase());
+            } else if c != ' ' || !chars.get(j + 1).is_some_and(char::is_ascii_alphanumeric) {
+                break;
+            }
+            j += 1;
+        }
+        (15..=code.len()).any(|n| iban_valid(&code[..n]))
+    })
+}
+
+fn iban_valid(code: &[char]) -> bool {
+    let moved = code[4..].iter().chain(&code[..4]);
+    let mut rest: u32 = 0;
+    for c in moved {
+        let v = match c.to_digit(36) {
+            Some(v) => v,
+            None => return false,
+        };
+        rest = if v < 10 {
+            (rest * 10 + v) % 97
+        } else {
+            (rest * 100 + v) % 97
+        };
+    }
+    rest == 1
+}
+
+/// A kept mail as a routine's item: who, what, its thread, and whether it
+/// speaks of bank details.
+pub fn item(k: &crate::business::store::mail::Kept, source: &str) -> crate::pipeline::run::Item {
+    let m = &k.mail;
+    let mut it = crate::pipeline::run::Item::new();
+    let mut set = |key: &str, v: String| {
+        it.insert(key.into(), v.into());
+    };
+    set(crate::routine::run::SOURCE, source.to_string());
+    set("from", m.from.clone());
+    set("to", m.to.join(", "));
+    set("subject", m.subject.clone());
+    set("text", m.text.clone());
+    set("thread", m.thread.clone());
+    set("message_id", m.message_id.clone().unwrap_or_default());
+    set(
+        "date",
+        m.date.clone().unwrap_or_else(|| k.fetched_at.clone()),
+    );
+    set("attachments", m.attachments.join(", "));
+    set(
+        "bank_details",
+        if bank_change(m) { "yes" } else { "no" }.into(),
+    );
+    it
 }
 
 /// The longest text kept of one message.
@@ -243,7 +432,7 @@ mod tests {
         let run = |messages: Vec<(u32, Vec<u8>)>, store: &mut Store| {
             let (port, server) = imap::tests::server(3, messages);
             let tcp = TcpStream::connect(("127.0.0.1", port)).unwrap();
-            let kept = fetch_over(tcp, &mailbox, "right", store).unwrap();
+            let kept = fetch_over(tcp, &mailbox, "right", store).unwrap().len();
             (kept, server.join().unwrap())
         };
         let (kept, _) = run(vec![(10, MAIL.to_vec())], &mut store);
@@ -269,8 +458,75 @@ mod tests {
         // and a message kept already is not kept twice.
         let (port, server) = imap::tests::server(4, vec![(1, MAIL.to_vec())]);
         let tcp = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        assert_eq!(fetch_over(tcp, &mailbox, "right", &mut store).unwrap(), 0);
+        assert!(
+            fetch_over(tcp, &mailbox, "right", &mut store)
+                .unwrap()
+                .is_empty()
+        );
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_change_of_bank_details_is_always_seen() {
+        let said = |subject: &str, text: &str| {
+            bank_change(&Mail {
+                subject: subject.into(),
+                text: text.into(),
+                ..Default::default()
+            })
+        };
+        assert!(said(
+            "Nouvelles coordonnées bancaires",
+            "Merci de mettre à jour."
+        ));
+        assert!(said("Invoice", "Please use our new account from now on."));
+        assert!(said(
+            "Facture",
+            "Virement sur FR76 3000 6000 0112 3456 7890 189 svp"
+        ));
+        assert!(said("Re: lot 12", "Voici mon RIB pour le remboursement."));
+        assert!(said("Update", "Our IBAN changed."));
+        // Its item goes to the founder, saying where it is from.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("business.db")).unwrap();
+        let mailbox = Mailbox {
+            agent: "support".into(),
+            address: "support@n.example".into(),
+            imap_host: "h".into(),
+            imap_port: 1,
+        };
+        let rib = Mail {
+            from: "x@y.example".into(),
+            subject: "Nouveau RIB".into(),
+            text: "Merci.".into(),
+            ..Default::default()
+        };
+        let fine = Mail {
+            subject: "Où est mon lot ?".into(),
+            ..Default::default()
+        };
+        flag_bank_changes(&mut store, &mailbox, &[(1, rib), (2, fine)]).unwrap();
+        let items = store.queue(&["pending"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            (items[0].kind.as_str(), items[0].args["mail"].as_i64()),
+            ("incident", Some(1))
+        );
+        assert!(
+            items[0].args["detail"]
+                .as_str()
+                .unwrap()
+                .contains("x@y.example")
+        );
+        // Words inside others are not words: no flag.
+        assert!(!said(
+            "Où est mon lot ?",
+            "Bonjour, je n'ai pas reçu le colis. Merci, Ribeiro"
+        ));
+        assert!(!said(
+            "Order 123456789",
+            "Tracking 1Z999AA10123456784 please"
+        ));
     }
 
     #[test]
