@@ -194,7 +194,8 @@ impl App {
                     self.mcp_connect(&realm, &name)?;
                     return Ok(Some(json_response(200, json!({"open": true}))));
                 }
-                let redirect = format!("http://127.0.0.1:{}/oauth/callback", self.port);
+                // Back to the app the founder used, on a server too.
+                let redirect = self.callback_url(request);
                 match crate::tools::remote::start(&dir, &name, &redirect) {
                     Ok(crate::tools::remote::Started::SignIn(url)) => {
                         let open = url.clone();

@@ -82,6 +82,22 @@ pub fn host_allowed(header: &str, port: u16, allowed: &[String]) -> bool {
     allowed.contains(&name)
 }
 
+/// Where a connector's sign-in page sends the browser back (decision 138):
+/// the name the browser reached Airth by, over HTTPS, when it is one the
+/// owner allowed (Airth on a server, reached through Tailscale); else
+/// loopback, where the browser and Airth are on one machine.
+pub fn callback_url(header: &str, port: u16, allowed: &[String]) -> String {
+    let name = header
+        .strip_suffix(":443")
+        .unwrap_or(header)
+        .to_ascii_lowercase();
+    if allowed.contains(&name) {
+        format!("https://{name}/oauth/callback")
+    } else {
+        format!("http://127.0.0.1:{port}/oauth/callback")
+    }
+}
+
 /// The link that pairs the phone: the app over HTTPS, carrying the token in
 /// its fragment, which the browser never sends to a server.
 pub fn pairing_link(host: &str, token: &str) -> String {
@@ -167,6 +183,30 @@ mod tests {
             7457,
             &allowed
         ));
+    }
+
+    /// Decision 138: a sign-in comes back to the name the browser used, if
+    /// the owner allowed it; anything else comes back to loopback.
+    #[test]
+    fn a_sign_in_comes_back_where_the_browser_reached_airth() {
+        let allowed = vec!["vps.tail1234.ts.net".to_string()];
+        assert_eq!(
+            callback_url("vps.tail1234.ts.net", 7457, &allowed),
+            "https://vps.tail1234.ts.net/oauth/callback"
+        );
+        assert_eq!(
+            callback_url("VPS.tail1234.ts.net:443", 7457, &allowed),
+            "https://vps.tail1234.ts.net/oauth/callback"
+        );
+        assert_eq!(
+            callback_url("127.0.0.1:7457", 7457, &allowed),
+            "http://127.0.0.1:7457/oauth/callback"
+        );
+        // A name the owner did not allow never becomes the way back.
+        assert_eq!(
+            callback_url("evil.example", 7457, &allowed),
+            "http://127.0.0.1:7457/oauth/callback"
+        );
     }
 
     #[test]
