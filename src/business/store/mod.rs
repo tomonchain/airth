@@ -11,6 +11,7 @@ pub mod autonomy;
 pub mod bank;
 pub mod drafts;
 pub mod legal;
+pub mod mail;
 pub mod pipelines;
 pub mod projects;
 pub mod queue;
@@ -417,6 +418,27 @@ const MIGRATIONS: &[&str] = &[
     // 23: how a project's task ended (its run's status), so what reads the
     // database alone (the morning brief) knows a project's state.
     "ALTER TABLE project_tasks ADD COLUMN outcome TEXT;",
+    // 24: the mail a role's mailbox received (decision 70), untrusted data,
+    // kept once: by its place in the mailbox, and by its Message-ID when it
+    // has one, so a renumbered mailbox does not bring it back.
+    "CREATE TABLE mail_messages (
+        id INTEGER PRIMARY KEY,
+        mailbox TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        uid_validity INTEGER NOT NULL,
+        uid INTEGER NOT NULL,
+        message_id TEXT,
+        thread TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        recipients TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        sent_at TEXT,
+        text TEXT NOT NULL,
+        attachments TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        UNIQUE (mailbox, uid_validity, uid)
+    );
+    CREATE UNIQUE INDEX mail_messages_once ON mail_messages(mailbox, message_id) WHERE message_id IS NOT NULL;",
 ];
 
 pub struct Store {

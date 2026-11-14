@@ -1139,7 +1139,14 @@ Decision 57 grew a new interface next to the classic one, to replace it at miles
 
 ## 70. Agent mail: one OVH mailbox per role, read as untrusted data, sent at level 1 with a blind copy to archive@
 
-**Proposed.**
+**Accepted** (founder, 14 November 2026: Numirama's support goes by e-mail, "on peut avancer"). Built in four steps: reading (IMAP, MIME, `business.db`); the Read block, the bank-details flag and the graph rule; sending (SMTP); the mailbox in Settings and `airth doctor`. What the build settled:
+
+- **Read only, by `EXAMINE`.** The inbox is opened with `EXAMINE`, not `SELECT`, so the server cannot mark or move anything. Messages are fetched with `BODY.PEEK[]`.
+- **Kept once twice over.** A message is kept once by its place in the mailbox (UIDVALIDITY and UID), and once by its Message-ID: a mailbox the server renumbers does not bring its mail back.
+- **The password.** It is the realm secret `MAIL_PASSWORD_<AGENT>`. It is redacted like every secret, and no command gets it, whatever the realm's rules.
+- **Another provider.** The agent's file may name its server (`mail_server:`); OVH's is the default.
+- **The crates.** `mail-parser` comes with two small crates of its own (`encodify`, `hashify`). TLS uses `rustls` with `rustls-platform-verifier`, both already built for reqwest, so certificates are checked against the system's roots.
+- **Limits.** A line from the server is at most 64 KB and a message at most 25 MB; anything larger is refused, not cut. A message's text is kept up to 100,000 characters.
 
 Milestone 7: at least one role handles mail under `CLAUDE.md`'s six rules. IMAP and SMTP are a new kind of integration (integrations are HTTP-only, decision 10), so they are security code with a decision and tests of their own.
 

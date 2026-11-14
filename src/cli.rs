@@ -168,6 +168,19 @@ pub enum PipelineCmd {
 }
 
 #[derive(Subcommand)]
+pub enum MailCmd {
+    /// Fetch the new mail of an agent's mailbox (its file's `mailbox:`),
+    /// read only; its password is the realm secret MAIL_PASSWORD_<AGENT>
+    Fetch { agent: String },
+    /// The last mail kept from an agent's mailbox
+    List {
+        agent: String,
+        #[arg(long, default_value_t = 20)]
+        last: usize,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum TimeCmd {
     /// What your time on the business was, by activity, and each entry
     Show {
@@ -1483,6 +1496,45 @@ pub fn pipeline(ctx: &Ctx, command: PipelineCmd) -> Result<bool> {
             Ok(true)
         }
     }
+}
+
+pub fn mail(ctx: &Ctx, command: MailCmd) -> Result<bool> {
+    use crate::business::store::Store;
+    let realm = ctx.realm()?;
+    let agent = match &command {
+        MailCmd::Fetch { agent } | MailCmd::List { agent, .. } => agent,
+    };
+    let mailbox = crate::mail::Mailbox::of(&realm.root()?, agent)?
+        .with_context(|| format!("{agent} has no mailbox: set `mailbox:` in agents/{agent}.md"))?;
+    let mut store = Store::of(&realm)?;
+    match command {
+        MailCmd::Fetch { .. } => {
+            let password = realm.secret(&mailbox.secret()).with_context(|| {
+                format!(
+                    "set the mailbox's password: airth secret set {}",
+                    mailbox.secret()
+                )
+            })?;
+            let kept = crate::mail::fetch(&mailbox, &password, &mut store)?;
+            println!("{}: {kept} new message(s) kept", mailbox.address);
+        }
+        MailCmd::List { last, .. } => {
+            for k in store.mails(&mailbox.address, last)? {
+                println!(
+                    "{}  {}  {}{}",
+                    k.mail.date.as_deref().unwrap_or(&k.fetched_at),
+                    k.mail.from,
+                    k.mail.subject,
+                    if k.mail.attachments.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  ({} attachment(s))", k.mail.attachments.len())
+                    }
+                );
+            }
+        }
+    }
+    Ok(true)
 }
 
 pub fn time(ctx: &Ctx, command: TimeCmd) -> Result<bool> {
