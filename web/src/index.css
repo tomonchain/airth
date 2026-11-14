@@ -152,6 +152,13 @@
   body {
     @apply bg-background text-foreground;
     }
+  /* The page itself never scrolls, only its columns: on a phone, nothing of
+     a column can slide under the status bar and the header. */
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
     }
@@ -269,7 +276,7 @@
    Pages scroll under it: each scrolling column ends with room for it, and
    what is pinned to the bottom (a message box) is lifted above it. */
 @media (max-width: 767px) {
-  :root { --dock: calc(62px + max(env(safe-area-inset-bottom), 10px) + 12px); }
+  :root { --dock: calc(54px + max(env(safe-area-inset-bottom), 10px) + 12px); }
   main .overflow-y-auto::after { content: ""; display: block; flex-shrink: 0; height: var(--dock); }
   .no-dock::after { display: none !important; }
   .dock-lift { padding-bottom: var(--dock) !important; }
@@ -290,6 +297,9 @@
     backdrop-filter: blur(24px) saturate(1.9);
   }
 }
+/* A glass button still answers the pointer: `.glass` sets the background,
+   which a utility's hover would not win over. */
+button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transparent); }
 .dark .glass {
   border-color: rgb(255 255 255 / 0.09);
   box-shadow:

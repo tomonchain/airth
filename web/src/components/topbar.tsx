@@ -17,7 +17,7 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   const closed = agents.filter((a) => !tabs.includes(a.name))
   return (
-    <header onMouseDown={titleBar} className="flex h-12 shrink-0 items-center gap-2 pr-3 select-none max-md:pl-3">
+    <header onMouseDown={titleBar} className="relative z-30 flex h-12 shrink-0 items-center gap-2 bg-background pr-3 select-none max-md:pl-3">
       {/* Room for the Mac window's buttons, then the tabs from the column's
           edge. Airth's mark and name sit over the rail in a browser, and
           just after the window's buttons in the Mac app; they open the HQ.

@@ -46,7 +46,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   if (shown === "thread" && lead) {
     return (
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <Button size="sm" variant="ghost" className="absolute top-2 right-3 z-10 h-8 text-muted-foreground" onClick={() => setMode("start")}><Plus /> New request</Button>
+        <Button size="sm" variant="ghost" className="glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground" onClick={() => setMode("start")}><Plus /> New request</Button>
         <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} />
       </div>
     )

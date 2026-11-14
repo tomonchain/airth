@@ -372,7 +372,7 @@ export function Welcome({ realms, onDone, fresh, onCancel }: { realms: Realm[]; 
   }
 
   return (
-    <div className={cn("grid min-h-svh bg-surface", step !== "connectors" && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
+    <div className={cn("grid h-svh overflow-y-auto bg-surface", step !== "connectors" && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
       <div className="flex min-h-svh flex-col px-6 pt-[max(env(safe-area-inset-top),24px)] pb-8 sm:px-12">
         <header className="flex items-center gap-3">
           <Ring className="size-6" />

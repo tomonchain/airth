@@ -115,11 +115,11 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
       {/* Only what the founder must know before writing: the agent is at work.
           Whether this goes on with the task or starts one is the box's own. */}
       {working && (
-        <div className="mb-1.5 px-3 text-xs text-muted-foreground">
+        <div className="glass mb-1.5 ml-2 w-fit max-w-[calc(100%-1rem)] rounded-full px-3 py-1 text-xs text-muted-foreground">
           {title} is working. It reads what you write at its next step.<span className="hidden md:inline"> <kbd className="font-sans">Esc</kbd> stops it.</span>
         </div>
       )}
-      <form onSubmit={(e) => { e.preventDefault(); send() }} className="relative flex items-end gap-1.5 rounded-[26px] bg-bubble py-1.5 pr-1.5 pl-2">
+      <form onSubmit={(e) => { e.preventDefault(); send() }} className="glass relative flex items-end gap-1.5 rounded-[26px] py-1.5 pr-1.5 pl-2">
         {/* A new task, or back to the current one: one small button. */}
         {task && !working && !closed && (fresh ? (
           <button type="button" onClick={() => setFresh(false)} title="Keep the current task" aria-label="Keep the current task"
