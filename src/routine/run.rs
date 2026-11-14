@@ -23,7 +23,7 @@ use std::path::Path;
 use std::time::Instant;
 
 /// Where an item keeps the id of what it was read from.
-pub(super) const SOURCE: &str = "source_id";
+pub(crate) const SOURCE: &str = "source_id";
 /// What a post the founder sent starts its routine with (decision 63).
 pub const POST_LINK: &str = "post_link";
 pub const ANGLE: &str = "angle";
@@ -501,6 +501,37 @@ pub fn run(
                 ));
                 (vec![week], Vec::new())
             }
+            Kind::Read { source, max, .. } if source == "mailbox" => {
+                // The routine's agent's mailbox (decision 70): each mail
+                // once per routine, oldest first; what is past the max waits
+                // for the next run. Its text is data, never instructions.
+                let mailbox =
+                    crate::mail::Mailbox::of(dry.root, &graph.agent)?.with_context(|| {
+                        format!("{} has no mailbox: set `mailbox:` in its file", graph.agent)
+                    })?;
+                let key = |id: i64| format!("mail:{id}");
+                let kept = dry.store.mails(&mailbox.address, 200)?;
+                let keys: Vec<String> = kept.iter().map(|k| key(k.id)).collect();
+                let seen = dry.store.seen(name, &keys)?;
+                let mut read: Vec<Item> = kept
+                    .iter()
+                    .filter(|k| !seen.contains(&key(k.id)))
+                    .map(|k| crate::mail::item(k, &key(k.id)))
+                    .collect();
+                let waiting = max.map_or(0, |m| read.len().saturating_sub(m));
+                read.truncate(read.len() - waiting);
+                if real.is_some() {
+                    let now_seen: Vec<String> =
+                        read.iter().map(|it| field_text(it, SOURCE)).collect();
+                    dry.store.mark_seen(name, &now_seen)?;
+                }
+                lines.push(format!(
+                    "{} new mail in {}, {waiting} left for the next run",
+                    read.len(),
+                    mailbox.address
+                ));
+                (read, Vec::new())
+            }
             Kind::Read { source, .. } if source == "x_post" => {
                 // The post the founder sent, through X's oEmbed; too thin to
                 // answer stops the run, said, before anything is drafted.
@@ -682,7 +713,17 @@ pub fn run(
             } => {
                 for it in &items {
                     let text = field_text(it, show);
-                    let flag = check.as_deref().and_then(|c| quality_flag(it, c));
+                    // A mail that speaks of bank details holds whatever came
+                    // of it, until the founder overrides it (decision 70).
+                    let flag = if field_text(it, "bank_details") == "yes" {
+                        Some((
+                            "blocking",
+                            "the mail speaks of bank details: check by phone before anything"
+                                .to_string(),
+                        ))
+                    } else {
+                        check.as_deref().and_then(|c| quality_flag(it, c))
+                    };
                     let flagged = flag
                         .as_ref()
                         .map(|(f, why)| format!(" [flagged {f}: {why}]"))

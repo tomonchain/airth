@@ -1516,7 +1516,8 @@ pub fn mail(ctx: &Ctx, command: MailCmd) -> Result<bool> {
                 )
             })?;
             let kept = crate::mail::fetch(&mailbox, &password, &mut store)?;
-            println!("{}: {kept} new message(s) kept", mailbox.address);
+            crate::mail::flag_bank_changes(&mut store, &mailbox, &kept)?;
+            println!("{}: {} new message(s) kept", mailbox.address, kept.len());
         }
         MailCmd::List { last, .. } => {
             for k in store.mails(&mailbox.address, last)? {

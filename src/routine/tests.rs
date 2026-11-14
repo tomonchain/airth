@@ -143,6 +143,44 @@ fn content_from_outside_reaches_no_act_without_an_approval() {
     .unwrap();
 }
 
+/// Decision 70: what comes of a mail reaches no act without an approval,
+/// whatever the agent's level for it; a report to the founder may.
+#[test]
+fn mail_reaches_no_act_without_an_approval_whatever_the_level() {
+    let root = business();
+    let mail = json!({"id": "inbox", "type": "read", "source": "mailbox", "max": 20});
+    let e = format!(
+        "{:#}",
+        try_graph(
+            root.path(),
+            posts(json!([mail, {"id": "d", "type": "act", "action": "typefully.create_draft"}]))
+        )
+        .unwrap_err()
+    );
+    assert!(e.contains("mail always needs one"), "{e}");
+    // Through a mission, too.
+    let e = format!(
+        "{:#}",
+        try_graph(root.path(), posts(json!([mail,
+            {"id": "m", "type": "act", "action": "airth.launch_mission", "fields": {"brief": "{{subject}}"}},
+            {"id": "d", "type": "act", "action": "typefully.create_draft"}])))
+        .unwrap_err()
+    );
+    assert!(
+        e.contains("'m'") && e.contains("mail always needs one"),
+        "{e}"
+    );
+    try_graph(
+        root.path(),
+        posts(json!([mail,
+        {"id": "ok", "type": "approval", "show": "text"},
+        {"id": "d", "type": "act", "action": "typefully.create_draft"}])),
+    )
+    .unwrap();
+    try_graph(root.path(), posts(json!([mail, {"id": "r", "type": "act", "action": "airth.report", "fields": {"title": "{{subject}}"}}])))
+        .unwrap();
+}
+
 #[test]
 fn a_wrong_graph_is_refused_naming_what_is_wrong() {
     let root = business();

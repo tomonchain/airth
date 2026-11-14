@@ -621,6 +621,12 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
                 crate::business::sync::run(home.clone())
             })
         });
+        // Each role's mailbox, read every few minutes (decision 70).
+        let home = app.hub.home().clone();
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("mail reader", tell, || crate::mail::run(home.clone()))
+        });
         let dir = app.hub.home().dir().to_path_buf();
         let tell = inbox();
         std::thread::spawn(move || {
