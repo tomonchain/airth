@@ -1,4 +1,4 @@
-//! Airth's icons, drawn in code: the app icon (a teal tile with an orbit and
+//! Airth's icons, drawn in code: the app icon (a dark grey tile with an orbit and
 //! a planet) and the menu bar icon (the same mark, as a template image).
 
 /// RGBA pixels of the mark on a `size`×`size` canvas. `tile` draws the app
@@ -63,9 +63,9 @@ pub fn draw(size: u32, tile: bool) -> Vec<u8> {
                 if bg == 0.0 {
                     continue;
                 }
-                // Teal, lighter at the top.
+                // Dark grey, lighter at the top.
                 let t = y as f32 / s;
-                let (r0, g0, b0) = (20.0 + 10.0 * (1.0 - t), 140.0 - 40.0 * t, 128.0 - 30.0 * t);
+                let (r0, g0, b0) = (64.0 - 36.0 * t, 64.0 - 36.0 * t, 66.0 - 36.0 * t);
                 let mix = |a: f32, b: f32| (a * (1.0 - mark) + b * mark) as u8;
                 px[i] = mix(r0, 250.0);
                 px[i + 1] = mix(g0, 250.0);

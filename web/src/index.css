@@ -56,6 +56,10 @@
 }
 
 :root {
+    /* Airth's ring, in greys: darker on a light page, lighter on a dark one. */
+    --logo-from: #8f8f94;
+    --logo-mid: #5c5c61;
+    --logo-to: #2e2e32;
     --background: #ececee;
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -95,6 +99,9 @@
 }
 
 .dark {
+    --logo-from: #f4f4f5;
+    --logo-mid: #a3a3a8;
+    --logo-to: #5c5c61;
     --background: #0e0e0f;
     --surface: #161617;
     --bubble: #1f1f21;
