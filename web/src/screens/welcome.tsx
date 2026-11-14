@@ -479,11 +479,11 @@ function Stage({ step, name, what, country, crew, goal, by, number, planned }: {
   )
 }
 
-/** Airth's mark: the ring, in its gradient. */
+/** Airth's mark: the ring, in its greys. */
 function Ring({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={className} aria-hidden>
-      <defs><linearGradient id="airth-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6d5dfc" /><stop offset=".55" stopColor="#3fb8ff" /><stop offset="1" stopColor="#2dd4bf" /></linearGradient></defs>
+      <defs><linearGradient id="airth-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style={{ stopColor: "var(--logo-from)" }} /><stop offset=".55" style={{ stopColor: "var(--logo-mid)" }} /><stop offset="1" style={{ stopColor: "var(--logo-to)" }} /></linearGradient></defs>
       <circle cx="32" cy="32" r="22" fill="none" stroke="url(#airth-ring)" strokeWidth="12" />
     </svg>
   )
