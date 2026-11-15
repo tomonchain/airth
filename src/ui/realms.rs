@@ -1206,17 +1206,23 @@ pub(super) fn set_mailbox(realm: &Realm, agent: &str, address: &str, password: &
         }
     }
     crate::business::set_agent_field(&root, agent, "mailbox", address, &realm.config.departments)?;
-    let secret = format!(
-        "{}{}",
-        crate::mail::SECRET_PREFIX,
-        agent.to_uppercase().replace('-', "_")
-    );
+    let secret = password_secret(agent);
     if !password.is_empty() {
         realm.set_secret(&secret, password)?;
     } else if before.is_some_and(|b| !b.address.eq_ignore_ascii_case(address)) {
         realm.remove_secret(&secret)?;
     }
     Ok(())
+}
+
+/// The realm secret holding `agent`'s mailbox password, as `Mailbox::secret`
+/// names it, for an agent whose file may not name a valid mailbox.
+fn password_secret(agent: &str) -> String {
+    format!(
+        "{}{}",
+        crate::mail::SECRET_PREFIX,
+        agent.to_uppercase().replace('-', "_")
+    )
 }
 
 /// Each agent with what its mailbox holds: the address and server, whether
@@ -1248,7 +1254,7 @@ pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
             Err(e) => (
                 front.as_ref().and_then(|f| f.text("mailbox")),
                 None,
-                false,
+                realm.secret(&password_secret(&agent)).is_some(),
                 None,
                 Some(format!("{e:#}")),
             ),

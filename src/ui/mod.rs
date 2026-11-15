@@ -703,6 +703,7 @@ mod tests {
                 .unwrap()
                 .contains("not a host name")
         );
+        assert_eq!(support["password"], true);
         std::fs::write(&file, good).unwrap();
         // An empty address removes the mailbox, and its password.
         realms::set_mailbox(&realm, "support", "", "").unwrap();
