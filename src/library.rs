@@ -146,8 +146,16 @@ pub fn shown(team: &Team, root: Option<&Path>) -> Value {
 /// `root`. Nothing is written when any of its files is there already: a
 /// team never overwrites what the founder has. Returns the files written.
 pub fn install(root: &Path, team: &Team) -> Result<Vec<String>> {
+    let files: Vec<(&str, &str)> = team.files.iter().map(|(r, t)| (r.as_str(), *t)).collect();
+    install_files(root, &files)
+}
+
+/// Write `files` into the business folder at `root`, by their path there,
+/// as a team installs: nothing when any of them is there already. An
+/// agent's package installs this way too (decision 140).
+pub fn install_files(root: &Path, files: &[(&str, &str)]) -> Result<Vec<String>> {
     let mut there = Vec::new();
-    for (rel, text) in &team.files {
+    for (rel, text) in files {
         let path = Path::new(rel);
         if !path.components().all(|c| matches!(c, Component::Normal(_))) {
             bail!("{rel}: a team's file stays inside its folder");
@@ -157,7 +165,7 @@ pub fn install(root: &Path, team: &Team) -> Result<Vec<String>> {
                 .with_context(|| format!("{rel} is not a valid routine"))?;
         }
         if root.join(path).exists() {
-            there.push(rel.clone());
+            there.push(rel.to_string());
         }
     }
     if !there.is_empty() {
@@ -167,13 +175,13 @@ pub fn install(root: &Path, team: &Team) -> Result<Vec<String>> {
         );
     }
     let mut written = Vec::new();
-    for (rel, text) in &team.files {
+    for (rel, text) in files {
         let path = root.join(rel);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
         crate::realm::write_atomic(&path, text)?;
-        written.push(rel.clone());
+        written.push(rel.to_string());
     }
     Ok(written)
 }

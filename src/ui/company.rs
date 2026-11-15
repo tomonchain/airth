@@ -107,6 +107,54 @@ impl App {
                 let seed = crate::business::keep_look(&self.realm(r)?.root()?, name)?;
                 json_response(200, json!({"look": seed}))
             }
+            // What the agent may do alone, action by action (decision 96):
+            // its level, the action's ceiling, and where it started.
+            (Method::Get, ["realms", r, "agents", name, "levels"]) => json_response(
+                200,
+                json!({"actions": agent_levels(&self.realm(r)?, name)?}),
+            ),
+            // The founder sets a level, never above the ceiling: only the
+            // founder promotes (CLAUDE.md, Autonomy).
+            (Method::Put, ["realms", r, "agents", name, "levels", action]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let level = body["level"]
+                    .as_u64()
+                    .filter(|l| *l <= 3)
+                    .context("level: 0, 1, 2 or 3")? as u8;
+                let declared = declared_actions(&realm)?
+                    .into_iter()
+                    .find(|a| a.id == *action)
+                    .with_context(|| format!("no action {action} in this business"))?;
+                crate::business::job(&realm.root()?, name)?;
+                Store::of(&realm)?.set_level(
+                    name,
+                    action,
+                    level,
+                    declared.ceiling,
+                    "founder",
+                    "set in the app",
+                )?;
+                json_response(200, json!({"actions": agent_levels(&realm, name)?}))
+            }
+            // The agent's package (decision 140): it, its routines and their
+            // prompts, without what belongs to this business.
+            (Method::Get, ["realms", r, "agents", name, "export"]) => json_response(
+                200,
+                serde_json::to_value(crate::business::package::export(
+                    &self.realm(r)?.root()?,
+                    name,
+                )?)?,
+            ),
+            // Install an agent's package from another business (decision
+            // 140): with no rights, overwriting nothing.
+            (Method::Post, ["realms", r, "agents", "import"]) => {
+                let package: crate::business::package::Package =
+                    serde_json::from_value(read_json(request)?)
+                        .context("not an agent's package")?;
+                let written = crate::business::package::import(&self.realm(r)?.root()?, &package)?;
+                json_response(200, json!({"agent": package.agent, "written": written}))
+            }
             (Method::Get, ["realms", r, "company"]) => {
                 json_response(200, self.company(&self.realm(r)?)?)
             }
@@ -239,6 +287,8 @@ impl App {
                 "job": job(&doc.body),
                 // The whole job, as written, to edit it.
                 "body": doc.body.trim(),
+                // The founder's lessons (decision 127), for its Memory tab.
+                "lessons": crate::business::lessons(&root, name),
                 // What its tasks may use (decision 64).
                 "integrations": doc.text("integrations").map(|t| split_names(&t)).unwrap_or_default(),
                 "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
@@ -323,6 +373,32 @@ fn split_names(text: &str) -> Vec<String> {
     text.split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// The business's declared actions: its connectors', its MCP servers', and
+/// Airth's own.
+fn declared_actions(realm: &Realm) -> Result<Vec<crate::actions::Declared>> {
+    let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+    Ok(crate::actions::all(&realm.config.integrations, &servers))
+}
+
+/// Each declared action with the agent `name`'s level for it.
+pub(super) fn agent_levels(realm: &Realm, name: &str) -> Result<Vec<Value>> {
+    crate::business::job(&realm.root()?, name)?;
+    let store = Store::of(realm)?;
+    declared_actions(realm)?
+        .into_iter()
+        .map(|a| {
+            Ok(json!({
+                "action": a.id,
+                "class": a.class.as_str(),
+                "ceiling": a.ceiling,
+                "start": a.start,
+                "classed": a.confirmed,
+                "level": store.level(name, &a.id, a.ceiling, a.start)?,
+            }))
+        })
         .collect()
 }
 

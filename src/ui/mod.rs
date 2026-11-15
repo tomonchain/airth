@@ -639,6 +639,106 @@ mod tests {
 
     /// Decision 70: Settings shows each role's mailbox, and whether its
     /// password is set, never the password; a wrong address is refused.
+    /// Decision 140 and the agent page: an agent's levels, set by the
+    /// founder never above the ceiling, and its package to take elsewhere.
+    #[test]
+    fn an_agents_levels_are_set_under_the_ceiling_and_it_exports() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "support", "Answer.").unwrap();
+        crate::business::set_agent_field(&root, "support", "mailbox", "support@n.example", &[])
+            .unwrap();
+        let app = test_app(home, 0);
+        let call = |method: Method, path: &str, body: &'static str| -> (u16, Value) {
+            let mut request: Request = tiny_http::TestRequest::new()
+                .with_method(method.clone())
+                .with_path(&format!("/api/{path}"))
+                .with_body(body)
+                .into();
+            let segments: Vec<&str> = path.split('/').collect();
+            match app.company_routes(&mut request, &method, &segments, "") {
+                Ok(Some(response)) => {
+                    let code = response.status_code().0;
+                    let mut text = String::new();
+                    std::io::Read::read_to_string(&mut response.into_reader(), &mut text).unwrap();
+                    (code, serde_json::from_str(&text).unwrap_or(Value::Null))
+                }
+                Ok(None) => (404, Value::Null),
+                Err(e) => (400, json!({"error": format!("{e:#}")})),
+            }
+        };
+        let (code, levels) = call(Method::Get, "realms/r/agents/support/levels", "");
+        assert_eq!(code, 200, "{levels}");
+        let actions = levels["actions"].as_array().unwrap();
+        let mail = actions.iter().find(|a| a["action"] == "mail.send").unwrap();
+        assert_eq!(
+            (mail["level"].as_u64(), mail["ceiling"].as_u64()),
+            (Some(1), Some(1))
+        );
+        // Down to 0: kept. Above the ceiling: refused, nothing stored.
+        let (code, _) = call(
+            Method::Put,
+            "realms/r/agents/support/levels/mail.send",
+            r#"{"level": 0}"#,
+        );
+        assert_eq!(code, 200);
+        let (code, err) = call(
+            Method::Put,
+            "realms/r/agents/support/levels/mail.send",
+            r#"{"level": 3}"#,
+        );
+        assert_eq!(code, 400, "{err}");
+        let (_, levels) = call(Method::Get, "realms/r/agents/support/levels", "");
+        let mail = levels["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["action"] == "mail.send")
+            .unwrap()
+            .clone();
+        assert_eq!(mail["level"], 0);
+        // An unknown action or agent is refused.
+        assert_eq!(
+            call(
+                Method::Put,
+                "realms/r/agents/support/levels/nope.act",
+                r#"{"level": 1}"#
+            )
+            .0,
+            400
+        );
+        assert_eq!(call(Method::Get, "realms/r/agents/ghost/levels", "").0, 400);
+        // Its package leaves its mailbox behind.
+        let (code, package) = call(Method::Get, "realms/r/agents/support/export", "");
+        assert_eq!(code, 200);
+        assert_eq!(package["format"], "airth-agent/1");
+        let file = package["files"]["agents/support.md"].as_str().unwrap();
+        assert!(
+            file.contains("Answer.") && !file.contains("support@n.example"),
+            "{file}"
+        );
+        // Brought back into the same business: refused, it is there already.
+        let body: &'static str = Box::leak(package.to_string().into_boxed_str());
+        let (code, err) = call(Method::Post, "realms/r/agents/import", body);
+        assert_eq!(code, 400, "{err}");
+        assert!(
+            err["error"]
+                .as_str()
+                .unwrap()
+                .contains("already in this business"),
+            "{err}"
+        );
+    }
+
     #[test]
     fn mailboxes_show_whether_a_password_is_set_never_the_password() {
         let home_dir = tempfile::tempdir().unwrap();

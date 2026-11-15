@@ -2,6 +2,28 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 140. An agent's page, its levels in the app, and its package to take to another business
+
+**Accepted** (founder, 15 November 2026: a fuller agent page with tabs, each agent's rights, connectors and skills, and exporting an agent; "agent, routines and prompts"; import "right after").
+
+- **Levels in the app.** An agent's level for each declared action (decision 96) was set only with `airth actions level`.
+  - `GET /api/realms/<r>/agents/<a>/levels` lists every declared action with the agent's level, its ceiling and where it started.
+  - `PUT …/levels/<action>` sets a level. It is never above the ceiling, it is recorded in the log as the founder's, and only the founder does it. Nothing else changes: a client decides who approves, never whether (decision 2).
+- **An agent's package** is a JSON file, format `airth-agent/1`. It holds the agent, its title, and its files by their path in the business folder:
+  - its file, without what belongs to its business: the mailbox and its server and ports, the monthly budget, the repositories, and the founder's lessons;
+  - the routines it runs;
+  - the prompts and schemas their AI blocks name.
+- **No secret leaves with it.** The business folder holds none.
+- **`GET …/agents/<a>/export`** returns the package. The app downloads it.
+- **`POST …/agents/import`** installs a package in another business the way a team installs (decision 74). It writes nothing if any of the files is there already.
+  - **It takes only what is the agent's:** its own file, routines whose agent it is, and prompts. Any other path is refused.
+  - **The agent comes in with no rights:** no connector, skill or repository until the founder gives them, never as the interlocutor, and its actions at their starting level.
+- **The page** (its own change): the agent fills the page, with tabs for its conversation, an overview, its rights, its tools, its routines, its memory and its mail.
+
+*Why:* the founder runs two businesses that need the same roles; an agent proven at Hedgen should go to Numirama with what it runs, and without what is Hedgen's. Levels are the agent's rights; they belong on its page.
+
+*Cost:* a package is a copy: it does not follow later changes to the agent. Prompts with the same name in the other business block the import, as a team's do.
+
 ## 139. A monthly budget per business and per agent, which stops the work once reached
 
 **Accepted** (founder, 15 November 2026, after the comparison with Paperclip: "go" on caps that cut). A task had a cost budget (decision 64) and each provider a monthly level that only warns (decision 107); nothing stopped a business, or one agent, from spending a month's money in a week of tasks.
