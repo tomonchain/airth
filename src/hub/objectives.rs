@@ -28,6 +28,9 @@ impl Hub {
             Some(bot) => Some(crate::business::job(&realm.root()?, bot)?),
             None => None,
         };
+        // The month's budgets bind it as they bind a task (decision 139):
+        // its bot's and the business's; none starts once one is reached.
+        let left = self.month_allows(realm, objective.bot.as_deref(), now)?;
         let mut state =
             self.create_run_in(realm, &objective.objective, objective.repo.as_deref())?;
         let mut brief = objective_brief(realm, &objective, trigger, payload);
@@ -40,6 +43,10 @@ impl Hub {
         append_user_text(&mut state.messages, &brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
+        if let Some(left) = left {
+            state.budget.max_cost_usd =
+                Some(state.budget.max_cost_usd.map_or(left, |c| c.min(left)));
+        }
         state.tools = objective.tools.clone();
         state.origin = Some(Origin {
             objective: objective.id.clone(),
