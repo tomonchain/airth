@@ -48,8 +48,8 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {/* On a phone it sits beside the logo, in the row above the conversation. */}
         <Button size="sm" variant="ghost" aria-label="New request" onClick={() => setMode("start")}
-          className="glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground max-md:[&_svg]:size-5">
-          <Plus /><span className="max-md:hidden">New request</span>
+          className="glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground">
+          <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
         </Button>
         <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top />
       </div>
