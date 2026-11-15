@@ -10,7 +10,9 @@ export function Page({ eyebrow, title, lede, actions, children, wide }: {
 }) {
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className={cn("mx-auto px-4 pt-6 pb-16 md:px-8 md:pt-9", wide ? "max-w-5xl" : "max-w-3xl")}>
+      {/* On a phone, the page starts below Airth's floating mark, and
+          scrolls under it (no header there). */}
+      <div className={cn("mx-auto px-4 pt-[68px] pb-16 md:px-8 md:pt-9", wide ? "max-w-5xl" : "max-w-3xl")}>
         <header className="flex items-end gap-4 max-md:flex-col max-md:items-start max-md:gap-3">
           <div className="min-w-0 flex-1">
             {eyebrow && <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{eyebrow}</p>}
@@ -70,7 +72,8 @@ export function Loading() {
     page, with a count or buttons on the right. */
 export function SideHead({ title, note, children }: { title: string; note?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-0.5 pr-2 pl-4">
+    // On a phone, the title sits beside Airth's floating mark.
+    <div className="flex h-12 shrink-0 items-center gap-0.5 pr-2 pl-4 max-md:h-[60px] max-md:pl-[68px]">
       <h1 className="flex-1 truncate text-[15px] font-semibold">{title}</h1>
       {note !== undefined && <span className="pr-2 text-xs text-muted-foreground tabular-nums">{note}</span>}
       {children}

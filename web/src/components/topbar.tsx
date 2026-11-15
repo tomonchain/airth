@@ -1,4 +1,4 @@
-import { Building, ChevronsUpDown, PanelRight, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
+import { Building, Check, ChevronsUpDown, PanelRight, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
 import { mac, titleBar } from "@/lib/shell"
@@ -29,11 +29,6 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
           <span className="text-[15px] font-semibold tracking-tight">Airth</span>
         </button>
       </div>
-      {/* On a phone, Airth's mark at the top left; it opens the HQ, which
-          the business menu alone reaches otherwise. */}
-      <button onClick={onHq} aria-label="Airth: all businesses" className="grid size-8 shrink-0 place-items-center rounded-lg md:hidden">
-        <AirthMark id="airth-mark-phone" />
-      </button>
       <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto max-md:invisible">
         {onAgents && tabs.map((t) => {
           const a = agents.find((x) => x.name === t)
@@ -88,24 +83,68 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
           <ChevronsUpDown className="size-3.5 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          {/* A label only holds inside a group: without one, opening the menu threw. */}
-          <DropdownMenuGroup>
-          <DropdownMenuLabel>Businesses</DropdownMenuLabel>
-          {realms.filter((r) => !r.archived).map((r) => (
-            <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
-              <span className="flex-1">{named(r.name, r.title)}</span>
-              {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
-              {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
-            </DropdownMenuItem>
-          ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
-          <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
+          <BusinessItems realms={realms} realm={realm} onHq={onHq} onNewBusiness={onNewBusiness} />
         </DropdownMenuContent>
       </DropdownMenu>
     </header>
+  )
+}
+
+/** The businesses, then the HQ, a new business and the welcome guide: the
+    business menu's items, on a computer and on a phone. */
+function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]; realm: string; onHq: () => void; onNewBusiness: () => void }) {
+  return (
+    <>
+      {/* A label only holds inside a group: without one, opening the menu threw. */}
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Businesses</DropdownMenuLabel>
+        {realms.filter((r) => !r.archived).map((r) => (
+          <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
+            <span className={cn("flex-1", r.name === realm && "font-semibold")}>{named(r.name, r.title)}</span>
+            {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
+            {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
+            {r.name === realm && <Check className="size-4 text-muted-foreground" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
+      <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
+    </>
+  )
+}
+
+/** On a phone there is no header (the founder's choice): Airth's mark
+    floats at the top left as glass, and opens the business menu, with the
+    server's name; an update, when there is one, floats at the top right. */
+export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }: {
+  server: string | null; realms: Realm[]; realm: string; agents: Agent[]; onNewBusiness: () => void; onHq: () => void
+}) {
+  const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<button aria-label={`Airth: ${named(realm, realms.find((r) => r.name === realm)?.title)}, other businesses${others > 0 ? ` (${others} waiting)` : ""} and the HQ`}
+          className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] left-3 z-40 grid size-11 place-items-center rounded-full transition-transform active:scale-95" />}>
+          <AirthMark id="airth-mark-phone" />
+          {/* Another business waits for the founder: said here, wherever they are. */}
+          {others > 0 && <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{others}</span>}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          <BusinessItems realms={realms} realm={realm} onHq={onHq} onNewBusiness={onNewBusiness} />
+          {server && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="flex items-center gap-1.5 font-normal" title="This Airth's name, set in Settings, About"><Server className="size-3.5" /> {server}</DropdownMenuLabel>
+              </DropdownMenuGroup>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div className="glass fixed top-[calc(env(safe-area-inset-top)+10px)] right-3 z-40 rounded-full empty:hidden"><UpdateNotice working={agents.filter((a) => a.state === "working").length} /></div>
+    </>
   )
 }
 

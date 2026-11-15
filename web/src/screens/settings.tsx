@@ -74,7 +74,7 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
         </div>
       </nav>
       <div className={cn("min-w-0 flex-1 overflow-y-auto", !picked && "max-md:hidden")}>
-        <div className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
+        <div className="flex h-[60px] items-center gap-2 border-b pr-3 pl-[68px] md:hidden">
           <Back label="All settings" onClick={() => setPicked(false)} />
           <span className="text-[15px] font-semibold">{SECTIONS.find((s) => s.id === section)?.label}</span>
         </div>

@@ -105,7 +105,7 @@ export function Marketplace({ realm }: { realm: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       {/* The same column as the content below, as on the other pages. */}
-      <header className="border-b pt-6 pb-0 md:pt-9">
+      <header className="border-b pt-[68px] pb-0 md:pt-9">
         <div className="mx-auto flex max-w-5xl items-end gap-4 px-4 max-md:flex-col max-md:items-stretch max-md:gap-3 md:px-8">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>

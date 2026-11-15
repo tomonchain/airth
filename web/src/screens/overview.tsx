@@ -28,7 +28,7 @@ export function Overview({ realm, agents, items, business, tasks, onAgent, onNee
   const money = <MoneyCard realm={realm} business={b} onOpen={() => onPage("finance")} onImported={onImported} />
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-8 pt-9 pb-16 max-md:px-4 max-md:pt-6 lg:max-w-6xl">
+      <div className="mx-auto max-w-3xl px-8 pt-9 pb-16 max-md:px-4 max-md:pt-[68px] lg:max-w-6xl">
         <header>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{b?.description ?? realm}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{named(realm, business?.title)}</h1>

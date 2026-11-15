@@ -324,7 +324,7 @@ function TaskView({ realm, run, agent, items, onBack, backLabel = "Projects", on
   return (
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:px-3">
+        <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:min-h-[60px] max-md:pr-3 max-md:pl-[68px]">
           <Back label={backLabel} onClick={onBack} />
           {renaming !== null ? (
             <>

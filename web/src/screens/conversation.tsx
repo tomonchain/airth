@@ -30,8 +30,10 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 /** One agent's work as a conversation: its runs, what it sent up, the
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
-export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone }: {
+export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone, top }: {
   realm: string; agent: Agent; agents?: Agent[]; onAgent?: (name: string) => void; tasks: Tasks | null; onDone: () => void
+  /** At the top of the page: on a phone, it starts below Airth's floating mark. */
+  top?: boolean
 }) {
   const { prefs } = usePrefs()
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
@@ -145,7 +147,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroller} onScroll={scrolled} className="no-dock min-h-0 flex-1 overflow-y-auto">
-        <div ref={content} className={cn("mx-auto px-3 pt-4 [overflow-wrap:anywhere] md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1, paddingBottom: room + 16 }}>
+        <div ref={content} className={cn("mx-auto px-3 pt-4 [overflow-wrap:anywhere] md:px-6 md:pt-6", top && "max-md:pt-[68px]", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1, paddingBottom: room + 16 }}>
           {!thread.data ? (
             <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (

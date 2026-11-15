@@ -4,7 +4,7 @@ import { QuickAsk } from "@/components/quick-ask"
 import { AgentList, type Last } from "@/components/agent-list"
 import { Details } from "@/components/details"
 import { Rail, TabBar, type Page } from "@/components/rail"
-import { TopBar } from "@/components/topbar"
+import { PhoneMenu, TopBar } from "@/components/topbar"
 import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, called, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
@@ -235,10 +235,14 @@ export default function App() {
 
   return (
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
-      <TopBar
-        server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-        onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
-      />
+      {narrow ? (
+        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} agents={agents} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
+      ) : (
+        <TopBar
+          server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
+          onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
+        />
+      )}
       <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
       {/* On a phone, Ask floats above the tabs, but not where a box to write in is already the page's own. */}
       {narrow && page !== "home" && page !== "needs" && page !== "tasks" && page !== "agents" && (
@@ -285,7 +289,7 @@ export default function App() {
               {narrow ? (
                 // One column: a head to go back to the list or see the card.
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+                  <div className="flex h-[60px] shrink-0 items-center gap-2 border-b pr-3 pl-[68px]">
                     <Back label="All agents" onClick={() => { setCurrent(null); setDetails(false) }} />
                     <Character agent={agent} size={24} still />
                     <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{called(agent)}</span>

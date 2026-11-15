@@ -75,7 +75,7 @@ export function Calendar({ realm, agents, onAgent }: { realm: string; agents: Ag
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5">
+      <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5 max-md:min-h-[60px] max-md:pl-[68px]">
         <h1 className="text-lg font-semibold tracking-tight">Calendar</h1>
         <Button variant="outline" size="sm" onClick={() => setAnchor(new Date())}>Today</Button>
         <div className="flex">
