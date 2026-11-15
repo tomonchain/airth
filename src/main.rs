@@ -984,6 +984,31 @@ fn doctor(ctx: &Ctx) -> Result<bool> {
             .as_ref()
             .map(|r| r.config.departments.clone())
             .unwrap_or_default();
+        // Each role's mailbox (decision 70): its password, and the DNS the
+        // founder sets at the provider, which Airth cannot see from here.
+        if let (Ok(r), Ok(agents)) = (realm.as_ref(), business::bots(&root)) {
+            for (agent, _) in agents {
+                let Ok(Some(m)) = mail::Mailbox::of(&root, &agent) else {
+                    continue;
+                };
+                let domain = m
+                    .address
+                    .split_once('@')
+                    .map(|(_, d)| d)
+                    .unwrap_or_default()
+                    .to_string();
+                check(
+                    &format!("mailbox {}", m.address),
+                    match r.secret(&m.secret()) {
+                        Some(_) => Ok(format!(
+                            "{agent}'s, on {}; at the provider, check for {domain}: SPF (a TXT record v=spf1 …), DKIM (signing on), DMARC (a TXT record at _dmarc.{domain}), and that archive@{domain} exists",
+                            m.imap_host
+                        )),
+                        None => Err(format!("no password: airth secret set {}", m.secret())),
+                    },
+                );
+            }
+        }
         let config = business::config::load(&root, &own).map_err(|e| format!("{e:#}"));
         check(
             "business config",

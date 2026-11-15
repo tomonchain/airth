@@ -634,6 +634,49 @@ mod tests {
         assert_eq!(crate::business::bots(&root).unwrap().len(), 1);
     }
 
+    /// Decision 70: Settings shows each role's mailbox, and whether its
+    /// password is set, never the password; a wrong address is refused.
+    #[test]
+    fn mailboxes_show_whether_a_password_is_set_never_the_password() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "support", "Answer.").unwrap();
+        crate::business::set_agent_field(&root, "support", "title", "Support", &[]).unwrap();
+        assert!(
+            crate::business::set_agent_field(&root, "support", "mailbox", "not mail", &[]).is_err()
+        );
+        crate::business::set_agent_field(&root, "support", "mailbox", "support@n.example", &[])
+            .unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert_eq!(shown[0]["address"], "support@n.example");
+        assert_eq!(
+            (shown[0]["title"].as_str(), shown[0]["password"].as_bool()),
+            (Some("Support"), Some(false))
+        );
+        realm
+            .set_secret("MAIL_PASSWORD_SUPPORT", "s3cret-pass")
+            .unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert_eq!(shown[0]["password"], true);
+        assert!(
+            !serde_json::to_string(&shown)
+                .unwrap()
+                .contains("s3cret-pass")
+        );
+        // An empty address removes the mailbox.
+        crate::business::set_agent_field(&root, "support", "mailbox", "", &[]).unwrap();
+        assert!(realms::mailboxes(&realm).unwrap()[0]["address"].is_null());
+    }
+
     /// A routine made in the app names a hired bot and the business's own
     /// extensions only; Planning shows its coming week.
     #[test]

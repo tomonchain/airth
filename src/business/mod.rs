@@ -416,6 +416,11 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
         "department" => {
             config::department(value, own)?;
         }
+        // A role's mailbox (decision 70); empty removes it.
+        "mailbox" if !value.is_empty() && !crate::mail::valid_address(value) => {
+            anyhow::bail!("'{value}' is not an e-mail address")
+        }
+        "mailbox" => {}
         _ => anyhow::bail!("{key} cannot be set here"),
     }
     if value.contains(['\n', '\r']) {
