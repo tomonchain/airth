@@ -254,6 +254,9 @@ impl App {
                     | ["realms", _, "orders", "route"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
+                    // Reading a mailbox waits on its server; what it reads
+                    // goes to the store, not the settings.
+                    | ["realms", _, "mailboxes", _, "read"]
             );
         let _writes = (!concurrent).then(|| self.write_lock());
         let areas = [
@@ -672,9 +675,40 @@ mod tests {
                 .unwrap()
                 .contains("s3cret-pass")
         );
-        // An empty address removes the mailbox.
-        crate::business::set_agent_field(&root, "support", "mailbox", "", &[]).unwrap();
-        assert!(realms::mailboxes(&realm).unwrap()[0]["address"].is_null());
+        // An address is one agent's only.
+        crate::business::set_job(&root, "sales", "Sell.").unwrap();
+        let err = realms::set_mailbox(&realm, "sales", "Support@n.example", "").unwrap_err();
+        assert!(format!("{err:#}").contains("support's mailbox"), "{err:#}");
+        // A password goes with its address: a new address drops it.
+        realms::set_mailbox(&realm, "support", "support@n.example", "").unwrap();
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_some());
+        realms::set_mailbox(&realm, "support", "help@n.example", "").unwrap();
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
+        realms::set_mailbox(&realm, "support", "help@n.example", "new-pass").unwrap();
+        // A wrong mailbox in the agent's file is shown with what is wrong.
+        let file = root.join("agents/support.md");
+        let good = std::fs::read_to_string(&file).unwrap();
+        let bad = good.replace(
+            "mailbox: help@n.example",
+            "mailbox: help@n.example\nmail_server: bad host!",
+        );
+        assert_ne!(good, bad);
+        std::fs::write(&file, bad).unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        let support = shown.iter().find(|b| b["agent"] == "support").unwrap();
+        assert_eq!(support["address"], "help@n.example");
+        assert!(
+            support["error"]
+                .as_str()
+                .unwrap()
+                .contains("not a host name")
+        );
+        std::fs::write(&file, good).unwrap();
+        // An empty address removes the mailbox, and its password.
+        realms::set_mailbox(&realm, "support", "", "").unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert!(shown.iter().all(|b| b["address"].is_null()));
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
     }
 
     /// A routine made in the app names a hired bot and the business's own
