@@ -639,6 +639,74 @@ fn the_plan_runs_as_the_founder_edited_it_and_stops_where_a_step_failed() {
     assert_eq!(states, ["failed", "not started"]);
 }
 
+/// A plan's step that cannot start for want of a model still ends: the
+/// interlocutor hears it, and the steps after it do not wait for good.
+#[test]
+fn a_step_with_no_model_still_tells_the_interlocutor() {
+    use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::{Proposal, Step};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Year-end")
+        .unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let plan = Proposal {
+        name: "Year-end".into(),
+        steps: vec![Step {
+            agent: "writer".into(),
+            task: "A recap".into(),
+            after: vec![],
+            milestone: None,
+        }],
+        ..Default::default()
+    };
+    (dispatch.propose)(&plan, None).unwrap();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .pop()
+        .unwrap();
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Approve,
+        "app",
+        1,
+    )
+    .unwrap();
+    let mut step = hub.take_hand_offs().unwrap().pop().unwrap().1;
+    let mut chief_done = hub.load_run(&f.realm, &chief.id).unwrap();
+    chief_done.status = Status::Completed;
+    chief_done.save().unwrap();
+
+    // No model: a provider this business does not have.
+    f.realm.set_secret("AIRTH_PROVIDER", "nowhere").unwrap();
+    let bare = Hub::new(f.home.clone());
+    assert!(
+        bare.drive(
+            &f.realm,
+            &mut step,
+            config(10),
+            hooks(&mut NoObserver, true)
+        )
+        .is_err()
+    );
+    assert_eq!(step.status, Status::Failed);
+    let told = hub.take_hand_offs().unwrap();
+    assert_eq!(told.len(), 1, "the interlocutor is told the step ended");
+    assert_eq!(told[0].1.id, chief.id);
+}
+
 /// Decision 125: a task stopped on its budget gets remedies from the fast
 /// model, journaled; the one the founder applies raises its budget within
 /// the bound, tells its agent, closes the incident, and the task goes on.
