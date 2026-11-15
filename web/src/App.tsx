@@ -1,11 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { PenLine } from "lucide-react"
 import { QuickAsk } from "@/components/quick-ask"
 import { AgentList, type Last } from "@/components/agent-list"
 import { AgentPage } from "@/components/agent-page"
-import { Rail, TabBar, type Page } from "@/components/rail"
+import { MAIN, Rail, TabBar, type Page } from "@/components/rail"
 import { PhoneMenu, TopBar } from "@/components/topbar"
 import { useNarrow } from "@/hooks/use-narrow"
+import { useSwipe } from "@/hooks/use-swipe"
+import { cn } from "@/lib/utils"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
@@ -129,6 +131,19 @@ export default function App() {
   const business = hq.data?.businesses.find((b) => b.name === realm) ?? null
 
   const [page, setPage] = useState<Page>(() => opened().page)
+  // On a phone, a sideways swipe moves between the bar's pages, and the
+  // page comes in from the side the finger went.
+  const [mainEl, setMainEl] = useState<HTMLElement | null>(null)
+  const [slide, setSlide] = useState<{ from: "left" | "right"; at: number } | null>(null)
+  const onSwipe = useCallback((to: "left" | "right") => {
+    const order = MAIN.map(([p]) => p)
+    const at = order.indexOf(page)
+    const next = at < 0 ? undefined : order[at + (to === "left" ? 1 : -1)]
+    if (!next) return
+    setSlide({ from: to === "left" ? "right" : "left", at: Date.now() })
+    setPage(next)
+  }, [page])
+  useSwipe(mainEl, narrow, onSwipe)
   const [current, setCurrent] = useState<string | null>(() => opened().agent)
   const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
   // An agent opens on its conversation, as a chat does; its other tabs hold
@@ -251,7 +266,9 @@ export default function App() {
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
         {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
-        <main className="flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm">
+        <main ref={setMainEl} onAnimationEnd={(e) => e.target === e.currentTarget && setSlide(null)}
+          className={cn("flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm",
+            slide && "animate-in fade-in-0 duration-200 ease-out", slide?.from === "right" && "slide-in-from-right-10", slide?.from === "left" && "slide-in-from-left-10")}>
           <PageBoundary page={page}>
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
