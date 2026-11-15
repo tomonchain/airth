@@ -95,4 +95,57 @@ impl Store {
         out.reverse();
         Ok(out)
     }
+
+    /// Record a mail a role sent: who, to whom, in which thread, and what
+    /// the server answered. Never changed after.
+    pub fn record_sent(&mut self, s: &Sent) -> Result<()> {
+        self.write(|tx| {
+            tx.execute(
+                "INSERT INTO mail_sent (mailbox, agent, key, message_id, recipients, subject, thread, server, sent_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    s.mailbox,
+                    s.agent,
+                    s.key,
+                    s.message_id,
+                    serde_json::to_string(s.to)?,
+                    s.subject,
+                    s.thread,
+                    s.server,
+                    Utc::now().to_rfc3339()
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Whether `mailbox` ever exchanged mail with `address`: written to it,
+    /// or received from it (rule 3: a new correspondent is marked).
+    pub fn corresponded(&self, mailbox: &str, address: &str) -> Result<bool> {
+        let address = address.trim().to_lowercase();
+        let wrote: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM mail_sent, json_each(mail_sent.recipients) r
+             WHERE mail_sent.mailbox = ?1 AND lower(r.value) = ?2)",
+            params![mailbox, address],
+            |r| r.get(0),
+        )?;
+        let heard: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM mail_messages WHERE mailbox = ?1 AND lower(sender) = ?2)",
+            params![mailbox, address],
+            |r| r.get(0),
+        )?;
+        Ok(wrote || heard)
+    }
+}
+
+/// A mail sent, to record.
+pub struct Sent<'a> {
+    pub mailbox: &'a str,
+    pub agent: &'a str,
+    pub key: &'a str,
+    pub message_id: &'a str,
+    pub to: &'a [String],
+    pub subject: &'a str,
+    pub thread: Option<&'a str>,
+    pub server: &'a str,
 }

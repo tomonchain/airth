@@ -4,6 +4,7 @@
 //! is a realm secret, used here only: never given to a command or a model.
 
 pub mod imap;
+pub mod send;
 
 use crate::business::store::Store;
 use crate::business::store::mail::NewMail;
@@ -18,6 +19,8 @@ pub const SECRET_PREFIX: &str = "MAIL_PASSWORD_";
 /// OVH MX Plan (decision 70); another provider is config, not code.
 const IMAP_HOST: &str = "ssl0.ovh.net";
 const IMAP_PORT: u16 = 993;
+/// Submission over TLS from the first byte.
+const SMTP_PORT: u16 = 465;
 /// Each connection gives up after this long without an answer.
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -27,8 +30,10 @@ pub struct Mailbox {
     pub agent: String,
     /// Its address, which is also its login.
     pub address: String,
+    /// The mail server, for reading (IMAP) and sending (SMTP).
     pub imap_host: String,
     pub imap_port: u16,
+    pub smtp_port: u16,
 }
 
 impl Mailbox {
@@ -61,11 +66,26 @@ impl Mailbox {
         {
             bail!("{agent}'s mail server '{imap_host}' is not a host name");
         }
+        let port = |key: &str, default: u16| -> Result<u16> {
+            match front
+                .text(key)
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+            {
+                None => Ok(default),
+                Some(p) => p
+                    .parse()
+                    .ok()
+                    .filter(|p| *p > 0)
+                    .with_context(|| format!("{agent}'s {key} '{p}' is not a port")),
+            }
+        };
         Ok(Some(Self {
             agent: agent.to_string(),
             address,
             imap_host,
-            imap_port: IMAP_PORT,
+            imap_port: port("imap_port", IMAP_PORT)?,
+            smtp_port: port("smtp_port", SMTP_PORT)?,
         }))
     }
 
@@ -78,7 +98,7 @@ impl Mailbox {
     }
 }
 
-fn valid_address(a: &str) -> bool {
+pub(crate) fn valid_address(a: &str) -> bool {
     let Some((local, domain)) = a.split_once('@') else {
         return false;
     };
@@ -188,6 +208,30 @@ pub fn flag_bank_changes(store: &mut Store, mailbox: &Mailbox, kept: &[(i64, Mai
         })?;
     }
     Ok(())
+}
+
+/// The business's mailboxes that have their password, for sending; None
+/// when it has none.
+pub fn sender(realm: &crate::realm::Realm) -> Result<Option<crate::tools::mail::SendMail>> {
+    let Ok(root) = realm.root() else {
+        return Ok(None);
+    };
+    let mut mailboxes = Vec::new();
+    for (agent, _) in crate::business::bots(&root)? {
+        if let Ok(Some(m)) = Mailbox::of(&root, &agent)
+            && let Some(password) = realm.secret(&m.secret())
+        {
+            mailboxes.push((m, password));
+        }
+    }
+    if mailboxes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(crate::tools::mail::SendMail {
+        mailboxes,
+        business: crate::business::title(&root).unwrap_or_else(|| realm.name().to_string()),
+        store: realm.dir().join(crate::business::store::FILE),
+    }))
 }
 
 /// How often each mailbox is read.
@@ -428,6 +472,7 @@ mod tests {
             address: "support@numirama.example".into(),
             imap_host: "127.0.0.1".into(),
             imap_port: 0,
+            smtp_port: 0,
         };
         let run = |messages: Vec<(u32, Vec<u8>)>, store: &mut Store| {
             let (port, server) = imap::tests::server(3, messages);
@@ -494,6 +539,7 @@ mod tests {
             address: "support@n.example".into(),
             imap_host: "h".into(),
             imap_port: 1,
+            smtp_port: 1,
         };
         let rib = Mail {
             from: "x@y.example".into(),
@@ -555,5 +601,23 @@ mod tests {
         assert!(Mailbox::of(root.path(), "writer").unwrap().is_none());
         assert!(Mailbox::of(root.path(), "odd").is_err());
         assert!(Mailbox::of(root.path(), "../x").is_err());
+        // Another provider: its server and ports, as the agent's own fields,
+        // which do not set its file aside.
+        std::fs::write(
+            agents.join("own.md"),
+            "---\ntitle: Own\nmailbox: hi@own.example\nmail_server: mail.own.example\nsmtp_port: 587\n---\nx\n",
+        )
+        .unwrap();
+        let own = Mailbox::of(root.path(), "own").unwrap().unwrap();
+        assert_eq!(
+            (own.imap_host.as_str(), own.imap_port, own.smtp_port),
+            ("mail.own.example", 993, 587)
+        );
+        let config = crate::business::config::load(root.path(), &[]).unwrap();
+        assert!(
+            config.broken.iter().all(|b| !b.contains("own")),
+            "{:?}",
+            config.broken
+        );
     }
 }

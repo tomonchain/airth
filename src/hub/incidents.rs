@@ -29,7 +29,8 @@ pub struct Incident<'a> {
 
 /// Whether an HTTP call's result says it worked: a 2xx status.
 pub fn succeeded(result: &str) -> bool {
-    result.starts_with("HTTP 2")
+    // A declared action's answer: HTTP's, or a mail server's (decision 70).
+    result.starts_with("HTTP 2") || result.starts_with("SMTP 2")
 }
 
 /// Record `incident` in `realm`'s queue; when it demotes, take the agent's

@@ -439,6 +439,21 @@ const MIGRATIONS: &[&str] = &[
         UNIQUE (mailbox, uid_validity, uid)
     );
     CREATE UNIQUE INDEX mail_messages_once ON mail_messages(mailbox, message_id) WHERE message_id IS NOT NULL;",
+    // 25: each mail a role sent (decision 70): append-only evidence of who
+    // sent what, to whom, in which thread, and what the server answered.
+    "CREATE TABLE mail_sent (
+        id INTEGER PRIMARY KEY,
+        mailbox TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        key TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        recipients TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        thread TEXT,
+        server TEXT NOT NULL,
+        sent_at TEXT NOT NULL
+    );
+    CREATE INDEX mail_sent_by_mailbox ON mail_sent(mailbox, sent_at);",
 ];
 
 pub struct Store {

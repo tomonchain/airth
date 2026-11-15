@@ -32,6 +32,9 @@ rustls-platform-verifier = "0.7"
 # Reads what senders send (MIME, encodings, charsets): hand-written MIME
 # parsing is where mail goes wrong.
 mail-parser = "1.0.1"
+# Sends a role's mail: SMTP and MIME (encodings, headers, line lengths) are
+# where hand-written mail goes wrong. Over the same TLS stack as the rest.
+lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "builder", "rustls", "aws-lc-rs", "rustls-platform-verifier"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.190"

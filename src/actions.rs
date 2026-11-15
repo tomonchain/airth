@@ -352,6 +352,10 @@ const AIRTH: &[(&str, Class)] = &[
     ("dispatch", Class::Reversible),
 ];
 
+/// A role's mail (decision 70): sending commits the business, so it never
+/// goes above level 1.
+const MAIL_SEND: &str = "mail.send";
+
 /// Airth's actions that start below their ceiling: a plan was always put to
 /// the founder (decision 120), so it stays so until the founder raises it
 /// (decision 137).
@@ -398,6 +402,7 @@ pub fn all(integrations: &[Integration], servers: &[McpServer]) -> Vec<Declared>
             d
         })
         .collect();
+    out.push(declared(MAIL_SEND.into(), Some(Class::Commits), None));
     for i in integrations {
         for a in &i.actions {
             out.push(declared(
@@ -620,6 +625,11 @@ mod tests {
         assert_eq!(find(&all1, "airth.create_task").start, 3);
         assert_eq!(find(&all1, "airth.adopt_change").start, 1);
         assert_eq!(find(&all1, "airth.launch_mission").ceiling, 3);
+        let mail = find(&all1, "mail.send");
+        assert_eq!(
+            (mail.class, mail.ceiling, mail.start),
+            (Class::Commits, 1, 1)
+        );
         let plan = find(&all1, "airth.dispatch");
         assert_eq!((plan.ceiling, plan.start), (3, 1));
         let p = find(&all1, "typefully.publish");

@@ -44,6 +44,8 @@ const AGENT: &[&str] = &[
     "integrations", "skills", "repos", "look", "accessory",
     // The founder's one interlocutor, who passes orders on (decision 120).
     "dispatch",
+    // A mailbox's server, when not OVH's (decision 70).
+    "mail_server", "imap_port", "smtp_port",
 ];
 
 #[derive(Debug, Default)]

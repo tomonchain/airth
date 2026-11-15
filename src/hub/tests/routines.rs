@@ -1180,3 +1180,80 @@ fn a_routines_ai_block_hears_its_agents_lessons() {
     );
     assert!(system.contains("- Never a price target."), "{system}");
 }
+
+/// Decision 70: a routine answers a mail once the founder approves it; the
+/// answer leaves signed, copied to archive@ and in its thread, is recorded,
+/// and is sent once however often it is approved.
+#[test]
+fn a_reply_to_a_mail_is_sent_once_the_founder_approves_it() {
+    let (port, server) = crate::mail::send::tests::server();
+    let mut f = fixture();
+    let root = f.root.path().to_path_buf();
+    for (path, text) in [
+        ("agents/support.md".to_string(), format!("---\ntitle: Support\nmailbox: support@n.example\nmail_server: 127.0.0.1\nsmtp_port: {port}\n---\nAnswer the buyers.\n")),
+        ("routines/replies.json".into(), json!({"agent": "support", "trigger": {"manual": true}, "blocks": [
+            {"id": "inbox", "type": "read", "source": "mailbox"},
+            {"id": "ok", "type": "approval", "show": "subject"},
+            {"id": "send", "type": "act", "action": "mail.send", "fields": {
+                "to": "{{from}}", "subject": "Re: {{subject}}", "text": "Votre lot part demain.", "in_reply_to": "{{message_id}}"}}
+        ]}).to_string()),
+    ] {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    f.realm.set_secret("MAIL_PASSWORD_SUPPORT", "pw").unwrap();
+    f.realm.config.policy.network = Rule::Allow;
+    f.realm.save().unwrap();
+    let mail = crate::mail::Mail {
+        message_id: Some("2@buyer.example".into()),
+        thread: "2@buyer.example".into(),
+        from: "ann@buyer.example".into(),
+        subject: "Où est mon lot ?".into(),
+        text: "Bonjour.".into(),
+        ..Default::default()
+    };
+    Store::of(&f.realm)
+        .unwrap()
+        .keep_mail(&crate::business::store::mail::NewMail {
+            mailbox: "support@n.example",
+            agent: "support",
+            uid_validity: 1,
+            uid: 1,
+            mail: &mail,
+            at: chrono::Utc::now(),
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    hub.run_routine(
+        &f.realm,
+        "replies",
+        "r1",
+        crate::routine::run::Start::Trigger,
+        None,
+    )
+    .unwrap();
+    let asked = Store::of(&f.realm).unwrap().queue(&["pending"]).unwrap();
+    assert_eq!(asked.len(), 1, "nothing is sent before the founder answers");
+    let (item, report) = hub
+        .answer_item(&f.realm, asked[0].id, None, Answer::Approve, "app", 5)
+        .unwrap();
+    assert_eq!(item.status, "done", "{report:?}");
+    let (rcpt, data) = server.join().unwrap();
+    assert_eq!(rcpt, ["ann@buyer.example", "archive@n.example"]);
+    assert!(data.contains("In-Reply-To: <2@buyer.example>"), "{data}");
+    assert!(data.contains("Prepared by an AI agent of"), "{data}");
+    // Recorded: Ann is a correspondent now.
+    assert!(
+        Store::of(&f.realm)
+            .unwrap()
+            .corresponded("support@n.example", "ann@buyer.example")
+            .unwrap()
+    );
+    // Approved again: done already, nothing is sent twice (the fake server
+    // took one mail and is gone).
+    let (item, again) = hub
+        .answer_item(&f.realm, asked[0].id, None, Answer::Approve, "app", 5)
+        .unwrap();
+    assert_eq!((item.status.as_str(), again), ("done", None));
+}
