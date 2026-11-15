@@ -15,6 +15,8 @@ const PROFILE: &[&str] = &[
     "currency", "bank", "domain", "links",
     // A task's budget (decision 64): optional, with defaults.
     "task_max_minutes", "task_max_cost_usd",
+    // A cap on the month's model cost (decision 139): optional.
+    "monthly_max_cost_usd",
     // The last confirmation statement's date, when filed early, and how
     // many days ahead deadlines are reminded (decision 66).
     "confirmation_date", "reminders",
@@ -23,6 +25,7 @@ const PROFILE: &[&str] = &[
 const PROFILE_OPTIONAL: &[&str] = &[
     "task_max_minutes",
     "task_max_cost_usd",
+    "monthly_max_cost_usd",
     "confirmation_date",
     "reminders",
 ];
@@ -46,6 +49,8 @@ const AGENT: &[&str] = &[
     "dispatch",
     // A mailbox's server, when not OVH's (decision 70).
     "mail_server", "imap_port", "smtp_port",
+    // A cap on its tasks' model cost each month (decision 139).
+    "monthly_max_cost_usd",
 ];
 
 #[derive(Debug, Default)]

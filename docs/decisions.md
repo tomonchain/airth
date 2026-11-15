@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 139. A monthly budget per business and per agent, which stops the work once reached
+
+**Accepted** (founder, 15 November 2026, after the comparison with Paperclip: "go" on caps that cut). A task had a cost budget (decision 64) and each provider a monthly level that only warns (decision 107); nothing stopped a business, or one agent, from spending a month's money in a week of tasks.
+
+- **Two caps, both optional,** in dollars at list prices, as every cost in Airth:
+  - the business's, `monthly_max_cost_usd` in `business/profile.md`, over all its tasks and its routines' model calls;
+  - an agent's, the same field in its file, over its tasks only, since a routine's calls are not kept per agent.
+- **A month is the calendar month, UTC.** What counts is what the run records and the routines' journal hold since its first day.
+- **A task starts with no more than what is left:** its cost budget is the smaller of the task budget and what the tightest cap leaves. So a task running when the cap is reached stops on its budget, as any task does, and the founder may go on with it (decision 125).
+- **Once a cap is reached, no task starts** (from the command bar, Telegram, the day's plan or a routine's mission), and **scheduled routines wait**:
+  - a routine leaves a heartbeat that says it waited, and no failure;
+  - run by hand, it says why it did not run.
+- **The founder is told once a month per cap**, as an incident in Needs you (and so on Telegram). It says what was spent of what, and that work starts again on the 1st or when the budget is raised. Refused tasks and waiting routines add nothing to it.
+- **The Finance page shows and sets the caps,** the business's and each agent's, with what each spent this month (`GET` and `PUT /api/realms/<r>/budgets`).
+
+*Why:* the beta is Hedgen running on its own for four weeks; an agent in a loop, or a routine gone wrong, must not be able to spend without bound while the founder is away. Caps per agent let a costly role (a developer) be bounded without stopping the rest.
+
+*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. A task that started just before the cap may still spend its share of what was left: concurrent tasks can overshoot a little. An agent's cap does not see its routines' calls.
+
 ## 138. A connector's sign-in comes back to the address the founder used
 
 **Accepted** (founder, 14 November 2026: "I cannot connect to Linear. The same for PostHog, Supabase…", on the VPS).

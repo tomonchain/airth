@@ -1079,7 +1079,13 @@ impl Hub {
             let run = format!("{name}-{}", Utc::now().format("%Y%m%dT%H%M%S"));
             self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None)
         };
-        let mut outcome = attempt();
+        // Past the month's budget (decision 139), a routine waits: the
+        // founder was told once, so this is no incident of its own.
+        let waits = self.month_allows(realm, None, started).err();
+        let mut outcome = match &waits {
+            Some(e) => Err(anyhow::anyhow!("{e:#}")),
+            None => attempt(),
+        };
         // At its time, a run that failed is tried again before it becomes an
         // incident (decision 81): an act never runs twice for one item, so
         // what the first try did is not done again. Not a file that does not
@@ -1090,7 +1096,7 @@ impl Hub {
             self.with_routine_checks(realm, |c| crate::routine::load(c, name))
                 .is_ok()
         };
-        if due.is_some() && outcome.is_err() && loads() {
+        if waits.is_none() && due.is_some() && outcome.is_err() && loads() {
             for wait in ROUTINE_RETRY_WAITS {
                 std::thread::sleep(wait);
                 tries += 1;
@@ -1100,13 +1106,17 @@ impl Hub {
                 }
             }
         }
-        let notes = if tries > 1 {
+        let notes = if waits.is_some() {
+            "waited: the monthly budget is reached".to_string()
+        } else if tries > 1 {
             format!("tried {tries} times")
         } else {
             String::new()
         };
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
         let report = outcome.ok().map(|ran| ran.text);
+        // A routine that waited left a heartbeat, not a failure.
+        let error = error.filter(|_| waits.is_none());
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
             due,
@@ -1143,9 +1153,10 @@ impl Hub {
                 );
             }
         }
-        match error {
-            Some(e) => Err(e),
-            None => Ok(report.unwrap_or_default()),
+        match (error, waits) {
+            (Some(e), _) => Err(e),
+            (None, Some(w)) => Err(format!("{w:#}")),
+            (None, None) => Ok(report.unwrap_or_default()),
         }
     }
 }

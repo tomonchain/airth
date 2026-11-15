@@ -339,6 +339,47 @@ pub fn task_budget(root: &Path) -> (u32, f64) {
     )
 }
 
+/// The cap on the month's model cost in dollars (decision 139): the
+/// business's, from `business/profile.md`, or `agent`'s, from its file.
+/// None when there is none, or it is not a positive number.
+pub fn monthly_cap(root: &Path, agent: Option<&str>) -> Option<f64> {
+    let path = match agent {
+        Some(a) => {
+            crate::realm::validate_name(a).ok()?;
+            root.join(AGENTS).join(format!("{a}.md"))
+        }
+        None => root.join(DIR).join(PROFILE),
+    };
+    let text = std::fs::read_to_string(path).ok()?;
+    crate::frontmatter::parse(&text)
+        .text("monthly_max_cost_usd")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// Set or, with None, remove a monthly cap (decision 139): the business's,
+/// or `agent`'s.
+pub fn set_monthly_cap(
+    root: &Path,
+    agent: Option<&str>,
+    cap: Option<f64>,
+    own: &[String],
+) -> Result<()> {
+    if let Some(c) = cap
+        && !(c.is_finite() && c > 0.0 && c <= 100_000.0)
+    {
+        bail!("a monthly budget is a number of dollars above 0");
+    }
+    let value = cap.map(|c| format!("{c}")).unwrap_or_default();
+    match agent {
+        Some(a) => set_agent_field(root, a, "monthly_max_cost_usd", &value, own),
+        None => {
+            migrate(root)?;
+            put_front(&dir(root).join(PROFILE), "monthly_max_cost_usd", &value)
+        }
+    }
+}
+
 /// Every agent of the business with its job, by name.
 pub fn bots(root: &Path) -> Result<Vec<(String, Job)>> {
     migrate(root)?;
@@ -406,6 +447,14 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
                     .with_context(|| format!("'{name}' is not a name in {key}"))?;
             }
         }
+        // A cap on its tasks' cost each month (decision 139); empty: none.
+        "monthly_max_cost_usd"
+            if !value.is_empty()
+                && !value.parse::<f64>().is_ok_and(|v| v.is_finite() && v > 0.0) =>
+        {
+            anyhow::bail!("a monthly budget is a number of dollars above 0")
+        }
+        "monthly_max_cost_usd" => {}
         // A repository keeps its own name, dots included (acme.example).
         "repos" => {
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
