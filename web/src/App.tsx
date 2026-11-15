@@ -131,8 +131,8 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => opened().page)
   const [current, setCurrent] = useState<string | null>(() => opened().agent)
   const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
-  // The conversation alone at first, as a chat is; the agent's card opens
-  // from the top bar (decision 132).
+  // An agent opens on its conversation, as a chat does; its other tabs hold
+  // its overview, rights, tools, routines, memory and mail (decision 140).
   const agents = data.data?.agents ?? []
   // An agent's idea is told in its conversation, not in Needs you (decision 119).
   const items = (data.data?.items ?? []).filter((i) => i.kind !== "idea")

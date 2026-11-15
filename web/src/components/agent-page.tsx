@@ -121,7 +121,7 @@ function Overview({ realm, agent, onSaved, onEdit }: { realm: string; agent: Age
   return (
     <>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat label="This week" value={usd(agent.cost_usd) || "$0"} />
+        <Stat label="Last 30 days" value={usd(agent.cost_usd) || "$0"} />
         <Stat label="This month" value={month ? `${usd(month.spent) || "$0"}${month.cap ? ` / ${usd(month.cap)}` : ""}` : "…"} tone={share >= 1 ? "bad" : share >= 0.8 ? "warn" : undefined} />
         <Stat label="Waiting for you" value={agent.waiting} />
         <Stat label="Last ran" value={last ? ago(last) : "—"} />
@@ -223,7 +223,10 @@ function Tools({ realm, agent, onSaved }: { realm: string; agent: Agent; onSaved
   async function save() {
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: agent.body || agent.job || "", integrations, skills, repos }, "PUT")
+      // The job as stored now, not as this page last saw it: it may have
+      // just been edited, and this write sends it back whole.
+      const stored = (await api<{ agents: { name: string; job: string }[] }>(`realms/${enc(realm)}/agents`)).agents.find((a) => a.name === agent.name)
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: stored?.job ?? agent.body ?? agent.job ?? "", integrations, skills, repos }, "PUT")
       toast.success(`${called(agent)}'s tools are saved.`)
       onSaved()
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }

@@ -105,6 +105,8 @@ export function AgentList({ realm, agents, departments, broken, items, last, sel
           const f = e.target.files?.[0]
           e.target.value = ""
           if (!f) return
+          // The server reads no request over 1 MiB.
+          if (f.size > 1 << 20) { toast.error("This file is over 1 MB: too large for an agent's package."); return }
           try {
             const r = await api<{ agent: string }>(`realms/${enc(realm)}/agents/import`, JSON.parse(await f.text()))
             toast.success("Imported with no rights: give it its tools and levels on its page.")
