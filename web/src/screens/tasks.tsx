@@ -99,11 +99,13 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   const stage = (p: Project) => {
     if (p.status === "done") return "Completed"
     const g = glance(p, byRun)
-    return g.running || g.done > 0 ? "In progress" : "Planned"
+    return g.running || g.done > 0 || g.stuck > 0 ? "In progress" : "Planned"
   }
   const projectGroups = (["In progress", "Planned", "Completed"] as const)
     .map((g) => [g, listed.filter((p) => stage(p) === g)] as const).filter(([, l]) => l.length)
   const [asking, setAsking] = useState(false)
+  // Shown by itself while the list is empty, until the founder closes it.
+  const [dismissed, setDismissed] = useState(false)
   useEffect(() => { if (prefill) setAsking(true) }, [prefill])
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const fold = (g: string) => setFolded((f) => { const n = new Set(f); if (n.has(g)) n.delete(g); else n.add(g); return n })
@@ -119,6 +121,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
   )
   const empty = view === "projects" ? !listed.length : !groups.length
+  const composing = asking || (empty && !archived && !dismissed)
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       {/* Linear's way: the views on top, one dense list under, groups that fold. */}
@@ -138,12 +141,14 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
           ))}
         </div>
         <span className="flex-1" />
-        <Button size="sm" variant={asking ? "secondary" : "default"} className="h-7 gap-1 px-2.5 text-[13px]" onClick={() => setAsking((a) => !a)}>
-          {asking ? <X /> : <Plus />}<span className="max-sm:hidden">{asking ? "Close" : "Ask the team"}</span>
+        <Button size="sm" variant={composing ? "secondary" : "default"} className="h-7 gap-1 px-2.5 text-[13px]" onClick={() => { if (composing) { setAsking(false); setDismissed(true) } else setAsking(true) }}>
+          {composing ? <X /> : <Plus />}<span className="max-sm:sr-only">{composing ? "Close" : "Ask the team"}</span>
         </Button>
       </header>
-      {(asking || (empty && !archived)) && (
-        <div className="shrink-0 border-b bg-muted/30 py-1">
+      {/* Hidden, not unmounted: a closed composer keeps what was typed and
+          does not take a request it already took again. */}
+      {(
+        <div className={cn("shrink-0 border-b bg-muted/30 py-1", !composing && "hidden")}>
           <div className="mx-auto max-w-3xl"><Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); setView("tasks"); setAsking(false); onOpen(id) }} /></div>
         </div>
       )}
@@ -236,7 +241,7 @@ function Ring({ share }: { share: number }) {
   return (
     <svg viewBox="0 0 16 16" className="size-4 shrink-0 -rotate-90" aria-hidden>
       <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
-      <circle cx="8" cy="8" r="6" fill="none" stroke={share >= 1 ? "rgb(99 102 241)" : "rgb(16 185 129)"} strokeWidth="2" strokeLinecap="round" strokeDasharray={`${share * 37.7} 37.7`} />
+      <circle cx="8" cy="8" r="6" fill="none" stroke={share >= 1 ? "rgb(99 102 241)" : "rgb(16 185 129)"} strokeWidth="2" strokeLinecap={share > 0 ? "round" : undefined} strokeDasharray={`${share * 37.7} 37.7`} />
     </svg>
   )
 }
