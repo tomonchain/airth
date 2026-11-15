@@ -287,6 +287,8 @@ impl App {
                 "job": job(&doc.body),
                 // The whole job, as written, to edit it.
                 "body": doc.body.trim(),
+                // The founder's lessons (decision 127), for its Memory tab.
+                "lessons": crate::business::lessons(&root, name),
                 // What its tasks may use (decision 64).
                 "integrations": doc.text("integrations").map(|t| split_names(&t)).unwrap_or_default(),
                 "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
