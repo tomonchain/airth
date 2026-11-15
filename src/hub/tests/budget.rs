@@ -49,13 +49,29 @@ fn a_task_spends_no_more_than_the_month_leaves_and_none_past_it() {
         None
     );
     spend(&mut first);
-    assert!((hub.month_spent(&f.realm, None, now).unwrap() - 1.5).abs() < 1e-9);
-    assert_eq!(hub.month_spent(&f.realm, Some("editor"), now).unwrap(), 0.0);
+    let view = hub.month_budgets(&f.realm, now).unwrap();
+    assert!((view["spent"].as_f64().unwrap() - 1.5).abs() < 1e-9);
+    // The founder's own chat (no agent) is not the agents' work.
+    let mut chat = hub.create_run_in(&f.realm, "Hello", None).unwrap();
+    spend(&mut chat);
+    let view = hub.month_budgets(&f.realm, now).unwrap();
+    assert!(
+        (view["spent"].as_f64().unwrap() - 1.5).abs() < 1e-9,
+        "{view}"
+    );
 
-    // A business cap of $2: $0.50 left, so the next task gets $0.50.
+    // A business cap of $2: $0.50 left, so the next task gets $0.50, and
+    // holds it while it runs: nothing is left to give another.
     crate::business::set_monthly_cap(&root, None, Some(2.0), &[]).unwrap();
-    let state = hub.start_task(&f.realm, "editor", "Edit").unwrap();
+    std::fs::remove_file(chat.path().unwrap()).unwrap();
+    let mut state = hub.start_task(&f.realm, "editor", "Edit").unwrap();
     assert!((state.budget.max_cost_usd.unwrap() - 0.5).abs() < 1e-9);
+    assert!(hub.start_task(&f.realm, "editor", "Edit twice").is_err());
+    // It ended without spending: the $0.50 is free again.
+    state.status = Status::Completed;
+    state.save().unwrap();
+    first.status = Status::Completed;
+    first.save().unwrap();
 
     // An agent's own cap binds it alone: writer has spent $1.50 of $1.
     crate::business::set_monthly_cap(&root, Some("writer"), Some(1.0), &[]).unwrap();
@@ -64,10 +80,15 @@ fn a_task_spends_no_more_than_the_month_leaves_and_none_past_it() {
         format!("{err:#}").contains("Writer's monthly budget is reached: $1.50 spent of $1.00"),
         "{err:#}"
     );
-    assert!(hub.start_task(&f.realm, "editor", "Edit again").is_ok());
+    let mut again = hub.start_task(&f.realm, "editor", "Edit again").unwrap();
+    again.status = Status::Completed;
+    again.save().unwrap();
     // Told once this month, however many times it is refused.
     assert!(hub.start_task(&f.realm, "writer", "Again").is_err());
-    assert_eq!(incidents(&f.realm), ["writer's monthly budget reached"]);
+    assert_eq!(
+        incidents(&f.realm),
+        ["Monthly budget reached", "writer's monthly budget reached"]
+    );
 
     // Past the business's cap, no task starts, for anyone.
     let mut second = hub.start_task(&f.realm, "editor", "Spend").unwrap();
@@ -79,7 +100,8 @@ fn a_task_spends_no_more_than_the_month_leaves_and_none_past_it() {
     );
     assert_eq!(
         incidents(&f.realm),
-        ["writer's monthly budget reached", "Monthly budget reached"]
+        ["Monthly budget reached", "writer's monthly budget reached"],
+        "each told once this month"
     );
 
     // Removing the caps lets work start again.
@@ -87,6 +109,13 @@ fn a_task_spends_no_more_than_the_month_leaves_and_none_past_it() {
     crate::business::set_monthly_cap(&root, Some("writer"), None, &[]).unwrap();
     assert!(hub.start_task(&f.realm, "writer", "Go").is_ok());
     assert!(crate::business::set_monthly_cap(&root, None, Some(-1.0), &[]).is_err());
+    // A typo in the file is refused when the configuration loads.
+    std::fs::write(
+        root.join("business/profile.md"),
+        "---\nmonthly_max_cost_usd: 4O\n---\nA media.\n",
+    )
+    .unwrap();
+    assert!(crate::business::config::load(&root, &[]).is_err());
 
     // The Finance page's figures.
     let view = hub.month_budgets(&f.realm, now).unwrap();
@@ -120,10 +149,11 @@ fn a_routine_waits_past_the_business_cap() {
     hub.run_scheduled_routine(&f.realm, "watch", Utc::now());
     hub.run_scheduled_routine(&f.realm, "watch", Utc::now());
     let beats = Store::of(&f.realm).unwrap().heartbeats().unwrap();
+    assert_eq!(beats.len(), 2, "{beats:?}");
     assert!(
         beats
             .iter()
-            .all(|b| b.1.notes == "waited: the monthly budget is reached"),
+            .all(|b| b.1.ok && b.1.notes == "waited: the monthly budget is reached"),
         "{beats:?}"
     );
     assert_eq!(
@@ -131,5 +161,88 @@ fn a_routine_waits_past_the_business_cap() {
         ["Monthly budget reached"],
         "not one a run"
     );
-    assert!(hub.run_routine_by_hand(&f.realm, "watch").is_err());
+    let err = hub.run_routine_by_hand(&f.realm, "watch").unwrap_err();
+    assert!(
+        format!("{err:#}").contains("monthly budget is reached"),
+        "{err:#}"
+    );
+}
+
+/// A day's plan keeps the tasks it started when a later one meets a cap:
+/// the approval goes through, and the refused step waits.
+#[test]
+fn a_plan_keeps_what_it_started_when_a_step_meets_a_cap() {
+    use crate::business::store::queue::Answer;
+    use crate::tools::dispatch::{Proposal, Step};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    for (name, front) in [
+        ("chief-of-staff", "title: Chief of staff\ndispatch: true\n"),
+        ("writer", "title: Writer\n"),
+        ("developer", "title: Developer\nmonthly_max_cost_usd: 1\n"),
+    ] {
+        std::fs::write(
+            root.join(format!("agents/{name}.md")),
+            format!("---\n{front}---\nWork.\n"),
+        )
+        .unwrap();
+    }
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let mut dev = hub
+        .start_task(&f.realm, "developer", "Earlier work")
+        .unwrap();
+    spend(&mut dev);
+    dev.status = Status::Completed;
+    dev.save().unwrap();
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Year end")
+        .unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let step = |agent: &str| Step {
+        agent: agent.into(),
+        task: format!("{agent}'s part"),
+        after: vec![],
+        milestone: None,
+    };
+    (dispatch.propose)(
+        &Proposal {
+            name: "Year-end".into(),
+            steps: vec![step("writer"), step("developer")],
+            ..Default::default()
+        },
+        None,
+    )
+    .unwrap();
+    let item = Store::of(&f.realm)
+        .unwrap()
+        .queue(&["pending"])
+        .unwrap()
+        .into_iter()
+        .find(|i| i.action.as_deref() == Some("airth.dispatch"))
+        .unwrap();
+    hub.answer_item(
+        &f.realm,
+        item.id,
+        Some(item.revision),
+        Answer::Approve,
+        "app",
+        3,
+    )
+    .unwrap();
+    let handed = hub.take_hand_offs().unwrap();
+    assert_eq!(handed.len(), 1);
+    assert_eq!(handed[0].1.agent.as_deref(), Some("writer"));
+    let project = Store::of(&f.realm)
+        .unwrap()
+        .projects()
+        .unwrap()
+        .pop()
+        .unwrap();
+    let runs: Vec<bool> = project.tasks.iter().map(|t| t.run.is_some()).collect();
+    assert_eq!(
+        runs,
+        [true, false],
+        "the writer's kept, the developer's waits"
+    );
 }

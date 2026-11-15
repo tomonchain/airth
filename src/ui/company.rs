@@ -53,13 +53,21 @@ impl App {
             (Method::Put, ["realms", r, "budgets"]) => {
                 let body = read_json(request)?;
                 let realm = self.realm(r)?;
-                let cap = match &body["cap"] {
-                    Value::Null => None,
-                    v => Some(v.as_f64().context("cap: a number of dollars, or null")?),
+                // Both fields, always: a body that forgets one never
+                // clears the business's cap by mistake.
+                let cap = match body.get("cap") {
+                    Some(Value::Null) => None,
+                    Some(v) => Some(v.as_f64().context("cap: a number of dollars, or null")?),
+                    None => anyhow::bail!("cap: a number of dollars, or null"),
+                };
+                let agent = match body.get("agent") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(a)) => Some(a.as_str()),
+                    _ => anyhow::bail!("agent: an agent's name, or null for the business"),
                 };
                 crate::business::set_monthly_cap(
                     &realm.root()?,
-                    body["agent"].as_str(),
+                    agent,
                     cap,
                     &realm.config.departments,
                 )?;

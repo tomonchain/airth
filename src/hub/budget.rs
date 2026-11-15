@@ -1,13 +1,14 @@
-//! Monthly caps on model cost (decision 139): the business's, over all its
-//! tasks and routines, and an agent's, over its tasks. A task starts with
-//! no more than what is left; once a cap is reached, no task starts and
-//! scheduled routines wait, until the next month or a higher cap. The
+//! Monthly caps on model cost (decision 139): the business's, over its
+//! agents' tasks and its routines, and an agent's, over its tasks. A task
+//! starts with no more than what is left; once a cap is reached, no task
+//! starts and routines wait, until the next month or a higher cap. The
 //! founder hears it once a month, in Needs you.
 
 use super::*;
 use crate::business::store::Store;
 use chrono::{Datelike, TimeZone};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 
 /// A cap and where the month stands against it.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,11 +17,14 @@ pub struct Cap {
     pub agent: Option<String>,
     pub cap: f64,
     pub spent: f64,
+    /// What tasks still running may spend of their own budgets: promised,
+    /// so not given again.
+    pub reserved: f64,
 }
 
 impl Cap {
     pub fn left(&self) -> f64 {
-        (self.cap - self.spent).max(0.0)
+        (self.cap - self.spent - self.reserved).max(0.0)
     }
 
     fn whose(&self) -> String {
@@ -30,6 +34,24 @@ impl Cap {
     }
 }
 
+/// Work refused because a cap is reached: told apart from a failure, so a
+/// routine waits instead of failing and a plan keeps what it started.
+#[derive(Debug)]
+pub struct CapReached(pub String);
+
+impl std::fmt::Display for CapReached {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CapReached {}
+
+/// Whether `e`, or what it wraps, is a cap reached.
+pub fn cap_reached(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| c.is::<CapReached>())
+}
+
 /// The first instant of `now`'s month, UTC.
 pub fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
@@ -37,38 +59,48 @@ pub fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
         .unwrap_or(now)
 }
 
+/// The month's spend, read once: the business's and each agent's, and what
+/// running tasks may still spend.
+#[derive(Debug, Default)]
+struct Month {
+    business: f64,
+    agents: HashMap<String, f64>,
+    reserved: f64,
+    reserved_by: HashMap<String, f64>,
+}
+
 impl Hub {
-    /// What `realm` spent on models since the start of `now`'s month: its
-    /// tasks' calls and, for the business, its routines' too. For `agent`,
-    /// its tasks only: a routine's calls count toward the business.
-    pub fn month_spent(
-        &self,
-        realm: &Realm,
-        agent: Option<&str>,
-        now: DateTime<Utc>,
-    ) -> Result<f64> {
+    fn month(&self, realm: &Realm, now: DateTime<Utc>) -> Result<Month> {
         let since = month_start(now);
         let prices = crate::prices::Prices::load(self.home());
-        let mut spent = 0.0;
-        for state in self.all_runs(realm)? {
-            if agent.is_some() && state.agent.as_deref() != agent {
-                continue;
-            }
-            spent += state
+        let mut m = Month::default();
+        // An agent's runs only: the founder's own chats are not its work.
+        for state in self.load_shared(realm)? {
+            let Some(agent) = &state.agent else { continue };
+            let spent: f64 = state
                 .usage
                 .iter()
                 .filter(|c| c.at >= since)
                 .map(|c| crate::usage::call_cost(c, &prices))
-                .sum::<f64>();
+                .sum();
+            m.business += spent;
+            *m.agents.entry(agent.clone()).or_default() += spent;
+            if state.status == Status::Running {
+                let promised = state.budget.max_cost_usd.unwrap_or(0.0)
+                    - crate::usage::run_cost(&state, &prices);
+                let promised = promised.max(0.0);
+                m.reserved += promised;
+                *m.reserved_by.entry(agent.clone()).or_default() += promised;
+            }
         }
-        if agent.is_none() && realm.dir().join(crate::business::store::FILE).exists() {
-            spent += Store::of(realm)?
+        if realm.dir().join(crate::business::store::FILE).exists() {
+            m.business += Store::of(realm)?
                 .model_costs_since(since)?
                 .iter()
                 .map(|(_, _, c)| c)
                 .sum::<f64>();
         }
-        Ok(spent)
+        Ok(m)
     }
 
     /// The caps that bear on work for `agent` (or the business's alone),
@@ -80,21 +112,27 @@ impl Hub {
         now: DateTime<Utc>,
     ) -> Result<Vec<Cap>> {
         let root = realm.root()?;
+        let business = crate::business::monthly_cap(&root, None);
+        let own = agent.and_then(|a| crate::business::monthly_cap(&root, Some(a)));
+        if business.is_none() && own.is_none() {
+            return Ok(Vec::new());
+        }
+        let m = self.month(realm, now)?;
         let mut caps = Vec::new();
-        if let Some(cap) = crate::business::monthly_cap(&root, None) {
+        if let Some(cap) = business {
             caps.push(Cap {
                 agent: None,
                 cap,
-                spent: self.month_spent(realm, None, now)?,
+                spent: m.business,
+                reserved: m.reserved,
             });
         }
-        if let Some(a) = agent
-            && let Some(cap) = crate::business::monthly_cap(&root, Some(a))
-        {
+        if let (Some(a), Some(cap)) = (agent, own) {
             caps.push(Cap {
                 agent: Some(a.to_string()),
                 cap,
-                spent: self.month_spent(realm, Some(a), now)?,
+                spent: m.agents.get(a).copied().unwrap_or(0.0),
+                reserved: m.reserved_by.get(a).copied().unwrap_or(0.0),
             });
         }
         Ok(caps)
@@ -102,7 +140,7 @@ impl Hub {
 
     /// What work for `agent` may still spend this month: None with no cap.
     /// When a cap is reached, the founder is told once this month, and the
-    /// error says which cap and how to go on.
+    /// error, a `CapReached`, says which cap and how to go on.
     pub(super) fn month_allows(
         &self,
         realm: &Realm,
@@ -118,10 +156,15 @@ impl Hub {
         }
         let next = month_start(month_start(now) + chrono::Duration::days(32));
         let detail = format!(
-            "{} monthly budget is reached: ${:.2} spent of ${:.2}. No task starts and scheduled routines wait until {}, or until the budget is raised on the Finance page.",
+            "{} monthly budget is reached: ${:.2} spent of ${:.2}{}. No task starts and routines wait until {}, or until the budget is raised on the Finance page.",
             capitalise(&tight.whose()),
             tight.spent,
             tight.cap,
+            if tight.reserved > 0.0 {
+                format!(", ${:.2} more held by tasks still running", tight.reserved)
+            } else {
+                String::new()
+            },
             next.format("%-d %B"),
         );
         let title = match &tight.agent {
@@ -129,11 +172,11 @@ impl Hub {
             None => "Monthly budget reached".to_string(),
         };
         self.tell_once_this_month(realm, &title, &detail, tight.agent.as_deref(), now)?;
-        bail!("{detail}")
+        Err(CapReached(detail).into())
     }
 
-    /// One incident a month for one cap: a routine waiting each hour must
-    /// not fill Needs you.
+    /// One incident a month for one cap, whatever the founder did with the
+    /// last: a routine waiting each hour must not fill Needs you.
     fn tell_once_this_month(
         &self,
         realm: &Realm,
@@ -144,7 +187,7 @@ impl Hub {
     ) -> Result<()> {
         let since = month_start(now);
         let told = Store::of(realm)?
-            .queue(&["pending", "done"])?
+            .queue(&["pending", "done", "rejected", "approved", "failed"])?
             .iter()
             .any(|i| {
                 i.kind == "incident"
@@ -175,18 +218,21 @@ impl Hub {
     /// agent's cap (None when unset) and what each spent.
     pub fn month_budgets(&self, realm: &Realm, now: DateTime<Utc>) -> Result<Value> {
         let root = realm.root()?;
-        let mut agents = Vec::new();
-        for (name, _) in crate::business::bots(&root)? {
-            agents.push(json!({
-                "agent": name,
-                "cap": crate::business::monthly_cap(&root, Some(&name)),
-                "spent": self.month_spent(realm, Some(&name), now)?,
-            }));
-        }
+        let m = self.month(realm, now)?;
+        let agents: Vec<Value> = crate::business::bots(&root)?
+            .into_iter()
+            .map(|(name, _)| {
+                json!({
+                    "cap": crate::business::monthly_cap(&root, Some(&name)),
+                    "spent": m.agents.get(&name).copied().unwrap_or(0.0),
+                    "agent": name,
+                })
+            })
+            .collect();
         Ok(json!({
             "month": month_start(now).format("%Y-%m").to_string(),
             "cap": crate::business::monthly_cap(&root, None),
-            "spent": self.month_spent(realm, None, now)?,
+            "spent": m.business,
             "agents": agents,
         }))
     }

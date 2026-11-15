@@ -15,11 +15,13 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - a routine leaves a heartbeat that says it waited, and no failure;
   - run by hand, it says why it did not run.
 - **The founder is told once a month per cap**, as an incident in Needs you (and so on Telegram). It says what was spent of what, and that work starts again on the 1st or when the budget is raised. Refused tasks and waiting routines add nothing to it.
-- **The Finance page shows and sets the caps,** the business's and each agent's, with what each spent this month (`GET` and `PUT /api/realms/<r>/budgets`).
+- **The caps are read and set through `GET` and `PUT /api/realms/<r>/budgets`,** the business's and each agent's, with what each spent this month. The Finance page shows and sets them (its own change). A value in a file that is not a number above 0 is refused when the configuration loads, so a typo never lifts a cap silently.
+- **What counts:** the agents' runs (not the founder's own chats) and the routines' journal. **What is held:** a task still running keeps what is left of its own budget, so two tasks started together do not both get what remains.
+- **However started,** a routine past the business's cap does not run: at its time, by hand, from the CLI or for a reply. A day's plan keeps the tasks it started and holds the next steps for its next pass. A mission a routine launches for an agent at its own cap is refused, as that act's failure.
 
 *Why:* the beta is Hedgen running on its own for four weeks; an agent in a loop, or a routine gone wrong, must not be able to spend without bound while the founder is away. Caps per agent let a costly role (a developer) be bounded without stopping the rest.
 
-*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. A task that started just before the cap may still spend its share of what was left: concurrent tasks can overshoot a little. An agent's cap does not see its routines' calls.
+*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. An agent's cap does not see its routines' calls. A task's spend is read from its run record, as the spending gauge and the usage report read it: a chat the founder deletes takes its spend with it.
 
 ## 138. A connector's sign-in comes back to the address the founder used
 

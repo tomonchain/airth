@@ -368,7 +368,7 @@ pub fn set_monthly_cap(
     if let Some(c) = cap
         && !(c.is_finite() && c > 0.0 && c <= 100_000.0)
     {
-        bail!("a monthly budget is a number of dollars above 0");
+        bail!("a monthly budget is a number of dollars above 0 and at most 100000");
     }
     let value = cap.map(|c| format!("{c}")).unwrap_or_default();
     match agent {
