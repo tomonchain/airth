@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { toast } from "sonner"
+import { Input } from "@/components/ui/input"
 import { ExternalLink, Landmark } from "lucide-react"
 import { ImportStatement } from "@/components/import-statement"
 import { Character } from "@/components/character"
@@ -66,6 +68,8 @@ export function Finance({ realm, business, agents, onImported }: { realm: string
         )}
       </Section>
 
+      <Budgets realm={realm} agents={agents} />
+
       <Section title="Tax and filings" note={cal.data ? "Not legal advice: check with your accountant" : undefined}>
         {!cal.data ? <Loading /> : (
           <Panel className="divide-y">
@@ -104,6 +108,79 @@ export function Finance({ realm, business, agents, onImported }: { realm: string
 
 type Spend = { currency: string | null; days: { date: string; agents: number; bank: number | null }[] }
 type Bucket = { label: string; title: string; from: string; agents: number; bank: number | null }
+
+/** A month's cap and spend (decision 139): the business's, or an agent's. */
+type Budget = { cap: number | null; spent: number }
+type Budgets = Budget & { month: string; agents: (Budget & { agent: string })[] }
+
+/** The month's caps on model cost (decision 139): the business's, over
+    everything, and each agent's, over its tasks. Past one, no task starts
+    and scheduled routines wait until the next month. */
+function Budgets({ realm, agents }: { realm: string; agents: Agent[] }) {
+  const { data, refresh } = usePoll<Budgets>(() => api(`realms/${enc(realm)}/budgets`), 60000, [realm])
+  const month = data && new Date(`${data.month}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "long", timeZone: "UTC" })
+  return (
+    <Section title="Monthly budget" note={month && `${month} · list prices`}>
+      {!data ? <Loading /> : (
+        <>
+          <Panel className="divide-y">
+            <BudgetRow key={`business:${data.cap ?? ""}`} realm={realm} label="Whole business" budget={data} onSaved={refresh} />
+            {data.agents.map((b) => {
+              const a = agents.find((x) => x.name === b.agent)
+              return <BudgetRow key={`${b.agent}:${b.cap ?? ""}`} realm={realm} agent={b.agent} who={a} label={a?.title ?? b.agent} budget={b} onSaved={refresh} />
+            })}
+          </Panel>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Past a budget, no task starts and scheduled routines wait until the 1st; you are told once in Needs you. Leave empty for no cap.
+          </p>
+        </>
+      )}
+    </Section>
+  )
+}
+
+function BudgetRow({ realm, agent, who, label, budget, onSaved }: {
+  realm: string; agent?: string; who?: Agent; label: string; budget: Budget; onSaved: () => void
+}) {
+  const [value, setValue] = useState(budget.cap == null ? "" : String(budget.cap))
+  const [busy, setBusy] = useState(false)
+  const share = budget.cap ? budget.spent / budget.cap : 0
+  const changed = value.trim() !== (budget.cap == null ? "" : String(budget.cap))
+  async function save() {
+    if (!changed) return
+    const cap = value.trim() === "" ? null : Number(value)
+    if (cap !== null && !(Number.isFinite(cap) && cap > 0 && cap <= 100000)) { toast.error("A budget is a number of dollars above 0 and at most 100000."); return }
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/budgets`, { agent: agent ?? null, cap }, "PUT")
+      toast.success(cap === null ? `${label}: no monthly cap.` : `${label}: ${usd(cap)} a month.`)
+      onSaved()
+    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <div className="flex items-center gap-3 px-3.5 py-2.5">
+      {who ? <Character agent={who} size={24} still /> : <Landmark className="size-6 shrink-0 p-0.5 text-muted-foreground" />}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className={cn("truncate text-sm", !agent && "font-medium")}>{label}</span>
+          <span className={cn("shrink-0 text-xs tabular-nums text-muted-foreground", share >= 1 && "text-red-500", share >= 0.8 && share < 1 && "text-amber-500")}>
+            {usd(budget.spent) || "$0"}{budget.cap ? ` of ${usd(budget.cap)}` : ""}
+          </span>
+        </div>
+        {!!budget.cap && (
+          <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-muted">
+            <span className={cn("block h-full rounded-full bg-foreground/60", share >= 0.8 && "bg-amber-500", share >= 1 && "bg-red-500")} style={{ width: `${Math.min(share, 1) * 100}%` }} />
+          </span>
+        )}
+      </div>
+      <div className="relative w-24 shrink-0">
+        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+        <Input value={value} onChange={(e) => setValue(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+          inputMode="decimal" placeholder="No cap" disabled={busy} aria-label={`${label}'s monthly budget in dollars`} className="h-8 pl-6 text-right tabular-nums" />
+      </div>
+    </div>
+  )
+}
 
 /** What the business spent, day by day or week by week: out of the bank
     when it is connected (in its currency), and what the agents' model calls
