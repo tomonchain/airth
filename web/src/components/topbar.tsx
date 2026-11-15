@@ -1,4 +1,4 @@
-import { Building, Check, ChevronsUpDown, PanelRight, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
+import { Building, Check, ChevronsUpDown, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
 import { UpdateNotice } from "@/components/update-notice"
 import { mac, titleBar } from "@/lib/shell"
@@ -8,11 +8,11 @@ import { named, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 /** The window's top: the open conversations as tabs (on the Team page),
-    the update notice, the details toggle and, at the far right, the
+    the update notice and, at the far right, the
     business. In the Mac app it is the title bar. */
-export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onAsk, onHq, details, onDetails }: {
+export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onAsk, onHq }: {
   server: string | null; realms: Realm[]; realm: string; onAgents: boolean; tabs: string[]; current: string | null; agents: Agent[]
-  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onAsk: () => void; onHq: () => void; details: boolean; onDetails: () => void
+  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onAsk: () => void; onHq: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   const closed = agents.filter((a) => !tabs.includes(a.name))
@@ -73,7 +73,6 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
           <Server className="size-3.5 shrink-0" /> <span className="truncate">{server}</span>
         </span>
       )}
-      {onAgents && <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground max-md:hidden", details && "bg-accent text-foreground")} aria-label="Details" title="Details" onClick={onDetails}><PanelRight /></Button>}
       <DropdownMenu>
         <DropdownMenuTrigger render={<button className="flex h-8 items-center gap-2 rounded-lg bg-foreground/[0.05] pr-2 pl-1.5 text-[13.5px] font-semibold hover:bg-accent" />}>
           <span className="size-5 rounded-full bg-[radial-gradient(circle_at_35%_30%,#d9f99d,#22c55e_55%,#14532d)] shadow-inner" />

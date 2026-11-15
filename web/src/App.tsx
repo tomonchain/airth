@@ -1,23 +1,19 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
-import { PanelRight, PenLine } from "lucide-react"
+import { PenLine } from "lucide-react"
 import { QuickAsk } from "@/components/quick-ask"
 import { AgentList, type Last } from "@/components/agent-list"
-import { Details } from "@/components/details"
+import { AgentPage } from "@/components/agent-page"
 import { Rail, TabBar, type Page } from "@/components/rail"
 import { PhoneMenu, TopBar } from "@/components/topbar"
 import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
-import { api, called, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
+import { api, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
-import { Conversation } from "@/screens/conversation"
 import { Home } from "@/screens/home"
 import { Overview } from "@/screens/overview"
 import { Inbox } from "@/screens/inbox"
 import type { Section as SettingsSection } from "@/screens/settings"
 import { PageBoundary } from "@/components/error-boundary"
-import { Back } from "@/components/page"
-import { Character } from "@/components/character"
-import { Button } from "@/components/ui/button"
 import { Pair } from "@/components/pair"
 import { DeviceAsks } from "@/components/device-asks"
 import { Palette } from "@/components/palette"
@@ -135,9 +131,8 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => opened().page)
   const [current, setCurrent] = useState<string | null>(() => opened().agent)
   const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
-  // The conversation alone at first, as a chat is; the agent's card opens
-  // from the top bar (decision 132).
-  const [details, setDetails] = useState(false)
+  // An agent opens on its conversation, as a chat does; its other tabs hold
+  // its overview, rights, tools, routines, memory and mail (decision 140).
   const agents = data.data?.agents ?? []
   // An agent's idea is told in its conversation, not in Needs you (decision 119).
   const items = (data.data?.items ?? []).filter((i) => i.kind !== "idea")
@@ -240,7 +235,7 @@ export default function App() {
       ) : (
         <TopBar
           server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-          onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")} details={details} onDetails={() => setDetails(!details)}
+          onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")}
         />
       )}
       <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
@@ -252,7 +247,7 @@ export default function App() {
         </button>
       )}
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
-        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} onDetails={() => { setDetails(!details); if (page !== "agents") setPage("agents") }} />
+        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} />
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
         {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
@@ -285,23 +280,8 @@ export default function App() {
           <>
           {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}
           {agent ? (
-            <>
-              {narrow ? (
-                // One column: a head to go back to the list or see the card.
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex h-[60px] shrink-0 items-center gap-2 border-b pr-3 pl-[68px]">
-                    <Back label="All agents" onClick={() => { setCurrent(null); setDetails(false) }} />
-                    <Character agent={agent} size={24} still />
-                    <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{called(agent)}</span>
-                    <Button variant="ghost" size="icon-sm" className={details ? "bg-accent" : "text-muted-foreground"} aria-label="Details" onClick={() => setDetails(!details)}><PanelRight /></Button>
-                  </div>
-                  {details
-                    ? <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />
-                    : <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />}
-                </div>
-              ) : <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={open} tasks={data.data?.tasks ?? null} onDone={data.refresh} />}
-              {!narrow && details && <Details realm={realm} agent={agent} departments={data.data?.departments ?? []} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} />}
-            </>
+            <AgentPage key={agent.name} realm={realm} agent={agent} agents={agents} departments={data.data?.departments ?? []} tasks={data.data?.tasks ?? null} narrow={narrow}
+              onAgent={open} onDone={data.refresh} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} onBack={() => setCurrent(null)} />
           ) : !narrow && (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
           )}

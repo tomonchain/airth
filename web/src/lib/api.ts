@@ -141,6 +141,8 @@ export type Agent = {
   cost_usd: number
   seconds: number
   routines: { name: string; schedule: string | null; last: { at: string; ok: boolean } | null }[]
+  /** The founder's lessons (decision 127). */
+  lessons?: string[]
 }
 
 export type Activity = { agent: string; agent_title: string; routine: string; sentence: string; at: string }

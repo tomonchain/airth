@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Building2, ListChecks, Moon, PanelRight, PenLine, Search, Sparkles, Sun, type LucideIcon } from "lucide-react"
+import { Building2, ListChecks, Moon, PenLine, Search, Sparkles, Sun, type LucideIcon } from "lucide-react"
 import { Character } from "@/components/character"
 import { MAIN, MORE, type Page } from "@/components/rail"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -16,9 +16,9 @@ const PAGES: [Page, string, LucideIcon][] = [...MAIN, ...MORE, ["hq", "HQ: all b
 
 /** ⌘K (the classic interface's palette): go anywhere, open an agent or a
     task, switch business, and the few actions worth a key. */
-export function Palette({ open, onOpenChange, realm, realms, agents, onPage, onAgent, onTask, onAsk, onDetails }: {
+export function Palette({ open, onOpenChange, realm, realms, agents, onPage, onAgent, onTask, onAsk }: {
   open: boolean; onOpenChange: (o: boolean) => void; realm: string; realms: Realm[]; agents: Agent[]
-  onPage: (p: Page) => void; onAgent: (name: string) => void; onTask: (id: string) => void; onAsk: () => void; onDetails: () => void
+  onPage: (p: Page) => void; onAgent: (name: string) => void; onTask: (id: string) => void; onAsk: () => void
 }) {
   const { theme, setTheme } = useTheme()
   const [q, setQ] = useState("")
@@ -33,13 +33,12 @@ export function Palette({ open, onOpenChange, realm, realms, agents, onPage, onA
   const entries = useMemo<Entry[]>(() => [
     { group: "Actions", label: "Ask the team for something", icon: PenLine, keys: `${MOD}⇧O`, run: onAsk },
     { group: "Actions", label: theme === "dark" ? "Switch to light mode" : "Switch to dark mode", icon: theme === "dark" ? Sun : Moon, run: () => setTheme(theme === "dark" ? "light" : "dark") },
-    { group: "Actions", label: "Show or hide the details", icon: PanelRight, run: onDetails },
     ...PAGES.map(([p, label, icon]) => ({ group: "Go to", label, icon, run: () => onPage(p) })),
     { group: "Go to", label: "The welcome guide", icon: Sparkles, run: () => { location.hash = "#/welcome" } },
     ...agents.map((a) => ({ group: "Agents", label: called(a), agent: a, run: () => onAgent(a.name) })),
     ...runs.map((r) => ({ group: `Tasks in ${realm}`, label: r.title || r.objective.split("\n")[0] || r.id, icon: ListChecks, run: () => onTask(r.id) })),
     ...realms.filter((r) => !r.archived && r.name !== realm).map((r) => ({ group: "Switch business", label: r.name, icon: Building2, run: () => { location.hash = `#/b/${encodeURIComponent(r.name)}` } })),
-  ], [agents, runs, realms, realm, theme, onAsk, onDetails, onPage, onAgent, onTask, setTheme])
+  ], [agents, runs, realms, realm, theme, onAsk, onPage, onAgent, onTask, setTheme])
 
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
   const hits = entries.filter((e) => words.every((w) => `${e.group} ${e.label}`.toLowerCase().includes(w))).slice(0, 40)
