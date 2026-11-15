@@ -95,9 +95,11 @@ impl Hub {
             if let Some(agent) = &agent {
                 *m.agents.entry(agent.clone()).or_default() += spent;
             }
-            // Only a run that is driven now holds what it may still spend:
-            // one killed midway stays Running on disk, and promises nothing.
-            if state.status == Status::Running && self.is_live(realm, &state.id) {
+            // A run holds what it may still spend while it is driven, or
+            // saved and not yet driven; one killed midway stays Running on
+            // disk, and promises nothing.
+            let holds = state.iterations == 0 || self.is_live(realm, &state.id);
+            if state.status == Status::Running && holds {
                 let promised = state.budget.max_cost_usd.unwrap_or(0.0)
                     - crate::usage::run_cost(&state, &prices);
                 let promised = promised.max(0.0);
