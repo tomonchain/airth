@@ -84,7 +84,11 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   }, [tasks.data])
   const kids = (id: string) => list.filter((r) => fromOf.get(r.id) === id)
   const top = list.filter((r) => { const p = fromOf.get(r.id); return !p || !list.some((x) => x.id === p) })
-  const planGroup = (r: Run) => ORDER[Math.min(...[r, ...kids(r.id)].map((x) => ORDER.indexOf(group(x, waiting))))]
+  // A plan's whole tree, however deep, each task with its depth under the
+  // task it hangs from; `seen` keeps a loop from running forever.
+  const tree = (r: Run, depth = 0, seen = new Set<string>()): { r: Run; depth: number }[] =>
+    seen.has(r.id) ? [] : (seen.add(r.id), [{ r, depth }, ...kids(r.id).flatMap((k) => tree(k, depth + 1, seen))])
+  const planGroup = (r: Run) => ORDER[Math.min(...tree(r).map((x) => ORDER.indexOf(group(x.r, waiting))))]
   const groups = ORDER.map((g) => [g, top.filter((r) => planGroup(r) === g)] as const).filter(([, l]) => l.length)
   const titleOf = (n: string | null | undefined) => { const a = agents.find((x) => x.name === n); return a ? called(a) : n ?? "An agent" }
   const passedOf = (id: string): Passed[] => kids(id).map((k) => ({ id: k.id, agent: agentOf.get(k.id) ?? "", title: titleOf(agentOf.get(k.id)), order: name(k), status: k.live ? "running" : k.status }))
@@ -179,16 +183,16 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
           )) : groups.map(([g, l]) => (
             <section key={g}>
               <GroupHead label={g} count={l.length} icon={<StatusIcon kind={KIND[g]} />} folded={folded.has(g)} onFold={() => fold(g)} />
-              {!folded.has(g) && l.flatMap((parent) => [parent, ...kids(parent.id)]).map((r) => {
+              {!folded.has(g) && l.flatMap((parent) => tree(parent)).map(({ r, depth }) => {
                 const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
-                const child = fromOf.has(r.id) && list.some((x) => x.id === fromOf.get(r.id))
+                const child = depth > 0
                 const team = kids(r.id)
                 // Said once, on the task its plan hangs from.
                 const inProject = child && projectOf.get(fromOf.get(r.id) ?? "") === projectOf.get(r.id) ? null : projectOf.get(r.id)
                 const kind: Kind = r.status === "failed" ? "failed" : r.status === "stopped" ? "stopped" : KIND[group(r, waiting)]
                 return (
                   <button key={r.id} onClick={() => { setShown(null); onOpen(r.id) }} title={r.objective}
-                    className={cn("flex h-11 w-full items-center gap-3 border-b border-border/60 px-4 text-left text-[13px] hover:bg-accent/50 md:px-5", child && "pl-10 md:pl-11")}>
+                    className="flex h-11 w-full items-center gap-3 border-b border-border/60 px-4 text-left text-[13px] hover:bg-accent/50 md:px-5" style={depth ? { paddingLeft: 20 + 24 * depth } : undefined}>
                     <StatusIcon kind={kind} />
                     <span className={cn("min-w-0 flex-1 truncate", team.length > 0 && "font-medium")}>{name(r)}</span>
                     {team.length > 0 && <span className="shrink-0 text-xs text-muted-foreground tabular-nums max-sm:hidden">{team.filter((k) => k.status === "completed").length}/{team.length}</span>}
