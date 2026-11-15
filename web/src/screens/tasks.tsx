@@ -49,6 +49,8 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   // The app's list, refreshed every few seconds: not asked again here.
   const tasks = { data: shared, refresh: onTasks }
   const [archived, setArchived] = useState(false)
+  // Two levels, never mixed: the projects, and every task.
+  const [view, setView] = useState<"projects" | "tasks">("projects")
   // The projects (decision 129): the open ones first in the list, the done
   // ones with what is archived.
   const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
@@ -57,7 +59,6 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   useEffect(() => { if (startProject) { setShown(startProject.id); onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
   const byRun = useMemo(() => new Map((runs.data ?? []).map((r) => [r.id, r])), [runs.data])
   const all = projects.data?.projects ?? []
-  const ours = new Set(all.flatMap((p) => [p.run, ...p.tasks.map((t) => t.run)]).filter((x): x is string => !!x))
   const listed = all.filter((p) => (p.status === "done") === archived)
   const project = all.find((p) => p.id === shown) ?? null
   const agentOf = useMemo(() => {
@@ -66,8 +67,14 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
     return m
   }, [tasks.data])
   const waiting = new Set((tasks.data?.waiting ?? []).map((t) => t.id))
-  // A project's tasks and the task it was planned in show in the project.
-  const list = (runs.data ?? []).filter((r) => r.archived === archived && !ours.has(r.id))
+  // Each task shows once, in the Tasks list, with its project's name.
+  const projectOf = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of all) for (const r of [p.run, ...p.tasks.map((t) => t.run)]) if (r) m.set(r, p.name)
+    return m
+  }, [all])
+  const list = (runs.data ?? []).filter((r) => r.archived === archived)
+  const live = (runs.data ?? []).filter((r) => !r.archived).length
   // A plan's tasks (decision 120) sit under the task that passed them on,
   // which is grouped by the most pressing of them all.
   const fromOf = useMemo(() => {
@@ -88,35 +95,55 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
     <div className="flex min-w-0 flex-1">
       <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", (current || project) && "max-md:hidden")}>
         <SideHead title="Projects" />
-        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); onOpen(id) }} />
-        <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
-          {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
+        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); setView("tasks"); onOpen(id) }} />
+        <div className="px-3 pt-3">
+          <div role="tablist" aria-label="Projects or tasks" className="grid grid-cols-2 rounded-lg bg-muted p-0.5">
+            {([["projects", "Projects", all.filter((p) => p.status !== "done").length], ["tasks", "Tasks", live]] as const).map(([v, l, n]) => (
+              <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                className={cn("flex h-8 items-center justify-center gap-1.5 rounded-md text-sm transition-colors max-md:h-9",
+                  view === v ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                {l}<span className="text-xs text-muted-foreground tabular-nums">{n}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 px-4 pt-2.5 pb-1 text-xs">
+          {[[false, view === "projects" ? "Open" : "Current"], [true, view === "projects" ? "Done" : "Archived"]].map(([v, l]) => (
             <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("rounded-md px-2 py-1", archived === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l as string}</button>
           ))}
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {listed.length > 0 && (
-            <section className="mb-2">
-              <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{archived ? "Done projects" : "Projects"} · {listed.length}</h2>
-              {listed.map((p) => {
-                const { done: ended, next, when, running } = glance(p, byRun)
-                return (
-                  <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", shown === p.id && !current && "bg-accent")}>
-                    <span className={cn("grid size-[22px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-3.5" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium">{p.name}</span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
+          {view === "projects" ? (
+            !projects.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
+            : !listed.length ? (
+              <div className="px-4 py-10 text-center">
+                <FolderKanban className="mx-auto size-7 text-muted-foreground/50" />
+                <p className="mt-3 text-sm font-medium">{archived ? "No project done yet." : "No project yet."}</p>
+                {!archived && <p className="mt-1 text-sm text-muted-foreground">Ask the team for something bigger than a task: it is planned as a project, with milestones and tasks.</p>}
+              </div>
+            ) : listed.map((p) => {
+              const { done: ended, next, when, running } = glance(p, byRun)
+              const share = p.tasks.length ? ended / p.tasks.length : 0
+              return (
+                <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-accent/60", shown === p.id && !current && "bg-accent")}>
+                  <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground", running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-4" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{p.name}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(p.updated_at)}</span>
+                    </span>
+                    <span className="mt-1 flex items-center gap-2">
+                      <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-emerald-500" style={{ width: `${Math.round(share * 100)}%` }} /></span>
+                      <span className="truncate text-[11px] text-muted-foreground">
                         {[`${ended}/${p.tasks.length} done`, next && `next: ${next.title}${when ? `, ${when.text.split(" · ")[0]}` : ""}`].filter(Boolean).join(" · ")}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(p.updated_at)}</span>
-                  </button>
-                )
-              })}
-            </section>
-          )}
-          {!runs.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-            : !groups.length ? (!listed.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No project or task yet."}</p>)
+                  </span>
+                </button>
+              )
+            })
+          ) : !runs.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
+            : !groups.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No task yet. Ask the team for something above."}</p>
             : groups.map(([g, l]) => (
               <section key={g} className="mb-2">
                 <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g} · {l.length}</h2>
@@ -124,15 +151,18 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
                   const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
                   const child = fromOf.has(r.id) && list.some((x) => x.id === fromOf.get(r.id))
                   const team = kids(r.id)
-                  const plan = team.length ? `project ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
+                  const plan = team.length ? `${team.length} passed on · ${team.filter((k) => k.status === "completed").length} done` : null
+                  // Said once, on the task its plan hangs from.
+                  const inProject = child && projectOf.get(fromOf.get(r.id) ?? "") === projectOf.get(r.id) ? null : projectOf.get(r.id)
                   return (
                     <button key={r.id} onClick={() => { setShown(null); onOpen(r.id) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
                       {child && <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />}
                       <Character agent={a} size={22} still={!r.live} />
                       <span className="min-w-0 flex-1">
                         <span className={cn("block truncate text-[13px]", team.length > 0 && "font-medium")}>{name(r)}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {[a.title, plan, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}
+                        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {inProject && <span className="inline-flex max-w-[60%] min-w-0 shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-px"><FolderKanban className="size-3 shrink-0" /><span className="truncate">{inProject}</span></span>}
+                          <span className="truncate">{[a.title, plan, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}</span>
                         </span>
                       </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(r.updated_at)}</span>
@@ -145,7 +175,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       </aside>
       {current ? (
         <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
-          backLabel={project ? project.name : "Projects"}
+          backLabel={project ? project.name : view === "tasks" ? "Tasks" : "Projects"}
           from={fromTitle(current.id)} passed={passedOf(current.id)} onOpenTask={onOpen}
           onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
       ) : project ? (
