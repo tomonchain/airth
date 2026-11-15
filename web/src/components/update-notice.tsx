@@ -13,8 +13,8 @@ type Info = {
 }
 
 /** A newer Airth, prepared and checked in the background (the classic
-    interface's notice): shown in the title bar, installed on a restart. */
-/** `phone`: a larger trigger and panel, for a finger. */
+    interface's notice): shown in the title bar, installed on a restart.
+    `phone`: a larger trigger and panel, for a finger. */
 export function UpdateNotice({ working, phone }: { working: number; phone?: boolean }) {
   const { data, refresh } = usePoll<Info>(() => api("info"), 60000, [])
   const [sure, setSure] = useState(false)
