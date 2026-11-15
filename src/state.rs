@@ -281,8 +281,20 @@ pub struct State {
 
 impl State {
     pub fn new(objective: &str, runs_dir: Option<&Path>) -> Self {
-        let id = Utc::now().format("%Y%m%dT%H%M%S%.3fZ").to_string();
-        let path = runs_dir.map(|d| d.join(format!("{id}.json")));
+        // An id is the time to the millisecond; two runs started within
+        // one would share a file, the second erasing the first: the next
+        // free millisecond is taken.
+        let mut at = Utc::now();
+        let free = |at: DateTime<Utc>| {
+            let id = at.format("%Y%m%dT%H%M%S%.3fZ").to_string();
+            let path = runs_dir.map(|d| d.join(format!("{id}.json")));
+            (id, path)
+        };
+        let (mut id, mut path) = free(at);
+        while path.as_ref().is_some_and(|p| p.exists()) {
+            at += chrono::Duration::milliseconds(1);
+            (id, path) = free(at);
+        }
         Self {
             id,
             task: objective.to_string(),
@@ -419,6 +431,23 @@ fn is_zero(n: &u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runs_started_in_one_millisecond_keep_their_own_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ids: Vec<String> = (0..5)
+            .map(|i| {
+                let mut s = State::new(&format!("run {i}"), Some(dir.path()));
+                s.save().unwrap();
+                s.id
+            })
+            .collect();
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 5, "{ids:?}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 5);
+    }
 
     #[test]
     fn save_then_load_round_trips() {
