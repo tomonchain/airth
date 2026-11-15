@@ -246,48 +246,63 @@ impl Hub {
             }
         };
         let _lock = RunLock::acquire(&realm.runs_dir(), &state.id)?;
-        let model = self.model_for_drive(realm, &connections, state)?;
-        state.save()?;
-        let workspace = self.workspace_for(realm, state)?;
-        let context = frozen_context(
-            state,
-            run_context(&self.briefing(realm, state, &workspace)?),
-        );
-        let plan = PlanHandle::new(state.plan.clone().into());
-        let runtime = Runtime::new(
-            tools::realm_tools(RealmTools {
-                memory: realm.memory(),
-                source: format!("run:{}", state.id),
-                plan: plan.clone(),
-                integrations: realm.config.integrations.clone(),
-                skills_dir: realm.skills_dir(),
-                allowed: state.tools.clone(),
-                delegation: self.delegation_for(realm, state)?,
-                dispatch: self.dispatch_for(realm, state)?,
-                // A task works on files only in a repository of its scope.
-                files: state.agent.is_none() || state.change.is_some(),
-            }),
-            PermissionGate::new(realm.config.policy.clone(), hooks.approver)
-                .with_grants(state.grants.clone())
-                .with_isolated_writes(state.change.is_some()),
-            workspace.clone(),
-            hooks.cancel.clone(),
-        )
-        .with_plan(plan);
-        let runtime = match autonomy::BusinessAuthority::for_run(realm, state)? {
-            Some(authority) => runtime.with_authority(Box::new(authority)),
-            None => {
-                runtime.with_authority(Box::new(autonomy::FounderAuthority::for_run(realm, state)?))
+        // A run that cannot be set up fails, as one with no model does: left
+        // Running, it would hold its share of the month's budget for good
+        // (decision 139), and no one waiting on it would hear it ended.
+        let setup = (|| -> Result<_> {
+            let model = self.model_for_drive(realm, &connections, state)?;
+            state.save()?;
+            let workspace = self.workspace_for(realm, state)?;
+            let context = frozen_context(
+                state,
+                run_context(&self.briefing(realm, state, &workspace)?),
+            );
+            let plan = PlanHandle::new(state.plan.clone().into());
+            let runtime = Runtime::new(
+                tools::realm_tools(RealmTools {
+                    memory: realm.memory(),
+                    source: format!("run:{}", state.id),
+                    plan: plan.clone(),
+                    integrations: realm.config.integrations.clone(),
+                    skills_dir: realm.skills_dir(),
+                    allowed: state.tools.clone(),
+                    delegation: self.delegation_for(realm, state)?,
+                    dispatch: self.dispatch_for(realm, state)?,
+                    // A task works on files only in a repository of its scope.
+                    files: state.agent.is_none() || state.change.is_some(),
+                }),
+                PermissionGate::new(realm.config.policy.clone(), hooks.approver)
+                    .with_grants(state.grants.clone())
+                    .with_isolated_writes(state.change.is_some()),
+                workspace.clone(),
+                hooks.cancel.clone(),
+            )
+            .with_plan(plan);
+            let runtime = match autonomy::BusinessAuthority::for_run(realm, state)? {
+                Some(authority) => runtime.with_authority(Box::new(authority)),
+                None => runtime
+                    .with_authority(Box::new(autonomy::FounderAuthority::for_run(realm, state)?)),
+            };
+            let mut config = config.within(&state.budget);
+            // AIRTH_COMPACT_AT: tokens past which the conversation is summarized (0: never).
+            if let Some(v) = self.settings(realm)?("AIRTH_COMPACT_AT")
+                && let Ok(n) = v.trim().parse::<u64>()
+            {
+                config.compact_at = (n > 0).then_some(n.max(20_000));
+            }
+            Ok((model, workspace, context, runtime, config))
+        })();
+        let (model, workspace, context, runtime, config) = match setup {
+            Ok(setup) => setup,
+            Err(e) => {
+                state.status = Status::Failed;
+                state.report = Some(format!("could not start: {e:#}"));
+                state.save()?;
+                self.run_ended(realm, state);
+                return Err(e);
             }
         };
         let observer = hooks.observer;
-        let mut config = config.within(&state.budget);
-        // AIRTH_COMPACT_AT: tokens past which the conversation is summarized (0: never).
-        if let Some(v) = self.settings(realm)?("AIRTH_COMPACT_AT")
-            && let Ok(n) = v.trim().parse::<u64>()
-        {
-            config.compact_at = (n > 0).then_some(n.max(20_000));
-        }
         let result = Agent::new(
             &model,
             runtime,

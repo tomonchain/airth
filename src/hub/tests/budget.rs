@@ -357,3 +357,40 @@ fn an_objective_waits_past_the_month_cap_too() {
         .unwrap_err();
     assert!(crate::hub::budget::cap_reached(&err), "{err:#}");
 }
+
+/// A run that cannot be set up fails, and gives back what it held of the
+/// month: left Running, it would hold its share for good.
+#[test]
+fn a_run_that_cannot_start_holds_nothing_of_the_month() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "---\n---\nWrite.\n").unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    crate::business::set_monthly_cap(&root, None, Some(2.0), &[]).unwrap();
+
+    let mut state = hub.start_task(&f.realm, "writer", "Draft").unwrap();
+    assert!((state.budget.max_cost_usd.unwrap() - 1.0).abs() < 1e-9);
+    // A model no provider serves: the drive fails before its first turn.
+    state.model_choice = Some("nowhere/none".into());
+    state.save().unwrap();
+    assert!(
+        hub.drive(
+            &f.realm,
+            &mut state,
+            config(10),
+            hooks(&mut NoObserver, true)
+        )
+        .is_err()
+    );
+    assert_eq!(state.status, Status::Failed);
+    assert_eq!(state.iterations, 0);
+    let saved = hub.load_run(&f.realm, &state.id).unwrap();
+    assert_eq!(saved.status, Status::Failed);
+    assert!(saved.report.unwrap().starts_with("could not start"));
+    // The whole $2 is free again.
+    let left = hub
+        .month_allows(&f.realm, Some("writer"), Utc::now())
+        .unwrap();
+    assert!((left.unwrap() - 2.0).abs() < 1e-9, "{left:?}");
+}
