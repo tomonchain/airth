@@ -10,6 +10,7 @@
 //! moved once, the first time they are read.
 
 pub mod config;
+pub mod package;
 pub mod store;
 pub mod sync;
 
