@@ -92,14 +92,16 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
 
 /** The businesses, then the HQ, a new business and the welcome guide: the
     business menu's items, on a computer and on a phone. */
-function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]; realm: string; onHq: () => void; onNewBusiness: () => void }) {
+function BusinessItems({ realms, realm, onHq, onNewBusiness, phone }: { realms: Realm[]; realm: string; onHq: () => void; onNewBusiness: () => void; phone?: boolean }) {
+  // On a phone, rows a finger can hit.
+  const item = phone ? "gap-3 rounded-lg px-3 py-3 text-base [&_svg:not([class*='size-'])]:size-5" : undefined
   return (
     <>
       {/* A label only holds inside a group: without one, opening the menu threw. */}
       <DropdownMenuGroup>
-        <DropdownMenuLabel>Businesses</DropdownMenuLabel>
+        <DropdownMenuLabel className={cn(phone && "px-3 text-sm")}>Businesses</DropdownMenuLabel>
         {realms.filter((r) => !r.archived).map((r) => (
-          <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
+          <DropdownMenuItem key={r.name} className={item} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
             <span className={cn("flex-1", r.name === realm && "font-semibold")}>{named(r.name, r.title)}</span>
             {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
             {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
@@ -108,9 +110,9 @@ function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]
         ))}
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
-      <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
-      <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
+      <DropdownMenuItem className={item} onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
+      <DropdownMenuItem className={item} onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
+      <DropdownMenuItem className={item} onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
     </>
   )
 }
@@ -131,19 +133,19 @@ export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }
           {/* Another business waits for the founder: said here, wherever they are. */}
           {others > 0 && <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{others}</span>}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
-          <BusinessItems realms={realms} realm={realm} onHq={onHq} onNewBusiness={onNewBusiness} />
+        <DropdownMenuContent align="start" className="w-[min(20rem,calc(100vw-24px))] rounded-2xl p-1.5">
+          <BusinessItems realms={realms} realm={realm} onHq={onHq} onNewBusiness={onNewBusiness} phone />
           {server && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuLabel className="flex items-center gap-1.5 font-normal" title="This Airth's name, set in Settings, About"><Server className="size-3.5" /> {server}</DropdownMenuLabel>
+                <DropdownMenuLabel className="flex items-center gap-2 px-3 py-2.5 text-sm font-normal" title="This Airth's name, set in Settings, About"><Server className="size-4" /> {server}</DropdownMenuLabel>
               </DropdownMenuGroup>
             </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <div className="glass fixed top-[calc(env(safe-area-inset-top)+10px)] right-3 z-40 rounded-full empty:hidden"><UpdateNotice working={agents.filter((a) => a.state === "working").length} /></div>
+      <div className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] right-3 z-40 rounded-full empty:hidden"><UpdateNotice working={agents.filter((a) => a.state === "working").length} phone /></div>
     </>
   )
 }

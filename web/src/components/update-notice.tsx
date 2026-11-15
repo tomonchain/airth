@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { ArrowUpCircle, Loader, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { usePoll } from "@/hooks/use-poll"
@@ -12,8 +13,9 @@ type Info = {
 }
 
 /** A newer Airth, prepared and checked in the background (the classic
-    interface's notice): shown in the title bar, installed on a restart. */
-export function UpdateNotice({ working }: { working: number }) {
+    interface's notice): shown in the title bar, installed on a restart.
+    `phone`: a larger trigger and panel, for a finger. */
+export function UpdateNotice({ working, phone }: { working: number; phone?: boolean }) {
   const { data, refresh } = usePoll<Info>(() => api("info"), 60000, [])
   const [sure, setSure] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -39,13 +41,13 @@ export function UpdateNotice({ working }: { working: number }) {
   const what = `${a.count} change${a.count === 1 ? "" : "s"}`
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<button className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium hover:bg-accent" />}>
+      <DropdownMenuTrigger render={<button className={cn("inline-flex items-center gap-1.5 font-medium hover:bg-accent", phone ? "h-11 rounded-full px-4 text-sm" : "h-8 rounded-lg px-2.5 text-xs")} />}>
         {u.phase === "ready" ? <><ArrowUpCircle className="size-4 text-sky-500" /> Update ready</>
           : u.phase === "failed" ? <><TriangleAlert className="size-4 text-amber-500" /> Update not installed</>
           : <><Loader className="size-3.5 animate-spin text-muted-foreground" /> Preparing an update</>}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-3">
-        <div className="text-sm font-medium">{u.phase === "failed" ? `Update ${a.short} not installed` : u.phase === "ready" ? "A new version of Airth" : `Preparing ${a.short}`}</div>
+      <DropdownMenuContent align="end" className={cn(phone ? "w-[min(24rem,calc(100vw-24px))] p-4 text-base [&_.text-xs]:text-sm" : "w-80 p-3")}>
+        <div className={cn("font-medium", phone ? "text-base" : "text-sm")}>{u.phase === "failed" ? `Update ${a.short} not installed` : u.phase === "ready" ? "A new version of Airth" : `Preparing ${a.short}`}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           {u.phase === "failed" ? (a.release ? "It could not be downloaded or verified." : "Its build or tests failed.")
             : u.phase === "ready" ? `${a.short} · ${what} · ${a.release ? "signature verified" : "tests passed"}`
@@ -58,10 +60,10 @@ export function UpdateNotice({ working }: { working: number }) {
         {u.phase === "ready" && (
           <>
             {sure && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{working} task{working === 1 ? " is" : "s are"} in progress: they stop with the restart and can be resumed.</p>}
-            <Button className="mt-3 w-full" size="sm" onClick={restart}>{sure ? "Restart anyway" : "Restart to update"}</Button>
+            <Button className={cn("mt-3 w-full", phone && "h-11 text-base")} size="sm" onClick={restart}>{sure ? "Restart anyway" : "Restart to update"}</Button>
           </>
         )}
-        {u.phase === "failed" && <Button className="mt-3 w-full" size="sm" variant="outline" onClick={() => api("update/check", {}).then(refresh, (e: Error) => toast.error(e.message))}>Try again</Button>}
+        {u.phase === "failed" && <Button className={cn("mt-3 w-full", phone && "h-11 text-base")} size="sm" variant="outline" onClick={() => api("update/check", {}).then(refresh, (e: Error) => toast.error(e.message))}>Try again</Button>}
       </DropdownMenuContent>
     </DropdownMenu>
   )
