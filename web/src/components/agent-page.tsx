@@ -1,12 +1,15 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { BookOpen, Brain, Download, Gauge, Mail, MessageSquare, Pencil, Repeat, ShieldCheck, Wrench } from "lucide-react"
+import { BookOpen, Brain, ChevronLeft, ChevronRight, Download, Mail, Repeat, Settings2, ShieldCheck, UserRound, Wrench } from "lucide-react"
 import { Back } from "@/components/page"
 import { Character } from "@/components/character"
-import { EditAgent } from "@/components/edit-agent"
+import { DepartmentField } from "@/components/department-field"
 import { Rich } from "@/components/rich"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { useTools } from "@/hooks/use-tools"
 import { api, called, departmentName, enc, type Agent, type Department, type Tasks } from "@/lib/api"
@@ -20,25 +23,70 @@ const STATE: Record<Agent["state"], string> = {
   needs: "Waiting for you", incident: "Stopped on an incident", working: "Working now", idle: "Between runs", asleep: "Nothing scheduled",
 }
 
-const TABS = [
-  { id: "chat", label: "Conversation", icon: MessageSquare },
-  { id: "overview", label: "Overview", icon: Gauge },
-  { id: "rights", label: "Rights", icon: ShieldCheck },
-  { id: "tools", label: "Tools", icon: Wrench },
-  { id: "routines", label: "Routines", icon: Repeat },
-  { id: "memory", label: "Memory", icon: Brain },
-  { id: "mail", label: "Mail", icon: Mail },
+const SECTIONS = [
+  { id: "profile", label: "Profile", hint: "Who it is and its job", icon: UserRound },
+  { id: "rights", label: "Rights", hint: "What it may do alone", icon: ShieldCheck },
+  { id: "tools", label: "Tools", hint: "Connectors and skills", icon: Wrench },
+  { id: "routines", label: "Routines", hint: "Its recurring work", icon: Repeat },
+  { id: "memory", label: "Memory", hint: "Your lessons", icon: Brain },
+  { id: "mail", label: "Mail", hint: "Its mailbox", icon: Mail },
 ] as const
-type Tab = (typeof TABS)[number]["id"]
+type Section = (typeof SECTIONS)[number]["id"]
 
-/** An agent's page (decision 140): who it is and what it may do, in tabs,
-    with its package to take to another business. */
+/** An agent: its conversation first, as a chat is; Edit opens what it is
+    and what it may do, section by section (decision 140). */
 export function AgentPage({ realm, agent, agents, departments, tasks, narrow, onAgent, onDone, onSaved, onGone, onBack }: {
   realm: string; agent: Agent; agents: Agent[]; departments: Department[]; tasks: Tasks | null; narrow: boolean
   onAgent: (name: string) => void; onDone: () => void; onSaved: () => void; onGone: () => void; onBack: () => void
 }) {
-  const [tab, setTab] = useState<Tab>("chat")
   const [editing, setEditing] = useState(false)
+  if (editing) return <AgentEditor realm={realm} agent={agent} departments={departments} narrow={narrow} onClose={() => setEditing(false)} onSaved={onSaved} onGone={onGone} />
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className={cn("flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-5", narrow && "h-[60px] pl-[68px]")}>
+        {narrow && <Back label="All agents" onClick={onBack} />}
+        {/* The head opens the agent, as a contact's does in a chat. */}
+        <button onClick={() => setEditing(true)} className="-ml-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-accent/60">
+          <Character agent={agent} size={32} still={narrow} />
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] leading-tight font-semibold">{called(agent)}</span>
+            <span className="block truncate text-xs text-muted-foreground">{departmentName(agent.department)} · {STATE[agent.state]}</span>
+          </span>
+        </button>
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Settings2 />Edit</Button>
+      </header>
+      <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={onAgent} tasks={tasks} onDone={onDone} />
+    </div>
+  )
+}
+
+/** The agent's edit page: one section at a time, a side list on a wide
+    screen, a row of icons on a phone. The profile keeps what is typed
+    while another section is open; leaving with it unsaved asks first. */
+function AgentEditor({ realm, agent, departments, narrow, onClose, onSaved, onGone }: {
+  realm: string; agent: Agent; departments: Department[]; narrow: boolean; onClose: () => void; onSaved: () => void; onGone: () => void
+}) {
+  const [section, setSection] = useState<Section>("profile")
+  const [dirty, setDirty] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const scroller = useRef<HTMLDivElement>(null)
+  const leave = () => (dirty ? setAsking(true) : onClose())
+
+  // Escape goes back to the conversation, unless the founder is typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (e.key !== "Escape" || e.defaultPrevented || t?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return
+      leave()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
+
+  function go(s: Section) {
+    setSection(s)
+    scroller.current?.scrollTo({ top: 0 })
+  }
 
   async function exportAgent() {
     try {
@@ -51,44 +99,77 @@ export function AgentPage({ realm, agent, agents, departments, tasks, narrow, on
     } catch (e) { toast.error((e as Error).message) }
   }
 
+  const current = SECTIONS.find((s) => s.id === section)!
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="shrink-0 border-b">
-        <div className={cn("flex items-center gap-3 px-4 pt-3 pb-2 md:px-6", narrow && "pl-[68px]")}>
-          {narrow && <Back label="All agents" onClick={onBack} />}
-          <Character agent={agent} size={narrow ? 28 : 40} still={narrow} />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] font-semibold md:text-base">{called(agent)}</h1>
-            <p className="truncate text-xs text-muted-foreground">{departmentName(agent.department)} · {STATE[agent.state]}</p>
+      <header className={cn("flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-5", narrow && "h-[60px] pl-[68px]")}>
+        <Button variant="ghost" size="sm" className="-ml-1.5 shrink-0 px-2" onClick={leave} aria-label="Back to the conversation">
+          <ChevronLeft /><span className="max-md:hidden">Conversation</span>
+        </Button>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <Character agent={agent} size={28} still />
+          <div className="min-w-0">
+            <div className="truncate text-[15px] leading-tight font-semibold">{called(agent)}</div>
+            <div className="truncate text-xs text-muted-foreground">Settings · {departmentName(agent.department)}</div>
           </div>
-          <Button variant="ghost" size="sm" onClick={exportAgent} aria-label="Export"><Download /><span className="max-md:hidden">Export</span></Button>
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)} aria-label="Edit"><Pencil /><span className="max-md:hidden">Edit</span></Button>
         </div>
-        <nav className="flex gap-0.5 px-2 md:px-4" role="tablist">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button key={id} role="tab" aria-selected={tab === id} aria-label={label} onClick={() => setTab(id)}
-              className={cn("relative flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-t-md px-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:flex-none md:px-3",
-                tab === id && "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground")}>
-              <Icon className="size-4 shrink-0" /><span className="max-md:hidden">{label}</span>
+        <Button variant="ghost" size="sm" onClick={exportAgent} aria-label="Export"><Download /><span className="max-md:hidden">Export</span></Button>
+      </header>
+      {narrow && (
+        <nav className="grid shrink-0 grid-cols-6 border-b px-1" aria-label="Sections">
+          {SECTIONS.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => go(id)} aria-current={section === id ? "page" : undefined}
+              className={cn("relative flex flex-col items-center gap-1 py-2 text-[11px] text-muted-foreground transition-colors",
+                section === id && "text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground")}>
+              <Icon className="size-[18px]" />{label}
             </button>
           ))}
         </nav>
-      </header>
-      <EditAgent key={agent.name} realm={realm} agent={agent} departments={departments} open={editing} onOpenChange={setEditing} onSaved={onSaved} onGone={onGone} />
-      {tab === "chat" ? (
-        <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={onAgent} tasks={tasks} onDone={onDone} />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-6">
-            {tab === "overview" && <Overview realm={realm} agent={agent} onSaved={onSaved} onEdit={() => setEditing(true)} />}
-            {tab === "rights" && <Rights realm={realm} agent={agent} />}
-            {tab === "tools" && <Tools key={agent.name} realm={realm} agent={agent} onSaved={onSaved} />}
-            {tab === "routines" && <Routines agent={agent} />}
-            {tab === "memory" && <Memory realm={realm} agent={agent} onSaved={onSaved} />}
-            {tab === "mail" && <AgentMail realm={realm} agent={agent} />}
+      )}
+      <div className="flex min-h-0 flex-1">
+        {!narrow && (
+          <nav className="w-60 shrink-0 space-y-0.5 overflow-y-auto border-r p-3" aria-label="Sections">
+            {SECTIONS.map(({ id, label, hint, icon: Icon }) => (
+              <button key={id} onClick={() => go(id)} aria-current={section === id ? "page" : undefined}
+                className={cn("group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
+                  section === id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
+                <Icon className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{label}{id === "profile" && dirty && <span className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle" aria-label="unsaved" />}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{hint}</span>
+                </span>
+                <ChevronRight className={cn("size-3.5 shrink-0 opacity-0 transition-opacity", section === id && "opacity-60")} />
+              </button>
+            ))}
+          </nav>
+        )}
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 pt-6 pb-32 md:px-8 md:pb-10">
+            {!narrow && <h2 className="text-lg font-semibold">{current.label}</h2>}
+            {/* The profile stays mounted, so what is typed survives a look at another section. */}
+            <div className={cn("space-y-6", section !== "profile" && "hidden")}>
+              <Profile realm={realm} agent={agent} departments={departments} onSaved={onSaved} onGone={onGone} onDirty={setDirty} />
+            </div>
+            {section === "rights" && <Rights realm={realm} agent={agent} />}
+            {section === "tools" && <Tools key={agent.name} realm={realm} agent={agent} onSaved={onSaved} />}
+            {section === "routines" && <Routines agent={agent} />}
+            {section === "memory" && <Memory realm={realm} agent={agent} onSaved={onSaved} />}
+            {section === "mail" && <AgentMail realm={realm} agent={agent} />}
           </div>
         </div>
-      )}
+      </div>
+      <Dialog open={asking} onOpenChange={setAsking}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Leave without saving?</DialogTitle>
+            <DialogDescription>The changes to {called(agent)}'s profile are not saved yet.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAsking(false)}>Keep editing</Button>
+            <Button variant="destructive" onClick={() => { setAsking(false); onClose() }}>Discard</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -96,7 +177,7 @@ export function AgentPage({ realm, agent, agents, departments, tasks, narrow, on
 function Title({ children, note }: { children: React.ReactNode; note?: React.ReactNode }) {
   return (
     <div className="mb-2.5 flex items-baseline justify-between gap-3">
-      <h2 className="text-sm font-semibold">{children}</h2>
+      <h3 className="text-sm font-semibold">{children}</h3>
       {note && <span className="text-xs text-muted-foreground">{note}</span>}
     </div>
   )
@@ -104,37 +185,128 @@ function Title({ children, note }: { children: React.ReactNode; note?: React.Rea
 
 function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: "warn" | "bad" }) {
   return (
-    <div className="rounded-xl bg-bubble px-3.5 py-3">
+    <div className="rounded-xl bg-bubble px-3.5 py-2.5">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 text-lg font-semibold tabular-nums", tone === "warn" && "text-amber-500", tone === "bad" && "text-red-500")}>{value}</div>
+      <div className={cn("mt-0.5 text-base font-semibold tabular-nums", tone === "warn" && "text-amber-500", tone === "bad" && "text-red-500")}>{value}</div>
     </div>
   )
 }
 
 type Budgets = { agents: { agent: string; cap: number | null; spent: number }[] }
 
-function Overview({ realm, agent, onSaved, onEdit }: { realm: string; agent: Agent; onSaved: () => void; onEdit: () => void }) {
+/** Who it is and its job, written in its file in the business folder; only
+    the founder edits them, runs cannot. Letting it go is here too. */
+function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
+  realm: string; agent: Agent; departments: Department[]; onSaved: () => void; onGone: () => void; onDirty: (dirty: boolean) => void
+}) {
   const budgets = usePoll<Budgets>(() => api(`realms/${enc(realm)}/budgets`), 60000, [realm])
   const month = budgets.data?.agents.find((b) => b.agent === agent.name)
   const share = month?.cap ? month.spent / month.cap : 0
   const last = agent.routines.map((r) => r.last?.at ?? "").sort().at(-1)
+
+  const saved = { firstName: agent.first_name ?? "", title: agent.title, department: agent.department ?? "", job: agent.body || agent.job || "" }
+  const [form, setForm] = useState(saved)
+  const [busy, setBusy] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const dirty = form.firstName.trim() !== saved.firstName || form.title !== saved.title || form.department !== saved.department || form.job !== saved.job
+  useEffect(() => onDirty(dirty), [dirty, onDirty])
+  // What was saved elsewhere comes in, unless the founder is mid-edit.
+  const key = JSON.stringify(saved)
+  useEffect(() => { if (!dirty) setForm(saved) }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }))
+  const valid = form.title.trim() && form.job.trim() && form.department
+
+  async function save() {
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title: form.title, first_name: form.firstName.trim(), department: form.department, job: form.job }, "PUT")
+      toast.success(`${form.firstName.trim() || form.title} is saved.`)
+      onSaved()
+    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  }
+
+  // Its file leaves agents/; its past tasks stay. The server refuses while
+  // a routine still names it, and says which.
+  async function letGo() {
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, undefined, "DELETE")
+      toast.success(`${called(agent)} left the team.`)
+      onGone()
+    } catch (e) {
+      toast.error((e as Error).message)
+      setLeaving(false)
+    } finally { setBusy(false) }
+  }
+
   return (
     <>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <section className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Character agent={{ ...agent, department: form.department || null, title: form.title }} size={56} />
+          <div className="min-w-0 text-sm">
+            <div className="font-medium">{form.firstName.trim() || form.title || "—"}</div>
+            <div className="text-muted-foreground">{departmentName(form.department || null)}</div>
+            {agent.look_saved === false && (
+              <button className="mt-0.5 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={async () => {
+                try { await api(`realms/${enc(realm)}/agents/${enc(agent.name)}/look`, {}); toast.success("Look kept."); onSaved() } catch (e) { toast.error((e as Error).message) }
+              }}>Its look comes from its name. Keep this look</button>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-first-name">First name</Label>
+            <Input id="agent-first-name" value={form.firstName} placeholder="Optional" maxLength={30} onChange={(e) => set("firstName")(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-title">Title</Label>
+            <Input id="agent-title" value={form.title} onChange={(e) => set("title")(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-department">Department</Label>
+            <DepartmentField id="agent-department" value={form.department} departments={departments} onChange={set("department")} />
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Last 30 days" value={usd(agent.cost_usd) || "$0"} />
         <Stat label="This month" value={month ? `${usd(month.spent) || "$0"}${month.cap ? ` / ${usd(month.cap)}` : ""}` : "…"} tone={share >= 1 ? "bad" : share >= 0.8 ? "warn" : undefined} />
         <Stat label="Waiting for you" value={agent.waiting} />
         <Stat label="Last ran" value={last ? ago(last) : "—"} />
       </div>
-      {agent.look_saved === false && (
-        <p className="text-xs text-muted-foreground">Its look comes from its name for now. <button className="underline underline-offset-2 hover:text-foreground" onClick={async () => {
-          try { await api(`realms/${enc(realm)}/agents/${enc(agent.name)}/look`, {}); toast.success("Look kept."); onSaved() } catch (e) { toast.error((e as Error).message) }
-        }}>Keep this look</button></p>
+
+      <section className="space-y-1.5">
+        <Label htmlFor="agent-job">Job</Label>
+        <p className="text-xs text-muted-foreground">Its mission, how it works and what it reports, in Markdown. It reads this on every task.</p>
+        <Textarea id="agent-job" value={form.job} onChange={(e) => set("job")(e.target.value)} className="field-sizing-content min-h-72 font-mono text-[12.5px] leading-relaxed" />
+        {!dirty && form.job && (
+          <details className="group rounded-xl bg-bubble px-4 py-3 text-sm">
+            <summary className="cursor-pointer text-xs text-muted-foreground select-none">As it reads</summary>
+            <div className="mt-2 leading-relaxed"><Rich text={form.job} /></div>
+          </details>
+        )}
+      </section>
+
+      {dirty && (
+        <div className="sticky bottom-4 z-10 flex items-center gap-2 rounded-xl border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur max-md:bottom-24">
+          <span className="flex-1 text-sm text-muted-foreground">Unsaved changes</span>
+          <Button variant="ghost" size="sm" onClick={() => setForm(saved)}>Undo</Button>
+          <Button size="sm" disabled={busy || !valid} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
+        </div>
       )}
-      <section>
-        <Title note={<button onClick={onEdit} className="underline underline-offset-2 hover:text-foreground">Edit</button>}>Job</Title>
-        <div className="rounded-xl bg-bubble px-4 py-3.5 text-sm leading-relaxed">
-          {agent.body ? <Rich text={agent.body} /> : <span className="text-muted-foreground">No job written yet.</span>}
+
+      <section className="rounded-xl border border-red-500/25 px-4 py-3.5">
+        <Title>Let {called(agent)} go</Title>
+        <p className="text-sm text-muted-foreground">Its file leaves the team; its past tasks and conversation stay. Refused while a routine still names it.</p>
+        <div className="mt-3 flex gap-2">
+          {leaving ? (
+            <>
+              <Button variant="destructive" size="sm" disabled={busy} onClick={letGo}>Let {called(agent)} go</Button>
+              <Button variant="ghost" size="sm" onClick={() => setLeaving(false)}>Keep</Button>
+            </>
+          ) : <Button variant="outline" size="sm" className="text-red-500 hover:text-red-500" onClick={() => setLeaving(true)}>Let go…</Button>}
         </div>
       </section>
     </>
@@ -209,33 +381,34 @@ function Rights({ realm, agent }: { realm: string; agent: Agent }) {
   )
 }
 
-const flip = (l: string[], n: string) => (l.includes(n) ? l.filter((x) => x !== n) : [...l, n])
-
-/** What its tasks may use (decision 64): nothing else. */
+/** What its tasks may use (decision 64): nothing else. Each switch is
+    saved as it flips, one at a time. */
 function Tools({ realm, agent, onSaved }: { realm: string; agent: Agent; onSaved: () => void }) {
   const tools = useTools(realm)
-  const [integrations, setIntegrations] = useState<string[]>(agent.integrations ?? [])
-  const [skills, setSkills] = useState<string[]>(agent.skills ?? [])
-  const [repos, setRepos] = useState<string[]>(agent.repos ?? [])
-  const [busy, setBusy] = useState(false)
-  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x))
-  const changed = !same(integrations, agent.integrations ?? []) || !same(skills, agent.skills ?? []) || !same(repos, agent.repos ?? [])
-  async function save() {
-    setBusy(true)
+  const [on, setOn] = useState({ integrations: agent.integrations ?? [], skills: agent.skills ?? [], repos: agent.repos ?? [] })
+  const [busy, setBusy] = useState<string | null>(null)
+  async function flip(kind: keyof typeof on, name: string) {
+    const before = on
+    const next = { ...on, [kind]: on[kind].includes(name) ? on[kind].filter((x) => x !== name) : [...on[kind], name] }
+    setOn(next)
+    setBusy(name)
     try {
-      // The job as stored now, not as this page last saw it: it may have
-      // just been edited, and this write sends it back whole.
+      // The job as stored now, not as this page last saw it: this write
+      // sends it back whole.
       const stored = (await api<{ agents: { name: string; job: string }[] }>(`realms/${enc(realm)}/agents`)).agents.find((a) => a.name === agent.name)
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: stored?.job ?? agent.body ?? agent.job ?? "", integrations, skills, repos }, "PUT")
-      toast.success(`${called(agent)}'s tools are saved.`)
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: stored?.job ?? agent.body ?? agent.job ?? "", ...next }, "PUT")
+      toast.success(next[kind].includes(name) ? `${called(agent)} can use ${name}.` : `${called(agent)} no longer uses ${name}.`)
       onSaved()
-    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+    } catch (e) {
+      setOn(before)
+      toast.error((e as Error).message)
+    } finally { setBusy(null) }
   }
-  const group = (title: string, hint: string, names: { name: string; hint?: string }[], on: string[], toggle: (n: string) => void, mark?: string) => names.length > 0 && (
+  const group = (title: string, hint: string, names: { name: string; hint?: string }[], kind: keyof typeof on, mark?: string) => names.length > 0 && (
     <section>
       <Title note={hint}>{title}</Title>
       <div className="flex flex-wrap gap-2">
-        {names.map(({ name, hint }) => <Toggle key={name} label={name} hint={hint} mark={mark} on={on.includes(name)} onClick={() => toggle(name)} />)}
+        {names.map(({ name, hint }) => <Toggle key={name} label={name} hint={hint} mark={mark} on={on[kind].includes(name)} disabled={busy !== null} onClick={() => flip(kind, name)} />)}
       </div>
     </section>
   )
@@ -245,23 +418,19 @@ function Tools({ realm, agent, onSaved }: { realm: string; agent: Agent; onSaved
     <>
       <p className="text-sm text-muted-foreground">Its tasks use only what is on. With nothing on, it reads the public web and no more.</p>
       {none && <p className="text-sm text-muted-foreground">This business has no connector or skill yet: connect them in the Marketplace.</p>}
-      {group("Connectors", "Services it calls", tools.data.integrations.map((name) => ({ name })), integrations, (n) => setIntegrations((l) => flip(l, n)))}
-      {group("MCP servers", "Tools from a server", tools.data.servers, skills, (n) => setSkills((l) => flip(l, n)))}
-      {group("Skills", "Know-how it can load", tools.data.skills.map((name) => ({ name })), skills, (n) => setSkills((l) => flip(l, n)), "✦")}
-      {group("Code", "Each task on its own branch", tools.data.repos.map((name) => ({ name })), repos, (n) => setRepos((l) => flip(l, n)))}
-      <div className="flex justify-end gap-2">
-        {changed && <Button variant="ghost" onClick={() => { setIntegrations(agent.integrations ?? []); setSkills(agent.skills ?? []); setRepos(agent.repos ?? []) }}>Undo</Button>}
-        <Button disabled={!changed || busy} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
-      </div>
+      {group("Connectors", "Services it calls", tools.data.integrations.map((name) => ({ name })), "integrations")}
+      {group("MCP servers", "Tools from a server", tools.data.servers, "skills")}
+      {group("Skills", "Know-how it can load", tools.data.skills.map((name) => ({ name })), "skills", "✦")}
+      {group("Code", "Each task on its own branch", tools.data.repos.map((name) => ({ name })), "repos")}
     </>
   )
 }
 
-function Toggle({ label, hint, mark: glyph, on, onClick }: { label: string; hint?: string; mark?: string; on: boolean; onClick: () => void }) {
+function Toggle({ label, hint, mark: glyph, on, disabled, onClick }: { label: string; hint?: string; mark?: string; on: boolean; disabled?: boolean; onClick: () => void }) {
   const mark = LOGOS[label]
   return (
-    <button type="button" onClick={onClick} title={hint} aria-pressed={on}
-      className={cn("inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm transition-colors",
+    <button type="button" onClick={onClick} title={hint} aria-pressed={on} disabled={disabled}
+      className={cn("inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm transition-colors disabled:cursor-wait",
         on ? "border-sky-500/60 bg-sky-500/10 text-foreground" : "text-muted-foreground hover:text-foreground")}>
       {mark ? <svg viewBox="0 0 24 24" className="size-4" style={{ color: mark[0] ?? "currentColor" }}><path fill="currentColor" d={mark[1]} /></svg>
         : glyph ? <span className="text-xs">{glyph}</span> : null}
