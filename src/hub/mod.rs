@@ -239,7 +239,9 @@ impl Hub {
                 state.status = Status::Failed;
                 state.report = Some(format!("no model available: {e:#}"));
                 state.save()?;
-                let _ = self.objective_run_ended(realm, state);
+                // Ended all the same: a plan's next step, a routine's
+                // mission, the interlocutor, all hear it.
+                self.run_ended(realm, state);
                 return Err(e);
             }
         };
@@ -335,6 +337,13 @@ impl Hub {
             state.save()?;
             observer.changed(state);
         }
+        self.run_ended(realm, state);
+        result
+    }
+
+    /// What follows a run's end, however it ended: each says whether it
+    /// concerns this run, so all are asked.
+    fn run_ended(&self, realm: &Realm, state: &mut State) {
         if let Err(e) = self.task_ended(realm, state) {
             eprintln!("warning: could not tell how task {} ended: {e:#}", state.id);
         }
@@ -350,15 +359,12 @@ impl Hub {
                 state.id
             );
         }
-        if state.origin.is_some()
-            && let Err(e) = self.objective_run_ended(realm, state)
-        {
+        if let Err(e) = self.objective_run_ended(realm, state) {
             eprintln!(
                 "warning: could not record objective run {}: {e:#}",
                 state.id
             );
         }
-        result
     }
 
     /// Start an agent on a new objective and drive it until it stops.
