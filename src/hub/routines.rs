@@ -108,9 +108,10 @@ impl Hub {
             .with_secrets(realm.command_env()?, self.redactions(realm)?)
             .with_credentials(realm.integration_credentials()?)
             .with_network(!realm.config.offline);
+        let mail = crate::mail::sender(realm)?;
         let runtime = || {
             Runtime::new(
-                tools::pipeline_tools(realm.config.integrations.clone()),
+                business_tools(realm, mail.clone()),
                 PermissionGate::new(
                     realm.config.policy.clone(),
                     Box::new(super::pipelines::Unattended),
@@ -176,57 +177,67 @@ impl Hub {
                 };
                 return self.launch_for_routine(realm, &launch, approved, &declared);
             }
-            let (connector, action_name) = action
-                .split_once('.')
-                .context("an action is <connector>.<action>")?;
-            let integration = realm
-                .config
-                .integrations
-                .iter()
-                .find(|i| i.name == connector)
-                .with_context(|| {
-                    format!(
-                        "{action}: only declared HTTP actions and airth.report are done for now"
-                    )
-                })?;
-            let declared_http = integration
-                .actions
-                .iter()
-                .find(|a| a.name == action_name)
-                .with_context(|| format!("{action} is not declared"))?;
-            let mut url = declared_http.url(integration, fields)?;
-            let mut body = serde_json::Map::new();
-            for f in &declared_http.fields {
-                let Some(value) = fields.get(&f.name) else {
-                    continue;
-                };
-                match f.place {
-                    crate::actions::Place::Query => {
-                        url.query_pairs_mut().append_pair(&f.name, value);
+            // A role's mail (decision 70): sent through `send_mail`, under
+            // the same levels, journal and approvals as any declared action.
+            let (tool, connector, args) = if action == crate::tools::mail::ACTION {
+                let get = |k: &str| fields.get(k).cloned().unwrap_or_default();
+                let args = json!({"agent": graph.agent, "to": get("to"), "subject": get("subject"),
+                    "text": get("text"), "in_reply_to": get("in_reply_to"), "key": key});
+                (crate::tools::mail::NAME, "mail", args)
+            } else {
+                let (connector, action_name) = action
+                    .split_once('.')
+                    .context("an action is <connector>.<action>")?;
+                let integration = realm
+                    .config
+                    .integrations
+                    .iter()
+                    .find(|i| i.name == connector)
+                    .with_context(|| {
+                        format!(
+                            "{action}: only declared HTTP actions and airth.report are done for now"
+                        )
+                    })?;
+                let declared_http = integration
+                    .actions
+                    .iter()
+                    .find(|a| a.name == action_name)
+                    .with_context(|| format!("{action} is not declared"))?;
+                let mut url = declared_http.url(integration, fields)?;
+                let mut body = serde_json::Map::new();
+                for f in &declared_http.fields {
+                    let Some(value) = fields.get(&f.name) else {
+                        continue;
+                    };
+                    match f.place {
+                        crate::actions::Place::Query => {
+                            url.query_pairs_mut().append_pair(&f.name, value);
+                        }
+                        crate::actions::Place::Body => {
+                            body.insert(f.name.clone(), value.clone().into());
+                        }
+                        crate::actions::Place::Path => {}
                     }
-                    crate::actions::Place::Body => {
-                        body.insert(f.name.clone(), value.clone().into());
-                    }
-                    crate::actions::Place::Path => {}
                 }
-            }
-            let mut args = json!({"integration": connector, "method": declared_http.method, "url": url.as_str()});
-            // A declared body is the only one sent; without one, the body
-            // fields as a flat object.
-            let body = match declared_http.body(fields)? {
-                Some(templated) => Some(templated),
-                None => (!body.is_empty()).then_some(Value::Object(body)),
+                let mut args = json!({"integration": connector, "method": declared_http.method, "url": url.as_str()});
+                // A declared body is the only one sent; without one, the body
+                // fields as a flat object.
+                let body = match declared_http.body(fields)? {
+                    Some(templated) => Some(templated),
+                    None => (!body.is_empty()).then_some(Value::Object(body)),
+                };
+                if let Some(body) = body {
+                    args["body"] = body.to_string().into();
+                    args["headers"] = json!({"Content-Type": "application/json"});
+                }
+                // The same key on every attempt: the service does it once.
+                if let Some(header) =
+                    super::retries::idempotency_header(&realm.config.integrations, action)
+                {
+                    args["headers"][header] = key.into();
+                }
+                ("http_request", connector, args)
             };
-            if let Some(body) = body {
-                args["body"] = body.to_string().into();
-                args["headers"] = json!({"Content-Type": "application/json"});
-            }
-            // The same key on every attempt: the service does it once.
-            if let Some(header) =
-                super::retries::idempotency_header(&realm.config.integrations, action)
-            {
-                args["headers"][header] = key.into();
-            }
             let event = if approved {
                 let ceiling = declared
                     .iter()
@@ -258,7 +269,7 @@ impl Hub {
                 let crate::business::store::autonomy::Begin::Started(journal) = begin else {
                     bail!("not done again: this act was already started under {key}");
                 };
-                let event = as_approved.invoke(key, "http_request", &args);
+                let event = as_approved.invoke(key, tool, &args);
                 // A failure that was tried is recorded below, with its retry.
                 match event.status {
                     crate::state::EventStatus::Ok if super::incidents::succeeded(&event.result) => {
@@ -271,7 +282,7 @@ impl Hub {
                 }
                 event
             } else {
-                within_levels.invoke(key, "http_request", &args)
+                within_levels.invoke(key, tool, &args)
             };
             let first = event.result.lines().next().unwrap_or_default().to_string();
             match event.status {
@@ -699,9 +710,9 @@ impl Hub {
         if tool.starts_with("mcp__") {
             return self.do_approved_mcp(realm, item, action, tool);
         }
-        if tool != "http_request" {
+        if tool != "http_request" && tool != crate::tools::mail::NAME {
             bail!(
-                "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions and MCP tools only"
+                "{action} goes through {tool}: approve it, then do it yourself; Airth does approved calls of HTTP actions, mail and MCP tools only"
             );
         }
         let key = format!("item/{}", item.id);
@@ -1180,6 +1191,20 @@ enum Approved {
     Done(String),
     /// It failed, and is tried again later (decision 55): why, and when.
     Later(String),
+}
+
+/// The tools a routine's acts and their approvals are done with: the
+/// declared HTTP actions, and the mailboxes' `send_mail` when the business
+/// has one with its password (decision 70).
+pub(super) fn business_tools(
+    realm: &Realm,
+    mail: Option<crate::tools::mail::SendMail>,
+) -> Vec<Box<dyn crate::tools::Tool>> {
+    let mut out = tools::pipeline_tools(realm.config.integrations.clone());
+    if let Some(mail) = mail {
+        out.push(Box::new(mail));
+    }
+    out
 }
 
 /// One report per block of what a run's `airth.report` acts gathered,

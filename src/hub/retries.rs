@@ -195,7 +195,7 @@ impl Hub {
             .with_credentials(realm.integration_credentials()?)
             .with_network(!realm.config.offline);
         Ok(Runtime::new(
-            tools::pipeline_tools(realm.config.integrations.clone()),
+            super::routines::business_tools(realm, crate::mail::sender(realm)?),
             PermissionGate::new(
                 realm.config.policy.clone(),
                 Box::new(super::pipelines::Unattended),
