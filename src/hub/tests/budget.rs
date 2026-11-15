@@ -166,6 +166,23 @@ fn a_routine_waits_past_the_business_cap() {
         format!("{err:#}").contains("monthly budget is reached"),
         "{err:#}"
     );
+    // One under way goes on: after an approval, past the cap, it is not
+    // refused for the budget.
+    let mut item = serde_json::Map::new();
+    item.insert("title".into(), json!("Supply at a high"));
+    let after = hub.run_routine(
+        &f.realm,
+        "watch",
+        "watch-after",
+        crate::routine::run::Start::After {
+            block: "ok".into(),
+            item,
+        },
+        None,
+    );
+    if let Err(e) = &after {
+        assert!(!crate::hub::budget::cap_reached(e), "{e:#}");
+    }
 }
 
 /// A day's plan keeps the tasks it started when a later one meets a cap:
@@ -239,6 +256,12 @@ fn a_plan_keeps_what_it_started_when_a_step_meets_a_cap() {
         .unwrap()
         .pop()
         .unwrap();
+    // Waiting, not skipped: it starts on a later pass.
+    assert!(
+        project.tasks.iter().all(|t| t.skipped.is_none()),
+        "{:?}",
+        project.tasks
+    );
     let runs: Vec<bool> = project.tasks.iter().map(|t| t.run.is_some()).collect();
     assert_eq!(
         runs,

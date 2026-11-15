@@ -103,14 +103,22 @@ impl Hub {
     ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         // Past the business's monthly budget (decision 139), no routine
-        // runs, however started; a failure to read the spend stops nothing.
-        match self.month_allows(realm, None, Utc::now()) {
-            Err(e) if super::budget::cap_reached(&e) => return Err(e),
-            Err(e) => eprintln!(
-                "routine {}/{name}: the monthly budget was not read: {e:#}",
-                realm.name()
-            ),
-            Ok(_) => {}
+        // starts, however started; one under way (after an approval, a
+        // mission or a redo) goes on to its end, so nothing it began is
+        // lost. A failure to read the spend stops nothing.
+        let fresh = matches!(
+            start,
+            crate::routine::run::Start::Trigger | crate::routine::run::Start::Event(_)
+        );
+        if fresh {
+            match self.month_allows(realm, None, Utc::now()) {
+                Err(e) if super::budget::cap_reached(&e) => return Err(e),
+                Err(e) => eprintln!(
+                    "routine {}/{name}: the monthly budget was not read: {e:#}",
+                    realm.name()
+                ),
+                Ok(_) => {}
+            }
         }
         let root = realm.root()?;
         let context = routine_context(realm)?;
