@@ -106,7 +106,9 @@ export function Seg<T extends string | number>({ label, value, options, onPick }
 }
 
 /** On a phone, a list and what is open in it take the screen in turn:
-    this goes back to the list. Hidden where both fit side by side. */
-export function Back({ onClick, label = "Back" }: { onClick: () => void; label?: string }) {
+    this goes back to the list. Hidden where both fit side by side, unless
+    `always`: then the list is gone on every screen, and it says where to. */
+export function Back({ onClick, label = "Back", always }: { onClick: () => void; label?: string; always?: boolean }) {
+  if (always) return <Button variant="ghost" size="sm" className="-ml-1.5 shrink-0 gap-0.5 px-1.5 text-muted-foreground hover:text-foreground" aria-label={label} onClick={onClick}><ChevronLeft /><span className="max-w-40 truncate max-md:hidden">{label}</span></Button>
   return <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0 md:hidden" aria-label={label} onClick={onClick}><ChevronLeft /></Button>
 }
