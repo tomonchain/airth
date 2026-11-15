@@ -250,7 +250,7 @@ export function Documents({ realm, onAsk, start }: { realm: string; onAsk: (text
 
       <section className={cn("flex min-w-0 flex-1 flex-col", !tab && "max-md:hidden")}>
         {tabs.length > 0 && (
-          <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 pt-1.5">
+          <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 pt-1.5 max-md:min-h-[60px] max-md:pl-[68px]">
             <Back label="All documents" onClick={() => setActive(null)} />
             {tabs.map((t) => (
               <div key={t.path} className={cn("group flex h-8 shrink-0 items-center gap-1.5 rounded-t-lg border border-b-0 pr-1 pl-2.5 text-[13px]", t.path === active ? "bg-surface text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>

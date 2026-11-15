@@ -240,7 +240,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
         </div>
       ) : (
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4 max-md:px-3">
+          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4 max-md:h-[60px] max-md:pr-3 max-md:pl-[68px]">
             <Back label="All items" onClick={() => setSel(null)} />
             <Button variant="ghost" size="icon-sm" disabled={at <= 0} onClick={() => setSel(sorted[at - 1].id)} aria-label="Previous (K)"><ChevronUp /></Button>
             <Button variant="ghost" size="icon-sm" disabled={at >= sorted.length - 1} onClick={() => setSel(sorted[at + 1].id)} aria-label="Next (J)"><ChevronDown /></Button>
