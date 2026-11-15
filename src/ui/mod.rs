@@ -726,6 +726,17 @@ mod tests {
             file.contains("Answer.") && !file.contains("support@n.example"),
             "{file}"
         );
+        // Brought back into the same business: refused, it is there already.
+        let body: &'static str = Box::leak(package.to_string().into_boxed_str());
+        let (code, err) = call(Method::Post, "realms/r/agents/import", body);
+        assert_eq!(code, 400, "{err}");
+        assert!(
+            err["error"]
+                .as_str()
+                .unwrap()
+                .contains("already in this business"),
+            "{err}"
+        );
     }
 
     #[test]

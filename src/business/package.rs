@@ -103,6 +103,62 @@ pub fn export(root: &Path, name: &str) -> Result<Package> {
     })
 }
 
+/// Fields an imported agent comes in without: it has no rights until the
+/// founder gives them, and never takes the interlocutor's place.
+const RIGHTS: &[&str] = &["integrations", "skills", "repos", "dispatch"];
+
+/// Install the package `p` in the business folder at `root`, as a team
+/// installs: nothing when any of its files is there already. The agent
+/// comes in with no connector, skill or repository; only its own file,
+/// its own routines and prompts are taken. The files written.
+pub fn import(root: &Path, p: &Package) -> Result<Vec<String>> {
+    if p.format != FORMAT {
+        bail!("not an agent's package ({FORMAT})");
+    }
+    crate::realm::validate_name(&p.agent).context("invalid agent name")?;
+    let own = format!("{AGENTS}/{}.md", p.agent);
+    let mut files: Vec<(String, String)> = Vec::new();
+    for (rel, text) in &p.files {
+        if rel == &own {
+            let (front, body) = split(text);
+            let front: String = front
+                .lines()
+                .filter(|l| {
+                    let key = l.split(':').next().unwrap_or_default().trim();
+                    !LOCAL.contains(&key) && !RIGHTS.contains(&key)
+                })
+                .map(|l| format!("{l}\n"))
+                .collect();
+            files.push((rel.clone(), format!("{front}{body}")));
+        } else if let Some(file) = rel.strip_prefix("routines/") {
+            if !file.ends_with(".json") || file.contains('/') {
+                bail!("{rel}: not a routine");
+            }
+            let graph: serde_json::Value =
+                serde_json::from_str(text).with_context(|| format!("{rel} is not a routine"))?;
+            if graph["agent"].as_str() != Some(p.agent.as_str()) {
+                bail!("{rel} is not {}'s routine", p.agent);
+            }
+            files.push((rel.clone(), text.clone()));
+        } else if let Some(file) = rel.strip_prefix("prompts/") {
+            if !(file.ends_with(".md") || file.ends_with(".schema.json")) || file.contains('/') {
+                bail!("{rel}: not a prompt");
+            }
+            files.push((rel.clone(), text.clone()));
+        } else {
+            bail!("{rel}: a package holds its agent, its routines and their prompts only");
+        }
+    }
+    if !files.iter().any(|(rel, _)| rel == &own) {
+        bail!("the package has no {own}");
+    }
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(r, t)| (r.as_str(), t.as_str()))
+        .collect();
+    crate::library::install_files(root, &refs)
+}
+
 /// Every `"prompt": "prompts/…"` a routine's blocks name, in order.
 fn named_prompts(value: &serde_json::Value, out: &mut Vec<String>) {
     match value {
@@ -199,6 +255,57 @@ mod tests {
         // No such agent, or a name that walks out of the folder.
         assert!(export(root, "ghost").is_err());
         assert!(export(root, "../agents").is_err());
+    }
+
+    #[test]
+    fn an_imported_agent_comes_with_no_rights_and_overwrites_nothing() {
+        let from = tempfile::tempdir().unwrap();
+        write(
+            from.path(),
+            "agents/support.md",
+            "---\ntitle: Support\ndispatch: true\nintegrations: shop\nskills: gmail\n---\nAnswer.\n",
+        );
+        write(
+            from.path(),
+            "routines/replies.json",
+            r#"{"agent": "support", "trigger": {"manual": true}, "blocks": [{"id": "d", "type": "ai", "prompt": "prompts/reply.md"}]}"#,
+        );
+        write(from.path(), "prompts/reply.md", "Draft.");
+        let package = export(from.path(), "support").unwrap();
+
+        let to = tempfile::tempdir().unwrap();
+        let written = import(to.path(), &package).unwrap();
+        assert_eq!(written.len(), 3);
+        let agent = std::fs::read_to_string(to.path().join("agents/support.md")).unwrap();
+        for gone in ["dispatch", "integrations", "skills"] {
+            assert!(!agent.contains(gone), "{gone} came in: {agent}");
+        }
+        assert!(
+            agent.contains("title: Support") && agent.contains("Answer."),
+            "{agent}"
+        );
+        // Twice: refused, nothing written.
+        assert!(import(to.path(), &package).is_err());
+
+        // A package that reaches outside its agent's files is refused.
+        let mut bad = package.clone();
+        bad.files.insert(
+            "agents/chief.md".into(),
+            "---\ntitle: Chief\n---\nX\n".into(),
+        );
+        assert!(import(tempfile::tempdir().unwrap().path(), &bad).is_err());
+        let mut bad = package.clone();
+        bad.files.insert(
+            "routines/other.json".into(),
+            r#"{"agent": "chief", "trigger": {"manual": true}, "blocks": []}"#.into(),
+        );
+        assert!(import(tempfile::tempdir().unwrap().path(), &bad).is_err());
+        let mut bad = package.clone();
+        bad.files.insert("../secrets.env".into(), "KEY=1".into());
+        assert!(import(tempfile::tempdir().unwrap().path(), &bad).is_err());
+        let mut bad = package;
+        bad.format = "something/2".into();
+        assert!(import(tempfile::tempdir().unwrap().path(), &bad).is_err());
     }
 
     #[test]

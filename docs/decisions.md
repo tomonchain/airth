@@ -15,7 +15,9 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - the prompts and schemas their AI blocks name.
 - **No secret leaves with it.** The business folder holds none.
 - **`GET …/agents/<a>/export`** returns the package. The app downloads it.
-- **Import** (its own change) installs a package in another business the way a team installs (decision 74). It writes nothing if any of the files is there already. The agent comes in with no rights: no connector, skill or repository until the founder gives them, and its actions at their starting level.
+- **`POST …/agents/import`** installs a package in another business the way a team installs (decision 74). It writes nothing if any of the files is there already.
+  - **It takes only what is the agent's:** its own file, routines whose agent it is, and prompts. Any other path is refused.
+  - **The agent comes in with no rights:** no connector, skill or repository until the founder gives them, never as the interlocutor, and its actions at their starting level.
 - **The page** (its own change): the agent fills the page, with tabs for its conversation, an overview, its rights, its tools, its routines, its memory and its mail.
 
 *Why:* the founder runs two businesses that need the same roles; an agent proven at Hedgen should go to Numirama with what it runs, and without what is Hedgen's. Levels are the agent's rights; they belong on its page.

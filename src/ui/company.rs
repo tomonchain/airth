@@ -146,6 +146,15 @@ impl App {
                     name,
                 )?)?,
             ),
+            // Install an agent's package from another business (decision
+            // 140): with no rights, overwriting nothing.
+            (Method::Post, ["realms", r, "agents", "import"]) => {
+                let package: crate::business::package::Package =
+                    serde_json::from_value(read_json(request)?)
+                        .context("not an agent's package")?;
+                let written = crate::business::package::import(&self.realm(r)?.root()?, &package)?;
+                json_response(200, json!({"agent": package.agent, "written": written}))
+            }
             (Method::Get, ["realms", r, "company"]) => {
                 json_response(200, self.company(&self.realm(r)?)?)
             }
