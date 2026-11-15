@@ -144,7 +144,7 @@ export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }
 function Badge({ r, size = 32 }: { r: Realm; size?: number }) {
   const hue = [...r.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
   return (
-    <span className="grid shrink-0 place-items-center rounded-[10px] text-[13px] font-semibold text-white shadow-inner"
+    <span aria-hidden="true" className="grid shrink-0 place-items-center rounded-[10px] text-[13px] font-semibold text-white shadow-inner"
       style={{ width: size, height: size, background: `linear-gradient(135deg, oklch(0.72 0.14 ${hue}), oklch(0.55 0.15 ${(hue + 40) % 360}))` }}>
       {named(r.name, r.title).charAt(0).toUpperCase()}
     </span>
@@ -196,7 +196,11 @@ function PhoneItems({ realms, realm, server, onHq, onNewBusiness }: { realms: Re
           </DropdownMenuItem>
         ))}
       </DropdownMenuGroup>
-      {server && <p className="flex items-center justify-center gap-1.5 px-2 pt-2 pb-1 text-[11px] text-muted-foreground" title="This Airth's name, set in Settings, About"><Server className="size-3" />{server}</p>}
+      {server && (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex items-center justify-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-normal" title="This Airth's name, set in Settings, About"><Server className="size-3 shrink-0" /><span className="min-w-0 truncate">{server}</span></DropdownMenuLabel>
+        </DropdownMenuGroup>
+      )}
     </>
   )
 }
