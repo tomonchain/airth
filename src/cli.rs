@@ -911,12 +911,9 @@ pub enum RoutinesCmd {
 pub fn routines(ctx: &Ctx, command: Option<RoutinesCmd>) -> Result<bool> {
     let realm = ctx.realm()?;
     if let Some(RoutinesCmd::Run { name }) = command {
-        let run = format!("{name}-{}", chrono::Utc::now().format("%Y%m%dT%H%M%S"));
-        let start = crate::routine::run::Start::Trigger;
-        println!(
-            "{}",
-            ctx.hub().run_routine(&realm, &name, &run, start, None)?
-        );
+        // The app's way of running one now: a heartbeat either way, an
+        // incident when it fails, so a run from the terminal is not lost.
+        println!("{}", ctx.hub().run_routine_by_hand(&realm, &name)?);
         return Ok(true);
     }
     if let Some(RoutinesCmd::DryRun { name }) = command {
