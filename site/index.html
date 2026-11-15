@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airth · Your online company HQ</title>
+  <meta name="description" content="Airth runs your online businesses with a staff of AI agents. They do the work; you set the goal and decide what commits the business.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Airth · Your online company HQ">
+  <meta property="og:description" content="AI staff, you decide. A staff of AI agents for each of your businesses, on your Mac.">
+  <meta property="og:image" content="https://tomonchain.github.io/airth/img/team-dark.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1011">
+  <style>
+    /* The app's tokens (docs/design/DESIGN.md): dark first, light when the system is light. */
+    :root {
+      color-scheme: dark light;
+      --bg: #0f1011; --panel: #17181a; --card: #1d1f22; --line: #2a2d31;
+      --text: #ecedee; --text-2: #c2c7ce; --text-3: #a3a9b1; --text-4: #8b929b;
+      --accent: #8fa6ff; --accent-hover: #b8c6ff; --ok: #5bd08d; --warn: #f5b353;
+      --button-bg: #ecedee; --button-text: #0f1011;
+      --logo-from: #f4f4f5; --logo-mid: #a3a3a8; --logo-to: #5c5c61;
+      --shadow: 0 30px 80px -20px rgb(0 0 0 / .6);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff; --panel: #f4f4f5; --card: #fafafa; --line: #e4e4e7;
+        --text: #09090b; --text-2: #3f3f46; --text-3: #5f5f66; --text-4: #71717a;
+        --accent: #3b5bdb; --accent-hover: #2f49b0; --ok: #15803d; --warn: #b45309;
+        --button-bg: #09090b; --button-text: #ffffff;
+        --logo-from: #8f8f94; --logo-mid: #5c5c61; --logo-to: #2e2e32;
+        --shadow: 0 30px 80px -30px rgb(0 0 0 / .25);
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+    @media (max-width: 600px) { .wrap { padding: 0 16px; } }
+
+    header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+    header .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+    .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; font-size: 17px; }
+    .brand:hover { color: var(--text); }
+    header nav { margin-left: auto; display: flex; gap: 24px; font-size: 14px; }
+    header nav a { color: var(--text-3); }
+    header nav a:hover { color: var(--text); }
+    @media (max-width: 600px) { header nav .optional { display: none; } }
+
+    .hero { padding-top: 96px; padding-bottom: 56px; text-align: center; }
+    .hero h1 { margin: 0 auto; max-width: 14ch; font-size: clamp(40px, 7vw, 72px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 650; }
+    .hero .tagline { margin: 16px 0 0; font-size: clamp(20px, 2.6vw, 26px); color: var(--text-3); font-weight: 500; letter-spacing: -0.01em; }
+    .hero .lead { margin: 24px auto 0; max-width: 60ch; font-size: 18px; color: var(--text-2); }
+    .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 36px; }
+    .button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 12px; font-weight: 600; font-size: 15px; border: 1px solid var(--line); color: var(--text); background: var(--card); }
+    .button:hover { color: var(--text); border-color: var(--text-4); }
+    .button.primary { background: var(--button-bg); color: var(--button-text); border-color: var(--button-bg); }
+    .button.primary:hover { color: var(--button-text); opacity: .9; }
+    .note { margin-top: 16px; font-size: 13px; color: var(--text-4); }
+
+    .shot { margin: 56px auto 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--panel); }
+    .shot img { display: block; width: 100%; height: auto; }
+    figcaption { margin-top: 14px; text-align: center; font-size: 13px; color: var(--text-4); }
+
+    section { padding: 88px 0; }
+    section + section { border-top: 1px solid var(--line); }
+    .label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin: 0 0 12px; }
+    h2 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.15; letter-spacing: -0.02em; font-weight: 650; max-width: 22ch; }
+    .intro { margin: 16px 0 0; max-width: 62ch; color: var(--text-2); font-size: 17px; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 40px; counter-reset: step; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 40px; }
+    @media (max-width: 900px) { .steps, .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 600px) { .steps, .grid { grid-template-columns: minmax(0, 1fr); } }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px; }
+    .card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+    .card p { margin: 0; color: var(--text-3); font-size: 15px; }
+    .steps .card::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 16px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); font-weight: 600; font-size: 14px; color: var(--text-2); }
+
+    .levels { margin-top: 40px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+    .level { display: grid; grid-template-columns: 56px 200px 1fr; align-items: baseline; gap: 16px; padding: 18px 24px; background: var(--panel); }
+    .level + .level { border-top: 1px solid var(--line); }
+    .level .n { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-4); }
+    .level strong { font-weight: 600; }
+    .level span:last-child { color: var(--text-3); font-size: 15px; }
+    @media (max-width: 600px) { .level { grid-template-columns: 40px 1fr; } .level span:last-child { grid-column: 2; } }
+    .fixed { margin-top: 20px; padding: 16px 20px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); color: var(--text-2); font-size: 15px; }
+
+    .blocks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+    .blocks span { padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 14px; color: var(--text-2); }
+
+    .install { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 40px; }
+    @media (max-width: 900px) { .install { grid-template-columns: minmax(0, 1fr); } }
+    .install .card p + p { margin-top: 12px; }
+    .install .actions { justify-content: flex-start; margin-top: 20px; }
+    pre { margin: 16px 0 0; padding: 16px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); overflow-x: auto; color: var(--text-2); line-height: 1.7; }
+    pre .c { color: var(--text-4); }
+
+    footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--text-4); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+    footer nav { margin-left: auto; display: flex; gap: 20px; }
+    footer a { color: var(--text-3); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <!-- The ring, defined once and drawn wherever the logo appears. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" style="stop-color: var(--logo-from)"/>
+        <stop offset=".55" style="stop-color: var(--logo-mid)"/>
+        <stop offset="1" style="stop-color: var(--logo-to)"/>
+      </linearGradient>
+      <symbol id="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="22" fill="none" stroke="url(#ring)" stroke-width="12"/></symbol>
+    </defs>
+  </svg>
+
+  <header>
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="Airth, top of the page"><svg width="26" height="26" aria-hidden="true"><use href="#logo"/></svg>Airth</a>
+      <nav aria-label="Sections">
+        <a class="optional" href="#how">How it works</a>
+        <a class="optional" href="#autonomy">You decide</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/tomonchain/airth">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap hero">
+      <h1>Your online company HQ.</h1>
+      <p class="tagline">AI staff, you decide.</p>
+      <p class="lead">Airth gives each of your online businesses a staff of AI agents, organised by department. They do the work. You set the goal and decide whatever commits the business.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/tomonchain/airth/releases/latest">Download for Mac</a>
+        <a class="button" href="https://github.com/tomonchain/airth">View on GitHub</a>
+      </div>
+      <p class="note">Free to use · fair source · runs on your Mac, with your own model keys</p>
+      <figure class="shot" style="margin-bottom:0">
+        <picture>
+          <source srcset="img/team-light.jpg" media="(prefers-color-scheme: light)">
+          <img src="img/team-dark.jpg" width="2560" height="1600" alt="Airth's Team page: a business's agents listed by department, Leadership and Marketing, with the Chief of staff open and its mission.">
+        </picture>
+      </figure>
+    </div>
+
+    <section id="how">
+      <div class="wrap">
+        <p class="label">How it works</p>
+        <h2>Run a company the way a founder should.</h2>
+        <p class="intro">Each business in Airth is a company: its own folder, data, secrets and team. The HQ shows you all of them at once, and what each one needs from you.</p>
+        <div class="steps">
+          <div class="card">
+            <h3>Describe the business</h3>
+            <p>What it does, for whom, how it sounds, and where it is going. The agents work from what you write, in plain files you can edit.</p>
+          </div>
+          <div class="card">
+            <h3>Hire a team</h3>
+            <p>Install a ready team from the Marketplace, Media or E-commerce, or hire agents one role at a time. Each agent has a mission, routines and its own rights.</p>
+          </div>
+          <div class="card">
+            <h3>Decide what matters</h3>
+            <p>Drafts, replies and anything that commits the business wait in Needs you, on the web or on your phone through Telegram. Approve, edit or reject.</p>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Businesses kept apart</h3>
+            <p>No agent works for two businesses, and no data crosses between them. Each one has its own database, out of the agents' reach.</p>
+          </div>
+          <div class="card">
+            <h3>Routines you can read</h3>
+            <p>Recurring work is a graph of blocks you see and edit: read a source, ask the AI, wait for you, act. The model never holds the tools that act.</p>
+          </div>
+          <div class="card">
+            <h3>Missions on demand</h3>
+            <p>Ask the team for anything from the command bar. The right agent takes it, works in its sandbox, and brings back the result for review.</p>
+          </div>
+          <div class="card">
+            <h3>Budgets that stop the work</h3>
+            <p>A monthly budget per business and per agent. Every model call is recorded with its cost, and the work stops when the budget is reached.</p>
+          </div>
+          <div class="card">
+            <h3>Your keys, your models</h3>
+            <p>Claude, GPT, Grok, DeepSeek, Mistral, OpenRouter, or a local model with Ollama. Credentials stay with Airth and never reach the model.</p>
+          </div>
+          <div class="card">
+            <h3>Your time, measured</h3>
+            <p>Airth records the time you spend on each business and the cost of its agents, so you can see whether the team really saves you work.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="autonomy">
+      <div class="wrap">
+        <p class="label">You decide</p>
+        <h2>Agents earn their freedom, one action at a time.</h2>
+        <p class="intro">Every action an agent can take has a level. Reads and reversible changes start free; anything that commits the business starts at Propose. Only you raise a level, and an incident lowers it on its own.</p>
+        <div class="levels" role="list">
+          <div class="level" role="listitem"><span class="n">0</span><strong>Prepare</strong><span>The agent prepares the action. You carry it out.</span></div>
+          <div class="level" role="listitem"><span class="n">1</span><strong>Propose</strong><span>It waits in Needs you. You approve, edit or reject.</span></div>
+          <div class="level" role="listitem"><span class="n">2</span><strong>Act with delay</strong><span>The agent acts after a window in which you can cancel.</span></div>
+          <div class="level" role="listitem"><span class="n">3</span><strong>Act</strong><span>The agent acts, then reports.</span></div>
+        </div>
+        <p class="fixed">Payments, refunds, contracts, merging code and deploying to production never go past Propose. You always have the last word on them.</p>
+
+        <figure class="shot">
+          <picture>
+            <source srcset="img/routine-light.jpg" media="(prefers-color-scheme: light)">
+            <img src="img/routine-dark.jpg" width="2560" height="1600" loading="lazy" alt="Airth's routine editor: a routine drawn as linked blocks, Trigger, Read, AI and Act, with the blocks to add on the left and the routine's agent on the right.">
+          </picture>
+        </figure>
+        <figcaption>A routine in the editor. Six blocks cover the work:</figcaption>
+        <div class="blocks" style="justify-content:center">
+          <span>Trigger</span><span>Read</span><span>AI</span><span>Condition</span><span>Approval</span><span>Act</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="wrap">
+        <p class="label">Install</p>
+        <h2>Start in a few minutes.</h2>
+        <p class="intro">You need a Mac and a key from a model provider, Anthropic or another. A guide sets up your first business, its first agent and its first routine.</p>
+        <div class="install">
+          <div class="card">
+            <h3>Download the app</h3>
+            <p>Open the disk image and drag Airth to Applications. It then offers each new version on its own.</p>
+            <p>The app is not signed by Apple yet: the first time, open it with right-click, then Open.</p>
+            <div class="actions"><a class="button primary" href="https://github.com/tomonchain/airth/releases/latest">Download for Mac</a></div>
+          </div>
+          <div class="card">
+            <h3>Or build it from source</h3>
+            <p>With <a href="https://rustup.rs">Rust</a> installed:</p>
+<pre><code>git clone https://github.com/tomonchain/airth
+cd airth
+cargo install --path .
+airth secret set ANTHROPIC_API_KEY --all-realms
+airth service install   <span class="c"># starts at login, adds Airth.app</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>Made by Hedgen Ltd. Free to use under the <a href="https://github.com/tomonchain/airth/blob/main/LICENSE.md">Functional Source License</a>; each version becomes Apache 2.0 after two years.</span>
+      <nav aria-label="Links">
+        <a href="https://github.com/tomonchain/airth">GitHub</a>
+        <a href="https://github.com/tomonchain/airth/releases">Releases</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
