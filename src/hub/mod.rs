@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub(crate) mod autonomy;
-pub(crate) mod budget;
+mod budget;
 mod changes;
 mod config_check;
 mod delegation;
