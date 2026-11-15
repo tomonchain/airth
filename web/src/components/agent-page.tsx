@@ -33,6 +33,12 @@ const SECTIONS = [
 ] as const
 type Section = (typeof SECTIONS)[number]["id"]
 
+type Form = { firstName: string; title: string; department: string; job: string }
+/** Profile drafts not saved yet, by business and agent: leaving the page
+    or switching agent keeps them, until saved or undone. */
+const drafts = new Map<string, Form>()
+const draftKey = (realm: string, agent: string) => `${realm}/${agent}`
+
 /** An agent: its conversation first, as a chat is; Edit opens what it is
     and what it may do, section by section (decision 140). */
 export function AgentPage({ realm, agent, agents, departments, tasks, narrow, onAgent, onDone, onSaved, onGone, onBack }: {
@@ -53,7 +59,10 @@ export function AgentPage({ realm, agent, agents, departments, tasks, narrow, on
             <span className="block truncate text-xs text-muted-foreground">{departmentName(agent.department)} · {STATE[agent.state]}</span>
           </span>
         </button>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Settings2 />Edit</Button>
+        <Button variant="outline" size="sm" className="relative" onClick={() => setEditing(true)}>
+          <Settings2 />Edit
+          {drafts.has(draftKey(realm, agent.name)) && <span className="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-background bg-amber-500" aria-label="unsaved changes" />}
+        </Button>
       </header>
       <Conversation key={agent.name} realm={realm} agent={agent} agents={agents} onAgent={onAgent} tasks={tasks} onDone={onDone} />
     </div>
@@ -71,6 +80,15 @@ function AgentEditor({ realm, agent, departments, narrow, onClose, onSaved, onGo
   const [asking, setAsking] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const leave = () => (dirty ? setAsking(true) : onClose())
+
+  // Closing or reloading the window with a draft asks first; leaving
+  // within Airth keeps the draft instead (see drafts).
+  useEffect(() => {
+    if (!dirty) return
+    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener("beforeunload", onUnload)
+    return () => window.removeEventListener("beforeunload", onUnload)
+  }, [dirty])
 
   // Escape goes back to the conversation, unless the founder is typing.
   useEffect(() => {
@@ -166,7 +184,7 @@ function AgentEditor({ realm, agent, departments, narrow, onClose, onSaved, onGo
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAsking(false)}>Keep editing</Button>
-            <Button variant="destructive" onClick={() => { setAsking(false); onClose() }}>Discard</Button>
+            <Button variant="destructive" onClick={() => { drafts.delete(draftKey(realm, agent.name)); setAsking(false); onClose() }}>Discard</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -204,23 +222,29 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
   const share = month?.cap ? month.spent / month.cap : 0
   const last = agent.routines.map((r) => r.last?.at ?? "").sort().at(-1)
 
-  const saved = { firstName: agent.first_name ?? "", title: agent.title, department: agent.department ?? "", job: agent.body || agent.job || "" }
-  const [form, setForm] = useState(saved)
+  const saved: Form = { firstName: agent.first_name ?? "", title: agent.title, department: agent.department ?? "", job: agent.body || agent.job || "" }
+  const draft = draftKey(realm, agent.name)
+  const [form, setForm] = useState<Form>(() => drafts.get(draft) ?? saved)
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const dirty = form.firstName.trim() !== saved.firstName || form.title !== saved.title || form.department !== saved.department || form.job !== saved.job
+  // The server trims what it stores, so spaces alone change nothing.
+  const dirty = form.firstName.trim() !== saved.firstName || form.title.trim() !== saved.title || form.department !== saved.department || form.job.trim() !== saved.job.trim()
   useEffect(() => onDirty(dirty), [dirty, onDirty])
+  useEffect(() => { if (dirty) drafts.set(draft, form); else drafts.delete(draft) }, [dirty, form, draft])
   // What was saved elsewhere comes in, unless the founder is mid-edit.
   const key = JSON.stringify(saved)
   useEffect(() => { if (!dirty) setForm(saved) }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }))
+  const set = (k: keyof Form) => (v: string) => setForm((f) => ({ ...f, [k]: v }))
   const valid = form.title.trim() && form.job.trim() && form.department
 
   async function save() {
     setBusy(true)
     try {
-      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title: form.title, first_name: form.firstName.trim(), department: form.department, job: form.job }, "PUT")
-      toast.success(`${form.firstName.trim() || form.title} is saved.`)
+      const sent: Form = { firstName: form.firstName.trim(), title: form.title.trim(), department: form.department, job: form.job.trim() }
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { title: sent.title, first_name: sent.firstName, department: sent.department, job: sent.job }, "PUT")
+      setForm(sent)
+      drafts.delete(draft)
+      toast.success(`${sent.firstName || sent.title} is saved.`)
       onSaved()
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
