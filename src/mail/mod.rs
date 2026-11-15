@@ -102,10 +102,21 @@ pub(crate) fn valid_address(a: &str) -> bool {
     let Some((local, domain)) = a.split_once('@') else {
         return false;
     };
+    // The domain is a host name of two labels or more, none of them empty.
+    let labels: Vec<&str> = domain.split('.').collect();
     !local.is_empty()
-        && domain.contains('.')
+        && labels.len() >= 2
+        && labels.iter().all(|l| {
+            !l.is_empty()
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+        && !local.starts_with('.')
+        && !local.ends_with('.')
+        && !local.contains("..")
         && !a.contains(char::is_whitespace)
-        && !a.contains(['<', '>', '"', ',', ';'])
+        && !local.contains(['<', '>', '"', ',', ';', '@'])
 }
 
 /// A TLS connection to `host`, its certificate checked against the
@@ -619,5 +630,30 @@ mod tests {
             "{:?}",
             config.broken
         );
+    }
+
+    #[test]
+    fn an_address_is_one_local_part_at_one_host_name() {
+        for ok in [
+            "support@n.example",
+            "first.last@mail.n-a.example",
+            "a+b@x.co",
+        ] {
+            assert!(valid_address(ok), "{ok}");
+        }
+        for bad in [
+            "a@@example.com",
+            "a@.example.com",
+            "a@example.",
+            "a@example",
+            "@example.com",
+            ".a@example.com",
+            "a..b@example.com",
+            "a@-x.example",
+            "a b@example.com",
+            "a@b.example\r\nBcc: x@y.example",
+        ] {
+            assert!(!valid_address(bad), "{bad}");
+        }
     }
 }

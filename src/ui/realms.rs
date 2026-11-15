@@ -468,6 +468,37 @@ impl App {
                 }
                 json_response(200, self.realm_detail(&realm)?)
             }
+            // The roles' mailboxes (decision 70): which agent has one, on
+            // which server, whether its password is set, and what it read.
+            (Method::Get, ["realms", r, "mailboxes"]) => {
+                json_response(200, json!({"mailboxes": mailboxes(&self.realm(r)?)?}))
+            }
+            // A role's address, and its password, kept as a secret no
+            // command or model sees; an empty address removes the mailbox.
+            (Method::Put, ["realms", r, "mailboxes", agent]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                set_mailbox(
+                    &realm,
+                    agent,
+                    body["address"].as_str().unwrap_or_default(),
+                    body["password"].as_str().unwrap_or_default(),
+                )?;
+                json_response(200, json!({"mailboxes": mailboxes(&realm)?}))
+            }
+            // Read a mailbox now: the login is checked, and new mail kept.
+            (Method::Post, ["realms", r, "mailboxes", agent, "read"]) => {
+                let realm = self.realm(r)?;
+                let mailbox = crate::mail::Mailbox::of(&realm.root()?, agent)?
+                    .with_context(|| format!("{agent} has no mailbox"))?;
+                let password = realm
+                    .secret(&mailbox.secret())
+                    .context("set the mailbox's password first")?;
+                let mut store = crate::business::store::Store::of(&realm)?;
+                let kept = crate::mail::fetch(&mailbox, &password, &mut store)?;
+                crate::mail::flag_bank_changes(&mut store, &mailbox, &kept)?;
+                json_response(200, json!({"kept": kept.len()}))
+            }
             (Method::Get, ["realms", r, "repos"]) => {
                 json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
             }
@@ -1152,4 +1183,83 @@ impl App {
         );
         Ok(value)
     }
+}
+
+/// Give `agent` the mailbox `address` (empty removes it) and, if given, its
+/// password. An address belongs to one agent only: mail is read once per
+/// address, so a second agent on it would never see a mail. A password is
+/// for one address: changing the address without a new one drops it.
+pub(super) fn set_mailbox(realm: &Realm, agent: &str, address: &str, password: &str) -> Result<()> {
+    let root = realm.root()?;
+    let address = address.trim();
+    let before = crate::mail::Mailbox::of(&root, agent).ok().flatten();
+    if !address.is_empty() {
+        for (other, _) in crate::business::bots(&root)? {
+            if other == agent {
+                continue;
+            }
+            if let Ok(Some(m)) = crate::mail::Mailbox::of(&root, &other)
+                && m.address.eq_ignore_ascii_case(address)
+            {
+                bail!("{address} is already {other}'s mailbox");
+            }
+        }
+    }
+    crate::business::set_agent_field(&root, agent, "mailbox", address, &realm.config.departments)?;
+    let secret = password_secret(agent);
+    if !password.is_empty() {
+        realm.set_secret(&secret, password)?;
+    } else if before.is_some_and(|b| !b.address.eq_ignore_ascii_case(address)) {
+        realm.remove_secret(&secret)?;
+    }
+    Ok(())
+}
+
+/// The realm secret holding `agent`'s mailbox password, as `Mailbox::secret`
+/// names it, for an agent whose file may not name a valid mailbox.
+fn password_secret(agent: &str) -> String {
+    format!(
+        "{}{}",
+        crate::mail::SECRET_PREFIX,
+        agent.to_uppercase().replace('-', "_")
+    )
+}
+
+/// Each agent with what its mailbox holds: the address and server, whether
+/// its password is set (never the password), and the last mail kept.
+pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
+    let root = realm.root()?;
+    let store = crate::business::store::Store::of(realm)?;
+    let mut out = Vec::new();
+    for (agent, _) in crate::business::bots(&root)? {
+        let front = std::fs::read_to_string(root.join("agents").join(format!("{agent}.md")))
+            .map(|t| crate::frontmatter::parse(&t))
+            .ok();
+        let title = front
+            .as_ref()
+            .and_then(|f| f.text("title"))
+            .unwrap_or_else(|| agent.clone());
+        // A mailbox the agent's file gets wrong is shown with what is wrong,
+        // never as no mailbox.
+        let (address, server, password, last, error) = match crate::mail::Mailbox::of(&root, &agent)
+        {
+            Ok(Some(m)) => (
+                Some(m.address.clone()),
+                Some(m.imap_host.clone()),
+                realm.secret(&m.secret()).is_some(),
+                store.mails(&m.address, 1)?.pop().map(|k| k.fetched_at),
+                None,
+            ),
+            Ok(None) => (None, None, false, None, None),
+            Err(e) => (
+                front.as_ref().and_then(|f| f.text("mailbox")),
+                None,
+                realm.secret(&password_secret(&agent)).is_some(),
+                None,
+                Some(format!("{e:#}")),
+            ),
+        };
+        out.push(json!({"agent": agent, "title": title, "address": address, "server": server, "password": password, "last": last, "error": error}));
+    }
+    Ok(out)
 }

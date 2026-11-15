@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
+import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Mail, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Back, Loading, Panel, SideHead } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -18,8 +18,9 @@ import { DriveConnection } from "@/screens/settings-drive"
 import { McpServers } from "@/screens/settings-mcp"
 import { Business, Departments, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
+import { Mailboxes } from "@/screens/settings-mail"
 
-export type Section = "account" | "business" | "departments" | "models" | "keys" | "connections" | "permissions" | "repositories" | "memory" | "phone" | "about"
+export type Section = "account" | "business" | "departments" | "models" | "keys" | "connections" | "mailboxes" | "permissions" | "repositories" | "memory" | "phone" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "business", label: "Business", icon: Building2 },
@@ -27,6 +28,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "models", label: "Models", icon: Cpu },
   { id: "keys", label: "Keys", icon: KeyRound },
   { id: "connections", label: "Connections", icon: Plug },
+  { id: "mailboxes", label: "Mailboxes", icon: Mail },
   { id: "permissions", label: "Permissions", icon: Shield },
   { id: "repositories", label: "Repositories", icon: FolderGit2 },
   { id: "memory", label: "Memory", icon: Brain },
@@ -86,6 +88,7 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
             : section === "models" ? <Models realm={realm} onKeys={() => setSection("keys")} />
             : section === "keys" ? <Keys realm={realm} />
             : section === "connections" ? <Connections realm={realm} />
+            : section === "mailboxes" ? <Mailboxes realm={realm} />
             : section === "permissions" ? <Permissions realm={realm} />
             : section === "repositories" ? <Repositories realm={realm} onKeys={() => setSection("keys")} />
             : section === "phone" ? <Phone />

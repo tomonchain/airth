@@ -254,6 +254,9 @@ impl App {
                     | ["realms", _, "orders", "route"]
                     | ["realms", _, "connect"]
                     | ["realms", _, "connectors", ..]
+                    // Reading a mailbox waits on its server; what it reads
+                    // goes to the store, not the settings.
+                    | ["realms", _, "mailboxes", _, "read"]
             );
         let _writes = (!concurrent).then(|| self.write_lock());
         let areas = [
@@ -632,6 +635,81 @@ mod tests {
         assert!(format!("{err:#}").contains("weekly-article"), "{err:#}");
         realms::let_go(&realm, "analyst").unwrap();
         assert_eq!(crate::business::bots(&root).unwrap().len(), 1);
+    }
+
+    /// Decision 70: Settings shows each role's mailbox, and whether its
+    /// password is set, never the password; a wrong address is refused.
+    #[test]
+    fn mailboxes_show_whether_a_password_is_set_never_the_password() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "support", "Answer.").unwrap();
+        crate::business::set_agent_field(&root, "support", "title", "Support", &[]).unwrap();
+        assert!(
+            crate::business::set_agent_field(&root, "support", "mailbox", "not mail", &[]).is_err()
+        );
+        crate::business::set_agent_field(&root, "support", "mailbox", "support@n.example", &[])
+            .unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert_eq!(shown[0]["address"], "support@n.example");
+        assert_eq!(
+            (shown[0]["title"].as_str(), shown[0]["password"].as_bool()),
+            (Some("Support"), Some(false))
+        );
+        realm
+            .set_secret("MAIL_PASSWORD_SUPPORT", "s3cret-pass")
+            .unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert_eq!(shown[0]["password"], true);
+        assert!(
+            !serde_json::to_string(&shown)
+                .unwrap()
+                .contains("s3cret-pass")
+        );
+        // An address is one agent's only.
+        crate::business::set_job(&root, "sales", "Sell.").unwrap();
+        let err = realms::set_mailbox(&realm, "sales", "Support@n.example", "").unwrap_err();
+        assert!(format!("{err:#}").contains("support's mailbox"), "{err:#}");
+        // A password goes with its address: a new address drops it.
+        realms::set_mailbox(&realm, "support", "support@n.example", "").unwrap();
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_some());
+        realms::set_mailbox(&realm, "support", "help@n.example", "").unwrap();
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
+        realms::set_mailbox(&realm, "support", "help@n.example", "new-pass").unwrap();
+        // A wrong mailbox in the agent's file is shown with what is wrong.
+        let file = root.join("agents/support.md");
+        let good = std::fs::read_to_string(&file).unwrap();
+        let bad = good.replace(
+            "mailbox: help@n.example",
+            "mailbox: help@n.example\nmail_server: bad host!",
+        );
+        assert_ne!(good, bad);
+        std::fs::write(&file, bad).unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        let support = shown.iter().find(|b| b["agent"] == "support").unwrap();
+        assert_eq!(support["address"], "help@n.example");
+        assert!(
+            support["error"]
+                .as_str()
+                .unwrap()
+                .contains("not a host name")
+        );
+        assert_eq!(support["password"], true);
+        std::fs::write(&file, good).unwrap();
+        // An empty address removes the mailbox, and its password.
+        realms::set_mailbox(&realm, "support", "", "").unwrap();
+        let shown = realms::mailboxes(&realm).unwrap();
+        assert!(shown.iter().all(|b| b["address"].is_null()));
+        assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
     }
 
     /// A routine made in the app names a hired bot and the business's own
