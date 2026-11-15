@@ -102,6 +102,24 @@ impl Hub {
         retrying: Option<(&str, i64)>,
     ) -> Result<Ran> {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
+        // Past the business's monthly budget (decision 139), no routine
+        // starts, however started; one under way (after an approval, a
+        // mission or a redo) goes on to its end, so nothing it began is
+        // lost. A failure to read the spend stops nothing.
+        let fresh = matches!(
+            start,
+            crate::routine::run::Start::Trigger | crate::routine::run::Start::Event(_)
+        );
+        if fresh {
+            match self.month_allows(realm, None, Utc::now()) {
+                Err(e) if super::budget::cap_reached(&e) => return Err(e),
+                Err(e) => eprintln!(
+                    "routine {}/{name}: the monthly budget was not read: {e:#}",
+                    realm.name()
+                ),
+                Ok(_) => {}
+            }
+        }
         let root = realm.root()?;
         let context = routine_context(realm)?;
         let workspace = Workspace::new(&root)?
@@ -1080,6 +1098,10 @@ impl Hub {
             self.run_routine(realm, name, &run, crate::routine::run::Start::Trigger, None)
         };
         let mut outcome = attempt();
+        // Past the month's budget (decision 139), a routine waits: the
+        // founder was told once, so this is no incident of its own, and
+        // no try again.
+        let waits = |o: &Result<Ran>| o.as_ref().err().is_some_and(super::budget::cap_reached);
         // At its time, a run that failed is tried again before it becomes an
         // incident (decision 81): an act never runs twice for one item, so
         // what the first try did is not done again. Not a file that does not
@@ -1090,23 +1112,31 @@ impl Hub {
             self.with_routine_checks(realm, |c| crate::routine::load(c, name))
                 .is_ok()
         };
-        if due.is_some() && outcome.is_err() && loads() {
+        if !waits(&outcome) && due.is_some() && outcome.is_err() && loads() {
             for wait in ROUTINE_RETRY_WAITS {
                 std::thread::sleep(wait);
                 tries += 1;
                 outcome = attempt();
-                if outcome.is_ok() {
+                if outcome.is_ok() || waits(&outcome) {
                     break;
                 }
             }
         }
-        let notes = if tries > 1 {
+        let waited = waits(&outcome);
+        let notes = if waited {
+            "waited: the monthly budget is reached".to_string()
+        } else if tries > 1 {
             format!("tried {tries} times")
         } else {
             String::new()
         };
         let error = outcome.as_ref().err().map(|e| format!("{e:#}"));
         let report = outcome.ok().map(|ran| ran.text);
+        // A routine that waited leaves a heartbeat, not a failure.
+        let (error, waits) = match waited {
+            true => (None, error),
+            false => (error, None),
+        };
         let beat = crate::business::store::pipelines::Heartbeat {
             pipeline: &format!("routine:{name}"),
             due,
@@ -1143,9 +1173,10 @@ impl Hub {
                 );
             }
         }
-        match error {
-            Some(e) => Err(e),
-            None => Ok(report.unwrap_or_default()),
+        match (error, waits) {
+            (Some(e), _) => Err(e),
+            (None, Some(w)) => Err(w),
+            (None, None) => Ok(report.unwrap_or_default()),
         }
     }
 }

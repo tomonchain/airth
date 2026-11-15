@@ -12,6 +12,9 @@ impl Hub {
         let root = realm.root()?;
         let job = crate::business::job(&root, agent)?;
         let scope = crate::business::scope(&root, agent)?;
+        // No more than the month's budgets leave (decision 139); none when
+        // one is reached.
+        let left = self.month_allows(realm, Some(agent), Utc::now())?;
         // One repository per task: the first its agent declares.
         let repo = scope.repos.first().map(String::as_str);
         let mut state = self.create_run_in(realm, order, repo)?;
@@ -25,6 +28,7 @@ impl Hub {
         ))];
         state.tools = Some(scope.integrations.into_iter().chain(scope.skills).collect());
         let (minutes, cost) = crate::business::task_budget(&root);
+        let cost = left.map_or(cost, |l| cost.min(l));
         state.budget = crate::agent::Budget {
             max_minutes: Some(minutes),
             max_cost_usd: Some(cost),

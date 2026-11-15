@@ -15,6 +15,8 @@ const PROFILE: &[&str] = &[
     "currency", "bank", "domain", "links",
     // A task's budget (decision 64): optional, with defaults.
     "task_max_minutes", "task_max_cost_usd",
+    // A cap on the month's model cost (decision 139): optional.
+    "monthly_max_cost_usd",
     // The last confirmation statement's date, when filed early, and how
     // many days ahead deadlines are reminded (decision 66).
     "confirmation_date", "reminders",
@@ -23,6 +25,7 @@ const PROFILE: &[&str] = &[
 const PROFILE_OPTIONAL: &[&str] = &[
     "task_max_minutes",
     "task_max_cost_usd",
+    "monthly_max_cost_usd",
     "confirmation_date",
     "reminders",
 ];
@@ -46,6 +49,8 @@ const AGENT: &[&str] = &[
     "dispatch",
     // A mailbox's server, when not OVH's (decision 70).
     "mail_server", "imap_port", "smtp_port",
+    // A cap on its tasks' model cost each month (decision 139).
+    "monthly_max_cost_usd",
 ];
 
 #[derive(Debug, Default)]
@@ -312,6 +317,22 @@ fn date(d: &Doc, key: &str) -> Result<()> {
 }
 
 /// Each check refuses a wrong value and says which fields are expected.
+/// A monthly budget (decision 139) that is not a number above 0 is
+/// refused, so a typo never lifts the cap without a word.
+fn monthly_cap(d: &Doc) -> Result<()> {
+    if let Some(v) = d
+        .text("monthly_max_cost_usd")
+        .filter(|v| !v.trim().is_empty())
+        && !v
+            .trim()
+            .parse::<f64>()
+            .is_ok_and(|n| n.is_finite() && n > 0.0)
+    {
+        bail!("monthly_max_cost_usd '{v}' is not a number of dollars above 0");
+    }
+    Ok(())
+}
+
 fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
     one_of(d, "status", &["planned", "registered"])?;
     if let Some(c) = d.text("country")
@@ -326,6 +347,7 @@ fn check_profile(d: &Doc) -> Result<Vec<&'static str>> {
             bail!("reminders '{days}' is not a number of days: [30, 7]");
         }
     }
+    monthly_cap(d)?;
     if let Some(v) = d.text("fiscal_year_end") {
         NaiveDate::parse_from_str(&format!("2024-{v}"), "%Y-%m-%d")
             .with_context(|| format!("fiscal_year_end '{v}' is not a month and day like 03-31"))?;
@@ -375,6 +397,7 @@ fn check_agent(d: &Doc, own: &[String]) -> Result<Vec<&'static str>> {
     if let Some(v) = d.text("department") {
         department(&v, own)?;
     }
+    monthly_cap(d)?;
     Ok(vec!["title", "department"])
 }
 

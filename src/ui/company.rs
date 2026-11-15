@@ -42,6 +42,37 @@ impl App {
                     .collect();
                 json_response(200, json!({ "lines": lines }))
             }
+            // The month's budgets (decision 139): the business's and each
+            // agent's cap, with what each spent.
+            (Method::Get, ["realms", r, "budgets"]) => json_response(
+                200,
+                self.hub
+                    .month_budgets(&self.realm(r)?, chrono::Utc::now())?,
+            ),
+            // Set or remove a cap: `{"agent": null | name, "cap": null | dollars}`.
+            (Method::Put, ["realms", r, "budgets"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                // Both fields, always: a body that forgets one never
+                // clears the business's cap by mistake.
+                let cap = match body.get("cap") {
+                    Some(Value::Null) => None,
+                    Some(v) => Some(v.as_f64().context("cap: a number of dollars, or null")?),
+                    None => anyhow::bail!("cap: a number of dollars, or null"),
+                };
+                let agent = match body.get("agent") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(a)) => Some(a.as_str()),
+                    _ => anyhow::bail!("agent: an agent's name, or null for the business"),
+                };
+                crate::business::set_monthly_cap(
+                    &realm.root()?,
+                    agent,
+                    cap,
+                    &realm.config.departments,
+                )?;
+                json_response(200, self.hub.month_budgets(&realm, chrono::Utc::now())?)
+            }
             // A Revolut statement the founder imports (decision 123): CSV,
             // as exported.
             (Method::Post, ["realms", r, "finance", "statement"]) => {

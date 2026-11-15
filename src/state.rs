@@ -281,8 +281,31 @@ pub struct State {
 
 impl State {
     pub fn new(objective: &str, runs_dir: Option<&Path>) -> Self {
-        let id = Utc::now().format("%Y%m%dT%H%M%S%.3fZ").to_string();
-        let path = runs_dir.map(|d| d.join(format!("{id}.json")));
+        // An id is the time to the millisecond; two runs started within
+        // one would share a file, the second erasing the first. Within
+        // this process, ids are handed out one at a time and always after
+        // the last one; against a file another process wrote, the next
+        // free millisecond is taken.
+        static LAST: std::sync::Mutex<Option<DateTime<Utc>>> = std::sync::Mutex::new(None);
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        let mut at = Utc::now();
+        if let Some(prev) = *last
+            && at.timestamp_millis() <= prev.timestamp_millis()
+        {
+            at = prev + chrono::Duration::milliseconds(1);
+        }
+        let free = |at: DateTime<Utc>| {
+            let id = at.format("%Y%m%dT%H%M%S%.3fZ").to_string();
+            let path = runs_dir.map(|d| d.join(format!("{id}.json")));
+            (id, path)
+        };
+        let (mut id, mut path) = free(at);
+        while path.as_ref().is_some_and(|p| p.exists()) {
+            at += chrono::Duration::milliseconds(1);
+            (id, path) = free(at);
+        }
+        *last = Some(at);
+        drop(last);
         Self {
             id,
             task: objective.to_string(),
@@ -419,6 +442,39 @@ fn is_zero(n: &u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runs_started_at_once_on_threads_get_their_own_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let ids: Vec<String> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8)
+                .map(|i| s.spawn(move || State::new(&format!("run {i}"), Some(dir)).id))
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 8, "{ids:?}");
+    }
+
+    #[test]
+    fn runs_started_in_one_millisecond_keep_their_own_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ids: Vec<String> = (0..5)
+            .map(|i| {
+                let mut s = State::new(&format!("run {i}"), Some(dir.path()));
+                s.save().unwrap();
+                s.id
+            })
+            .collect();
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 5, "{ids:?}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 5);
+    }
 
     #[test]
     fn save_then_load_round_trips() {

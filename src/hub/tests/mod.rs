@@ -11,6 +11,7 @@ use serde_json::json;
 use std::sync::Mutex;
 
 mod autonomy;
+mod budget;
 mod changes;
 mod finance;
 mod founder;

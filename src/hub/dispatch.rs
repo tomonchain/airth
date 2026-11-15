@@ -335,7 +335,13 @@ impl Hub {
                 "{}{earlier}\n\n(Passed on by {}, from an order of the founder's; the founder approved this plan.)",
                 step.task, plan.from
             );
-            let mut state = self.start_task(realm, &step.agent, &order)?;
+            // Past a monthly budget (decision 139), this step and those after
+            // wait for the next pass; what started is kept in the plan.
+            let mut state = match self.start_task(realm, &step.agent, &order) {
+                Ok(state) => state,
+                Err(e) if super::budget::cap_reached(&e) => break,
+                Err(e) => return Err(e),
+            };
             state.dispatched_by = Some(plan.mark.clone());
             state.save()?;
             self.queue_hand_off(realm, &state.id)?;
