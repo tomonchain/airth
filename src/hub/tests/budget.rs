@@ -333,8 +333,8 @@ fn an_objective_waits_past_the_month_cap_too() {
         Some("waited: the monthly budget is reached")
     );
 
-    // Moving the objective to another bot later leaves the spend where it
-    // was: with the writer, the bot it ran for.
+    // Moving the objective off its bot later leaves the spend where it was:
+    // with the writer, the bot it ran for.
     f.realm
         .objectives()
         .update("weekly-article", |o| o.bot = None)

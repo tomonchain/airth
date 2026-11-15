@@ -32,7 +32,6 @@ impl Hub {
         // its bot's and the business's; none starts once one is reached.
         // Past one, this firing is skipped, as a routine's is: told once,
         // not tried again at every tick of the scheduler.
-        let _starting = super::budget::starting();
         let left = match self.month_allows(realm, objective.bot.as_deref(), now) {
             Ok(left) => left,
             Err(e) => {

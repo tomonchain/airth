@@ -59,15 +59,6 @@ pub fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
         .unwrap_or(now)
 }
 
-/// Held from a start's check of the month's budgets until its run is
-/// saved: two starts at once must not both take what is left.
-static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// The lock a start holds while it checks the month and saves its run.
-pub(super) fn starting() -> std::sync::MutexGuard<'static, ()> {
-    STARTING.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 /// The month's spend, read once: the business's and each agent's, and what
 /// running tasks may still spend.
 #[derive(Debug, Default)]
@@ -104,7 +95,9 @@ impl Hub {
             if let Some(agent) = &agent {
                 *m.agents.entry(agent.clone()).or_default() += spent;
             }
-            if state.status == Status::Running {
+            // Only a run that is driven now holds what it may still spend:
+            // one killed midway stays Running on disk, and promises nothing.
+            if state.status == Status::Running && self.is_live(realm, &state.id) {
                 let promised = state.budget.max_cost_usd.unwrap_or(0.0)
                     - crate::usage::run_cost(&state, &prices);
                 let promised = promised.max(0.0);

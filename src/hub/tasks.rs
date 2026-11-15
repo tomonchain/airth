@@ -14,7 +14,6 @@ impl Hub {
         let scope = crate::business::scope(&root, agent)?;
         // No more than the month's budgets leave (decision 139); none when
         // one is reached.
-        let _starting = super::budget::starting();
         let left = self.month_allows(realm, Some(agent), Utc::now())?;
         // One repository per task: the first its agent declares.
         let repo = scope.repos.first().map(String::as_str);
