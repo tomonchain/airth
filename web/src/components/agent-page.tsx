@@ -38,6 +38,9 @@ type Form = { firstName: string; title: string; department: string; job: string 
     or switching agent keeps them, until saved or undone. */
 const drafts = new Map<string, Form>()
 const draftKey = (realm: string, agent: string) => `${realm}/${agent}`
+// Closing or reloading the window while any draft waits asks first,
+// wherever in Airth the founder is; leaving a page within Airth keeps it.
+window.addEventListener("beforeunload", (e) => { if (drafts.size) e.preventDefault() })
 
 /** An agent: its conversation first, as a chat is; Edit opens what it is
     and what it may do, section by section (decision 140). */
@@ -80,15 +83,6 @@ function AgentEditor({ realm, agent, departments, narrow, onClose, onSaved, onGo
   const [asking, setAsking] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const leave = () => (dirty ? setAsking(true) : onClose())
-
-  // Closing or reloading the window with a draft asks first; leaving
-  // within Airth keeps the draft instead (see drafts).
-  useEffect(() => {
-    if (!dirty) return
-    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener("beforeunload", onUnload)
-    return () => window.removeEventListener("beforeunload", onUnload)
-  }, [dirty])
 
   // Escape goes back to the conversation, unless the founder is typing.
   useEffect(() => {
@@ -255,6 +249,7 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
     setBusy(true)
     try {
       await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, undefined, "DELETE")
+      drafts.delete(draft)
       toast.success(`${called(agent)} left the team.`)
       onGone()
     } catch (e) {
