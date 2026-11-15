@@ -58,11 +58,15 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   return (
     <div className="relative min-w-0 flex-1 overflow-y-auto">
       {lead && leadTasks.length > 0 && (
-        <Button size="sm" variant="ghost" className="absolute top-2 right-3 h-8 text-muted-foreground max-md:top-[68px]" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>
+        // On a phone, beside the logo: the slot New request takes in the conversation.
+        <Button size="sm" variant="ghost" aria-label="Conversation" onClick={() => setMode("thread")}
+          className="glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground">
+          <MessageSquare className="size-4 max-md:size-5" /><span className="max-md:hidden">Conversation</span>
+        </Button>
       )}
-      {/* On a phone the greeting and the box sit low, within the thumb's
-          reach, above the tab bar. */}
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-8 md:px-6 md:pb-24">
+      {/* On a phone the greeting and the box sit in the lower half, within
+          the thumb's reach, clear of the tab bar. */}
+      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>
