@@ -140,7 +140,9 @@ export default function App() {
     const at = order.indexOf(page)
     const next = at < 0 ? undefined : order[at + (to === "left" ? 1 : -1)]
     if (!next) return
-    setSlide({ from: to === "left" ? "right" : "left", at: Date.now() })
+    // Off for a frame, then on: a swipe during the last one's slide plays its own.
+    setSlide(null)
+    requestAnimationFrame(() => setSlide({ from: to === "left" ? "right" : "left", at: Date.now() }))
     setPage(next)
   }, [page])
   useSwipe(mainEl, narrow, onSwipe)

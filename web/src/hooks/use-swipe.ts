@@ -4,11 +4,11 @@ import { useEffect } from "react"
     sideways, or sits in a dialog or menu over the page. */
 function held(target: EventTarget | null, root: HTMLElement): boolean {
   for (let el = target as HTMLElement | null; el && el !== root; el = el.parentElement) {
-    if (el.matches("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-no-swipe]")) return true
+    if (el.matches("input, textarea, select, [contenteditable], [role=dialog], [role=alertdialog], [role=menu], [data-no-swipe]")) return true
     const x = getComputedStyle(el).overflowX
     if ((x === "auto" || x === "scroll") && el.scrollWidth > el.clientWidth) return true
   }
-  return !!document.querySelector("[role=dialog], [role=menu]")
+  return !!document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")
 }
 
 /** A sideways swipe on `root`: a quick, mostly horizontal stroke of at least
@@ -32,10 +32,12 @@ export function useSwipe(root: HTMLElement | null, enabled: boolean, onSwipe: (t
     }
     root.addEventListener("touchstart", down, { passive: true })
     root.addEventListener("touchend", up, { passive: true })
-    root.addEventListener("touchcancel", () => (start = null), { passive: true })
+    const cancel = () => { start = null }
+    root.addEventListener("touchcancel", cancel, { passive: true })
     return () => {
       root.removeEventListener("touchstart", down)
       root.removeEventListener("touchend", up)
+      root.removeEventListener("touchcancel", cancel)
     }
   }, [root, enabled, onSwipe])
 }
