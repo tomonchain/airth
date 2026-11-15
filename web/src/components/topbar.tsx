@@ -125,7 +125,7 @@ export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<button aria-label={`Airth: ${named(realm, realms.find((r) => r.name === realm)?.title)}, other businesses and the HQ`}
+        <DropdownMenuTrigger render={<button aria-label={`Airth: ${named(realm, realms.find((r) => r.name === realm)?.title)}, other businesses${others > 0 ? ` (${others} waiting)` : ""} and the HQ`}
           className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] left-3 z-40 grid size-11 place-items-center rounded-full transition-transform active:scale-95" />}>
           <AirthMark id="airth-mark-phone" />
           {/* Another business waits for the founder: said here, wherever they are. */}
