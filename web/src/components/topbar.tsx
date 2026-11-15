@@ -91,16 +91,14 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
 
 /** The businesses, then the HQ, a new business and the welcome guide: the
     business menu's items, on a computer and on a phone. */
-function BusinessItems({ realms, realm, onHq, onNewBusiness, phone }: { realms: Realm[]; realm: string; onHq: () => void; onNewBusiness: () => void; phone?: boolean }) {
-  // On a phone, rows a finger can hit.
-  const item = phone ? "gap-3 rounded-lg px-3 py-3 text-base [&_svg:not([class*='size-'])]:size-5" : undefined
+function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]; realm: string; onHq: () => void; onNewBusiness: () => void }) {
   return (
     <>
       {/* A label only holds inside a group: without one, opening the menu threw. */}
       <DropdownMenuGroup>
-        <DropdownMenuLabel className={cn(phone && "px-3 text-sm")}>Businesses</DropdownMenuLabel>
+        <DropdownMenuLabel>Businesses</DropdownMenuLabel>
         {realms.filter((r) => !r.archived).map((r) => (
-          <DropdownMenuItem key={r.name} className={item} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
+          <DropdownMenuItem key={r.name} onClick={() => (location.hash = `#/b/${encodeURIComponent(r.name)}`)}>
             <span className={cn("flex-1", r.name === realm && "font-semibold")}>{named(r.name, r.title)}</span>
             {r.needs_approval > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{r.needs_approval}</span>}
             {r.live > 0 && <span className="size-1.5 rounded-full bg-emerald-500" title="An agent is working" />}
@@ -109,9 +107,9 @@ function BusinessItems({ realms, realm, onHq, onNewBusiness, phone }: { realms: 
         ))}
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuItem className={item} onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
-      <DropdownMenuItem className={item} onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
-      <DropdownMenuItem className={item} onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
+      <DropdownMenuItem onClick={onHq}><Building /> HQ: all businesses</DropdownMenuItem>
+      <DropdownMenuItem onClick={onNewBusiness}><Plus /> New business</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => (location.hash = "#/welcome")}><Sparkles /> The welcome guide</DropdownMenuItem>
     </>
   )
 }
@@ -132,19 +130,77 @@ export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }
           {/* Another business waits for the founder: said here, wherever they are. */}
           {others > 0 && <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{others}</span>}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[min(20rem,calc(100vw-24px))] rounded-2xl p-1.5">
-          <BusinessItems realms={realms} realm={realm} onHq={onHq} onNewBusiness={onNewBusiness} phone />
-          {server && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="flex items-center gap-2 px-3 py-2.5 text-sm font-normal" title="This Airth's name, set in Settings, About"><Server className="size-4" /> {server}</DropdownMenuLabel>
-              </DropdownMenuGroup>
-            </>
-          )}
+        <DropdownMenuContent align="start" sideOffset={8} className="glass w-[min(18.5rem,calc(100vw-24px))] rounded-[22px] p-2">
+          <PhoneItems realms={realms} realm={realm} server={server} onHq={onHq} onNewBusiness={onNewBusiness} />
         </DropdownMenuContent>
       </DropdownMenu>
       <div className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] right-3 z-40 rounded-full empty:hidden"><UpdateNotice working={agents.filter((a) => a.state === "working").length} phone /></div>
+    </>
+  )
+}
+
+/** A business's mark: its initial on a tint drawn from its name, the same
+    on every visit. */
+function Badge({ r, size = 32 }: { r: Realm; size?: number }) {
+  const hue = [...r.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
+  return (
+    <span aria-hidden="true" className="grid shrink-0 place-items-center rounded-[10px] text-[13px] font-semibold text-white shadow-inner"
+      style={{ width: size, height: size, background: `linear-gradient(135deg, oklch(0.72 0.14 ${hue}), oklch(0.55 0.15 ${(hue + 40) % 360}))` }}>
+      {named(r.name, r.title).charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+/** The phone's business menu: the business open, the others to switch to,
+    then the HQ, a new business and the guide side by side. */
+function PhoneItems({ realms, realm, server, onHq, onNewBusiness }: { realms: Realm[]; realm: string; server: string | null; onHq: () => void; onNewBusiness: () => void }) {
+  const here = realms.find((r) => r.name === realm)
+  const others = realms.filter((r) => r.name !== realm && !r.archived)
+  const status = (r: Realm) => [r.needs_approval > 0 && `${r.needs_approval} waiting for you`, r.live > 0 && `${r.live} at work`].filter(Boolean).join(" · ") || "All quiet"
+  const go = (r: Realm) => (location.hash = `#/b/${encodeURIComponent(r.name)}`)
+  return (
+    <>
+      {here && (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex items-center gap-3 rounded-[14px] bg-foreground/[0.04] p-2.5 font-normal">
+            <Badge r={here} size={38} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-semibold text-foreground">{named(here.name, here.title)}</span>
+              <span className="block truncate text-xs text-muted-foreground">Open now{here.live > 0 && ` · ${here.live} at work`}</span>
+            </span>
+            <Check className="size-4 text-muted-foreground" />
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
+      )}
+      {others.length > 0 && (
+        <DropdownMenuGroup className="mt-1">
+          <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide uppercase">Switch to</DropdownMenuLabel>
+          {others.map((r) => (
+            <DropdownMenuItem key={r.name} onClick={() => go(r)} className="gap-3 rounded-[12px] px-2.5 py-2">
+              <Badge r={r} size={30} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px]">{named(r.name, r.title)}</span>
+                <span className="block truncate text-xs text-muted-foreground">{status(r)}</span>
+              </span>
+              {r.needs_approval > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">{r.needs_approval}</span>}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      )}
+      <DropdownMenuSeparator className="mx-1 my-2" />
+      <DropdownMenuGroup className="grid grid-cols-3 gap-1">
+        {([[Building, "HQ", onHq], [Plus, "New business", onNewBusiness], [Sparkles, "Guide", () => (location.hash = "#/welcome")]] as const).map(([Icon, label, onClick]) => (
+          <DropdownMenuItem key={label} onClick={onClick} className="flex-col justify-center gap-1.5 rounded-[12px] px-1 py-2.5 text-center text-xs text-muted-foreground">
+            <span className="grid size-9 place-items-center rounded-full bg-foreground/[0.06] text-foreground"><Icon className="size-[18px]" /></span>
+            {label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuGroup>
+      {server && (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex items-center justify-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-normal" title="This Airth's name, set in Settings, About"><Server className="size-3 shrink-0" /><span className="min-w-0 truncate">{server}</span></DropdownMenuLabel>
+        </DropdownMenuGroup>
+      )}
     </>
   )
 }
