@@ -9,7 +9,7 @@ import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { Head } from "@/screens/settings-business"
 
-type Box = { agent: string; title: string; address: string | null; server: string | null; password: boolean; last: string | null; error: string | null }
+export type Box = { agent: string; title: string; address: string | null; server: string | null; password: boolean; last: string | null; error: string | null }
 
 /** Each role's mailbox (decision 70): its address on the business's domain
     and its password, kept by Airth and seen by no agent. */
@@ -29,7 +29,7 @@ export function Mailboxes({ realm }: { realm: string }) {
   )
 }
 
-function MailboxRow({ realm, box, onSaved }: { realm: string; box: Box; onSaved: () => void }) {
+export function MailboxRow({ realm, box, onSaved }: { realm: string; box: Box; onSaved: () => void }) {
   const [address, setAddress] = useState(box.address ?? "")
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
