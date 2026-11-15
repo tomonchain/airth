@@ -109,9 +109,7 @@ export function Finance({ realm, business, agents, onImported }: { realm: string
 type Spend = { currency: string | null; days: { date: string; agents: number; bank: number | null }[] }
 type Bucket = { label: string; title: string; from: string; agents: number; bank: number | null }
 
-/** What the business spent, day by day or week by week: out of the bank
-    when it is connected (in its currency), and what the agents' model calls
-    cost (in dollars). Two currencies are never added up. */
+/** A month's cap and spend (decision 139): the business's, or an agent's. */
 type Budget = { cap: number | null; spent: number }
 type Budgets = Budget & { month: string; agents: (Budget & { agent: string })[] }
 
@@ -126,7 +124,7 @@ function Budgets({ realm, agents }: { realm: string; agents: Agent[] }) {
       {!data ? <Loading /> : (
         <>
           <Panel className="divide-y">
-            <BudgetRow realm={realm} label="Whole business" budget={data} onSaved={refresh} />
+            <BudgetRow key={`business:${data.cap ?? ""}`} realm={realm} label="Whole business" budget={data} onSaved={refresh} />
             {data.agents.map((b) => {
               const a = agents.find((x) => x.name === b.agent)
               return <BudgetRow key={`${b.agent}:${b.cap ?? ""}`} realm={realm} agent={b.agent} who={a} label={a?.title ?? b.agent} budget={b} onSaved={refresh} />
@@ -151,7 +149,7 @@ function BudgetRow({ realm, agent, who, label, budget, onSaved }: {
   async function save() {
     if (!changed) return
     const cap = value.trim() === "" ? null : Number(value)
-    if (cap !== null && !(cap > 0)) { toast.error("A budget is a number of dollars above 0."); return }
+    if (cap !== null && !(Number.isFinite(cap) && cap > 0 && cap <= 100000)) { toast.error("A budget is a number of dollars above 0 and at most 100000."); return }
     setBusy(true)
     try {
       await api(`realms/${enc(realm)}/budgets`, { agent: agent ?? null, cap }, "PUT")
@@ -184,6 +182,9 @@ function BudgetRow({ realm, agent, who, label, budget, onSaved }: {
   )
 }
 
+/** What the business spent, day by day or week by week: out of the bank
+    when it is connected (in its currency), and what the agents' model calls
+    cost (in dollars). Two currencies are never added up. */
 function Spending({ realm }: { realm: string }) {
   const [days, setDays] = useState(30)
   const [by, setBy] = useState<"day" | "week">("day")
