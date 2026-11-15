@@ -326,4 +326,34 @@ fn an_objective_waits_past_the_month_cap_too() {
         .unwrap_err();
     assert!(crate::hub::budget::cap_reached(&err), "{err:#}");
     assert_eq!(incidents(&f.realm), ["writer's monthly budget reached"]);
+    // The firing is skipped and said, not tried again at every tick.
+    let waited = f.realm.objectives().get("weekly-article").unwrap();
+    assert_eq!(
+        waited.last_status.as_deref(),
+        Some("waited: the monthly budget is reached")
+    );
+
+    // Moving the objective to another bot later leaves the spend where it
+    // was: with the writer, the bot it ran for.
+    f.realm
+        .objectives()
+        .update("weekly-article", |o| o.bot = None)
+        .unwrap();
+    let view = hub.month_budgets(&f.realm, Utc::now()).unwrap();
+    assert!(
+        (view["spent"].as_f64().unwrap() - 1.5).abs() < 1e-9,
+        "{view}"
+    );
+    let still = hub
+        .month_allows(&f.realm, Some("writer"), Utc::now())
+        .unwrap_err();
+    assert!(crate::hub::budget::cap_reached(&still), "{still:#}");
+
+    // With no bot, it is the business's work alone: its cap binds it.
+    crate::business::set_monthly_cap(&root, Some("writer"), None, &[]).unwrap();
+    crate::business::set_monthly_cap(&root, None, Some(1.0), &[]).unwrap();
+    let err = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap_err();
+    assert!(crate::hub::budget::cap_reached(&err), "{err:#}");
 }

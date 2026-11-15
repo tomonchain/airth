@@ -141,6 +141,10 @@ pub struct Origin {
     /// the one that asked last (decision 41).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chain: Vec<String>,
+    /// The bot it ran for, as the objective named it then: its spend is
+    /// that bot's month (decision 139), whatever the objective says later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
 }
 
 /// One model call's token usage, as the provider reported it.

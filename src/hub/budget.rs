@@ -59,6 +59,15 @@ pub fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
         .unwrap_or(now)
 }
 
+/// Held from a start's check of the month's budgets until its run is
+/// saved: two starts at once must not both take what is left.
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The lock a start holds while it checks the month and saves its run.
+pub(super) fn starting() -> std::sync::MutexGuard<'static, ()> {
+    STARTING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// The month's spend, read once: the business's and each agent's, and what
 /// running tasks may still spend.
 #[derive(Debug, Default)]
@@ -74,22 +83,14 @@ impl Hub {
         let since = month_start(now);
         let prices = crate::prices::Prices::load(self.home());
         let mut m = Month::default();
-        // An objective's run is its bot's work, or the business's when it
-        // has none.
-        let bots: HashMap<String, Option<String>> = realm
-            .objectives()
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|o| (o.id, o.bot))
-            .collect();
         // Agents' and objectives' runs only: the founder's own chats are not
-        // the business's work.
+        // the business's work. An objective's run is the bot it ran for, or
+        // the business's alone.
         for state in self.load_shared(realm)? {
-            let agent = state.agent.clone().or_else(|| {
-                let origin = state.origin.as_ref()?;
-                bots.get(&origin.objective).cloned().flatten()
-            });
+            let agent = state
+                .agent
+                .clone()
+                .or_else(|| state.origin.as_ref()?.bot.clone());
             if agent.is_none() && state.origin.is_none() {
                 continue;
             }
