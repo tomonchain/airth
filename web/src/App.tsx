@@ -234,7 +234,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
+    <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] max-md:bg-surface">
       {narrow ? (
         <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} agents={agents} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
       ) : (

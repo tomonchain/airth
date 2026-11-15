@@ -54,9 +54,11 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   return (
     <div className="relative min-w-0 flex-1 overflow-y-auto">
       {lead && leadTasks.length > 0 && (
-        <Button size="sm" variant="ghost" className="absolute top-2 right-3 h-8 text-muted-foreground" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>
+        <Button size="sm" variant="ghost" className="absolute top-2 right-3 h-8 text-muted-foreground max-md:top-[68px]" onClick={() => setMode("thread")}><MessageSquare /> Conversation</Button>
       )}
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 md:px-6 md:pb-24">
+      {/* On a phone the greeting and the box sit low, within the thumb's
+          reach, above the tab bar. */}
+      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-8 md:px-6 md:pb-24">
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>

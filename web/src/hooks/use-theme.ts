@@ -26,6 +26,8 @@ export function useTheme() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark")
     document.documentElement.dataset.theme = theme
+    // The phone's status bar takes the page's colour.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#161617" : "#ffffff")
   }, [theme])
   // Every user of the theme follows a change made by any of them.
   useEffect(() => {

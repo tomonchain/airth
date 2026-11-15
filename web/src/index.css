@@ -277,6 +277,9 @@
    what is pinned to the bottom (a message box) is lifted above it. */
 @media (max-width: 767px) {
   :root { --dock: calc(54px + max(env(safe-area-inset-bottom), 10px) + 12px); }
+  /* No header on a phone: under the status bar is the page's own colour,
+     so nothing shows as a band there. */
+  html, body { background: var(--surface); }
   main .overflow-y-auto::after { content: ""; display: block; flex-shrink: 0; height: var(--dock); }
   .no-dock::after { display: none !important; }
   .dock-lift { padding-bottom: var(--dock) !important; }
