@@ -269,3 +269,128 @@ fn a_plan_keeps_what_it_started_when_a_step_meets_a_cap() {
         "the writer's kept, the developer's waits"
     );
 }
+
+/// An objective is work like a task: the month's caps bound it, its bot's
+/// and the business's, and none starts once one is reached.
+#[test]
+fn an_objective_waits_past_the_month_cap_too() {
+    use crate::objective::{Objective, Trigger};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "---\n---\nWrite.\n").unwrap();
+    f.realm
+        .objectives()
+        .save(Objective {
+            id: "weekly-article".into(),
+            objective: "Write this week's article".into(),
+            trigger: Trigger::Manual,
+            approvals: vec![],
+            budget: Default::default(),
+            approval_wait_minutes: 0,
+            enabled: true,
+            created_at: Utc::now(),
+            repo: None,
+            bot: Some("writer".into()),
+            tools: None,
+            delegates: Vec::new(),
+            next_at: None,
+            fingerprint: None,
+            last_run: None,
+            last_at: None,
+            last_status: None,
+        })
+        .unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+
+    // Under the cap: it starts, bound by what the month leaves.
+    crate::business::set_monthly_cap(&root, Some("writer"), Some(5.0), &[]).unwrap();
+    let (mut first, _) = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap();
+    assert_eq!(first.budget.max_cost_usd, Some(5.0));
+    // What it spent is its bot's, and the business's.
+    spend(&mut first);
+    let view = hub.month_budgets(&f.realm, Utc::now()).unwrap();
+    assert!(
+        (view["spent"].as_f64().unwrap() - 1.5).abs() < 1e-9,
+        "{view}"
+    );
+    first.status = Status::Completed;
+    first.save().unwrap();
+
+    // Past it: refused, and the founder told once.
+    crate::business::set_monthly_cap(&root, Some("writer"), Some(1.0), &[]).unwrap();
+    let err = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap_err();
+    assert!(crate::hub::budget::cap_reached(&err), "{err:#}");
+    assert_eq!(incidents(&f.realm), ["writer's monthly budget reached"]);
+    // The firing is skipped and said, not tried again at every tick.
+    let waited = f.realm.objectives().get("weekly-article").unwrap();
+    assert_eq!(
+        waited.last_status.as_deref(),
+        Some("waited: the monthly budget is reached")
+    );
+
+    // Moving the objective off its bot later leaves the spend where it was:
+    // with the writer, the bot it ran for.
+    f.realm
+        .objectives()
+        .update("weekly-article", |o| o.bot = None)
+        .unwrap();
+    let view = hub.month_budgets(&f.realm, Utc::now()).unwrap();
+    assert!(
+        (view["spent"].as_f64().unwrap() - 1.5).abs() < 1e-9,
+        "{view}"
+    );
+    let still = hub
+        .month_allows(&f.realm, Some("writer"), Utc::now())
+        .unwrap_err();
+    assert!(crate::hub::budget::cap_reached(&still), "{still:#}");
+
+    // With no bot, it is the business's work alone: its cap binds it.
+    crate::business::set_monthly_cap(&root, Some("writer"), None, &[]).unwrap();
+    crate::business::set_monthly_cap(&root, None, Some(1.0), &[]).unwrap();
+    let err = hub
+        .start_objective(&f.realm, "weekly-article", "manual", None, Utc::now())
+        .unwrap_err();
+    assert!(crate::hub::budget::cap_reached(&err), "{err:#}");
+}
+
+/// A run that cannot be set up fails, and gives back what it held of the
+/// month: left Running, it would hold its share for good.
+#[test]
+fn a_run_that_cannot_start_holds_nothing_of_the_month() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "---\n---\nWrite.\n").unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    crate::business::set_monthly_cap(&root, None, Some(2.0), &[]).unwrap();
+
+    let mut state = hub.start_task(&f.realm, "writer", "Draft").unwrap();
+    assert!((state.budget.max_cost_usd.unwrap() - 1.0).abs() < 1e-9);
+    // A model no provider serves: the drive fails before its first turn.
+    state.model_choice = Some("nowhere/none".into());
+    state.save().unwrap();
+    assert!(
+        hub.drive(
+            &f.realm,
+            &mut state,
+            config(10),
+            hooks(&mut NoObserver, true)
+        )
+        .is_err()
+    );
+    assert_eq!(state.status, Status::Failed);
+    assert_eq!(state.iterations, 0);
+    let saved = hub.load_run(&f.realm, &state.id).unwrap();
+    assert_eq!(saved.status, Status::Failed);
+    assert!(saved.report.unwrap().starts_with("could not start"));
+    // The whole $2 is free again.
+    let left = hub
+        .month_allows(&f.realm, Some("writer"), Utc::now())
+        .unwrap();
+    assert!((left.unwrap() - 2.0).abs() < 1e-9, "{left:?}");
+}
