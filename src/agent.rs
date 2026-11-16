@@ -459,7 +459,7 @@ impl<'a> Agent<'a> {
                 let said = self.observer.said();
                 if !said.is_empty() {
                     for text in &said {
-                        crate::hub::append_user_text(&mut state.messages, text);
+                        state.append_user_text(text);
                     }
                     state.status = Status::Running;
                     state.report = None;

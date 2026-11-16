@@ -398,7 +398,7 @@ impl Runner {
                         *said = Some(Vec::new());
                         drop(said);
                         for text in &left {
-                            crate::hub::append_user_text(&mut state.messages, text);
+                            state.append_user_text(text);
                         }
                         state.status = Status::Running;
                         state.report = None;

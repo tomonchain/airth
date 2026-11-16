@@ -56,7 +56,7 @@ impl Hub {
                 job.text.trim()
             );
         }
-        append_user_text(&mut state.messages, &brief);
+        state.append_user_text(&brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
         if let Some(left) = left {

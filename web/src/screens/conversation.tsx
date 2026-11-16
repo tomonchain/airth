@@ -74,9 +74,14 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     // it, between its messages, each at its time (decision 148).
     const listed = new Map(Object.values(tasks.data ?? {}).flat().map((t) => [t.id, t.at ?? t.updated_at]))
     const shown = taskIds.slice(-8)
-    const spans: Span[] = shown.flatMap((id) => {
+    // A task the list no longer has (one started here, past the last ten
+    // done) ended at the latest when the next one began; only the latest
+    // can still be going on.
+    const spans: Span[] = shown.flatMap((id, n) => {
       const from = moment(startOf(id))
-      return from === null ? [] : [{ id, from, to: moment(listed.get(id)) }]
+      const next = shown[n + 1]
+      const to = moment(listed.get(id)) ?? (next ? moment(startOf(next)) : null)
+      return from === null ? [] : [{ id, from, to }]
     })
     const e: Entry[] = shown.map((id) => ({ kind: "task", at: startOf(id), id }))
     const inside = new Map<string, Entry[]>()
@@ -144,7 +149,8 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   // the founder watches comes in, the agent's words written as they stream.
   const known = useRef<Set<string> | null>(null)
   useEffect(() => { known.current = null }, [agent.name])
-  if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
+  // What shows inside a task counts too: it was there as well.
+  if (thread.data && !known.current) known.current = new Set([...units.map((u) => u.key), ...[...inside.values()].flat().flatMap(eventUnits).map((u) => u.key)])
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
   const busy = agent.state === "working" && !running
