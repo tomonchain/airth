@@ -28,7 +28,8 @@ pub(super) fn run_updater(hub: Arc<Hub>, state: Arc<Mutex<UpdateState>>) {
     let work = hub.home().dir().join("update");
     let mut ticks: u64 = 0;
     loop {
-        let fetch = ticks.is_multiple_of(30) || state.locked().phase == "checking";
+        // Asks the network every 5 minutes (decision 145), the checkout every minute.
+        let fetch = ticks.is_multiple_of(5) || state.locked().phase == "checking";
         ticks += 1;
         match crate::update::check(fetch) {
             Ok(found) => {

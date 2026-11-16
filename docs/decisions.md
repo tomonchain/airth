@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
+
+**Accepted** (founder, 16 November 2026: "Pourquoi les MaJ de l'UI sont aussi longues ? J'ai l'impression qu'on rebuild tout", then "Go" on these three). Decision 100's update built every new commit of `main` twice in the slowest mode (`cargo build --release` and `cargo test --release`, with whole-program optimization and one codegen unit) and ran every Rust test, even for a change to the interface alone; and it looked for one every 30 minutes.
+
+- **A faster build for updates.** A `[profile.update]` inherits the release's optimization level, without whole-program optimization (`lto = false`), in 16 codegen units, incrementally. The update builds and tests with it, in Airth's home as before. The published release (`release.yml`) and `cargo install` keep `[profile.release]`.
+- **Tests only when the Rust changed.** When everything that changed since the running version is in `web/`, `docs/`, `site/`, `.github/` or a Markdown file at the root, the Rust is the one the running version passed its tests with, so `cargo test` does not run again; the update says so in its steps. Anything else (`src/`, `library/`, `Cargo.*`, `build.rs`, a prompt) is tested as before, and so is a version built from uncommitted changes. The interface's own tests ran in CI's `web` job before the merge.
+- **A look every 5 minutes** for a new commit (the checkout itself is read every minute, as before).
+
+*Why:* a one-line change to a screen took two full optimized compiles and the whole suite before "Update ready". Measured in a 4-core container: see the pull request.
+
+*Cost:* the binary an update installs is somewhat larger and may be slightly slower than a release's; nothing measurable is expected for Airth's work, which waits on the network and the models. A change outside the list above that breaks only at run time is still caught only by CI. The network is asked six times as often (a `git fetch`).
+
 ## 144. An agent's words are rendered as Markdown, by one component, as untrusted content
 
 **Accepted** (founder, 16 November 2026: "afficher le markdown mis en forme partout où un agent écrit", with react-markdown and remark-gfm, and the security rules below).
