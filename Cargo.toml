@@ -53,3 +53,12 @@ tempfile = "3.27.0"
 lto = true
 codegen-units = 1
 strip = true
+
+# How the app builds its own updates (decision 145): the release's
+# optimization level, without whole-program optimization and in parallel,
+# keeping what did not change, so an update is ready in minutes.
+[profile.update]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
