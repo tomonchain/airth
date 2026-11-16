@@ -26,10 +26,12 @@ export type Row = {
   last: { at: string; ok: boolean; run?: string | null } | null
   /** What it may do alone (0–3): the lowest of its acts' levels. */
   level: number | null
+  /** The business it belongs to, when the list holds several. */
+  business?: string
 }
 
 /** The part of a Needs you item this page reads. */
-export type Waiting = { kind: string; status: string; routine: string | null; run: string | null }
+export type Waiting = { kind: string; status: string; routine: string | null; run: string | null; business?: string }
 
 export type State = "ok" | "waiting" | "incident" | "paused"
 
@@ -130,9 +132,10 @@ const WAITS = new Set(["approval", "prepared", "delayed"])
 /** What the founder's Needs you holds for this routine. Only a drawn
     routine's items name it; an agent routine's name its run; a fixed
     sequence leaves none. A drawn routine and an agent routine may share a
-    name: each reads its own. */
+    name: each reads its own. Two businesses may too: an item counts only
+    for a routine of its own business. */
 function mine(row: Row, items: Waiting[]) {
-  return items.filter((i) => i.status === "pending"
+  return items.filter((i) => i.status === "pending" && (i.business ?? null) === (row.business ?? null)
     && (row.kind === "graph" ? i.routine === row.name : row.kind === "agent" && !!row.last?.run && i.run === row.last.run))
 }
 
@@ -161,10 +164,24 @@ export function nextOf(rows: Row[]): string | null {
   return next[0] ?? null
 }
 
+export type By = "agent" | "frequency" | "business"
+
+/** The businesses in the order the list shows them: the one open first,
+    then the others as the business menu lists them. */
+export function businessOrder<T extends { name: string }>(current: string, all: T[]): T[] {
+  return [...all.filter((b) => b.name === current), ...all.filter((b) => b.name !== current)]
+}
+
 /** The rows in groups: by agent (in the order given, then the general
-    assistant and fixed sequences), or by how often they run. */
-export function groups(rows: Row[], by: "agent" | "frequency", agents: { name: string; title: string }[]): Group[] {
+    assistant and fixed sequences), by how often they run, or by business
+    (in the order given; a business with no row shown has no group). */
+export function groups(rows: Row[], by: By, agents: { name: string; title: string }[], businesses: { name: string; title: string }[] = []): Group[] {
   const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name))
+  if (by === "business") {
+    return businesses.map((b) => ({ key: b.name, label: b.title, rows: sorted.filter((r) => r.business === b.name) }))
+      .filter((g) => g.rows.length)
+      .map((g) => ({ ...g, next_at: nextOf(g.rows) }))
+  }
   if (by === "frequency") {
     return FREQUENCIES.map((f) => ({ key: f.key, label: f.label, rows: sorted.filter((r) => frequency(r.trigger) === f.key) }))
       .filter((g) => g.rows.length)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, BookOpen, Check, ChevronDown, ChevronRight, GitBranch, GraduationCap, Hand, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
+import { Bot, BookOpen, Building2, Check, ChevronDown, ChevronRight, GitBranch, GraduationCap, Hand, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Feedback, type Routine } from "@/lib/api"
-import { FOLD_ABOVE, filter, graphTrigger, groups, needsLook, schedule, state, triggerText, type Filter, type Row, type State, type Waiting } from "@/lib/routine-list"
+import { FOLD_ABOVE, businessOrder, filter, graphTrigger, groups, needsLook, schedule, state, triggerText, type By, type Filter, type Row, type State, type Waiting } from "@/lib/routine-list"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
@@ -62,70 +62,122 @@ function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)) } catch { /* private window */ }
 }
 
-type Open = { kind: Row["kind"]; name: string; edit?: boolean } | { kind: "new-graph" }
+// A routine open in the panel; `business` when it is another business's.
+type Open = ({ kind: Row["kind"]; name: string; edit?: boolean } | { kind: "new-graph" }) & { business?: string }
+
+type Graphs = { routines: Routine[]; actions: Declared[]; prompts: string[] }
+type Levels = Record<string, Record<string, number> | null>
+
+/** One list of rows from a business's three kinds of routine. */
+function toRows(business: string, routines: Routine[], objectives: Objective[], pipelines: Pipeline[], levels: Levels | null): Row[] {
+  const out: Row[] = []
+  for (const r of routines) {
+    const g = r.graph
+    const acts = (g?.blocks ?? []).filter((b) => b.type === "act" && typeof b.action === "string").map((b) => b.action as string)
+    const its = g ? levels?.[g.agent] : undefined
+    out.push({
+      kind: "graph", name: r.name, agent: g?.agent ?? null, trigger: graphTrigger(g?.trigger), paused: false, broken: !g, next_at: r.next_at,
+      last: r.runs[0] ? { at: r.runs[0].at, ok: r.runs[0].ok } : null,
+      // An action the business does not declare commits, and starts at 1 (decision 96).
+      level: its && acts.length ? Math.min(...acts.map((a) => its[a] ?? 1)) : null, business,
+    })
+  }
+  for (const o of objectives) {
+    out.push({
+      kind: "agent", name: o.id, agent: o.bot, trigger: o.every ? { kind: "schedule", every: o.every } : { kind: "manual" }, paused: !o.enabled, broken: false,
+      next_at: o.enabled ? o.next_at : null,
+      last: o.last_status && o.last_at ? { at: o.last_at, ok: o.last_status === "completed" || o.last_status === "running", run: o.last_run } : null, level: null, business,
+    })
+  }
+  for (const p of pipelines) {
+    out.push({
+      kind: "sequence", name: p.name, agent: null, trigger: p.schedule ? { kind: "schedule", every: p.schedule } : { kind: "manual" }, paused: false,
+      broken: !!p.error, next_at: p.next_at ?? null, last: p.runs[0] ? { at: p.runs[0].started_at, ok: p.runs[0].ok } : null, level: null, business,
+    })
+  }
+  return out
+}
+
+/** A drawn routine's agents' levels for their actions; one not read is
+    left unknown, so its level is not said rather than guessed. */
+async function readLevels(realm: string, routines: Routine[]): Promise<Levels> {
+  const owners = [...new Set(routines.map((r) => r.graph?.agent).filter((a): a is string => !!a))].sort()
+  return Object.fromEntries(await Promise.all(owners.map(async (a) => {
+    const l = await api<{ actions: { action: string; level: number }[] }>(`realms/${enc(realm)}/agents/${enc(a)}/levels`).catch(() => null)
+    return [a, l && Object.fromEntries(l.actions.map((x) => [x.action, x.level]))]
+  })))
+}
+
+/** Another business's routines, read from that business alone, with what
+    its panel needs: its agents, its editors' actions and prompts, its
+    items in Needs you. */
+type Away = { realm: string; graphs: Graphs; tasks: Tasks; pipelines: Pipeline[]; agents: Agent[]; items: Waiting[]; rows: Row[] }
+
+async function readBusiness(realm: string): Promise<Away> {
+  const r = enc(realm)
+  const [graphs, tasks, fixed, team, queue] = await Promise.all([
+    api<Graphs>(`realms/${r}/graphs`),
+    api<Tasks>(`realms/${r}/routines`),
+    api<{ pipelines: Pipeline[] }>(`realms/${r}/business`),
+    api<{ agents: Agent[] }>(`realms/${r}/team`),
+    api<{ items: Waiting[] }>(`realms/${r}/queue`),
+  ])
+  const levels = await readLevels(realm, graphs.routines)
+  return {
+    realm, graphs, tasks, pipelines: fixed.pipelines, agents: team.agents,
+    items: queue.items.filter((i) => i.kind !== "idea").map((i) => ({ ...i, business: realm })),
+    rows: toRows(realm, graphs.routines, tasks.routines, fixed.pipelines, levels),
+  }
+}
 
 /** The business's recurring work, in three kinds: routines made of blocks
     (decision 49), drawn on a canvas (decision 91); agents given a task on a
     schedule (decision 37); and the fixed sequences of business/pipelines/
     (decision 30). One list: what needs a look first, then the rest grouped;
     a routine opens in a panel on the right. */
-export function Routines({ realm, agents, items, onAgent }: { realm: string; agents: Agent[]; items: Waiting[]; onAgent: (name: string) => void }) {
-  const graphs = usePoll<{ routines: Routine[]; actions: Declared[]; prompts: string[] }>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
+export function Routines({ realm, agents, items: here, businesses, onAgent }: {
+  realm: string; agents: Agent[]; items: Waiting[]; businesses: { name: string; title: string }[]; onAgent: (name: string) => void
+}) {
+  const graphs = usePoll<Graphs>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
   const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/routines`), 15000, [realm])
   const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
 
   // A drawn routine's level: the lowest of its agent's levels for its acts.
   const owners = [...new Set((graphs.data?.routines ?? []).map((r) => r.graph?.agent).filter((a): a is string => !!a))].sort()
-  const levels = usePoll<Record<string, Record<string, number> | null>>(
-    owners.length ? async () => Object.fromEntries(await Promise.all(owners.map(async (a) => {
-      // Not read: its level is not said, rather than guessed.
-      const l = await api<{ actions: { action: string; level: number }[] }>(`realms/${enc(realm)}/agents/${enc(a)}/levels`).catch(() => null)
-      return [a, l && Object.fromEntries(l.actions.map((x) => [x.action, x.level]))]
-    }))) : null, 60000, [realm, owners.join(",")])
+  const levels = usePoll<Levels>(owners.length && graphs.data ? () => readLevels(realm, graphs.data!.routines) : null, 60000, [realm, owners.join(",")])
 
-  const rows = useMemo<Row[]>(() => {
-    const out: Row[] = []
-    for (const r of graphs.data?.routines ?? []) {
-      const g = r.graph
-      const acts = (g?.blocks ?? []).filter((b) => b.type === "act" && typeof b.action === "string").map((b) => b.action as string)
-      const its = g ? levels.data?.[g.agent] : undefined
-      out.push({
-        kind: "graph", name: r.name, agent: g?.agent ?? null, trigger: graphTrigger(g?.trigger), paused: false, broken: !g, next_at: r.next_at,
-        last: r.runs[0] ? { at: r.runs[0].at, ok: r.runs[0].ok } : null,
-        // An action the business does not declare commits, and starts at 1 (decision 96).
-        level: its && acts.length ? Math.min(...acts.map((a) => its[a] ?? 1)) : null,
-      })
-    }
-    for (const o of tasks.data?.routines ?? []) {
-      out.push({
-        kind: "agent", name: o.id, agent: o.bot, trigger: o.every ? { kind: "schedule", every: o.every } : { kind: "manual" }, paused: !o.enabled, broken: false,
-        next_at: o.enabled ? o.next_at : null,
-        last: o.last_status && o.last_at ? { at: o.last_at, ok: o.last_status === "completed" || o.last_status === "running", run: o.last_run } : null, level: null,
-      })
-    }
-    for (const p of fixed.data?.pipelines ?? []) {
-      out.push({
-        kind: "sequence", name: p.name, agent: null, trigger: p.schedule ? { kind: "schedule", every: p.schedule } : { kind: "manual" }, paused: false,
-        broken: !!p.error, next_at: p.next_at ?? null, last: p.runs[0] ? { at: p.runs[0].started_at, ok: p.runs[0].ok } : null, level: null,
-      })
-    }
-    return out
-  }, [graphs.data, tasks.data, fixed.data, levels.data])
+  const rows = useMemo<Row[]>(() => toRows(realm, graphs.data?.routines ?? [], tasks.data?.routines ?? [], fixed.data?.pipelines ?? [], levels.data),
+    [realm, graphs.data, tasks.data, fixed.data, levels.data])
 
   const [f, setF] = useState<Filter>({ search: "", show: "all", agent: null })
-  const [by, setBy] = useState<"agent" | "frequency">(() => stored("airth-routines-by", "agent"))
+  const [by, setBy] = useState<By>(() => stored("airth-routines-by", "agent"))
   useEffect(() => store("airth-routines-by", by), [by])
+
+  // Grouped by business, every business's routines are listed, as the HQ
+  // shows them; each is read from its own business, and only while this
+  // grouping is chosen. An item counts only for its own business's routines.
+  const order = businessOrder(realm, businesses)
+  const others = order.filter((b) => b.name !== realm)
+  const grouping = by === "business" && businesses.length > 1 ? "business" : by === "business" ? "agent" : by
+  const away = usePoll<Away[]>(grouping === "business"
+    ? async () => (await Promise.all(others.map((b) => readBusiness(b.name).catch(() => null)))).filter((x): x is Away => !!x)
+    : null, 30000, [realm, grouping, others.map((b) => b.name).join(",")])
+  const elsewhere = useMemo(() => (grouping === "business" ? away.data ?? [] : []), [grouping, away.data])
+  const items = useMemo(() => [...here.map((i) => ({ ...i, business: realm })), ...elsewhere.flatMap((b) => b.items)], [here, realm, elsewhere])
+  const all = useMemo(() => [...rows, ...elsewhere.flatMap((b) => b.rows)], [rows, elsewhere])
   const [folded, setFolded] = useState<Record<string, boolean>>(() => stored("airth-routines-folded", {}))
   const fold = (key: string, v: boolean) => setFolded((x) => { const y = { ...x, [key]: v }; store("airth-routines-folded", y); return y })
   const [open, setOpen] = useState<Open | null>(null)
   const [newTask, setNewTask] = useState(false)
 
   const loaded = !!(graphs.data && tasks.data && fixed.data)
-  const shown = filter(rows, f, items)
+  const shown = filter(all, f, items)
   const look = needsLook(shown, items)
-  const grouped = groups(shown, by, agents.map((a) => ({ name: a.name, title: a.title })))
+  const grouped = groups(shown, grouping, agents.map((a) => ({ name: a.name, title: a.title })), order)
   const owned = agents.filter((a) => rows.some((r) => r.agent === a.name))
-  const face = (name: string | null) => agents.find((a) => a.name === name)
+  const face = (name: string | null, business = realm) => (business === realm ? agents : elsewhere.find((b) => b.realm === business)?.agents ?? []).find((a) => a.name === name)
+  const opening = (r: Row) => setOpen({ kind: r.kind, name: r.name, business: r.business })
+  const there = open?.business && open.business !== realm ? elsewhere.find((b) => b.realm === open.business) : undefined
 
   return (
     <Page wide title="Routines" lede={loaded ? `${rows.length} routine${rows.length === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
@@ -137,35 +189,38 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
         <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link. Or give an agent a task to do on a schedule.</Empty>
       ) : (
         <>
-          <Toolbar f={f} setF={setF} by={by} setBy={setBy} agents={owned} />
+          <Toolbar f={f} setF={setF} by={grouping} setBy={setBy} agents={owned} several={businesses.length > 1} />
           {f.show !== "paused" && look.length > 0 && (
             <Section title="Needs a look" note={`${look.length} routine${look.length === 1 ? "" : "s"}`}>
               <Panel className="divide-y divide-border/60 overflow-hidden">
-                {look.map((r) => <RoutineRow key={`${r.kind}:${r.name}`} r={r} items={items} face={face} why onOpen={() => setOpen({ kind: r.kind, name: r.name })} />)}
+                {look.map((r) => <RoutineRow key={`${r.business}:${r.kind}:${r.name}`} r={r} items={items} face={face} why onOpen={() => opening(r)}
+                  where={grouping === "business" ? order.find((b) => b.name === r.business)?.title : undefined} />)}
               </Panel>
             </Section>
           )}
           {f.show === "look" ? (!look.length && <p className="text-sm text-muted-foreground">{f.search || f.agent ? "No routine matches." : "Nothing needs a look."}</p>)
             : !shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
             <section className="space-y-3">
+              {grouping === "business" && !away.data && <p className="text-xs text-muted-foreground">Reading the other businesses' routines…</p>}
               <Columns />
               {grouped.map((g) => {
-                const key = `${realm}:${by}:${g.key}`
+                const key = `${realm}:${grouping}:${g.key}`
                 const closed = folded[key] ?? g.rows.length > FOLD_ABOVE
-                const a = by === "agent" ? face(g.key) : undefined
+                const a = grouping === "agent" ? face(g.key) : undefined
+                const lead = a ? <Character agent={a} size={20} still /> : grouping === "agent" ? <Bot className="size-5 text-muted-foreground" /> : grouping === "business" ? <Building2 className="size-4 text-muted-foreground" /> : null
                 return (
                   <Panel key={g.key} className="overflow-hidden">
                     <button onClick={() => fold(key, !closed)} aria-expanded={!closed}
                       className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40">
                       <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", closed && "-rotate-90")} />
-                      {a ? <Character agent={a} size={20} still /> : by === "agent" ? <Bot className="size-5 text-muted-foreground" /> : null}
+                      {lead}
                       <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
                       <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums">{g.rows.length}</span>
                       <span className="ml-auto shrink-0 text-xs text-muted-foreground">{g.next_at ? <>Next <span className="tabular-nums">{next(g.next_at)}</span></> : "Nothing scheduled"}</span>
                     </button>
                     {!closed && (
                       <div className="divide-y divide-border/60 border-t border-border/60">
-                        {g.rows.map((r) => <RoutineRow key={`${r.kind}:${r.name}`} r={r} items={items} face={face} onOpen={() => setOpen({ kind: r.kind, name: r.name })} />)}
+                        {g.rows.map((r) => <RoutineRow key={`${r.business}:${r.kind}:${r.name}`} r={r} items={items} face={face} onOpen={() => opening(r)} />)}
                       </div>
                     )}
                   </Panel>
@@ -175,8 +230,16 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
           )}
         </>
       )}
-      <RoutineSheet realm={realm} open={open} setOpen={setOpen} agents={agents} items={items} rows={rows} onAgent={onAgent}
-        graphs={graphs} tasks={tasks} fixed={fixed.data?.pipelines ?? []} />
+      {there ? (
+        // Another business's routine: its own data, saved to it, and its
+        // agents opened in it.
+        <RoutineSheet realm={there.realm} open={open} setOpen={(o) => setOpen(o && { ...o, business: there.realm })} agents={there.agents} items={there.items} rows={there.rows}
+          onAgent={(name) => { location.hash = `#/b/${enc(there.realm)}/agents/${enc(name)}` }}
+          graphs={{ data: there.graphs, refresh: away.refresh }} tasks={{ data: there.tasks, refresh: away.refresh }} fixed={there.pipelines} />
+      ) : (
+        <RoutineSheet realm={realm} open={open} setOpen={setOpen} agents={agents} items={items} rows={rows} onAgent={onAgent}
+          graphs={graphs} tasks={tasks} fixed={fixed.data?.pipelines ?? []} />
+      )}
       {tasks.data && (
         <Dialog open={newTask} onOpenChange={setNewTask}>
           <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
@@ -192,8 +255,8 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
   )
 }
 
-function Toolbar({ f, setF, by, setBy, agents }: {
-  f: Filter; setF: (f: Filter) => void; by: "agent" | "frequency"; setBy: (b: "agent" | "frequency") => void; agents: Agent[]
+function Toolbar({ f, setF, by, setBy, agents, several }: {
+  f: Filter; setF: (f: Filter) => void; by: By; setBy: (b: By) => void; agents: Agent[]; several: boolean
 }) {
   const ANY = "-any"
   return (
@@ -214,7 +277,7 @@ function Toolbar({ f, setF, by, setBy, agents }: {
       )}
       <div className="flex items-center gap-1.5 sm:ml-auto">
         <span className="text-xs text-muted-foreground">Group by</span>
-        <Seg label="Group by" value={by} onPick={setBy} options={[["agent", "Agent"], ["frequency", "Frequency"]]} />
+        <Seg label="Group by" value={by} onPick={setBy} options={[["agent", "Agent"], ["frequency", "Frequency"], ...(several ? [["business", "Business"] as [By, string]] : [])]} />
       </div>
     </div>
   )
@@ -259,9 +322,11 @@ function why(r: Row, items: Waiting[]): string {
   return state(r, items) === "incident" ? "An incident waits in Needs you" : "Waits for you in Needs you"
 }
 
-function RoutineRow({ r, items, face, why: say, onOpen }: { r: Row; items: Waiting[]; face: (n: string | null) => Agent | undefined; why?: boolean; onOpen: () => void }) {
+function RoutineRow({ r, items, face, why: say, where, onOpen }: {
+  r: Row; items: Waiting[]; face: (n: string | null, business?: string) => Agent | undefined; why?: boolean; where?: string; onOpen: () => void
+}) {
   const s = state(r, items)
-  const a = face(r.agent)
+  const a = face(r.agent, r.business)
   return (
     <button onClick={onOpen} className={cn("grid w-full grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50", COLS)}>
       <Dot s={s} />
@@ -271,7 +336,7 @@ function RoutineRow({ r, items, face, why: say, onOpen }: { r: Row; items: Waiti
           <span className={cn("truncate font-mono text-[13px]", r.paused && "text-muted-foreground")}>{r.name}</span>
         </span>
         <span className="block truncate text-xs text-muted-foreground md:hidden">{triggerText(r.trigger)}{r.next_at ? ` · ${next(r.next_at)}` : ""}</span>
-        {say && <span className={cn("block truncate text-xs", s === "incident" ? "text-red-500" : "text-amber-600 dark:text-amber-400")}>{why(r, items)}</span>}
+        {say && <span className={cn("block truncate text-xs", s === "incident" ? "text-red-500" : "text-amber-600 dark:text-amber-400")}>{why(r, items)}{where && <span className="text-muted-foreground"> · {where}</span>}</span>}
       </span>
       <span className="hidden truncate text-xs text-muted-foreground md:block">{triggerText(r.trigger)}</span>
       <span className="hidden text-xs text-muted-foreground tabular-nums md:block">{r.paused ? "Paused" : next(r.next_at)}</span>
