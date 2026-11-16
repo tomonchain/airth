@@ -29,8 +29,10 @@ const EVERY = 6000
     once it is open); a glass pill at the top right on a computer. */
 const SLOT = "glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground"
 
-export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject }: {
+export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject, fresh }: {
   realm: string; agents: Agent[] | null; items: Item[]; tasks: Tasks | null
+  /** Changes each time the founder opens Chat from the rail: back to New request. */
+  fresh?: number
   onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void; onProject: (id: number) => void
 }) {
   const team = agents ?? []
@@ -41,13 +43,12 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 300000, [realm]).data?.projects
   const first = owner?.name?.trim().split(/\s+/)[0] || null
 
-  // The conversation opens when the interlocutor already has today's task;
-  // a new day starts on the greeting. The founder switches either way.
+  // Chat opens on New request, every time (the founder's choice); the
+  // conversation is one click away, under Conversation.
   const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name).map((t) => t.id).sort(), [tasks, lead])
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-  const [mode, setMode] = useState<"start" | "thread" | null>(null)
-  useEffect(() => setMode(null), [realm])
-  const shown = lead && (mode ?? (leadTasks[leadTasks.length - 1]?.startsWith(today) ? "thread" : "start")) === "thread" ? "thread" : "start"
+  const [mode, setMode] = useState<"start" | "thread">("start")
+  useEffect(() => setMode("start"), [realm, fresh])
+  const shown = lead && mode === "thread" ? "thread" : "start"
 
   if (shown === "thread" && lead) {
     return (

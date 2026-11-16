@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 146. An agent links a workspace file, and the founder opens it in the app
+
+**Accepted** (founder, 16 November 2026: "un agent pourrait envoyer le lien d'un document présent dans le workspace et en cliquant on devrait pouvoir l'ouvrir").
+
+- **The link:** a Markdown link whose target is a path from the workspace's root, `[the Q3 plan](docs/finance/q3-plan.md)`. Agents are told so in one sentence of the system prompt. No new scheme: a relative path is what an agent already writes.
+- **In `<Markdown>`** (decision 144), such a link becomes a button that opens the file in the Documents page, through the same path the business profile already uses. It is never an address: no `href`, nothing the browser follows or a page could reach.
+- **What counts as one** (`web/src/lib/workspace-link.ts`): read once for `%` encodings, then refused if it has a scheme (`http:`, `file:`, `javascript:`, a drive `C:`), starts with `/` or `~`, holds a backslash, an `@`, a query, a fragment, a control character or a leftover encoding, or steps out with `..`. `.` and empty segments are dropped. It must read as a file (its last part has an extension) and not as an address without its scheme (`acme.com`, `www.acme.com/pricing`). Anything refused stays plain text, as before.
+- **The boundary is the server's.** The Documents page reads through `documents::resolve`, which takes only plain path components and checks the real path (after symlinks) is under the workspace's root. The client's check only decides what is offered as a link.
+- Where no page can open files (no provider), the link is plain text.
+
+*Why:* agents write reports and plans into the business folder and point to them; the founder had to find the file by hand.
+
+*Cost:* a link to a file that does not exist opens Documents on an error. A link whose text an agent chose may say something other than the file; the button's title names the path. In an isolated run, the link opens the realm's checkout, not the run's worktree: a file the run created shows once its change is adopted.
+
 ## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
 
 **Accepted** (founder, 16 November 2026: "Pourquoi les MaJ de l'UI sont aussi longues ? J'ai l'impression qu'on rebuild tout", then "Go" on these three). Decision 100's update built every new commit of `main` twice in the slowest mode (`cargo build --release` and `cargo test --release`, with whole-program optimization and one codegen unit) and ran every Rust test, even for a change to the interface alone; and it looked for one every 30 minutes.
