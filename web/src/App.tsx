@@ -248,7 +248,7 @@ export default function App() {
   return (
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] max-md:bg-surface">
       {narrow ? (
-        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
+        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} working={agents.filter((a) => a.state === "working").length} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
       ) : (
         <TopBar
           server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
@@ -313,7 +313,7 @@ export default function App() {
           </PageBoundary>
         </main>
       </div>
-      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} working={agents.filter((a) => a.state === "working").length} />}
+      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
     </div>
   )
 }

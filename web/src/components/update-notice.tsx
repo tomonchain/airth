@@ -4,6 +4,7 @@ import { ArrowUpCircle, Loader, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { usePoll } from "@/hooks/use-poll"
 import { api } from "@/lib/api"
 
@@ -99,16 +100,20 @@ export function RailUpdate({ working }: { working: number }) {
   )
 }
 
-/** On a phone: a row in More, above Models and spending. */
-export function UpdateRow({ up, onOpen }: { up: Update; onOpen: () => void }) {
+/** On a phone: a pill floating at the top right, as before (the founder's
+    choice: only the computer's moved to the rail). */
+export function PhoneUpdate({ working }: { working: number }) {
+  const up = useUpdate(working)
   if (!up.shown) return null
+  if (up.restarting) return <span className="inline-flex h-11 items-center gap-1.5 px-4 text-sm text-muted-foreground"><Loader className="size-3.5 animate-spin" /> Restarting Airth…</span>
   return (
-    <button onClick={onOpen} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-accent">
-      <span className="grid size-7 place-items-center"><UpdateIcon up={up} className="size-6" /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{up.label}</span>
-        {up.a && !up.restarting && <span className="block truncate text-xs text-muted-foreground">{up.a.short} · {up.a.count} change{up.a.count === 1 ? "" : "s"}</span>}
-      </span>
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<button className="inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-medium hover:bg-accent" />}>
+        <UpdateIcon up={up} className="size-4" /> {up.label}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[min(24rem,calc(100vw-24px))] p-4">
+        <UpdatePanel up={up} phone />
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

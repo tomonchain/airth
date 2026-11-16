@@ -3,6 +3,7 @@ import { Character } from "@/components/character"
 import { mac, titleBar } from "@/lib/shell"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { PhoneUpdate } from "@/components/update-notice"
 import { named, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -107,9 +108,9 @@ function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]
 
 /** On a phone there is no header (the founder's choice): Airth's mark
     floats at the top left as glass, and opens the business menu, with the
-    server's name. An update waits in More, at the tab bar (rail.tsx). */
-export function PhoneMenu({ server, realms, realm, onNewBusiness, onHq }: {
-  server: string | null; realms: Realm[]; realm: string; onNewBusiness: () => void; onHq: () => void
+    server's name; an update, when there is one, floats at the top right. */
+export function PhoneMenu({ server, realms, realm, working, onNewBusiness, onHq }: {
+  server: string | null; realms: Realm[]; realm: string; working: number; onNewBusiness: () => void; onHq: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   return (
@@ -125,6 +126,7 @@ export function PhoneMenu({ server, realms, realm, onNewBusiness, onHq }: {
           <PhoneItems realms={realms} realm={realm} server={server} onHq={onHq} onNewBusiness={onNewBusiness} />
         </DropdownMenuContent>
       </DropdownMenu>
+      <div className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] right-3 z-40 rounded-full empty:hidden"><PhoneUpdate working={working} /></div>
     </>
   )
 }
