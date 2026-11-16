@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { chronological, moment, taskAt, type Kind } from "./timeline.ts"
+import { chronological, during, moment, slots, type Kind, type Span } from "./timeline.ts"
 
 const e = (kind: Kind, at: string | null, name: string) => ({ kind, at, name })
 const names = (xs: { name: string }[]) => xs.map((x) => x.name)
@@ -57,16 +57,61 @@ describe("chronological", () => {
   })
 })
 
-describe("taskAt", () => {
-  it("places a task at its last activity, else at its start", () => {
-    // The founder's bug: a task started at 9, last spoken to at 14:05; an
-    // approval at noon used to come after it, under the founder's last words.
-    const started = "2026-11-16T09:00:00.000Z"
-    const out = chronological([
-      e("task", taskAt("2026-11-16T14:05:00Z", started), "task"),
-      e("item", "2026-11-16T12:00:00Z", "approval at noon"),
-    ])
-    expect(names(out)).toEqual(["approval at noon", "task"])
-    expect(taskAt(undefined, started)).toBe(started)
+const h = (hour: number, minute = 0) => Date.UTC(2026, 10, 16, hour, minute)
+
+describe("during", () => {
+  const spans: Span[] = [
+    { id: "nine", from: h(9), to: h(14, 5) },
+    { id: "eleven", from: h(11), to: h(11, 30) },
+    { id: "now", from: h(16), to: null },
+  ]
+
+  it("finds the task an event came during", () => {
+    expect(during(spans, h(12))).toBe("nine")
+    expect(during(spans, h(9))).toBe("nine")
+    expect(during(spans, h(14, 5))).toBe("nine")
+    // A task still going holds everything after its start.
+    expect(during(spans, h(23))).toBe("now")
+  })
+
+  it("leaves what came between tasks to the conversation", () => {
+    expect(during(spans, h(8))).toBeNull()
+    expect(during(spans, h(15))).toBeNull()
+    expect(during(spans, null)).toBeNull()
+  })
+
+  it("gives an event during two tasks to the one started last", () => {
+    expect(during(spans, h(11, 15))).toBe("eleven")
+  })
+})
+
+describe("slots", () => {
+  // A task: the order at 9, the answer at 9:10, the founder again at
+  // 14:00, the answer at 14:05.
+  const turns = [h(9), h(9, 10), h(14), h(14, 5)]
+
+  it("puts an event between the messages around it", () => {
+    // The founder's bug: an approval at noon came after the whole task,
+    // under the founder's words of 14:00.
+    expect(slots(turns, [h(12)], true)).toEqual([2])
+    expect(slots(turns, [h(9, 5), h(14, 1), h(15)], true)).toEqual([1, 3, 4])
+  })
+
+  it("puts an event at the same moment as a message after it", () => {
+    expect(slots(turns, [h(9, 10)], true)).toEqual([2])
+  })
+
+  it("places nothing before messages older than the record of times", () => {
+    // A run begun before decision 148, then gone on with.
+    expect(slots([h(9), null, null, h(14)], [h(10)], true)).toEqual([3])
+    expect(slots([h(9), null, null, h(14)], [h(15)], true)).toEqual([4])
+  })
+
+  it("keeps a task without times whole, with what came during it above", () => {
+    expect(slots([h(9), null, null], [h(10), h(12)], false)).toEqual([0, 0])
+  })
+
+  it("puts an event of unknown time last", () => {
+    expect(slots(turns, [null], true)).toEqual([4])
   })
 })

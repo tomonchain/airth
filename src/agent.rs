@@ -866,6 +866,83 @@ mod tests {
         )
     }
 
+    /// Replays scripted responses and keeps every conversation it was sent.
+    struct Recording {
+        responses: RefCell<Vec<ModelResponse>>,
+        sent: RefCell<Vec<Vec<Message>>>,
+    }
+
+    impl Model for Recording {
+        fn name(&self) -> String {
+            "recording".into()
+        }
+        fn complete(&self, req: &ModelRequest) -> Result<ModelResponse> {
+            self.sent.lock().unwrap().push(req.messages.to_vec());
+            Ok(self.responses.lock().unwrap().remove(0))
+        }
+    }
+
+    /// Decision 148: a saved run records when each message was added, and
+    /// the model is sent the messages exactly as before, with no time.
+    #[test]
+    fn message_times_are_kept_but_never_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs = tempfile::tempdir().unwrap();
+        let model = Recording {
+            responses: RefCell::new(vec![
+                resp(
+                    vec![ContentBlock::ToolUse {
+                        id: "1".into(),
+                        name: "write_file".into(),
+                        input: json!({"path": "notes.md", "content": "hi"}),
+                    }],
+                    StopReason::ToolUse,
+                ),
+                resp(
+                    vec![ContentBlock::Text {
+                        text: "Done.".into(),
+                    }],
+                    StopReason::EndTurn,
+                ),
+            ]),
+            sent: RefCell::new(vec![]),
+        };
+        let mut observer = NoObserver;
+        let mut agent = Agent::new(
+            &model,
+            quiet_runtime(dir.path()),
+            AgentConfig::new(10),
+            &mut observer,
+            CancelToken::default(),
+        );
+        let mut state = State::new("write notes", Some(runs.path()));
+        agent.run(&mut state).unwrap();
+        assert_eq!(state.status, Status::Completed);
+
+        // Every message has its time, in order.
+        let at: Vec<_> = state
+            .message_at
+            .clone()
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .collect();
+        assert_eq!(at.len(), state.messages.len());
+        assert!(at.windows(2).all(|w| w[0] <= w[1]), "{at:?}");
+
+        // Each request is the run's messages as they stood, nothing added.
+        let sent = model.sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        for request in sent.iter() {
+            assert_eq!(request[..], state.messages[..request.len()]);
+            let json = serde_json::to_string(request).unwrap();
+            for t in &at {
+                assert!(!json.contains(&t.to_rfc3339()), "{json}");
+                assert!(!json.contains(&t.format("%Y-%m-%d").to_string()), "{json}");
+            }
+        }
+    }
+
     /// What the founder wrote while the agent worked is read at its next
     /// turn, even when the agent thought it was done.
     #[test]

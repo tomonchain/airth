@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 148. Each message of a run keeps the time it was added; the model never sees it
+
+**Accepted** (founder, 16 November 2026: "Go" on giving each message its time, so the chat interleaves exactly).
+
+- **What is stored:** a run's state (`runs/<id>.json`) gains `message_at`, a list as long as `messages`: for each message, the time it was added (RFC 3339, UTC), or null when unknown. A message gets the time of the save that first writes it; the agent saves after each answer of the model and each tool, so that is within a step of when it was added.
+- **Old runs** still load: `message_at` is optional. A run saved before this decision has null for each of its messages; a message added to it later gets its time.
+- **The model never sees it.** The times are a field of the run's state, apart from the messages; what the providers are sent is built from the messages alone, as before. A test runs an agent and checks that every request is the run's messages, unchanged, with no time in them.
+- **The API:** the run's view already returns its state; `message_at` is in it. Nothing else changes.
+- **The chat:** a task goes at its start. A routine's run or a Needs you item that came while the task went on (between its start and its last activity) is shown inside it, between the messages around it. An event during two tasks goes to the one started last. A task without times keeps today's way: shown whole, with what came during it above.
+
+*Why:* the chat placed a task at its last activity, whole, because its messages had no time of their own. An approval that came at noon, during a task the founder last spoke to at 14:05, showed above the whole task, before words it came after. With a time per message the conversation reads in the order things happened.
+
+*Cost:* a time per message in each run's file (about 35 bytes each). Text added to a message already saved (the founder's words appended to the agent's last tool results, when a run is picked up again) keeps that message's time. Tasks are not interleaved with each other: a task that began during another shows after it, whole.
+
 ## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
 
 **Accepted** (founder, 16 November 2026: "Pourquoi les MaJ de l'UI sont aussi longues ? J'ai l'impression qu'on rebuild tout", then "Go" on these three). Decision 100's update built every new commit of `main` twice in the slowest mode (`cargo build --release` and `cargo test --release`, with whole-program optimization and one codegen unit) and ran every Rust test, even for a change to the interface alone; and it looked for one every 30 minutes.

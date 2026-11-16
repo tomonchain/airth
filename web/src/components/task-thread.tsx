@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
@@ -11,6 +11,7 @@ import { Markdown } from "@/components/markdown"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
+import { moment, slots } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 type Block =
@@ -23,7 +24,9 @@ export type RunView = {
   elsewhere?: boolean
   version: number
   unchanged?: boolean
-  state: { id: string; objective: string; status: "running" | "completed" | "stopped" | "failed"; report: string | null; resume: string | null; messages: Message[]; updated_at: string; change?: Change | null }
+  state: { id: string; objective: string; status: "running" | "completed" | "stopped" | "failed"; report: string | null; resume: string | null; messages: Message[]; updated_at: string; change?: Change | null
+    /** When each message was added (decision 148); null when unknown. */
+    message_at?: (string | null)[] }
   title?: string | null
   checks_required?: boolean
   delivery?: Review["delivery"]
@@ -106,37 +109,39 @@ function Elapsed({ from }: { from: number }) {
 }
 
 type Step = { name: string; input: Record<string, unknown>; error?: boolean; done: boolean }
-type Part =
+type Part = (
   | { kind: "founder"; text: string }
   | { kind: "agent"; text: string }
   | { kind: "steps"; steps: Step[] }
   | { kind: "note"; text: string }
+) & { time: number | null }
 
 // The task's messages as chat parts: the founder's words, the agent's words,
 // and what it did in between, grouped.
 function parts(view: RunView): Part[] {
   // A task a plan passed on carries a note for its agent: not shown.
-  const out: Part[] = [{ kind: "founder", text: view.state.objective.split("\n\n(Passed on by ")[0] }]
+  const out: Part[] = [{ kind: "founder", text: view.state.objective.split("\n\n(Passed on by ")[0], time: moment(startOf(view.state.id)) }]
   const byId = new Map<string, Step>()
   view.state.messages.forEach((m, i) => {
+    const time = moment(view.state.message_at?.[i])
     for (const b of m.content) {
       if (b.type === "text") {
         const text = b.text.trim()
         if (!text) continue
-        if (m.role === "assistant") out.push({ kind: "agent", text })
+        if (m.role === "assistant") out.push({ kind: "agent", text, time })
         // The agent's job and the order, which the founder wrote above; what
         // the founder wrote after, before the agent answered, is theirs.
         else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
-        else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it." })
-        else if (text.startsWith("The tasks of your plan ended")) out.push({ kind: "note", text: "The project's tasks ended." })
-        else if (text.startsWith("[Airth runtime]") || text === "Go on with the order.") out.push({ kind: "note", text: "Picked up again." })
-        else out.push({ kind: "founder", text })
+        else if (text.startsWith("The founder allowed this")) out.push({ kind: "note", text: "You allowed it.", time })
+        else if (text.startsWith("The tasks of your plan ended")) out.push({ kind: "note", text: "The project's tasks ended.", time })
+        else if (text.startsWith("[Airth runtime]") || text === "Go on with the order.") out.push({ kind: "note", text: "Picked up again.", time })
+        else out.push({ kind: "founder", text, time })
       } else if (b.type === "tool_use") {
         const step = { name: b.name, input: b.input, done: false }
         byId.set(b.id, step)
         const last = out[out.length - 1]
         if (last?.kind === "steps") last.steps.push(step)
-        else out.push({ kind: "steps", steps: [step] })
+        else out.push({ kind: "steps", steps: [step], time })
       } else if (b.type === "tool_result") {
         const s = byId.get(b.tool_use_id)
         if (s) { s.done = true; s.error = !!b.is_error }
@@ -158,10 +163,12 @@ function stepLine(s: Step) {
 
 // A turn of the agent's, as shown: what it did (its notes on the way, its
 // steps, what the founder allowed), folded into one line, then its answer.
-type Shown =
+// `at` is its first part's place; `time`, when it began, if known.
+type Shown = (
   | { kind: "founder"; text: string; at: number }
   | { kind: "work"; items: Part[]; at: number; live: boolean }
   | { kind: "answer"; text: string; at: number }
+) & { time: number | null }
 
 function turns(ps: Part[], live: boolean): Shown[] {
   const out: Shown[] = []
@@ -172,12 +179,12 @@ function turns(ps: Part[], live: boolean): Shown[] {
     // agent works they may be a note before its next step.
     const last = work[work.length - 1]
     const answer = last.p.kind === "agent" && !(end && live) ? work.pop()! : null
-    if (work.length) out.push({ kind: "work", items: work.map((w) => w.p), at: work[0].at, live: end && live })
-    if (answer && answer.p.kind === "agent") out.push({ kind: "answer", text: answer.p.text, at: answer.at })
+    if (work.length) out.push({ kind: "work", items: work.map((w) => w.p), at: work[0].at, live: end && live, time: work[0].p.time })
+    if (answer && answer.p.kind === "agent") out.push({ kind: "answer", text: answer.p.text, at: answer.at, time: answer.p.time })
     work = []
   }
   ps.forEach((p, at) => {
-    if (p.kind === "founder") { flush(false); out.push({ kind: "founder", text: p.text, at }) }
+    if (p.kind === "founder") { flush(false); out.push({ kind: "founder", text: p.text, at, time: p.time }) }
     else work.push({ p, at })
   })
   flush(true)
@@ -251,13 +258,20 @@ function Bubble({ side, children, last, agent, time, aside }: { side: "left" | "
 /** A task one agent passed to another (decision 120), as the thread shows it. */
 export type Passed = { id: string; agent: string; title: string; order: string; status?: string }
 
-export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent }: {
+/** What else the conversation holds that came during this task (a
+    routine's run, something sent to Needs you), shown at its time between
+    the task's messages (decision 148). `node` draws it, ending its group
+    when `last`. */
+export type Between = { key: string; at: number | null; side: "left" | "right"; node: (last: boolean) => React.ReactNode }
+
+export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent, between = [] }: {
   realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echoes?: string[]; onEcho?: (text: string) => void; onChange: () => void
   /** Who passed this task on, when another agent did. */
   from?: string
   /** The tasks this one passed on to the team. */
   passed?: Passed[]
   onAgent?: (name: string) => void
+  between?: Between[]
 }) {
   const { view, draft, refresh } = useRun(realm, id, fresh || echoes.length > 0)
   // Words the founder already read as they were written are not written
@@ -268,6 +282,14 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
   const shownTurns = useMemo(() => turns(ps, !!view?.live), [ps, view?.live])
+  // Each of `between` goes before the turn of this index.
+  const timed = !!view?.state.message_at?.some((t) => t)
+  const slot = useMemo(() => slots(shownTurns.map((t) => t.time), between.map((b) => b.at), timed), [shownTurns, between, timed])
+  const breaks = (i: number) => slot.includes(i + 1)
+  function showBetween(i: number | null) {
+    const here = between.filter((_, k) => i === null || slot[k] === i)
+    return here.map((b, k) => <Fragment key={b.key}>{b.node(here[k + 1]?.side !== b.side)}</Fragment>)
+  }
   // What the agent is writing: a sentence is most often a note before its
   // next step, said on the work line; longer, it is an answer, written out
   // as a bubble. A note in a bubble would fold away a moment later and the
@@ -281,7 +303,8 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
     const said = ps.filter((p) => p.kind === "founder").slice(-(echoes.length + 1)).map((p) => p.text)
     for (const e of echoes) if (said.includes(e.trim())) onEcho?.(e)
   }, [ps, echoes, onEcho])
-  if (!view) return null
+  // Until the task is read, what came during it still shows.
+  if (!view) return <>{showBetween(null)}</>
   if (shown.current === null) shown.current = fresh ? 1 : ps.length
   const live = view.live
   const status = view.state.status
@@ -330,7 +353,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
 
   return (
     <div>
-      {shownTurns.map((t, i) => {
+      {shownTurns.map((t, i) => <Fragment key={t.at}>{showBetween(i)}{(() => {
         const next = shownTurns[i + 1]
         const isNew = t.at >= (shown.current ?? 0)
         // Passed on by another agent: its brief, not the founder's words.
@@ -350,12 +373,12 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         if (t.kind === "founder") {
           return (
             <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
-              <Bubble side="right" agent={agent} last={next?.kind !== "founder"} time={t.at === 0 ? stamp(startOf(id)) : undefined}
+              <Bubble side="right" agent={agent} last={next?.kind !== "founder" || breaks(i)} time={t.at === 0 ? stamp(startOf(id)) : t.time !== null ? stamp(new Date(t.time).toISOString()) : undefined}
                 aside={<KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" />}>{t.text}</Bubble>
             </div>
           )
         }
-        const last = (!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question))
+        const last = breaks(i) || ((!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question)))
         return (
           <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
             <Bubble side="left" agent={agent} last={last} aside={t.kind === "answer" ? <KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" /> : undefined}>
@@ -367,7 +390,8 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
             </Bubble>
           </div>
         )
-      })}
+      })()}</Fragment>)}
+      {showBetween(shownTurns.length)}
       {/* The agent proposes a decision for the whole team (decision 83):
           kept only if the founder says so. */}
       {view.pending?.tool === "remember" && (() => {
