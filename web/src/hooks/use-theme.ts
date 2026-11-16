@@ -21,14 +21,22 @@ function chosen(): "light" | "dark" | "system" {
   return "system"
 }
 
+function apply(theme: "light" | "dark") {
+  document.documentElement.classList.toggle("dark", theme === "dark")
+  document.documentElement.dataset.theme = theme
+  // The phone's status bar takes the page's colour.
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.setAttribute("content", theme === "dark" ? "#161617" : "#ffffff")
+}
+
+// Called before React mounts, so the first screen (the welcome guide
+// included) paints in the founder's theme rather than light, then dark.
+export function applyTheme() {
+  apply(initial())
+}
+
 export function useTheme() {
   const [theme, set] = useState(initial)
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark")
-    document.documentElement.dataset.theme = theme
-    // The phone's status bar takes the page's colour.
-    for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.setAttribute("content", theme === "dark" ? "#161617" : "#ffffff")
-  }, [theme])
+  useEffect(() => apply(theme), [theme])
   // Every user of the theme follows a change made by any of them.
   useEffect(() => {
     const on = () => set(initial())
