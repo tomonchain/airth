@@ -67,6 +67,9 @@ export default function App() {
   // A project opened from the Home or the Overview (decision 129).
   const [project, setProject] = useState<{ id: number; at: number } | null>(null)
   const openProject = (id: number) => { setTask(null); setProject({ id, at: Date.now() }); setPage("tasks") }
+  // Opening Chat from the rail or the tab bar starts on New request.
+  const [chatAt, setChatAt] = useState(0)
+  const go = (p: Page) => { if (p === "home") setChatAt(Date.now()); setPage(p) }
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
   // ⌘K goes anywhere; ⌘J, or ⌘⇧O (the classic interface's key), asks the team.
@@ -266,10 +269,10 @@ export default function App() {
         </button>
       )}
       <Palette open={palette} onOpenChange={setPalette} realm={realm} realms={realms.data ?? []} agents={agents}
-        onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} />
+        onPage={go} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} />
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
-        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} working={running} />}
+        {!narrow && <Rail page={page} onPage={go} needs={items.length} live={agents.some((a) => a.state === "working")} working={running} />}
         <main ref={setMainEl} onAnimationEnd={(e) => e.target === e.currentTarget && setSlide(null)}
           className={cn("flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm",
             slide && "animate-in fade-in-0 duration-200 ease-out", slide?.from === "right" && "slide-in-from-right-10", slide?.from === "left" && "slide-in-from-left-10")}>
@@ -277,7 +280,7 @@ export default function App() {
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} tasks={data.data?.tasks ?? null}
-              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} />
+              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} fresh={chatAt} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               onAgent={open} onNeeds={() => setPage("needs")}
@@ -315,7 +318,7 @@ export default function App() {
           </PageBoundary>
         </main>
       </div>
-      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
+      {narrow && <TabBar page={page} onPage={(p) => { go(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
     </div>
   )
 }
