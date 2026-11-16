@@ -3,6 +3,7 @@ import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, Rotate
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
 import { StreamText } from "@/components/beautifui/stream-text"
+import { FoldedLine, OpenLine, storage } from "@/components/fold-line"
 import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
 import { KeepButton } from "@/components/keep-decision"
@@ -11,6 +12,7 @@ import { Markdown } from "@/components/markdown"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
+import { exchanges, isOpen, openByDefault, remember, remembered, summary, type Exchange, type Outcome } from "@/lib/fold"
 import { moment, slots } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
@@ -261,10 +263,12 @@ export type Passed = { id: string; agent: string; title: string; order: string; 
 /** What else the conversation holds that came during this task (a
     routine's run, something sent to Needs you), shown at its time between
     the task's messages (decision 148). `node` draws it, ending its group
-    when `last`. */
-export type Between = { key: string; at: number | null; side: "left" | "right"; node: (last: boolean) => React.ReactNode }
+    when `last`; `answered` when it is a Needs you item the founder
+    answered, which a folded exchange hides (a routine's run, or an item
+    still waiting, stays shown). */
+export type Between = { key: string; at: number | null; side: "left" | "right"; answered?: boolean; node: (last: boolean) => React.ReactNode }
 
-export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent, between = [] }: {
+export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent, between = [], latest = true }: {
   realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echoes?: string[]; onEcho?: (text: string) => void; onChange: () => void
   /** Who passed this task on, when another agent did. */
   from?: string
@@ -272,6 +276,8 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   passed?: Passed[]
   onAgent?: (name: string) => void
   between?: Between[]
+  /** The last task shown (a page with one task: it is): its last exchange stays open. */
+  latest?: boolean
 }) {
   const { view, draft, refresh } = useRun(realm, id, fresh || echoes.length > 0)
   // Words the founder already read as they were written are not written
@@ -279,6 +285,8 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const read = useRef("")
   if (draft) read.current = draft
   const [busy, setBusy] = useState(false)
+  // The founder's fold choices on this page; kept in the browser too.
+  const [folds, setFolds] = useState<Record<string, boolean>>({})
   const shown = useRef<number | null>(null)
   const ps = useMemo(() => (view ? parts(view) : []), [view])
   const shownTurns = useMemo(() => turns(ps, !!view?.live), [ps, view?.live])
@@ -286,8 +294,9 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const timed = !!view?.state.message_at?.some((t) => t)
   const slot = useMemo(() => slots(shownTurns.map((t) => t.time), between.map((b) => b.at), timed), [shownTurns, between, timed])
   const breaks = (i: number) => slot.includes(i + 1)
-  function showBetween(i: number | null) {
-    const here = between.filter((_, k) => i === null || slot[k] === i)
+  // Folded: what was answered goes with the exchange; the rest still shows.
+  function showBetween(i: number | null, folded = false) {
+    const here = between.filter((b, k) => (i === null || slot[k] === i) && (!folded || !b.answered))
     return here.map((b, k) => <Fragment key={b.key}>{b.node(here[k + 1]?.side !== b.side)}</Fragment>)
   }
   // What the agent is writing: a sentence is most often a note before its
@@ -351,46 +360,87 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   }
   const timer = <span className="ml-2 inline-flex items-center gap-1.5 align-middle">{working && <Elapsed from={working} />}<StopButton onStop={stop} /></span>
 
+  // The founder's message and what answered it, folded into one line once
+  // it is over (an exchange; see lib/fold): open, the line folds it again.
+  const groups = exchanges(shownTurns.map((t) => t.kind))
+  function exchange(e: Exchange, k: number) {
+    const first = shownTurns[e.start]
+    const lastOne = k === groups.length - 1
+    const outcome: Outcome = !lastOne ? "done"
+      : live ? "running"
+      : view!.pending || question ? "waiting"
+      : status === "failed" ? "failed"
+      : status === "stopped" ? "stopped"
+      : "done"
+    const key = `${realm}:${id}:${first.at}`
+    const open = isOpen(openByDefault(outcome, latest && lastOne), folds[key] ?? remembered(storage(), key))
+    const toggle = () => { remember(storage(), key, !open); setFolds((f) => ({ ...f, [key]: !open })) }
+    const answer = shownTurns.slice(e.start, e.end).reverse().find((t) => t.kind === "answer")
+    const said = summary(first.kind === "founder" ? first.text : answer?.kind === "answer" ? answer.text : "", answer?.kind === "answer" ? answer.text : null, outcome)
+    // A later exchange without a known time says none, rather than the task's.
+    const when = e.start === 0 ? stamp(startOf(id)) : first.time === null ? "" : stamp(new Date(first.time).toISOString())
+    const inner = Array.from({ length: e.end - e.start - 1 }, (_, j) => e.start + 1 + j)
+    if (!open) {
+      return (
+        <>
+          {showBetween(e.start)}
+          <FoldedLine request={said.request} result={said.result} outcome={outcome} when={when} onOpen={toggle} />
+          {inner.map((i) => <Fragment key={i}>{showBetween(i, true)}</Fragment>)}
+        </>
+      )
+    }
+    return (
+      <>
+        {showBetween(e.start)}
+        {/* Still going or waiting: nothing to fold yet. */}
+        {outcome !== "running" && outcome !== "waiting" && <OpenLine result={outcome === "done" ? "Done" : said.result} outcome={outcome} when={when} onFold={toggle} />}
+        {[e.start, ...inner].map((i) => <Fragment key={shownTurns[i].at}>{i > e.start && showBetween(i)}{turn(shownTurns[i], i)}</Fragment>)}
+      </>
+    )
+  }
+
+  function turn(t: Shown, i: number) {
+    const next = shownTurns[i + 1]
+    const isNew = t.at >= (shown.current ?? 0)
+    // Passed on by another agent: its brief, not the founder's words.
+    if (t.kind === "founder" && t.at === 0 && from) {
+      return (
+        <div key={t.at} className={cn("mb-4", isNew && "fade-up")}>
+          <div className="rounded-2xl bg-bubble px-4 py-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CornerDownRight className="size-3.5" /> <b className="font-medium text-foreground">{from}</b> passed this on to <b className="font-medium text-foreground">{agent.title}</b>
+              <span className="ml-auto">{stamp(startOf(id))}</span>
+            </div>
+            <Markdown text={t.text} className="text-[13.5px] leading-relaxed" />
+          </div>
+        </div>
+      )
+    }
+    if (t.kind === "founder") {
+      return (
+        <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
+          <Bubble side="right" agent={agent} last={next?.kind !== "founder" || breaks(i)} time={t.at === 0 ? stamp(startOf(id)) : t.time !== null ? stamp(new Date(t.time).toISOString()) : undefined}
+            aside={<KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" />}>{t.text}</Bubble>
+        </div>
+      )
+    }
+    const last = breaks(i) || ((!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question)))
+    return (
+      <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
+        <Bubble side="left" agent={agent} last={last} aside={t.kind === "answer" ? <KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" /> : undefined}>
+          {t.kind === "work" ? <Work items={t.items} live={t.live && !long} saying={t.live ? short : undefined} tail={t.live && !long && !view!.pending ? timer : undefined} /> : (
+            <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 md:max-w-[85%] text-[13.5px] leading-relaxed">
+              <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
+            </div>
+          )}
+        </Bubble>
+      </div>
+    )
+  }
+
   return (
     <div>
-      {shownTurns.map((t, i) => <Fragment key={t.at}>{showBetween(i)}{(() => {
-        const next = shownTurns[i + 1]
-        const isNew = t.at >= (shown.current ?? 0)
-        // Passed on by another agent: its brief, not the founder's words.
-        if (t.kind === "founder" && t.at === 0 && from) {
-          return (
-            <div key={t.at} className={cn("mb-4", isNew && "fade-up")}>
-              <div className="rounded-2xl bg-bubble px-4 py-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CornerDownRight className="size-3.5" /> <b className="font-medium text-foreground">{from}</b> passed this on to <b className="font-medium text-foreground">{agent.title}</b>
-                  <span className="ml-auto">{stamp(startOf(id))}</span>
-                </div>
-                <Markdown text={t.text} className="text-[13.5px] leading-relaxed" />
-              </div>
-            </div>
-          )
-        }
-        if (t.kind === "founder") {
-          return (
-            <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
-              <Bubble side="right" agent={agent} last={next?.kind !== "founder" || breaks(i)} time={t.at === 0 ? stamp(startOf(id)) : t.time !== null ? stamp(new Date(t.time).toISOString()) : undefined}
-                aside={<KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" />}>{t.text}</Bubble>
-            </div>
-          )
-        }
-        const last = breaks(i) || ((!next || next.kind === "founder") && !(i === shownTurns.length - 1 && (live || question)))
-        return (
-          <div key={t.at} className={cn("group/msg", isNew && "fade-up")}>
-            <Bubble side="left" agent={agent} last={last} aside={t.kind === "answer" ? <KeepButton realm={realm} text={t.text} className="mt-1.5 shrink-0" /> : undefined}>
-              {t.kind === "work" ? <Work items={t.items} live={t.live && !long} saying={t.live ? short : undefined} tail={t.live && !long && !view.pending ? timer : undefined} /> : (
-                <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-2.5 md:max-w-[85%] text-[13.5px] leading-relaxed">
-                  <AgentText text={t.text} stream={isNew && !read.current.includes(t.text)} />
-                </div>
-              )}
-            </Bubble>
-          </div>
-        )
-      })()}</Fragment>)}
+      {groups.map((e, k) => <Fragment key={shownTurns[e.start].at}>{exchange(e, k)}</Fragment>)}
       {showBetween(shownTurns.length)}
       {/* The agent proposes a decision for the whole team (decision 83):
           kept only if the founder says so. */}
