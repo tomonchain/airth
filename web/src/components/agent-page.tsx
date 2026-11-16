@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { useTools } from "@/hooks/use-tools"
@@ -296,6 +297,8 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
         <Stat label="Last ran" value={last ? ago(last) : "—"} />
       </div>
 
+      <AgentModel realm={realm} agent={agent} onSaved={onSaved} />
+
       <section className="space-y-1.5">
         <Label htmlFor="agent-job">Job</Label>
         <p className="text-xs text-muted-foreground">Its mission, how it works and what it reports, in Markdown. It reads this on every task.</p>
@@ -329,6 +332,49 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
         </div>
       </section>
     </>
+  )
+}
+
+type Providers = { providers: { id: string; name: string; configured: boolean; models: string[] }[] }
+const BUSINESS = "-business"
+
+/** The model its tasks use (decision 141): the business's, or one of the
+    models a configured provider offers. Saved as soon as it is picked. */
+function AgentModel({ realm, agent, onSaved }: { realm: string; agent: Agent; onSaved: () => void }) {
+  const options = usePoll<Providers>(() => api(`realms/${enc(realm)}/models`), 600000, [realm])
+  const [busy, setBusy] = useState(false)
+  const current = agent.model ?? BUSINESS
+  const ready = (options.data?.providers ?? []).filter((p) => p.configured && p.models.length)
+  async function pick(v: string) {
+    if (v === current) return
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: agent.body || agent.job || "", model: v === BUSINESS ? "" : v }, "PUT")
+      toast.success(v === BUSINESS ? `${called(agent)} uses the business's model.` : `${called(agent)} now works with ${v.split("/")[1]}.`)
+      onSaved()
+    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <section className="flex items-center gap-4 max-sm:flex-col max-sm:items-start max-sm:gap-1.5">
+      <div className="min-w-0 flex-1">
+        <Label>Model</Label>
+        <p className="text-xs text-muted-foreground">What its tasks and agent routines think with. A model picked in a conversation still wins there.</p>
+      </div>
+      <Select value={current} disabled={busy} onValueChange={(v) => v && pick(String(v))}>
+        <SelectTrigger className="w-64 max-sm:w-full" aria-label="Model"><SelectValue>{(v: string) => (v === BUSINESS ? "The business's model" : v.split("/")[1] ?? v)}</SelectValue></SelectTrigger>
+        <SelectContent>
+          <SelectItem value={BUSINESS}>The business's model</SelectItem>
+          {/* One no longer offered stays shown, so it can be changed. */}
+          {current !== BUSINESS && !ready.some((p) => p.models.some((m) => `${p.id}/${m}` === current)) && <SelectItem value={current}>{current}</SelectItem>}
+          {ready.map((p) => (
+            <SelectGroup key={p.id}>
+              <SelectLabel>{p.name}</SelectLabel>
+              {p.models.map((m) => <SelectItem key={m} value={`${p.id}/${m}`}>{m}</SelectItem>)}
+            </SelectGroup>
+          ))}
+        </SelectContent>
+      </Select>
+    </section>
   )
 }
 

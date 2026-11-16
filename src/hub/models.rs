@@ -228,10 +228,19 @@ impl Hub {
         connections: &Connections,
         state: &mut State,
     ) -> Result<Routed> {
-        let key = state.model_choice.clone().unwrap_or_else(|| "auto".into());
+        // A model picked for this run wins; else the one its agent's file
+        // names (decision 141); else the realm's routing.
+        let choice = state.model_choice.clone().or_else(|| {
+            let agent = state
+                .agent
+                .clone()
+                .or_else(|| state.origin.as_ref()?.bot.clone())?;
+            crate::business::agent_model(&realm.root().ok()?, &agent)
+        });
+        let key = choice.clone().unwrap_or_else(|| "auto".into());
         let switched = state.answered_by.as_deref().is_some_and(|prev| prev != key);
         state.answered_by = Some(key);
-        let Some(choice) = state.model_choice.clone() else {
+        let Some(choice) = choice else {
             let mut routed = self.route(connections, state);
             if switched {
                 routed = Routed::new_after(routed, state.model_len());

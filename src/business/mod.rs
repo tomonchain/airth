@@ -248,6 +248,16 @@ pub fn first_name(root: &Path, name: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
+/// The model the agent `name`'s tasks use, when its file names one
+/// (decision 141).
+pub fn agent_model(root: &Path, name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(AGENTS).join(format!("{name}.md"))).ok()?;
+    crate::frontmatter::parse(&text)
+        .text("model")
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+}
+
 /// The job of the agent `name`.
 pub fn job(root: &Path, name: &str) -> Result<Job> {
     crate::realm::validate_name(name).context("invalid agent name")?;
@@ -466,6 +476,21 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
         "department" => {
             config::department(value, own)?;
         }
+        // The model its tasks use (decision 141): provider/model, a
+        // provider Airth knows; empty: the business's.
+        "model" if !value.is_empty() => {
+            let (provider, model) = value
+                .split_once('/')
+                .filter(|(p, m)| !p.is_empty() && !m.is_empty())
+                .context("a model is provider/model, e.g. anthropic/claude-opus-5-5")?;
+            if !crate::models::provider_catalog()
+                .iter()
+                .any(|(id, _, _)| *id == provider)
+            {
+                bail!("unknown provider '{provider}' for {model}");
+            }
+        }
+        "model" => {}
         // A role's mailbox (decision 70); empty removes it.
         "mailbox" if !value.is_empty() && !crate::mail::valid_address(value) => {
             anyhow::bail!("'{value}' is not an e-mail address")

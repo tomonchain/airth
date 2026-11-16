@@ -1215,3 +1215,40 @@ fn a_permission_asked_again_replaces_only_the_same_one() {
         .collect();
     assert_eq!(expired, vec![write]);
 }
+
+/// Decision 141: an agent's file may name the model its tasks use; a model
+/// picked for one run still wins, and an agent without one uses the
+/// business's routing.
+#[test]
+fn an_agents_tasks_use_the_model_its_file_names() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "writer",
+        "title: Writer\nmodel: deepseek/deepseek-chat\n",
+    );
+    agent(&root, "editor", "title: Editor\n");
+    // A key for the model named, so it can be built (nothing is called).
+    f.realm.set_secret("DEEPSEEK_API_KEY", "sk-test").unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let connections = hub.connections_for(&f.realm).unwrap();
+    let used = |state: &mut State| {
+        hub.model_for_drive(&f.realm, &connections, state).unwrap();
+        state.answered_by.clone().unwrap()
+    };
+
+    let mut writer = hub.start_task(&f.realm, "writer", "Draft").unwrap();
+    assert_eq!(used(&mut writer), "deepseek/deepseek-chat");
+    let mut editor = hub.start_task(&f.realm, "editor", "Edit").unwrap();
+    assert_eq!(used(&mut editor), "auto");
+    writer.model_choice = Some("deepseek/deepseek-reasoner".into());
+    assert_eq!(used(&mut writer), "deepseek/deepseek-reasoner");
+
+    // The field is checked as the others: provider/model, a known provider.
+    let own: Vec<String> = Vec::new();
+    assert!(crate::business::check_agent_field("model", "anthropic/claude-opus-5-5", &own).is_ok());
+    assert!(crate::business::check_agent_field("model", "", &own).is_ok());
+    assert!(crate::business::check_agent_field("model", "claude", &own).is_err());
+    assert!(crate::business::check_agent_field("model", "nowhere/x", &own).is_err());
+}

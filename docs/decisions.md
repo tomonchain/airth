@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 141. An agent may name the model its tasks use
+
+**Accepted** (founder, 16 November 2026: "un modèle par agent", for Hedgen's year report written by a stronger model than the business's).
+
+- **The field.** An agent's file may hold `model: provider/model`, for example `anthropic/claude-opus-5-5`. The provider is one Airth knows (`models::provider_catalog`); empty means the business's model.
+- **Where it applies.** When a run is driven, a model picked for that run in a conversation wins. Otherwise the model named by the run's agent applies: a task's agent, or the bot an agent routine ran for. Otherwise the business's routing applies.
+  - Like a model picked in a conversation, it uses that provider's own key, and falls back to the business's connections if the provider fails.
+  - A provider whose key is missing stops the run at its start, saying so (decision 139's "could not start").
+- **The page.** The agent's page has a Model choice, among the configured providers' models, saved when picked.
+- **Not changed.** A drawn routine's AI blocks keep the business's tiers, main and fast.
+
+*Why:* one agent may need a stronger model than the rest of the team, a year report for instance, without the whole business paying for it.
+
+*Cost:* the field travels in the agent's package (decision 140). A business without that provider's key cannot run the agent until it changes the model or adds the key.
+
 ## 140. An agent's page, its levels in the app, and its package to take to another business
 
 **Accepted** (founder, 15 November 2026: a fuller agent page with tabs, each agent's rights, connectors and skills, and exporting an agent; "agent, routines and prompts"; import "right after").

@@ -359,13 +359,14 @@ impl App {
                     ),
                     v => v.as_str().map(str::to_string),
                 };
-                const FIELDS: [&str; 6] = [
+                const FIELDS: [&str; 7] = [
                     "title",
                     "first_name",
                     "department",
                     "integrations",
                     "skills",
                     "repos",
+                    "model",
                 ];
                 for key in FIELDS {
                     if let Some(value) = field(key) {
