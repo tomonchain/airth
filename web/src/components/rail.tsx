@@ -3,6 +3,7 @@ import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, Fol
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
+import { RailUpdate, UpdatePanel, UpdateRow, useUpdate } from "@/components/update-notice"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
@@ -67,7 +68,7 @@ export const MORE = GROUPS.flatMap((g) => g.pages)
 
 /** The app's rail: the three pages the founder lives in, then the team's
     and the business's, a group each; Settings at its foot. */
-export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean }) {
+export function Rail({ page, onPage, needs, live, working }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean; working: number }) {
   const { theme, setTheme } = useTheme()
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 overflow-y-auto pt-1 pb-3">
@@ -80,6 +81,8 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
         </div>
       ))}
       <div className="mt-auto flex flex-col items-center gap-1.5">
+        {/* A new Airth, above what the models cost. */}
+        <RailUpdate working={working} />
         <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
         <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
@@ -89,11 +92,13 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
 }
 
 /** The rail on a phone: a bar at the bottom, within the thumb's reach. */
-export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) => void; needs: number }) {
+export function TabBar({ page, onPage, needs, working }: { page: Page; onPage: (p: Page) => void; needs: number; working: number }) {
   const { theme, setTheme } = useTheme()
   const [more, setMore] = useState(false)
   const [spending, setSpending] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const spend = useSpend()
+  const up = useUpdate(working)
   const tabs: [Page | "more", string, LucideIcon][] = [...MAIN, ["more", "More", Ellipsis]]
   // The tab the page is under: its own, or More; none for the HQ.
   const at = MAIN.findIndex(([p]) => p === page)
@@ -112,19 +117,27 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
           const badge = p === "needs" ? needs : 0
           return (
             <button key={label} onClick={() => p === "more" ? setMore(true) : onPage(p)} aria-current={active ? "page" : undefined}
-              aria-label={badge > 0 ? `${label}, ${badge} waiting` : label} title={label}
+              aria-label={badge > 0 ? `${label}, ${badge} waiting` : p === "more" && up.ready ? `${label}, update ready` : label} title={label}
               className={cn("group relative grid place-items-center rounded-[23px] text-foreground/55 transition-colors active:scale-95", active && "text-foreground")}>
               <Icon className={cn("size-6", metal(active))} strokeWidth={active ? 2.2 : 1.8} />
               {badge > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{badge}</span>}
+              {/* An update ready to install waits in More. */}
+              {p === "more" && up.ready && <span aria-hidden className="absolute top-2.5 left-[calc(50%+8px)] size-2 rounded-full bg-sky-500" />}
             </button>
           )
         })}
       </div>
-      <Sheet open={more} onOpenChange={(o) => { setMore(o); if (!o) setSpending(false) }}>
+      <Sheet open={more} onOpenChange={(o) => { setMore(o); if (!o) { setSpending(false); setUpdating(false) } }}>
         <SheetContent side="bottom" className="glass rounded-[28px] border px-3 pt-4 pb-3 data-[side=bottom]:inset-x-3 data-[side=bottom]:bottom-[max(env(safe-area-inset-bottom),10px)]">
           <SheetTitle className="px-2">More</SheetTitle>
-          {/* What the models cost, as the rail's ring shows it on a computer. */}
-          {spending ? (
+          {/* A new Airth, then what the models cost, as at the rail's foot on a computer. */}
+          {updating ? (
+            <div className="max-h-[60svh] overflow-y-auto px-1">
+              <UpdatePanel up={up} phone />
+              <button className="mt-3 text-sm text-muted-foreground" onClick={() => setUpdating(false)}>Back</button>
+            </div>
+          ) : !spending && <UpdateRow up={up} onOpen={() => setUpdating(true)} />}
+          {updating ? null : spending ? (
             <div className="max-h-[60svh] overflow-y-auto px-1">
               <SpendPanel data={spend.data} error={spend.error} onChanged={spend.refresh} onUsage={() => { onPage("usage"); setMore(false); setSpending(false) }} />
               <button className="mt-3 text-sm text-muted-foreground" onClick={() => setSpending(false)}>Back</button>
@@ -138,7 +151,7 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
               </span>
             </button>
           )}
-          {!spending && <div className="max-h-[62svh] overflow-y-auto">
+          {!spending && !updating && <div className="max-h-[62svh] overflow-y-auto">
             {GROUPS.map((g, i) => (
               <section key={g.title} className="mt-2">
                 <h3 className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g.title}</h3>

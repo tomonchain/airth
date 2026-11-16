@@ -248,11 +248,11 @@ export default function App() {
   return (
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] max-md:bg-surface">
       {narrow ? (
-        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} agents={agents} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
+        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
       ) : (
         <TopBar
           server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
-          onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onAsk={() => setAsking(true)} onHq={() => setPage("hq")}
+          onTab={open} onClose={close} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")}
         />
       )}
       <QuickAsk open={asking} onOpenChange={setAsking} realm={realm} agents={agents} onTask={(id) => { setTask(id); setPage("tasks") }} />
@@ -267,7 +267,7 @@ export default function App() {
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} />
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
-        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} />}
+        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} working={agents.filter((a) => a.state === "working").length} />}
         <main ref={setMainEl} onAnimationEnd={(e) => e.target === e.currentTarget && setSlide(null)}
           className={cn("flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm",
             slide && "animate-in fade-in-0 duration-200 ease-out", slide?.from === "right" && "slide-in-from-right-10", slide?.from === "left" && "slide-in-from-left-10")}>
@@ -313,7 +313,7 @@ export default function App() {
           </PageBoundary>
         </main>
       </div>
-      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
+      {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} working={agents.filter((a) => a.state === "working").length} />}
     </div>
   )
 }
