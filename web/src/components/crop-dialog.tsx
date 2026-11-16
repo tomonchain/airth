@@ -38,7 +38,7 @@ export function CropDialog({ file, round, onCancel, onSave }: { file: File | nul
     const url = URL.createObjectURL(file)
     setError(null)
     createImageBitmap(file).then(
-      (bitmap) => { if (!live) return; setImg({ bitmap, url }); setCrop(centred(bitmap.width, bitmap.height, VIEW)) },
+      (bitmap) => { if (!live) { bitmap.close(); return }; setImg({ bitmap, url }); setCrop(centred(bitmap.width, bitmap.height, VIEW)) },
       () => { if (live) setError("This file is not an image Airth can read.") },
     )
     return () => { live = false; URL.revokeObjectURL(url) }
