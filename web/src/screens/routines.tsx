@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Bot, BookOpen, Check, ChevronDown, ChevronRight, GitBranch, GraduationCap, Hand, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
-import { Rich } from "@/components/rich"
+import { Markdown } from "@/components/markdown"
 import { RoutineCanvas } from "@/components/routine-canvas"
 import type { Declared } from "@/components/routine-editor"
 import { Empty, Loading, Page, Panel, Section, Seg } from "@/components/page"
@@ -658,7 +658,7 @@ function PipelineDetail({ realm, p }: { realm: string; p: Pipeline }) {
       {last?.report && (
         <div>
           <button className="inline-flex items-center gap-1 text-xs text-sky-500 hover:underline" onClick={() => setReport(!report)}><ChevronRight className={cn("size-3 transition-transform", report && "rotate-90")} />{report ? "Hide the last report" : "The last report"}</button>
-          {report && <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-surface p-3 text-sm"><Rich text={last.report} /></div>}
+          {report && <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-surface p-3 text-sm"><Markdown text={last.report} /></div>}
         </div>
       )}
     </>

@@ -3,7 +3,7 @@ import { AppWindow, ChevronRight, Table2, Eye, File, FileImage, FilePlus, FileTe
 import { Back, SideHead } from "@/components/page"
 import { toast } from "sonner"
 import { selection } from "@/lib/editor-selection"
-import { Rich } from "@/components/rich"
+import { Markdown } from "@/components/markdown"
 import { CsvTable } from "@/components/csv-table"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -418,7 +418,7 @@ function FileView({ t, onText, onPreview, onSave, onOverwrite, onReload, onApp, 
             </div>
           ) : t.text === undefined ? <p className="p-6 text-sm text-muted-foreground">Loading…</p>
           : t.preview && CSV.test(t.path) ? <CsvTable text={t.text} tsv={/\.tsv$/i.test(t.path)} />
-          : t.preview ? <div className="mx-auto max-w-3xl px-8 py-8 text-sm leading-relaxed"><Rich text={t.text} /></div>
+          : t.preview ? <div className="mx-auto max-w-3xl px-8 py-8 text-sm leading-relaxed"><Markdown text={t.text} /></div>
           : (
             <div className="h-full">
               <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading the editor…</p>}>

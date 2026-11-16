@@ -7,7 +7,7 @@ import { ChangePanel, type Change, type Review } from "@/components/change-panel
 import { Character } from "@/components/character"
 import { KeepButton } from "@/components/keep-decision"
 import { NeedCard } from "@/components/need-card"
-import { Rich } from "@/components/rich"
+import { Markdown } from "@/components/markdown"
 import { Button } from "@/components/ui/button"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { stamp } from "@/lib/time"
@@ -204,7 +204,7 @@ function Work({ items, live, saying, tail }: { items: Part[]; live: boolean; say
       {open && (
         <ol className="mt-1 ml-1.5 space-y-1.5 border-l pl-3 fade-up">
           {items.map((p, i) =>
-            p.kind === "agent" ? <li key={i} className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">{p.text}</li>
+            p.kind === "agent" ? <li key={i} className="text-xs leading-relaxed text-muted-foreground"><Markdown text={p.text} /></li>
             : p.kind === "note" ? <li key={i} className="text-xs text-muted-foreground italic">{p.text}</li>
             : p.kind === "steps" ? p.steps.map((s, k) => {
               const l = stepLine(s)
@@ -342,7 +342,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
                   <CornerDownRight className="size-3.5" /> <b className="font-medium text-foreground">{from}</b> passed this on to <b className="font-medium text-foreground">{agent.title}</b>
                   <span className="ml-auto">{stamp(startOf(id))}</span>
                 </div>
-                <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{t.text}</p>
+                <Markdown text={t.text} className="text-[13.5px] leading-relaxed" />
               </div>
             </div>
           )
@@ -376,7 +376,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           <Bubble side="left" agent={agent} last>
             <div className="rounded-2xl rounded-bl-md border border-sky-400/40 md:max-w-[85%] bg-bubble px-4 py-3 fade-up">
               <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-sky-600 dark:text-sky-300"><BookmarkPlus className="size-3.5" /> {agent.title} proposes to keep this for the whole team</div>
-              <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{decision}</p>
+              <Markdown text={decision} className="text-[13.5px] leading-relaxed" />
               {replaced && <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium">In place of:</span> <span className="line-through decoration-muted-foreground/50">{replaced}</span></p>}
               <p className="mt-2 text-xs text-muted-foreground">Every agent and routine is told it from now on. Keep only what you decided, not ideas still open.</p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -405,7 +405,7 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
         <Bubble side="left" agent={{ ...agent, state: "working" }} last>
           <div className="writing rounded-2xl md:max-w-[85%] rounded-bl-md bg-bubble px-4 py-2.5 text-[13.5px] leading-relaxed">
             {/* A list item or a line just begun shows once it has words. */}
-            <Rich text={draft.replace(/\n\s*(?:[-*•]|\d+[.)])?\s*$/, "").trimEnd()} />
+            <Markdown text={draft.replace(/\n\s*(?:[-*•]|\d+[.)])?\s*$/, "").trimEnd()} />
           </div>
           <div className="mt-1 flex items-center gap-2 pl-1">
             {working && <Elapsed from={working} />}
@@ -495,11 +495,10 @@ function StopButton({ onStop }: { onStop: () => void }) {
   return <button onClick={onStop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
 }
 
-/** An agent's words: streamed as they arrive, then shown with links, lists,
-    bold and italic. */
+/** An agent's words: streamed as they arrive, then formatted. */
 function AgentText({ text, stream }: { text: string; stream: boolean }) {
   const [done, setDone] = useState(!stream)
-  if (done) return <Rich text={text} />
+  if (done) return <Markdown text={text} />
   const plain = text.replace(/\*\*|__|`/g, "").replace(/^\s*#{1,6}\s+/gm, "")
   return <span className="whitespace-pre-wrap"><StreamText text={plain} caret={false} onDone={() => setDone(true)} /></span>
 }

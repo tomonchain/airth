@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, Users, Wrench, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
+import { Markdown } from "@/components/markdown"
 import { RemedyPanel } from "@/components/remedy"
 import { ReplyBox } from "@/components/reply-box"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,8 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
   const [why, setWhy] = useState("")
   const [busy, setBusy] = useState(false)
   const [shown] = useState(Date.now())
+  // An idea streams in once, then shows formatted.
+  const [streamed, setStreamed] = useState(false)
   const k = kindOf(it)
   const blocked = it.flag === "blocking"
   // A routine's draft can be drafted again; a task's proposed call cannot.
@@ -209,11 +212,12 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
         ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : it.kind === "idea" && it.text ? (
         <>
-          <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
+          {stream && !streamed ? <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap"><StreamText text={it.text} caret={false} onDone={() => setStreamed(true)} /></p>
+            : <Markdown text={it.text} className="mt-1 text-[13.5px] leading-relaxed" />}
           {it.angle && <p className="mt-2 text-xs text-muted-foreground"><b className="font-medium">Why now:</b> {it.angle}</p>}
         </>
       ) : page && it.text && it.text !== it.title ? (
-        <pre className="mt-4 max-h-96 overflow-auto rounded-xl bg-bubble px-4 py-3.5 font-sans text-sm leading-relaxed whitespace-pre-wrap">{it.text}</pre>
+        <div className="mt-4 max-h-96 overflow-auto rounded-xl bg-bubble px-4 py-3.5 text-sm leading-relaxed"><Markdown text={it.text} /></div>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
       ) : null}

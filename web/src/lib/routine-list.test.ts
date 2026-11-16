@@ -1,4 +1,4 @@
-import { test } from "node:test"
+import { test } from "vitest"
 import assert from "node:assert/strict"
 import { filter, frequency, graphTrigger, groups, needsLook, schedule, state, triggerText, type Row, type Waiting } from "./routine-list.ts"
 
