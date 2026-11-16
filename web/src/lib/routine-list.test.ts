@@ -52,6 +52,7 @@ test("how often a routine runs", () => {
   assert.equal(frequency({ kind: "telegram", event: "x_post" }), "event")
   assert.equal(frequency({ kind: "webhook", name: "statera" }), "event")
   assert.equal(frequency({ kind: "manual" }), "manual")
+  assert.equal(s("daily 25:00"), "other")
 })
 
 test("a routine's state: what broke first, then what waits, then paused", () => {

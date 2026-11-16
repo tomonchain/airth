@@ -101,13 +101,14 @@ export function graphTrigger(t: { schedule?: string | null; telegram?: string | 
   return { kind: "manual" }
 }
 
-export type Frequency = "daily" | "weekly" | "monthly" | "event" | "manual"
+export type Frequency = "daily" | "weekly" | "monthly" | "event" | "manual" | "other"
 export const FREQUENCIES: { key: Frequency; label: string }[] = [
   { key: "daily", label: "Daily" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
   { key: "event", label: "On an event" },
   { key: "manual", label: "By hand" },
+  { key: "other", label: "Other schedules" },
 ]
 
 /** How often it runs: several times a day counts as daily. */
@@ -115,7 +116,8 @@ export function frequency(t: Trigger): Frequency {
   if (t.kind === "manual") return "manual"
   if (t.kind !== "schedule") return "event"
   const p = parse(t.every)
-  if (!p) return "daily"
+  // One the scheduler would refuse: its frequency is not guessed.
+  if (!p) return "other"
   if ("every" in p) {
     if (p.unit !== "day") return "daily"
     return p.every < 7 ? "daily" : p.every < 28 ? "weekly" : "monthly"

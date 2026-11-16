@@ -145,7 +145,8 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
               </Panel>
             </Section>
           )}
-          {f.show === "look" && !look.length ? <p className="text-sm text-muted-foreground">Nothing needs a look.</p> : f.show === "look" ? null : !shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
+          {f.show === "look" ? (!look.length && <p className="text-sm text-muted-foreground">{f.search || f.agent ? "No routine matches." : "Nothing needs a look."}</p>)
+            : !shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
             <section className="space-y-3">
               <Columns />
               {grouped.map((g) => {
@@ -243,8 +244,11 @@ function LastRun({ last }: { last: Row["last"] }) {
   )
 }
 
-function Level({ n }: { n: number | null }) {
-  if (n === null) return <span className="text-muted-foreground/60" title="Agent routines and fixed sequences follow the business's permissions.">—</span>
+function Level({ n, kind }: { n: number | null; kind: Row["kind"] }) {
+  if (n === null) {
+    const why = kind === "graph" ? "Not known: it takes no action, or its agent's levels could not be read." : "Agent routines and fixed sequences follow the business's permissions."
+    return <span className="text-muted-foreground/60" title={why}>—</span>
+  }
   return <span className="rounded-md border px-1 py-px font-mono text-[11px] tabular-nums" title={`Level ${n} · ${LEVELS[n]}`}>L{n}</span>
 }
 
@@ -272,7 +276,7 @@ function RoutineRow({ r, items, face, why: say, onOpen }: { r: Row; items: Waiti
       <span className="hidden truncate text-xs text-muted-foreground md:block">{triggerText(r.trigger)}</span>
       <span className="hidden text-xs text-muted-foreground tabular-nums md:block">{r.paused ? "Paused" : next(r.next_at)}</span>
       <span className="text-xs max-md:text-right"><LastRun last={r.last} /></span>
-      <span className="hidden text-right md:block"><Level n={r.level} /></span>
+      <span className="hidden text-right md:block"><Level n={r.level} kind={r.kind} /></span>
     </button>
   )
 }
@@ -317,7 +321,7 @@ function RoutineSheet({ realm, open, setOpen, agents, items, rows, onAgent, grap
                 <Fact label="State"><span className="inline-flex items-center gap-1.5"><Dot s={s} />{STATES[s].label}</span></Fact>
                 <Fact label="Next run">{row.paused ? "Paused" : next(row.next_at)}</Fact>
                 <Fact label="Last run"><LastRun last={row.last} /></Fact>
-                <Fact label="Level"><Level n={row.level} /></Fact>
+                <Fact label="Level"><Level n={row.level} kind={row.kind} /></Fact>
               </dl>
               {(s === "incident" || s === "waiting") && <p className={cn("rounded-lg px-3 py-2 text-xs", s === "incident" ? "bg-red-500/10 text-red-600 dark:text-red-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>{why(row, items)}.</p>}
               {graph && <GraphDetail realm={realm} r={graph} agent={a} onAgent={onAgent} onEdit={() => setOpen({ kind: "graph", name: graph.name, edit: true })} onChanged={graphs.refresh} />}
