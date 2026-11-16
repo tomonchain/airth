@@ -22,7 +22,7 @@ export const CHANGELOG: Entry[] = [
     fixed: [
       "Agent routines respect the monthly budgets, as tasks do: past a cap they wait, and what they spend counts.",
       "A task that cannot start ends properly: its plan, its routine and the chief of staff hear of it, and it holds none of the month's budget.",
-      "A routine run from the terminal leaves its heartbeat, and an incident when it fails. A misspelt routine name is refused.",
+      "A routine run from the terminal is recorded like a scheduled one, and tells you in Needs you when it fails. A misspelt routine name is refused.",
       "An agent's look is saved whole, never half-written.",
     ],
   },
@@ -43,7 +43,7 @@ export const CHANGELOG: Entry[] = [
     date: "2026-11-15",
     title: "An agent opens on its conversation",
     improved: [
-      "An agent opens on its conversation. Edit opens its settings on a page of their own.",
+      "Edit opens an agent's settings on a page of their own.",
     ],
   },
   {
@@ -64,7 +64,7 @@ export const CHANGELOG: Entry[] = [
     date: "2026-11-15",
     title: "Agent mail",
     added: [
-      "A role can have its own mailbox. Routines read it, any change of bank details always reaches you, and nothing is sent without your approval.",
+      "A role can have its own mailbox. Routines read it, mail that looks like a change of bank details is flagged for you, and nothing is sent without your approval.",
       "Mailboxes are set up in Settings, and airth doctor checks their DNS.",
     ],
     improved: [
