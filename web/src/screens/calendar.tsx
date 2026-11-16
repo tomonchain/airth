@@ -3,9 +3,12 @@ import { CalendarClock, Check, ChevronLeft, ChevronRight, X } from "lucide-react
 import { Character } from "@/components/character"
 import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { isNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Calendar as Data } from "@/lib/api"
+import { layout, shown } from "@/lib/calendar-layout"
 import { cn } from "@/lib/utils"
 
 type View = "day" | "week" | "month" | "agenda"
@@ -16,6 +19,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "agenda", label: "Agenda" },
 ]
 const HOUR = 56 // px per hour in the day and week grids: a 30-minute run is 28px
+const LANE = 28 // px kept on a day's right for the "+N" of a crowded hour
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 const add = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
@@ -132,23 +136,101 @@ function Planning({ realm, face, onAgent }: { realm: string; face: Face; onAgent
 
 type Face = (name: string) => Agent | undefined
 
-function Chip({ run, face, onAgent, compact, slot }: { run: Run; face: Face; onAgent: (n: string) => void; compact?: boolean; slot?: boolean }) {
+/** A run in the month view: one line, its time first. */
+function Chip({ run, face, onAgent }: { run: Run; face: Face; onAgent: (n: string) => void }) {
   const a = face(run.agent)
   const s = STATE[run.state] ?? STATE.planned
   const hue = `var(--dept-${a?.department?.trim().toLowerCase().replace(/[^a-z]/g, "") || "none"}, var(--dept-none))`
   return (
-    <button onClick={() => onAgent(run.agent)} title={`${run.routine} · ${run.time} · ${s.label}`}
-      className={cn("flex w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left transition-[filter] hover:brightness-110", compact ? "h-5" : slot ? "h-full" : "h-full min-h-6 items-start py-1", s.cls)}
+    <button onClick={() => onAgent(run.agent)} title={`${run.time} ${run.routine} · ${a?.title ?? run.agent} · ${s.label}`}
+      className={cn("flex h-5 w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left transition-[filter] hover:brightness-110", s.cls)}
       style={{ background: `color-mix(in oklch, ${hue} 22%, transparent)`, borderLeft: `3px solid ${hue}` }}>
-      {!compact && a && <Character agent={a} size={14} still className="mt-px" />}
       <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
-        <span className="font-medium">{compact ? `${run.time} ` : ""}{run.routine}</span>
-        {slot && <span className="ml-1.5 text-[10px] opacity-70">{run.time}</span>}
-        {!compact && !slot && <span className="block text-[10px] opacity-75">{run.time} · {s.label}</span>}
+        <span className="font-medium">{run.time} {run.routine}</span>
       </span>
       {run.state === "done" && <Check className="size-3 shrink-0 text-emerald-500" />}
       {run.state === "failed" && <X className="size-3 shrink-0 text-red-500" />}
     </button>
+  )
+}
+
+/** A run in the day and week grids. As its column narrows, the face, then
+    the time and the mark give way to the name, which ends in an ellipsis;
+    hovering says everything. */
+function Slot({ run, face, onAgent }: { run: Run; face: Face; onAgent: (n: string) => void }) {
+  const a = face(run.agent)
+  const s = STATE[run.state] ?? STATE.planned
+  const hue = `var(--dept-${a?.department?.trim().toLowerCase().replace(/[^a-z]/g, "") || "none"}, var(--dept-none))`
+  return (
+    <Tooltip>
+      <TooltipTrigger render={
+        <button onClick={() => onAgent(run.agent)} aria-label={`${run.routine}, ${run.time}, ${a?.title ?? run.agent}, ${s.label}`}
+          className={cn("@container flex size-full items-center gap-1.5 overflow-hidden rounded-md px-1 text-left @[5rem]:px-1.5 transition-[filter] hover:brightness-110", s.cls)}
+          style={{ background: `color-mix(in oklch, ${hue} 22%, transparent)`, borderLeft: `3px solid ${hue}` }} />
+      }>
+        {a && <span className="mt-px hidden shrink-0 @[7rem]:block"><Character agent={a} size={14} still /></span>}
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+          <span className="font-medium">{run.routine}</span>
+          <span className="ml-1.5 hidden text-[10px] opacity-70 @[9rem]:inline">{run.time}</span>
+        </span>
+        {run.state === "done" && <Check className="hidden size-3 shrink-0 text-emerald-500 @[5rem]:block" />}
+        {run.state === "failed" && <X className="hidden size-3 shrink-0 text-red-500 @[5rem]:block" />}
+      </TooltipTrigger>
+      <TooltipContent className="flex-col items-start gap-0.5">
+        <span className="font-medium">{run.routine}</span>
+        <span className="opacity-80">{run.time} · {a?.title ?? run.agent} · {s.label}</span>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** A day's runs in its column: those that overlap share it, side by side,
+    and past three across the rest fold into a "+N" that lists the slot. */
+function DayRuns({ runs, face, onAgent }: { runs: Run[]; face: Face; onAgent: (n: string) => void }) {
+  const spans = useMemo(() => runs.map((r) => shown(r.time)), [runs])
+  const { placed, overflows } = useMemo(() => layout(spans), [spans])
+  const px = (m: number) => (m / 60) * HOUR
+  const height = (start: number, end: number) => Math.min(px(end), HOUR * 24) - px(start) - 2
+  return (
+    <div className="absolute inset-y-0 right-1 left-1">
+      {placed.map((p) => {
+        const sp = spans[p.index]
+        const room = p.folded ? `(100% - ${LANE}px)` : "100%"
+        return (
+          <div key={p.index} className="absolute pr-px" style={{
+            top: px(sp.start) + 1, height: height(sp.start, sp.end),
+            left: `calc(${room} * ${p.column / p.columns})`, width: `calc(${room} * ${p.span / p.columns})`,
+          }}>
+            <Slot run={runs[p.index]} face={face} onAgent={onAgent} />
+          </div>
+        )
+      })}
+      {overflows.map((o) => (
+        <DropdownMenu key={o.start}>
+          <DropdownMenuTrigger render={
+            <button className="absolute right-0 grid place-items-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
+              style={{ top: px(o.start) + 1, height: height(o.start, o.start + 30), width: LANE - 2 }}
+              aria-label={`${o.hidden.length} more at ${runs[o.hidden[0]].time}`} />
+          }>+{o.hidden.length}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuGroup>
+            <DropdownMenuLabel>{o.slot.length} runs from {runs[o.slot[0]].time}</DropdownMenuLabel>
+            {[...o.slot].sort((x, y) => spans[x].start - spans[y].start).map((i) => {
+              const run = runs[i], a = face(run.agent), s = STATE[run.state] ?? STATE.planned
+              return (
+                <DropdownMenuItem key={i} onClick={() => onAgent(run.agent)}>
+                  <span className="w-10 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{run.time}</span>
+                  {a && <Character agent={a} size={16} still />}
+                  <span className="min-w-0 flex-1 truncate">{run.routine}</span>
+                  <span className={cn("shrink-0 text-xs", run.state === "failed" ? "text-red-500" : run.state === "done" ? "text-emerald-500" : "text-muted-foreground")}>{s.label}</span>
+                </DropdownMenuItem>
+              )
+            })}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ))}
+    </div>
   )
 }
 
@@ -190,14 +272,7 @@ function Grid({ days, face, onAgent, onDay }: { days: Day[]; face: Face; onAgent
           {days.map((d) => (
             <div key={d.date} className={cn("relative border-l", d.today && "bg-sky-500/[0.03]")}>
               {Array.from({ length: 24 }, (_, h) => <div key={h} className="absolute inset-x-0 border-t border-border/60" style={{ top: h * HOUR }} />)}
-              {d.runs.map((run, i) => {
-                const [hh, mm] = run.time.split(":").map(Number)
-                return (
-                  <div key={i} className="absolute inset-x-1 px-px" style={{ top: (hh + mm / 60) * HOUR + 1, height: HOUR / 2 - 2 }}>
-                    <Chip run={run} face={face} onAgent={onAgent} slot />
-                  </div>
-                )
-              })}
+              <DayRuns runs={d.runs} face={face} onAgent={onAgent} />
               {d.today && (
                 <div className="absolute inset-x-0 z-10 flex items-center" style={{ top: (now.getHours() + now.getMinutes() / 60) * HOUR }}>
                   <span className="-ml-1 size-2 rounded-full bg-red-500" /><span className="h-px flex-1 bg-red-500" />
@@ -227,7 +302,7 @@ function Month({ days, anchor, face, onAgent, onDay }: { days: Day[]; anchor: Da
                 className={cn("mb-0.5 grid size-6 place-items-center rounded-full text-xs tabular-nums hover:bg-accent", d.today && "bg-sky-500 font-semibold text-white hover:bg-sky-500", out && "text-muted-foreground")}>{d.day}</button>
               <div className="space-y-0.5">
                 {d.deadlines.map((t, i) => <div key={i} className="truncate rounded bg-amber-500/20 px-1 text-[10.5px] font-medium text-amber-700 dark:text-amber-300">{t}</div>)}
-                {shown.map((run, i) => <Chip key={i} run={run} face={face} onAgent={onAgent} compact />)}
+                {shown.map((run, i) => <Chip key={i} run={run} face={face} onAgent={onAgent} />)}
                 {d.runs.length > shown.length && (
                   <button onClick={() => onDay(new Date(d.date + "T12:00"))} className="px-1 text-[10.5px] text-muted-foreground hover:text-foreground">+{d.runs.length - shown.length} more</button>
                 )}
