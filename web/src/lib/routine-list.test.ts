@@ -1,6 +1,6 @@
 import { test } from "vitest"
 import assert from "node:assert/strict"
-import { filter, frequency, graphTrigger, groups, needsLook, schedule, state, triggerText, type Row, type Waiting } from "./routine-list.ts"
+import { businessOrder, filter, frequency, graphTrigger, groups, needsLook, schedule, state, triggerText, type Row, type Waiting } from "./routine-list.ts"
 
 const row = (name: string, more: Partial<Row> = {}): Row => ({
   kind: "graph", name, agent: "writer", trigger: { kind: "schedule", every: "daily 07:00" },
@@ -122,4 +122,36 @@ test("filters: a name, what needs a look, paused, one agent", () => {
   assert.deepEqual(names({ search: "", show: "look", agent: null }), ["replies"])
   assert.deepEqual(names({ search: "", show: "paused", agent: null }), ["watch"])
   assert.deepEqual(names({ search: "", show: "all", agent: "post-writer" }), ["replies"])
+})
+
+test("groups by business: the open one first, then the others in the menu's order", () => {
+  const all = [{ name: "atelier", title: "Atelier" }, { name: "hedgen", title: "Hedgen" }, { name: "numirama", title: "Numirama" }]
+  const order = businessOrder("hedgen", all)
+  assert.deepEqual(order.map((b) => b.name), ["hedgen", "atelier", "numirama"])
+  const rows = [
+    row("b", { business: "atelier", next_at: "2026-11-17T07:00:00Z" }),
+    row("a", { business: "atelier", next_at: "2026-11-16T07:00:00Z" }),
+    row("watch", { business: "hedgen" }),
+  ]
+  const g = groups(rows, "business", [], order)
+  // Numirama has no routine shown: no group.
+  assert.deepEqual(g.map((x) => [x.label, x.rows.map((r) => r.name)]), [["Hedgen", ["watch"]], ["Atelier", ["a", "b"]]])
+  assert.equal(g[1].next_at, "2026-11-16T07:00:00Z")
+})
+
+test("an item counts only for a routine of its own business, even under the same name", () => {
+  const here = row("weekly-report", { business: "hedgen" })
+  const there = row("weekly-report", { business: "atelier" })
+  const items = [item("incident", "weekly-report", { business: "atelier" })]
+  assert.equal(state(here, items), "ok")
+  assert.equal(state(there, items), "incident")
+  assert.deepEqual(needsLook([here, there], items).map((r) => r.business), ["atelier"])
+  assert.deepEqual(filter([here, there], { search: "", show: "look", agent: null }, items).map((r) => r.business), ["atelier"])
+})
+
+test("an agent filter names its business when the list holds several", () => {
+  const rows = [row("a", { agent: "chief-of-staff", business: "hedgen" }), row("b", { agent: "chief-of-staff", business: "atelier" })]
+  const f = { search: "", show: "all" as const, agent: "atelier/chief-of-staff" }
+  assert.deepEqual(filter(rows, f, []).map((r) => r.name), ["b"])
+  assert.deepEqual(filter(rows, { ...f, agent: "chief-of-staff" }, []).map((r) => r.name), ["a", "b"])
 })
