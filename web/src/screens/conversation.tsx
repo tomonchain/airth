@@ -12,6 +12,7 @@ import { usePoll } from "@/hooks/use-poll"
 import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
 import { api, called, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
 import { stamp } from "@/lib/time"
+import { chronological, taskAt } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 type Entry =
@@ -68,11 +69,15 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     // A report is read in Needs you, on the phone and on Telegram; in the
     // conversation it came between the founder and the agent (decision 134).
     for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
-    for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
+    // A task is shown whole, its newest messages last: it goes at its last
+    // activity, so nothing that came before the founder's last words shows
+    // under them. Its messages carry no time of their own.
+    const listed = new Map(Object.values(tasks.data ?? {}).flat().map((t) => [t.id, t.at ?? t.updated_at]))
+    for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: taskAt(listed.get(id), startOf(id)), id })
     // In time order, as a chat is: what waits for the founder stays where
     // it was sent, marked new, not moved after later messages.
-    return e.sort((a, b) => a.at.localeCompare(b.at))
-  }, [thread.data, taskIds])
+    return chronological(e)
+  }, [thread.data, taskIds, tasks.data])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
