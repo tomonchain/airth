@@ -138,19 +138,22 @@ impl Hub {
                 if crate::business::job(&realm.root()?, &h.name).is_ok() {
                     bail!("{} is already an agent of the team", h.name);
                 }
-                let id = super::autonomy::propose_replacing(&mut Store::of(&realm)?, &crate::business::store::autonomy::NewItem {
-                kind: "approval",
-                title: &format!("Hire a {}", h.title),
-                agent: Some(&agent),
-                routine: None,
-                run: Some(&run),
-                action: Some(HIRE),
-                args: &json!({"name": h.name, "title": h.title, "department": department, "text": h.job, "why": h.why}).to_string(),
-                execute_at: None,
+                let args = json!({"name": h.name, "title": h.title, "department": department, "text": h.job, "why": h.why}).to_string();
                 // The founder may edit the job before approving it.
-                source: &json!({"show": "text", "editable": "text"}).to_string(),
-                model_call: None,
-            })?;
+                let source = json!({"show": "text", "editable": "text"}).to_string();
+                let item = crate::business::store::autonomy::NewItem {
+                    kind: "approval",
+                    title: &format!("Hire a {}", h.title),
+                    agent: Some(&agent),
+                    routine: None,
+                    run: Some(&run),
+                    action: Some(HIRE),
+                    args: &args,
+                    execute_at: None,
+                    source: &source,
+                    model_call: None,
+                };
+                let id = super::autonomy::propose_replacing(&mut Store::of(&realm)?, &item)?;
                 Ok(format!(
                     "The hiring waits for the founder in Needs you (item {id}); they may edit the job. Once they approve it, {} joins the team, with no tools until they give them. End your turn now, saying in one line whom you proposed.",
                     h.title

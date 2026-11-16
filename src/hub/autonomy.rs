@@ -17,12 +17,17 @@ const DAILY_LIMIT: u32 = 20;
 pub(super) const CANCEL_MINUTES: u32 = 30;
 
 /// A task's new question to the founder replaces its earlier ones about
-/// the same action: once the founder answered in words and the agent asked
+/// the same thing: once the founder answered in words and the agent asked
 /// again, the first card no longer stands, so it leaves Needs you, marked
-/// expired. Only a task's approvals: a routine's run proposes each of its
-/// items on its own, and what waits to run or was prepared asks nothing.
+/// expired. The same thing is the same action, or, for a permission (no
+/// action), the same capability and scope. Only a task's approvals: a
+/// routine's run proposes each of its items on its own, and what waits to
+/// run or was prepared asks nothing.
 pub(super) fn propose_replacing(store: &mut Store, item: &NewItem) -> Result<i64> {
     let id = store.propose(item)?;
+    let ask = serde_json::from_str::<Value>(item.source)
+        .ok()
+        .and_then(|s| s.get("ask").cloned());
     let Some(run) = item
         .run
         .filter(|_| item.kind == "approval" && item.routine.is_none())
@@ -35,6 +40,7 @@ pub(super) fn propose_replacing(store: &mut Store, item: &NewItem) -> Result<i64
             && old.routine.is_none()
             && old.run.as_deref() == Some(run)
             && old.action.as_deref() == item.action
+            && (item.action.is_some() || old.source.get("ask") == ask.as_ref())
         {
             store.expire_item(old.id, &format!("replaced by item {id}"))?;
         }

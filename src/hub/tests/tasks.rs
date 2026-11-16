@@ -1160,4 +1160,58 @@ fn a_task_asking_again_replaces_its_earlier_card() {
     let expired = store.queue(&["expired"]).unwrap();
     assert_eq!(expired.len(), 1);
     assert_eq!(expired[0].args["steps"][0]["task"], json!("A recap"));
+    assert!(
+        store
+            .queue_log(expired[0].id)
+            .unwrap()
+            .iter()
+            .any(|(action, by, _)| action == "expired" && by == "airth"),
+        "the log says Airth let it go"
+    );
+}
+
+/// A permission names no action: a task asking again for the same
+/// capability and scope replaces its card, asking for another does not.
+#[test]
+fn a_permission_asked_again_replaces_only_the_same_one() {
+    use crate::business::store::autonomy::NewItem;
+    let f = fixture();
+    let mut store = Store::of(&f.realm).unwrap();
+    let ask = |store: &mut Store, capability: &str, scope: &str| {
+        let source = json!({"show": "preview", "ask": {"capability": capability, "scope": scope}})
+            .to_string();
+        super::super::autonomy::propose_replacing(
+            store,
+            &NewItem {
+                kind: "approval",
+                title: "writer asks",
+                agent: Some("writer"),
+                routine: None,
+                run: Some("r1"),
+                action: None,
+                args: "{}",
+                execute_at: None,
+                source: &source,
+                model_call: None,
+            },
+        )
+        .unwrap()
+    };
+    let write = ask(&mut store, "write", "drafts/");
+    let execute = ask(&mut store, "execute", "npm test");
+    let again = ask(&mut store, "write", "drafts/");
+    let pending: Vec<i64> = store
+        .queue(&["pending"])
+        .unwrap()
+        .iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(pending, vec![execute, again]);
+    let expired: Vec<i64> = store
+        .queue(&["expired"])
+        .unwrap()
+        .iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(expired, vec![write]);
 }
