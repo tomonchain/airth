@@ -3,6 +3,7 @@ import { ArrowDown, Check, ChevronDown, Copy, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Character } from "@/components/character"
+import { FoldedLine, OpenLine, useFold } from "@/components/fold-line"
 import { Typing } from "@/components/typing"
 import { NeedCard } from "@/components/need-card"
 import { OrderBox } from "@/components/order-box"
@@ -92,22 +93,28 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
-  type Unit = { side: "left" | "right" | "task"; key: string; at: string; node: (last: boolean) => React.ReactNode }
+  // "fold": an answered item, which draws its own line.
+  type Unit = { side: "left" | "right" | "task" | "fold"; key: string; at: string; waiting?: boolean; node: (last: boolean) => React.ReactNode }
   // A run or an item as bubbles: an answered item is the agent's message,
-  // then the founder's answer.
-  function eventUnits(x: Entry): Unit[] {
+  // then the founder's answer, folded into one line unless it is the last.
+  function eventUnits(x: Entry, last = false): Unit[] {
     if (x.kind === "run") return [{ side: "left", key: `r${x.run.run}`, at: x.at, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> }]
     if (x.kind !== "item") return []
     const it = x.item
-    const u: Unit[] = [{ side: "left", key: `i${it.id}`, at: x.at, node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> }]
-    if (it.status !== "pending") {
-      const a = ANSWERED[it.status] ?? ANSWERED.done
-      u.push({ side: "right", key: `a${it.id}`, at: x.at, node: () => <Mine text={a.reply(it)} at={it.created_at} /> })
-    }
-    return u
+    const ask: Unit = { side: "left", key: `i${it.id}`, at: x.at, waiting: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> }
+    if (it.status === "pending") return [ask]
+    const a = ANSWERED[it.status] ?? ANSWERED.done
+    const answer: Unit = { side: "right", key: `a${it.id}`, at: x.at, node: () => <Mine text={a.reply(it)} at={it.created_at} /> }
+    return [{ side: "fold", key: `i${it.id}`, at: x.at, node: () => (
+      <Answered storeKey={`${realm}:item:${it.id}`} byDefault={last} request={it.title} result={a.label} failed={it.status === "failed"} when={stamp(it.created_at)}>
+        {place(ask, true)}{place(answer, true)}
+      </Answered>
+    ) }]
   }
   const units = useMemo(() => {
     const u: Unit[] = []
+    // The newest task: its last exchange stays open.
+    const lastTask = entries.filter((e) => e.kind === "task").at(-1)?.id
     for (const x of entries) {
       if (x.kind === "task") {
         // Who passed it on, and what it passed on (decision 120).
@@ -115,13 +122,13 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
         const titleOf = (name: string | null | undefined) => { const a = agents.find((g) => g.name === name); return a ? called(a) : name ?? "An agent" }
         const self = all.find((t) => t.id === x.id)
         const passed = all.filter((t) => t.from?.task === x.id && t.agent).map((t) => ({ id: t.id, agent: t.agent!, title: titleOf(t.agent), order: t.order ?? "", status: t.status }))
-        const between: Between[] = (inside.get(x.id) ?? []).flatMap(eventUnits).map((b) => ({
-          key: b.key, at: moment(b.at), side: b.side === "right" ? "right" : "left", node: (last) => place(b, last),
+        const between: Between[] = (inside.get(x.id) ?? []).flatMap((e) => eventUnits(e)).map((b) => ({
+          key: b.key, at: moment(b.at), side: b.side === "right" ? "right" : "left", waiting: b.waiting, node: (last) => place(b, last),
         }))
         u.push({ side: "task", key: `t${x.id}`, at: x.at, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }}
-          from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} between={between} /> })
+          from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} between={between} latest={x.id === lastTask} /> })
       }
-      else u.push(...eventUnits(x))
+      else u.push(...eventUnits(x, x === entries.at(-1)))
     }
     return u
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,7 +192,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
             <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
           </div>
         )}
-        {x.side === "left" ? (
+        {x.side === "fold" ? x.node(lastOfGroup) : x.side === "left" ? (
           <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
             <span className="mb-6 hidden w-8 shrink-0 md:block">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
             <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
@@ -285,6 +292,17 @@ function Meta({ at, copy, children }: { at: string; copy?: string; children?: Re
       {children}
     </div>
   )
+}
+
+/** Something the agent sent up and the founder answered: one line, what
+    it asked and the answer, unless open (by default or by the founder). */
+function Answered({ storeKey, byDefault, request, result, failed, when, children }: {
+  storeKey: string; byDefault: boolean; request: string; result: string; failed: boolean; when: string; children: React.ReactNode
+}) {
+  const [open, toggle] = useFold(storeKey, byDefault)
+  const outcome = failed ? "failed" : "done"
+  if (!open) return <FoldedLine request={request} result={result} outcome={outcome} when={when} onOpen={toggle} />
+  return <><OpenLine result={result} outcome={outcome} when={when} onFold={toggle} />{children}</>
 }
 
 /** The founder's message, on the right, in their colour. */
