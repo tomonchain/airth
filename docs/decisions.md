@@ -10,7 +10,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 - **Tests only when the Rust changed.** When everything that changed since the running version is in `web/`, `docs/`, `site/`, `.github/` or a Markdown file at the root, the Rust is the one the running version passed its tests with, so `cargo test` does not run again; the update says so in its steps. Anything else (`src/`, `library/`, `Cargo.*`, `build.rs`, a prompt) is tested as before, and so is a version built from uncommitted changes. The interface's own tests ran in CI's `web` job before the merge.
 - **A look every 5 minutes** for a new commit (the checkout itself is read every minute, as before).
 
-*Why:* a one-line change to a screen took two full optimized compiles and the whole suite before "Update ready". Measured in a 4-core container: see the pull request.
+*Why:* a one-line change to a screen took two full optimized compiles and the whole suite before "Update ready". Measured in a 4-core container, after a change to `web/dist` alone: building took 202 s with the release profile and 29 s with this one; building the tests, 241 s and 38 s; running them, 8 s. An interface change goes from about 7 minutes to about half a minute, and a Rust change, tested, to a little over a minute; the wait before the update is noticed, from up to 30 minutes to up to 5.
 
 *Cost:* the binary an update installs is somewhat larger and may be slightly slower than a release's; nothing measurable is expected for Airth's work, which waits on the network and the models. A change outside the list above that breaks only at run time is still caught only by CI. The network is asked six times as often (a `git fetch`).
 
