@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { Markdown, figure } from "./markdown"
+import { Markdown, chart, csv, figure } from "./markdown"
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} />)
 
@@ -75,6 +75,14 @@ describe("untrusted content", () => {
     expect(out).toContain("file")
   })
 
+  it("keeps mailto links, and no relative or anchor link", () => {
+    const out = html("[write](mailto:team@example.com), [up](../secrets.env) and [here](#top)")
+    expect(out).toContain('href="mailto:team@example.com"')
+    expect(out.match(/href=/g)).toHaveLength(1)
+    expect(out).toContain("up")
+    expect(out).toContain("here")
+  })
+
   it("opens a web link in a new tab, without the opener, its domain on hover", () => {
     const out = html("[the deck](https://docs.example.com/deck)")
     expect(out).toContain('href="https://docs.example.com/deck"')
@@ -96,6 +104,32 @@ describe("Airth's blocks", () => {
     expect(chart).toContain("<figure")
     expect(chart).toContain("Signups")
     expect(html("```chart\nnot json\n```")).toMatch(/<pre[^>]*>not json<\/pre>/)
+  })
+
+  it("reads a csv block's separator outside quotes", () => {
+    expect(csv('"Q1, US, foo";Revenue\nx;1')).toEqual([["Q1, US, foo", "Revenue"], ["x", "1"]])
+  })
+
+  it("takes a chart only with text where text goes and finite numbers", () => {
+    expect(chart('{"labels":["Mon"],"series":[{"values":[3]}]}')).not.toBeNull()
+    expect(chart('{"labels":["Mon","Tue"],"series":[{"values":[3,null]}]}')).not.toBeNull()
+    for (const bad of [
+      '{"labels":[{"x":1}],"series":[{"values":[3]}]}',
+      '{"title":{"x":1},"labels":["Mon"],"series":[{"values":[3]}]}',
+      '{"labels":["Mon"],"series":[{"name":[1],"values":[3]}]}',
+      '{"labels":["Mon"],"series":[{"values":["3"]}]}',
+      '{"labels":["Mon"],"series":[]}',
+      '{"type":"pie","labels":["Mon"],"series":[{"values":[3]}]}',
+      "null",
+    ]) expect(chart(bad), bad).toBeNull()
+    // Rendered, a malformed chart is code, never a crash.
+    expect(html('```chart\n{"labels":[{"x":1}],"series":[{"values":[3]}]}\n```')).toMatch(/<pre/)
+  })
+
+  it("draws a bar below zero with no height, never a negative one", () => {
+    const out = html('```chart\n{"labels":["Mon","Tue"],"series":[{"values":[-2,4]}]}\n```')
+    const heights = [...out.matchAll(/height:([^%;"]+)%/g)].map((m) => Number(m[1]))
+    expect(heights).toEqual([0, 100])
   })
 
   it("shows other code in a scrolling block, in a mono font", () => {

@@ -13,7 +13,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Markdown } from "@/components/markdown"
 import { useTheme } from "@/hooks/use-theme"
 import { api, called, enc, type Agent, type GraphBlock, type Routine } from "@/lib/api"
 import { graphTrigger, schedule, triggerText } from "@/lib/routine-list"
@@ -394,7 +393,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
               {issues.length > 0 && <ul className="space-y-1 text-xs text-amber-600 dark:text-amber-300">{issues.map((i) => <li key={i}>{i}</li>)}</ul>}
               <p className="text-xs text-muted-foreground">Drag from a block's right dot to another block to link them; select a link or a block and press Delete to remove it. A condition has two outputs, then and else.</p>
               {ran.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{ran.error}</p>}
-              {ran.report && <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground"><Markdown text={ran.report} /></div>}
+              {ran.report && <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">{ran.report}</p>}
               {dry.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs break-words text-red-600 dark:text-red-300">{dry.error}</p>}
               {report && <p className="text-xs text-muted-foreground">Dry run: {report.cost.replace(/^cost: /, "")}. Choose a block to see what it did.</p>}
               {routine && (
