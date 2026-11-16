@@ -1,4 +1,4 @@
-// The Home's greeting and its light: what the founder reads on opening
+// The Home's greeting: what the founder reads on opening
 // Airth changes with the time of day and the day of the week, as a person
 // would say it. Kept here, apart from the page, so it is tested.
 
@@ -55,15 +55,4 @@ function hash(n: number): number {
   x = Math.imul(x ^ (x >>> 16), 0x45d9f3b)
   x = Math.imul(x ^ (x >>> 16), 0x45d9f3b)
   return (x ^ (x >>> 16)) >>> 0
-}
-
-/** The two soft lights behind the greeting, as "r g b": the morning warm,
-    the afternoon clear, the evening violet, the night deep blue. */
-export function light(now: Date): [string, string] {
-  switch (moment(now)) {
-    case "morning": return ["251 191 36", "244 114 182"]
-    case "afternoon": return ["56 189 248", "45 212 191"]
-    case "evening": return ["139 92 246", "244 114 182"]
-    case "night": return ["79 70 229", "30 64 175"]
-  }
 }

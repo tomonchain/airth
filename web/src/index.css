@@ -341,24 +341,16 @@ button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transpar
     stroke: url(#airth-metal);
 }
 
-/* The Home's two lights (home.tsx, lib/greeting.ts): soft, behind the
-   greeting, a little stronger on a dark page. */
+/* The Home's dithered background (components/dither.tsx): light dots on a
+   dark page, dark dots on a light one, faint enough to read over. */
 :root {
-    --light-strength: 0.2;
+    --dither-ink: 0 0 0;
+    --dither-alpha: 0.13;
 }
 .dark {
-    --light-strength: 0.28;
+    --dither-ink: 255 255 255;
+    --dither-alpha: 0.16;
 }
-.home-light {
-    background:
-        radial-gradient(42% 38% at 32% 38%, rgb(var(--light-a) / var(--light-strength)), transparent 70%),
-        radial-gradient(38% 36% at 70% 62%, rgb(var(--light-b) / calc(var(--light-strength) * 0.75)), transparent 70%);
-    animation: home-drift 40s ease-in-out infinite alternate;
-}
-@keyframes home-drift {
-    from { transform: translate3d(-3%, -2%, 0) scale(1); }
-    to { transform: translate3d(3%, 2%, 0) scale(1.08); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .home-light { animation: none; }
+.dither {
+    image-rendering: pixelated;
 }

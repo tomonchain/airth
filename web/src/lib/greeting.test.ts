@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { greeting, light, moment } from "./greeting.ts"
+import { greeting, moment } from "./greeting.ts"
 
 // 16 November 2026 is a Monday.
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute)
@@ -36,12 +36,5 @@ describe("greeting", () => {
       expect(g).not.toMatch(/^,|, [.?]|,$/)
     }
     expect(greeting(at(18, 9), "Ada")).toContain("Ada")
-  })
-})
-
-describe("light", () => {
-  it("warms the morning and deepens the night", () => {
-    expect(light(at(16, 8))[0]).toBe("251 191 36")
-    expect(light(at(16, 2))).toEqual(["79 70 229", "30 64 175"])
   })
 })

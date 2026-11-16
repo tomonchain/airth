@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ArrowUp, CalendarClock, Flag, FolderKanban, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
 import { toast } from "sonner"
 import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/use-poll"
 import { api, called, enc, type Agent, type Calendar, type Company, type Item, type Project, type Tasks } from "@/lib/api"
-import { greeting, light } from "@/lib/greeting"
+import { Dither } from "@/components/dither"
+import { greeting, moment } from "@/lib/greeting"
 import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
 import { Conversation } from "@/screens/conversation"
@@ -80,7 +81,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   )
 }
 
-/** The time, again every few minutes: the greeting and its light follow
+/** The time, again every few minutes: the greeting and its background follow
     the day while the page stays open. */
 function useNow(): Date {
   const [now, setNow] = useState(() => new Date())
@@ -91,15 +92,9 @@ function useNow(): Date {
   return now
 }
 
-/** Two soft lights behind the greeting, in the moment's colours (warm in
-    the morning, violet in the evening), drifting slowly. */
+/** Behind the greeting, the moment's light in grey dots. */
 function Light() {
-  const [a, b] = light(useNow())
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="home-light absolute -inset-[10%]" style={{ "--light-a": a, "--light-b": b } as CSSProperties} />
-    </div>
-  )
+  return <Dither moment={moment(useNow())} />
 }
 
 /** The greeting, the one line to ask, and the suggestion under it. */
