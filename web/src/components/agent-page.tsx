@@ -334,7 +334,7 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
 
 type Level = { action: string; class: "read" | "reversible" | "commits"; ceiling: number; start: number; classed: boolean; level: number }
 
-const LEVELS = [
+export const LEVELS = [
   { n: 0, name: "Prepare", hint: "It prepares; you do it." },
   { n: 1, name: "Propose", hint: "It asks in Needs you first." },
   { n: 2, name: "Act with delay", hint: "It acts after a window you can cancel." },

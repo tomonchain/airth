@@ -1,150 +1,389 @@
 import { useState } from "react"
-import { Bot, BookOpen, Check, ChevronDown, GitBranch, GraduationCap, Hand, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
+import { Bot, Building2, CalendarClock, Check, ChevronDown, ChevronRight, GraduationCap, ListOrdered, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Workflow, X } from "lucide-react"
 import { toast } from "sonner"
+import { LEVELS } from "@/components/agent-page"
 import { Character } from "@/components/character"
 import { Rich } from "@/components/rich"
-import { RoutineCanvas, schedule, triggerText } from "@/components/routine-canvas"
+import { RoutineCanvas } from "@/components/routine-canvas"
 import type { Declared } from "@/components/routine-editor"
-import { Empty, Loading, Page, Panel, Section } from "@/components/page"
+import { Empty, Loading, Page, Panel, Section, Seg } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
-import { api, enc, type Agent, type Feedback, type Routine } from "@/lib/api"
+import { api, enc, type Agent, type Feedback, type Item, type Routine } from "@/lib/api"
+import {
+  FOLDED_FROM, agentRow, filter, graphRow, group, needsLook, reasons, scheduleText, sequenceRow, state, triggerText,
+  type Filter, type Group, type GroupBy, type Reason, type Row,
+} from "@/lib/routines"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Remove } from "@/screens/settings-keys"
 
-// The six blocks (CLAUDE.md): what each looks like in a routine's chain.
-const BLOCK: Record<string, { icon: LucideIcon; label: string }> = {
-  read: { icon: BookOpen, label: "Read" },
-  ai: { icon: Sparkles, label: "AI" },
-  condition: { icon: GitBranch, label: "If" },
-  approval: { icon: Hand, label: "You approve" },
-  act: { icon: Zap, label: "Act" },
+// A run's day and time; past the coming week, its month too.
+const clock = (iso: string) => new Date(iso).toLocaleString("en-GB", {
+  weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  ...(Math.abs(Date.parse(iso) - Date.now()) > 6 * 86400000 ? { month: "short" } : {}),
+})
+
+/** Everything the page shows of one business: its routines of each kind,
+    as rows, with what the editors need. */
+type Loaded = { realm: string; routines: Routine[]; actions: Declared[]; prompts: string[]; tasks: Tasks; pipelines: Pipeline[]; agents: Agent[]; rows: Row[] }
+
+async function load(realm: string): Promise<Loaded> {
+  const r = enc(realm)
+  const [graphs, tasks, fixed, team, queue] = await Promise.all([
+    api<{ routines: Routine[]; actions: Declared[]; prompts: string[] }>(`realms/${r}/graphs`),
+    api<Tasks>(`realms/${r}/routines`),
+    api<{ pipelines: Pipeline[] }>(`realms/${r}/business`).catch(() => ({ pipelines: [] as Pipeline[] })),
+    api<{ agents: Agent[] }>(`realms/${r}/team`),
+    api<{ items: Item[] }>(`realms/${r}/queue`),
+  ])
+  // A routine's level comes from its agent's levels (decision 140).
+  const owners = [...new Set(graphs.routines.map((x) => x.graph?.agent).filter((a): a is string => !!a))]
+  const levels: Record<string, Record<string, number>> = Object.fromEntries(await Promise.all(owners.map(async (a) => {
+    const l = await api<{ actions: { action: string; level: number }[] }>(`realms/${r}/agents/${enc(a)}/levels`).catch(() => ({ actions: [] }))
+    return [a, Object.fromEntries(l.actions.map((x) => [x.action, x.level]))]
+  })))
+  const title = (name: string | null) => (name ? team.agents.find((a) => a.name === name)?.title ?? name : null)
+  const rows = [
+    ...graphs.routines.map((x) => graphRow(realm, x, levels[x.graph?.agent ?? ""], queue.items)),
+    ...tasks.routines.map((o) => agentRow(realm, o, title(o.bot), queue.items)),
+    ...fixed.pipelines.map((p) => sequenceRow(realm, p, queue.items)),
+  ].map((row) => ({ ...row, agentTitle: title(row.agent) ?? row.agentTitle }))
+  return { realm, routines: graphs.routines, actions: graphs.actions, prompts: graphs.prompts, tasks, pipelines: fixed.pipelines, agents: team.agents, rows }
 }
 
-// Not a routine name: those are lowercase letters, digits and dashes.
-const NEW = " new"
+// Which groups the founder folded or opened, in this browser only.
+const FOLDS = "airth-routines-folded"
+function readFolds(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(FOLDS) ?? "{}") } catch { return {} }
+}
 
-const clock = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+const BY: [GroupBy, string][] = [["agent", "Agent"], ["frequency", "Frequency"], ["business", "Business"]]
+const ALL = "*"
+
+type Open = { realm: string; key: string } | { realm: string; key: null }
 
 /** The business's recurring work, in three kinds: routines made of blocks
     (decision 49), drawn on a canvas (decision 91); agents given a task on a
     schedule (decision 37); and the fixed sequences of business/pipelines/
-    (decision 30). */
-export function Routines({ realm, agents, onAgent }: { realm: string; agents: Agent[]; onAgent: (name: string) => void }) {
-  const graphs = usePoll<{ routines: Routine[]; actions: Declared[]; prompts: string[] }>(() => api(`realms/${enc(realm)}/graphs`), 15000, [realm])
-  const tasks = usePoll<Tasks>(() => api(`realms/${enc(realm)}/routines`), 15000, [realm])
-  const fixed = usePoll<{ pipelines: Pipeline[] }>(() => api(`realms/${enc(realm)}/business`), 30000, [realm])
-  const [form, setForm] = useState<Objective | "new" | null>(null)
-  // The routine open on the canvas, NEW for one being drawn.
-  const [canvas, setCanvas] = useState<string | null>(null)
+    (decision 30). What needs a look comes first; the rest is grouped, and
+    a routine opens in a panel beside the list. */
+export function Routines({ realm, agents, onAgent, businesses }: { realm: string; agents: Agent[]; onAgent: (name: string) => void; businesses: { name: string; title: string }[] }) {
+  const [by, setBy] = useState<GroupBy>("agent")
+  const [f, setF] = useState<Filter>({ query: "", status: "all", agent: null })
+  const [folds, setFolds] = useState(readFolds)
+  // The routine open in the panel; a null key is a new routine being drawn.
+  const [open, setOpen] = useState<Open | null>(null)
+  const [form, setForm] = useState<{ realm: string; start: Objective | "new" } | null>(null)
 
-  if (canvas && graphs.data) {
-    const routine = canvas === NEW ? null : graphs.data.routines.find((r) => r.name === canvas) ?? null
-    return (
-      <div className="min-w-0 flex-1 p-3">
-        <RoutineCanvas key={routine?.name ?? NEW} realm={realm} routine={routine} agents={agents}
-          actions={graphs.data.actions} prompts={graphs.data.prompts} onClose={() => setCanvas(null)}
-          onSaved={async (name) => { await graphs.refresh(); setCanvas(name) }} />
-      </div>
-    )
+  const here = usePoll(() => load(realm), 15000, [realm])
+  // Grouped by business, every business's routines are listed, as the HQ
+  // shows them; each one's are read from its own business.
+  const others = businesses.filter((b) => b.name !== realm)
+  const away = usePoll(by === "business" && others.length ? () => Promise.all(others.map((b) => load(b.name).catch(() => null))) : null, 30000, [realm, by, others.map((b) => b.name).join()])
+  const loaded = [here.data, ...(by === "business" ? away.data ?? [] : [])].filter((x): x is Loaded => !!x)
+  const refresh = () => { here.refresh(); if (by === "business") away.refresh() }
+
+  const all = loaded.flatMap((l) => l.rows)
+  const shown = filter(all, f)
+  const look = f.status === "all" ? needsLook(shown) : []
+  const order = [...businesses.filter((b) => b.name === realm), ...others]
+  const groups = group(shown, by, order)
+  const owners = [...new Map(all.filter((r) => r.agent).map((r) => [r.agent!, r.agentTitle ?? r.agent!])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  const agentOf = (r: { realm: string; agent: string | null }) => loaded.find((l) => l.realm === r.realm)?.agents.find((a) => a.name === r.agent) ?? (r.realm === realm ? agents.find((a) => a.name === r.agent) : undefined)
+
+  // A search opens every group, so nothing it finds is folded away.
+  const foldKey = (g: Group) => `${by === "business" ? "" : realm}|${g.key}`
+  const folded = (g: Group) => !f.query.trim() && (folds[foldKey(g)] ?? g.rows.length >= FOLDED_FROM)
+  function toggle(g: Group) {
+    const next = { ...folds, [foldKey(g)]: !folded(g) }
+    setFolds(next)
+    try { localStorage.setItem(FOLDS, JSON.stringify(next)) } catch { /* private window */ }
   }
 
-  const count = (graphs.data?.routines.length ?? 0) + (tasks.data?.routines.length ?? 0) + (fixed.data?.pipelines.length ?? 0)
+  const count = here.data?.rows.length ?? 0
+  const busy = by === "business" && others.length > 0 && !away.data
   return (
-    <Page wide title="Routines" lede={graphs.data && tasks.data ? `${count} routine${count === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
+    <Page wide title="Routines" lede={here.data ? `${count} routine${count === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
       actions={<div className="flex gap-2">
-        <Button size="sm" disabled={!graphs.data || !agents.length} onClick={() => setCanvas(NEW)} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
-        <Button size="sm" variant="outline" onClick={() => setForm("new")}><Plus /> New agent routine</Button>
+        <Button size="sm" disabled={!here.data || !agents.length} onClick={() => setOpen({ realm, key: null })} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
+        <Button size="sm" variant="outline" disabled={!here.data} onClick={() => setForm({ realm, start: "new" })}><Plus /> New agent routine</Button>
       </div>}>
-      <Section title="Routines" note="Files in routines/, in the business folder">
-        {!graphs.data ? <Loading /> : graphs.data.routines.length ? (
-          <div className="space-y-2.5">
-            {graphs.data.routines.map((r) => (
-              <GraphCard key={r.name} realm={realm} r={r} agent={agents.find((x) => x.name === r.graph?.agent)} onOpen={() => setCanvas(r.name)} onAgent={onAgent} onChanged={graphs.refresh} />
-            ))}
+      {!here.data ? <Loading /> : !all.length ? (
+        <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link. Or give an agent a task to do on a schedule.</Empty>
+      ) : (
+        <>
+          <div className="-mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex h-8 w-56 items-center gap-2 rounded-lg border bg-transparent px-2.5 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring/40 max-sm:w-full">
+              <Search className="size-4 shrink-0" />
+              <input value={f.query} onChange={(e) => setF({ ...f, query: e.target.value })} placeholder="Search by name" aria-label="Search routines by name" className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
+              {f.query && <button aria-label="Clear the search" onClick={() => setF({ ...f, query: "" })}><X className="size-3.5" /></button>}
+            </label>
+            <Seg label="Show" value={f.status} options={[["all", "All"], ["look", "Needs a look"], ["paused", "Paused"]]} onPick={(status) => setF({ ...f, status })} />
+            <Select value={f.agent ?? ALL} onValueChange={(v) => setF({ ...f, agent: v === ALL || v == null ? null : String(v) })}>
+              <SelectTrigger size="sm" className="w-44" aria-label="Agent"><SelectValue>{(v: string) => (v === ALL ? "Every agent" : owners.find(([a]) => a === v)?.[1] ?? v)}</SelectValue></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Every agent</SelectItem>
+                {owners.map(([a, t]) => <SelectItem key={a} value={a}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <span className="flex-1" />
+            <span className="text-xs text-muted-foreground">Group by</span>
+            <Select value={by} onValueChange={(v) => v && setBy(v as GroupBy)}>
+              <SelectTrigger size="sm" className="w-32" aria-label="Group by"><SelectValue>{(v: string) => BY.find(([k]) => k === v)?.[1] ?? v}</SelectValue></SelectTrigger>
+              <SelectContent>{BY.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
-        ) : <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link.</Empty>}
-      </Section>
 
-      <Section title="Agent routines" note="An agent, a task, a time">
-        {!tasks.data ? <Loading /> : tasks.data.routines.length ? (
-          <div className="space-y-2.5">
-            {tasks.data.routines.map((o) => (
-              <TaskCard key={o.id} realm={realm} o={o} agent={agents.find((x) => x.name === o.bot)} onAgent={onAgent} onEdit={() => setForm(o)} onChanged={tasks.refresh} />
-            ))}
-          </div>
-        ) : (
-          <Empty icon={Bot} title="No agent routine">
-            {tasks.data.agents.length ? "Give an agent a task to do on a schedule: it works on it each time, as on a task you give it." : "Hire an agent first, then give it a task to do on a schedule."}
-          </Empty>
-        )}
-      </Section>
+          {look.length > 0 && (
+            <Section title="Needs a look" note={`${look.length} routine${look.length === 1 ? "" : "s"}`}>
+              <Panel className="divide-y overflow-hidden">
+                {look.map(({ row, reasons }) => (
+                  <button key={row.key} onClick={() => setOpen({ realm: row.realm, key: row.key })} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/50">
+                    <Dot row={row} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="truncate font-mono text-[13px] font-medium">{row.name}</span>
+                        <span className="truncate text-xs text-muted-foreground">{row.agentTitle ?? "No agent"}</span>
+                      </div>
+                      <div className={cn("truncate text-xs", reasons[0].kind === "waiting" ? "text-amber-600 dark:text-amber-300" : "text-red-500")}>
+                        {said(reasons[0])}{reasons.length > 1 && <span className="text-muted-foreground"> · and {reasons.length - 1} more</span>}
+                      </div>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </Panel>
+            </Section>
+          )}
 
-      {fixed.data && fixed.data.pipelines.length > 0 && (
-        <Section title="Fixed sequences" note="Files in business/pipelines/">
-          <div className="space-y-2.5">{fixed.data.pipelines.map((p) => <PipelineCard key={p.name} realm={realm} p={p} />)}</div>
-        </Section>
+          <section className="space-y-2.5">
+            {busy && <p className="text-xs text-muted-foreground">Reading the other businesses' routines…</p>}
+            {groups.length > 0 && (
+              <div className="grid grid-cols-[8.5rem_minmax(0,1fr)_minmax(0,1.15fr)_8.5rem_8.5rem_2.75rem] gap-x-4 px-4 text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase max-md:hidden">
+                <span>State</span><span>Routine</span><span>When</span><span>Next run</span><span>Last run</span><span className="text-right">Level</span>
+              </div>
+            )}
+            {groups.map((g) => {
+              const closed = folded(g)
+              const agent = by === "agent" && g.agent ? agentOf({ realm, agent: g.agent }) : undefined
+              return (
+                <Panel key={g.key} className="overflow-hidden">
+                  <button onClick={() => toggle(g)} aria-expanded={!closed} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40">
+                    <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", closed && "-rotate-90")} />
+                    {by === "agent" ? (agent ? <Character agent={agent} size={24} still /> : <Bot className="size-5 text-muted-foreground" />)
+                      : by === "business" ? <Building2 className="size-5 text-muted-foreground" /> : <CalendarClock className="size-5 text-muted-foreground" />}
+                    <span className="min-w-0 flex-1 md:flex md:items-baseline md:gap-3">
+                      <span className="block truncate font-medium">{g.label}</span>
+                      <span className="block shrink-0 text-xs text-muted-foreground">{g.rows.length} routine{g.rows.length === 1 ? "" : "s"}<span className="md:hidden"> · {g.next ? `next ${clock(g.next)}` : "nothing scheduled"}</span></span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground max-md:hidden">{g.next ? `Next ${clock(g.next)}` : "Nothing scheduled"}</span>
+                  </button>
+                  {!closed && <div className="divide-y border-t">{g.rows.map((r) => <Line key={r.key} row={r} withAgent={by !== "agent"} onOpen={() => setOpen({ realm: r.realm, key: r.key })} />)}</div>}
+                </Panel>
+              )
+            })}
+            {!groups.length && <p className="px-1 py-6 text-center text-sm text-muted-foreground">No routine matches{f.query ? ` “${f.query}”` : ""}.</p>}
+          </section>
+        </>
       )}
 
-      {tasks.data && <TaskForm realm={realm} d={tasks.data} start={form} onClose={() => setForm(null)} onSaved={tasks.refresh} />}
+      <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1180px,94vw)]">
+          {open && <Detail open={open} loaded={loaded.find((l) => l.realm === open.realm)} agentOf={agentOf} onAgent={onAgent}
+            onClose={() => setOpen(null)} onChanged={refresh} onOpen={setOpen}
+            onEdit={(o) => setForm({ realm: open.realm, start: o })} />}
+        </SheetContent>
+      </Sheet>
+
+      {form && loaded.some((l) => l.realm === form.realm) && (
+        <TaskForm realm={form.realm} d={loaded.find((l) => l.realm === form.realm)!.tasks} start={form.start} onClose={() => setForm(null)} onSaved={refresh} />
+      )}
     </Page>
+  )
+}
+
+const STATE = {
+  ok: { label: "Healthy", dot: "bg-emerald-500" },
+  waiting: { label: "Waiting for you", dot: "bg-amber-500" },
+  incident: { label: "Incident", dot: "bg-red-500" },
+  paused: { label: "Paused", dot: "border border-muted-foreground/70" },
+}
+
+/** The pill's word: an incident says which kind. */
+function stateLabel(row: Row): string {
+  const s = state(row)
+  if (s !== "incident") return STATE[s].label
+  const first = reasons(row)[0]
+  return first.kind === "failed" ? "Failed" : first.kind === "broken" ? "Does not load" : "Incident"
+}
+
+function Dot({ row }: { row: Row }) {
+  return <span className={cn("size-2 shrink-0 rounded-full", STATE[state(row)].dot)} aria-hidden />
+}
+
+function Pill({ row }: { row: Row }) {
+  return <span className="inline-flex min-w-0 items-center gap-1.5 text-xs"><Dot row={row} /><span className="truncate">{stateLabel(row)}</span></span>
+}
+
+/** One reason a routine needs a look, in a line. */
+function said(r: Reason): string {
+  switch (r.kind) {
+    case "incident": return `Incident: ${r.item.title || "see Needs you"}`
+    case "broken": return `Its file does not load: ${r.error}`
+    case "failed": return `Last run failed ${ago(r.at)}${r.error && r.error !== "failed" ? `: ${r.error}` : ""}`
+    case "waiting": return `Waiting for you: ${r.item.title || (r.item.kind === "prepared" ? "an action to carry out" : "an approval")}`
+  }
+}
+
+function Level({ row }: { row: Row }) {
+  if (row.level === null) {
+    const why = row.kind === "graph" ? "No declared action in its Act blocks" : row.kind === "agent" ? "It works as a task: each action asks at its own level" : "A fixed sequence: it takes no action of its own"
+    return <span className="text-muted-foreground/60" title={why}>—</span>
+  }
+  const each = row.levels.map((l) => `${l.action}: ${l.level} · ${LEVELS[l.level].name}`).join("\n")
+  return (
+    <span title={`Level ${row.level} · ${LEVELS[row.level].name}: ${LEVELS[row.level].hint}\n${each}`}
+      className={cn("inline-flex h-5 items-center rounded-md px-1.5 font-mono text-[11px] tabular-nums", row.level < 2 ? "bg-amber-500/12 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground")}>
+      L{row.level}
+    </span>
+  )
+}
+
+function NextRun({ row }: { row: Row }) {
+  if (!row.enabled) return <span className="text-muted-foreground">Paused</span>
+  if (row.next) return <span className="tabular-nums">{clock(row.next)}</span>
+  return <span className="text-muted-foreground">{row.trigger.schedule ? "Not planned" : "On demand"}</span>
+}
+
+function LastRun({ row }: { row: Row }) {
+  if (row.broken) return <span className="text-red-500">Does not load</span>
+  if (!row.last) return <span className="text-muted-foreground">Never ran</span>
+  return <Last ok={row.last.ok} at={row.last.at} />
+}
+
+/** A routine in its group: state, name, when, next and last run, level. */
+function Line({ row, withAgent, onOpen }: { row: Row; withAgent: boolean; onOpen: () => void }) {
+  const kind = row.kind === "agent" ? "Agent routine" : row.kind === "sequence" ? "Fixed sequence" : null
+  const who = [withAgent ? row.agentTitle ?? "No agent" : null, kind].filter(Boolean).join(" · ")
+  return (
+    <button onClick={onOpen} className="w-full text-left text-[13px] transition-colors hover:bg-accent/50">
+      <div className="grid min-h-11 grid-cols-[8.5rem_minmax(0,1fr)_minmax(0,1.15fr)_8.5rem_8.5rem_2.75rem] items-center gap-x-4 px-4 py-2 max-md:hidden">
+        <Pill row={row} />
+        <span className="min-w-0">
+          <span className="block truncate font-mono font-medium">{row.name}</span>
+          {who && <span className="block truncate text-xs text-muted-foreground">{who}</span>}
+        </span>
+        <span className="truncate text-foreground/85">{triggerText(row.trigger)}</span>
+        <span className="truncate text-xs"><NextRun row={row} /></span>
+        <span className="truncate text-xs"><LastRun row={row} /></span>
+        <span className="text-right"><Level row={row} /></span>
+      </div>
+      <div className="px-4 py-2.5 md:hidden">
+        <div className="flex items-center gap-2">
+          <Dot row={row} />
+          <span className="min-w-0 flex-1 truncate font-mono font-medium">{row.name}</span>
+          <Level row={row} />
+        </div>
+        <div className="mt-0.5 truncate pl-4 text-xs text-muted-foreground">{triggerText(row.trigger)} · <NextRun row={row} /></div>
+        <div className="truncate pl-4 text-xs text-muted-foreground"><span className="text-foreground/80">{stateLabel(row)}</span> · <LastRun row={row} />{who && ` · ${who}`}</div>
+      </div>
+    </button>
   )
 }
 
 function Last({ ok, at }: { ok: boolean; at: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1", ok ? "text-emerald-500" : "text-red-500")}>
-      {ok ? <Check className="size-3.5" /> : <X className="size-3.5" />} {ago(at)}
+    <span className={cn("inline-flex items-center gap-1", ok ? "text-emerald-600 dark:text-emerald-500" : "text-red-500")}>
+      {ok ? <Check className="size-3.5" /> : <X className="size-3.5" />} {ok ? ago(at) : `Failed ${ago(at)}`}
     </span>
   )
 }
 
-/** A routine in the list: who, when, its chain of blocks; it opens on the canvas. */
-function GraphCard({ realm, r, agent, onOpen, onAgent, onChanged }: { realm: string; r: Routine; agent?: Agent; onOpen: () => void; onAgent: (name: string) => void; onChanged: () => void }) {
-  const g = r.graph
-  const last = r.runs[0]
-  return (
-    <Panel className="transition-colors hover:bg-bubble/50">
-      <div className="flex items-center gap-3 px-4 py-3.5">
-        {agent ? <button onClick={() => onAgent(agent.name)} aria-label={agent.title}><Character agent={agent} size={30} still /></button> : <Bot className="size-6 text-muted-foreground" />}
-        <button className="min-w-0 flex-1 text-left" onClick={onOpen}>
-          <div className="font-mono text-[13px] font-medium">{r.name}</div>
-          <div className="truncate text-xs text-muted-foreground">
-            {g ? <>{r.agent_title ?? g.agent} · {triggerText(g.trigger)}{r.next_at ? ` · next ${clock(r.next_at)}` : ""}{late(last) && <span className="text-amber-500"> · last run {late(last)} late</span>}</> : <span className="text-red-500">This file does not hold</span>}
-          </div>
-        </button>
-        <div className="text-right text-xs text-muted-foreground">
-          {last ? <Last ok={last.ok} at={last.at} /> : "Never ran"}
-          <div className="tabular-nums">{usd(r.cost_usd) || "$0"} this week{r.unpriced ? ` + ${r.unpriced} unpriced` : ""}</div>
+/** What the panel shows: a routine of blocks on its canvas, with its runs
+    and what needs a look above; an agent routine or a fixed sequence as
+    its card. */
+function Detail({ open, loaded, agentOf, onAgent, onClose, onChanged, onOpen, onEdit }: {
+  open: Open; loaded?: Loaded; agentOf: (r: { realm: string; agent: string | null }) => Agent | undefined; onAgent: (name: string) => void
+  onClose: () => void; onChanged: () => void; onOpen: (o: Open) => void; onEdit: (o: Objective) => void
+}) {
+  if (!loaded) return <div className="p-6"><Loading /></div>
+  const agents = loaded.agents
+  if (open.key === null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <SheetTitle className="sr-only">New routine</SheetTitle>
+        <SheetDescription className="sr-only">Draw a routine: a trigger, then blocks you drag in and link.</SheetDescription>
+        <div className="min-h-0 flex-1 p-3">
+          <RoutineCanvas key="new" realm={loaded.realm} routine={null} agents={agents} actions={loaded.actions} prompts={loaded.prompts}
+            onClose={onClose} onSaved={async (name) => { onChanged(); onOpen({ realm: loaded.realm, key: `${loaded.realm}/graph/${name}` }) }} />
         </div>
-        <Button size="sm" variant="outline" onClick={onOpen}><Workflow /> Open</Button>
       </div>
-      {g && (
-        <button className="-mt-1 flex w-full flex-wrap items-center gap-1 px-4 pb-3.5 text-left" onClick={onOpen}>
-          {g.blocks.map((b, i) => {
-            const k = BLOCK[b.type] ?? BLOCK.act
-            return (
-              <span key={b.id} className="flex items-center gap-1">
-                {i > 0 && <span className="text-muted-foreground/50">→</span>}
-                <span className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]", b.type === "approval" && "border-amber-400/40 text-amber-600 dark:text-amber-300")}>
-                  <k.icon className="size-3" /> {b.id}
-                </span>
-              </span>
-            )
-          })}
-        </button>
+    )
+  }
+  const row = loaded.rows.find((r) => r.key === open.key)
+  if (!row) return <div className="p-6 text-sm text-muted-foreground">This routine is no longer in the business.</div>
+  const agent = agentOf(row)
+  const why = reasons(row)
+  const graph = row.kind === "graph" ? loaded.routines.find((r) => r.name === row.name) : undefined
+  const cost = graph?.cost_usd ?? 0
+  const unpriced = graph?.unpriced ?? 0
+  const lateBy = late(graph?.runs[0])
+  const head = (
+    <div className="space-y-2.5 border-b px-5 pt-4 pb-3.5 pr-14">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <SheetTitle className="font-mono text-base">{row.name}</SheetTitle>
+        <Pill row={row} />
+        <Level row={row} />
+      </div>
+      <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        {agent ? (
+          <button className="inline-flex items-center gap-1.5 hover:text-foreground" onClick={() => onAgent(agent.name)}><Character agent={agent} size={18} still /> {agent.title}</button>
+        ) : <span>{row.kind === "sequence" ? "Fixed sequence" : "The general assistant"}</span>}
+        <span>·</span><span>{triggerText(row.trigger)}</span>
+        <span>·</span><span>Next: <NextRun row={row} /></span>
+        <span>·</span><span>Last: <LastRun row={row} /></span>
+        {row.kind === "graph" && <><span>·</span><span>{usd(cost) || "$0"} this week{unpriced ? ` + ${unpriced} unpriced` : ""}</span></>}
+        {lateBy && <><span>·</span><span className="text-amber-600 dark:text-amber-300">last run started {lateBy} late</span></>}
+      </SheetDescription>
+      {why.length > 0 && (
+        <ul className="space-y-1 rounded-lg bg-muted/60 px-3 py-2 text-xs">
+          {why.map((r, i) => <li key={i} className={r.kind === "waiting" ? "text-amber-700 dark:text-amber-300" : "text-red-600 dark:text-red-400"}>{said(r)}{(r.kind === "incident" || r.kind === "waiting") && <span className="text-muted-foreground"> · in Needs you</span>}</li>)}
+        </ul>
       )}
-      {!!r.feedback?.length && <Learned realm={realm} said={r.feedback} onChanged={onChanged} />}
-      {!g && r.error && <p className="-mt-1 px-4 pb-3.5 font-mono text-[11px] break-words text-red-500">{r.error}</p>}
-      {last?.error && <p className="-mt-1 line-clamp-2 px-4 pb-3.5 font-mono text-[11px] text-red-500">{last.error}</p>}
-    </Panel>
+    </div>
+  )
+
+  if (graph) {
+    const routine = graph
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {head}
+        {!!routine.feedback?.length && <div className="max-h-[30svh] shrink-0 overflow-y-auto"><Learned realm={loaded.realm} said={routine.feedback} onChanged={onChanged} /></div>}
+        <div className="min-h-[420px] flex-1 border-t p-3">
+          <RoutineCanvas key={routine.name} realm={loaded.realm} routine={routine} agents={agents} actions={loaded.actions} prompts={loaded.prompts}
+            onClose={onClose} onSaved={async () => onChanged()} />
+        </div>
+      </div>
+    )
+  }
+  const o = row.kind === "agent" ? loaded.tasks.routines.find((x) => x.id === row.name) : undefined
+  const p = row.kind === "sequence" ? loaded.pipelines.find((x) => x.name === row.name) : undefined
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {head}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {o && <TaskCard realm={loaded.realm} o={o} agent={agent} onAgent={onAgent} onEdit={() => onEdit(o)} onChanged={onChanged} />}
+        {p && <PipelineCard realm={loaded.realm} p={p} />}
+      </div>
+    </div>
   )
 }
 
@@ -246,7 +485,7 @@ function TaskCard({ realm, o, agent, onAgent, onEdit, onChanged }: {
             {!o.enabled && <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">Paused</span>}
           </div>
           <div className="text-xs text-muted-foreground">
-            {agent?.title ?? o.bot ?? "The general assistant"} · {o.every ? schedule(o.every) : "By hand"}{o.enabled && o.next_at ? ` · next ${clock(o.next_at)}` : ""}
+            {agent?.title ?? o.bot ?? "The general assistant"} · {o.every ? scheduleText(o.every) : "By hand"}{o.enabled && o.next_at ? ` · next ${clock(o.next_at)}` : ""}
           </div>
         </div>
         <div className="text-right text-xs text-muted-foreground">
@@ -356,7 +595,7 @@ function TaskForm({ realm, d, start, onClose, onSaved }: { realm: string; d: Tas
           <div className="space-y-1.5">
             <Label htmlFor="r-every">When</Label>
             <Input id="r-every" value={f.every} spellCheck={false} onChange={(e) => setF({ ...f, every: e.target.value })} placeholder="mon 08:00 · daily 07:00 · weekdays 09:00 · every 2h" className="font-mono" />
-            <p className="text-xs text-muted-foreground">{f.every.trim() ? schedule(f.every) : "Empty: you run it by hand."}</p>
+            <p className="text-xs text-muted-foreground">{f.every.trim() ? scheduleText(f.every) : "Empty: you run it by hand."}</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="r-min">Time limit</Label>
@@ -417,7 +656,7 @@ function PipelineCard({ realm, p }: { realm: string; p: Pipeline }) {
         <ListOrdered className="size-5 text-muted-foreground" />
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[13px] font-medium">{p.name}</div>
-          <div className="text-xs text-muted-foreground">{p.schedule ? schedule(p.schedule) : "By hand"}{p.next_at ? ` · next ${clock(p.next_at)}` : ""}</div>
+          <div className="text-xs text-muted-foreground">{p.schedule ? scheduleText(p.schedule) : "By hand"}{p.next_at ? ` · next ${clock(p.next_at)}` : ""}</div>
         </div>
         <div className="text-right text-xs text-muted-foreground">{last ? <Last ok={last.ok} at={last.started_at} /> : "Never ran"}</div>
         <Button size="sm" variant="outline" disabled={!!p.error || busy} onClick={run}><Play /> Run now</Button>
