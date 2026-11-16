@@ -16,6 +16,21 @@ export type Entry = {
 
 export const CHANGELOG: Entry[] = [
   {
+    version: "0.9.0",
+    date: "2026-11-16",
+    title: "Routines, at a glance",
+    added: [
+      "What's new in Settings: what changed in each version, in plain words. About shows the version you run.",
+    ],
+    improved: [
+      "Routines in one list: what needs a look on top, then the routines by agent or by how often they run. Each says its state, when it runs in plain words, its next and last run and its level, and opens in a panel on the right.",
+      "The calendar puts routines that overlap side by side, as Google Calendar does; past three, a \"+N\" lists the rest.",
+    ],
+    fixed: [
+      "When you answer an agent in words and it asks again, its first card leaves Needs you.",
+    ],
+  },
+  {
     version: "0.8.1",
     date: "2026-11-16",
     title: "Budgets hold for every kind of work",
