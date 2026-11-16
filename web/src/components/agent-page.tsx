@@ -4,7 +4,7 @@ import { BookOpen, Brain, ChevronLeft, ChevronRight, Download, Mail, Repeat, Set
 import { Back } from "@/components/page"
 import { Character } from "@/components/character"
 import { DepartmentField } from "@/components/department-field"
-import { Rich } from "@/components/rich"
+import { Markdown } from "@/components/markdown"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -303,7 +303,7 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
         {!dirty && form.job && (
           <details className="group rounded-xl bg-bubble px-4 py-3 text-sm">
             <summary className="cursor-pointer text-xs text-muted-foreground select-none">As it reads</summary>
-            <div className="mt-2 leading-relaxed"><Rich text={form.job} /></div>
+            <div className="mt-2 leading-relaxed"><Markdown text={form.job} /></div>
           </details>
         )}
       </section>

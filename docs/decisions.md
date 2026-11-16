@@ -2,6 +2,25 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 143. An agent's words are rendered as Markdown, by one component, as untrusted content
+
+**Accepted** (founder, 16 November 2026: "afficher le markdown mis en forme partout où un agent écrit", with react-markdown and remark-gfm, and the security rules below).
+
+- **One component, `<Markdown>`** (`web/src/components/markdown.tsx`), wherever an agent's text is shown: reports, incidents and ideas in Needs you, the conversation (answers, drafts being written, the agent's working notes, a task passed on, a decision it proposes), a routine's last report and dry run, a company document's preview, an agent's mission. It replaces `Rich`, whose regular expressions dropped headings and quotes, missed task lists and strikethrough, and read tables only in some shapes.
+- **Two dependencies:** `react-markdown` 10.1.0 and `remark-gfm` 4.0.1, pinned. A parser is safer than regular expressions on text nobody controls.
+- **Airth's own blocks are kept:** a ```` ```csv ```` (or tsv) block is a table, a ```` ```chart ```` block a chart.
+- **The text is untrusted**, whatever the agent read to write it:
+  - no HTML is rendered (no `rehype-raw`; HTML in the text is skipped);
+  - no image is loaded, from anywhere: its alt text and its domain are shown in its place, so a remote image cannot tell its server who reads, and when;
+  - a link opens in a new tab with `rel="noopener noreferrer"`, its domain on hover; only `http`, `https` and `mailto` addresses are kept, anything else (`javascript:`, `data:`, `vbscript:`…) leaves the text without a link.
+- These rules stand on their own. The request cited decision 56, which is about approvals, not rendering.
+- **The look:** headings 15 to 17 px, never larger than the page's title; tables with thin borders, a tinted header, figures aligned right, and their own horizontal scroll on a narrow screen; code in the mono font.
+- **Left as typed:** a draft waiting for approval (it is published as written, so `**` must show), and text from outside (a source's excerpt).
+
+*Why:* reports showed `##`, `**` and `|` raw, worst on a phone. One renderer means one set of rules for untrusted text.
+
+*Cost:* two dependencies and theirs (the unified/remark family), about 30 KB gzipped in the main bundle (191 to 220 KB). A link to a relative address or an anchor no longer works in an agent's text.
+
 ## 142. The interface's deterministic logic is tested with Vitest
 
 **Accepted** (founder, 16 November 2026: "Vitest + CI", for the tests the Routines page and the Markdown rendering ask for).
