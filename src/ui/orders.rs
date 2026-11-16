@@ -155,18 +155,24 @@ impl App {
             groups[group].as_array_mut().expect("an array").push(task);
         }
         // The last ten done, and a project's past beyond them: its thread
-        // keeps it (decision 147).
+        // keeps it (decision 147). Counted from the newest (the runs come
+        // oldest first), listed in the same order as before.
         let (mut general, mut in_projects) = (0, 0);
-        done.retain(|(in_project, _)| {
+        let mut keep = vec![false; done.len()];
+        for (i, (in_project, _)) in done.iter().enumerate().rev() {
             let seen = if *in_project {
                 &mut in_projects
             } else {
                 &mut general
             };
             *seen += 1;
-            *seen <= if *in_project { 40 } else { 10 }
-        });
-        groups["done"] = done.into_iter().map(|(_, t)| t).collect();
+            keep[i] = *seen <= if *in_project { 40 } else { 10 };
+        }
+        groups["done"] = done
+            .into_iter()
+            .zip(keep)
+            .filter_map(|((_, t), k)| k.then_some(t))
+            .collect();
         Ok(groups)
     }
 
@@ -356,6 +362,13 @@ mod tests {
         assert_eq!(of(&tagged.id), Some(json!(id)), "its order named it");
         let general: Vec<_> = tasks.iter().filter(|t| t["project"].is_null()).collect();
         assert_eq!(general.len(), 10, "the main chat's ten");
+        // The latest ten, not the first.
+        let orders: Vec<_> = general
+            .iter()
+            .map(|t| t["order"].as_str().unwrap())
+            .collect();
+        assert_eq!(orders.first(), Some(&"Chat 2"));
+        assert_eq!(orders.last(), Some(&"Chat 11"));
         // Refused at the door: another business's or an unknown project.
         assert!(
             app.hub

@@ -77,6 +77,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       {/* On a phone the greeting and the box sit in the lower half, within
           the thumb's reach, clear of the tab bar. */}
       <div className="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
+        <ProjectLines tasks={tasks} projects={projects} onProject={onProject} />
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>

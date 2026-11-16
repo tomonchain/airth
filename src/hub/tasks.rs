@@ -147,12 +147,22 @@ impl Hub {
     }
 }
 
+/// How much of a project's description an agent is told.
+const BRIEF_CHARS: usize = 2000;
+
 /// What an agent is told of the project an order is about: enough to
 /// answer where it stands, and how to add to it rather than start another.
 fn briefing(p: &crate::business::store::projects::Project) -> String {
     let mut out = format!("This order is about project {}, \"{}\".\n", p.id, p.name);
-    if !p.description.trim().is_empty() {
-        out += &format!("{}\n", p.description.trim());
+    // A long description would take the model's context from the work:
+    // its start is enough to say what the project is.
+    let description = p.description.trim();
+    if !description.is_empty() {
+        let mut cut: String = description.chars().take(BRIEF_CHARS).collect();
+        if cut.len() < description.len() {
+            cut += "…";
+        }
+        out += &format!("{cut}\n");
     }
     if !p.milestones.is_empty() {
         out += "Milestones:\n";

@@ -16,15 +16,16 @@ export function inThread(t: Threaded, scope: Scope): boolean {
 
 export type ProjectLine = { id: number; name: string; count: number; at: string }
 
-/** The Home's quiet line per project: each project whose tasks moved in the
-    last `days`, with how many did, the most recent first. */
-export function projectLines(tasks: Record<string, Threaded[]> | null, projects: { id: number; name: string }[], now: Date, days = 7): ProjectLine[] {
+/** The Home's quiet line per project: each open project whose tasks moved
+    in the last `days`, with how many did, the most recent first. */
+export function projectLines(tasks: Record<string, Threaded[]> | null, projects: { id: number; name: string; status?: string }[], now: Date, days = 7): ProjectLine[] {
   const since = now.getTime() - days * 86400000
+  const open = new Map(projects.filter((p) => p.status !== "done").map((p) => [p.id, p]))
   const lines = new Map<number, ProjectLine>()
   for (const t of Object.values(tasks ?? {}).flat()) {
     const at = t.at ?? t.updated_at
     if (t.project == null || !at || !(Date.parse(at) >= since)) continue
-    const p = projects.find((x) => x.id === t.project)
+    const p = open.get(t.project)
     if (!p) continue
     const line = lines.get(p.id) ?? { id: p.id, name: p.name, count: 0, at }
     line.count += 1

@@ -55,7 +55,12 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name && inThread(t, project)) ids.add(t.id)
     return [...ids].sort()
   }, [tasks.data, started, agent.name, project])
+  // Every task of the agent, whatever its thread: what they sent up is
+  // answered in their own chat, never as an item here.
+  const anyTask = useMemo(() => new Set(Object.values(tasks.data ?? {}).flat().filter((t) => t.agent === agent.name).map((t) => t.id).concat(started)), [tasks.data, started, agent.name])
   const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name && inThread(t, project)) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
+  // A task at work in another thread (a project's) is not a routine at work.
+  const elsewhere = (tasks.data?.running ?? []).some((t) => t.agent === agent.name && !inThread(t, project))
   const latest = taskIds[taskIds.length - 1]
   // A task whose change was adopted or thrown away is closed: the next
   // message starts a new one (the server refuses to go on with it).
@@ -75,12 +80,12 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
     // A task's questions show in its own chat, not as items.
     // A report is read in Needs you, on the phone and on Telegram; in the
     // conversation it came between the founder and the agent (decision 134).
-    for (const i of own ? [] : thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
+    for (const i of own ? [] : thread.data?.items ?? []) if (!(i.run && anyTask.has(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
     for (const id of own ? taskIds : taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
     // In time order, as a chat is: what waits for the founder stays where
     // it was sent, marked new, not moved after later messages.
     return e.sort((a, b) => a.at.localeCompare(b.at))
-  }, [thread.data, taskIds, own])
+  }, [thread.data, taskIds, own, anyTask])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
@@ -117,7 +122,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
-  const busy = !own && agent.state === "working" && !running
+  const busy = !own && agent.state === "working" && !running && !elsewhere
   // Like a chat: the thread opens at its newest message and stays there as
   // messages and tasks load in, unless the founder scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null)

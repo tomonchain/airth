@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { inThread, projectLines, type Threaded } from "./project-threads.ts"
 
 const task = (id: string, at: string, project?: number | null) => ({ id, at, project })
-const list = (done: Threaded[], running: Threaded[] = []) => ({ running, waiting: [], review: [], done })
+const list = (done: Threaded[], running: Threaded[] = [], waiting: Threaded[] = [], review: Threaded[] = []) => ({ running, waiting, review, done })
 
 describe("which thread a task goes to", () => {
   const general = task("a", "2026-11-16T09:00:00Z")
@@ -33,6 +33,16 @@ describe("the Home's line per project", () => {
       { id: 1, name: "Website redesign", count: 2, at: "2026-11-16T11:00:00+00:00" },
       { id: 2, name: "Year's end", count: 1, at: "2026-11-15T10:00:00Z" },
     ])
+  })
+
+  it("counts tasks waiting for the founder and in review", () => {
+    const lines = projectLines(list([], [], [task("a", "2026-11-16T10:00:00Z", 1)], [task("b", "2026-11-16T09:00:00Z", 1)]), projects, now)
+    expect(lines).toEqual([{ id: 1, name: "Website redesign", count: 2, at: "2026-11-16T10:00:00Z" }])
+  })
+
+  it("says nothing of a done project", () => {
+    const done = [{ id: 1, name: "Website redesign", status: "done" }, { id: 2, name: "Year's end", status: "active" }]
+    expect(projectLines(list([task("a", "2026-11-16T10:00:00Z", 1), task("b", "2026-11-16T10:00:00Z", 2)]), done, now).map((l) => l.id)).toEqual([2])
   })
 
   it("says nothing of a quiet project, or of one it does not know", () => {
