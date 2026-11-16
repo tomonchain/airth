@@ -1,0 +1,1 @@
+import{i as e,n as t}from"./jsx-runtime-DyZJNswf.js";import{F as n,it as r}from"./page-DeQ-ZBmt.js";var i=e(t(),1);function a(e,t){let a=i.useRef(e),o=n(t);r(()=>{a.current!==e&&o(a.current),a.current=e},[e,o])}export{a as t};

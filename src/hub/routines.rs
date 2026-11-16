@@ -1082,6 +1082,9 @@ impl Hub {
     /// founder in the queue), recorded the same way. Its report, or why it
     /// failed.
     pub fn run_routine_by_hand(&self, realm: &Realm, name: &str) -> Result<String> {
+        // A file that does not hold (a mistyped name, a graph refused) is
+        // refused at once: no heartbeat, no incident, nothing ran.
+        self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         self.run_and_record(realm, name, None)
             .map_err(|e| anyhow::anyhow!(e))
     }

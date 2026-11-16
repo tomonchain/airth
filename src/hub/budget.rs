@@ -74,9 +74,17 @@ impl Hub {
         let since = month_start(now);
         let prices = crate::prices::Prices::load(self.home());
         let mut m = Month::default();
-        // An agent's runs only: the founder's own chats are not its work.
+        // Agents' and objectives' runs only: the founder's own chats are not
+        // the business's work. An objective's run is the bot it ran for, or
+        // the business's alone.
         for state in self.load_shared(realm)? {
-            let Some(agent) = &state.agent else { continue };
+            let agent = state
+                .agent
+                .clone()
+                .or_else(|| state.origin.as_ref()?.bot.clone());
+            if agent.is_none() && state.origin.is_none() {
+                continue;
+            }
             let spent: f64 = state
                 .usage
                 .iter()
@@ -84,13 +92,21 @@ impl Hub {
                 .map(|c| crate::usage::call_cost(c, &prices))
                 .sum();
             m.business += spent;
-            *m.agents.entry(agent.clone()).or_default() += spent;
-            if state.status == Status::Running {
+            if let Some(agent) = &agent {
+                *m.agents.entry(agent.clone()).or_default() += spent;
+            }
+            // A run holds what it may still spend while it is driven, or
+            // saved and not yet driven; one killed midway stays Running on
+            // disk, and promises nothing.
+            let holds = state.iterations == 0 || self.is_live(realm, &state.id);
+            if state.status == Status::Running && holds {
                 let promised = state.budget.max_cost_usd.unwrap_or(0.0)
                     - crate::usage::run_cost(&state, &prices);
                 let promised = promised.max(0.0);
                 m.reserved += promised;
-                *m.reserved_by.entry(agent.clone()).or_default() += promised;
+                if let Some(agent) = &agent {
+                    *m.reserved_by.entry(agent.clone()).or_default() += promised;
+                }
             }
         }
         if realm.dir().join(crate::business::store::FILE).exists() {
