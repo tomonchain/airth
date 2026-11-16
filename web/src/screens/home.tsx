@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ArrowUp, CalendarClock, Flag, FolderKanban, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
 import { toast } from "sonner"
 import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/use-poll"
 import { api, called, enc, type Agent, type Calendar, type Company, type Item, type Project, type Tasks } from "@/lib/api"
+import { greeting, light } from "@/lib/greeting"
 import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
 import { Conversation } from "@/screens/conversation"
@@ -61,6 +62,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   }
   return (
     <div className="relative min-w-0 flex-1 overflow-y-auto">
+      <Light />
       {lead && leadTasks.length > 0 && (
         // On a phone, beside the logo: the slot New request takes in the conversation.
         <Button size="sm" variant="ghost" aria-label="Conversation" onClick={() => setMode("thread")}
@@ -70,10 +72,32 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       )}
       {/* On a phone the greeting and the box sit in the lower half, within
           the thumb's reach, clear of the tab bar. */}
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
+      <div className="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>
+    </div>
+  )
+}
+
+/** The time, again every few minutes: the greeting and its light follow
+    the day while the page stays open. */
+function useNow(): Date {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 5 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
+/** Two soft lights behind the greeting, in the moment's colours (warm in
+    the morning, violet in the evening), drifting slowly. */
+function Light() {
+  const [a, b] = light(useNow())
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="home-light absolute -inset-[10%]" style={{ "--light-a": a, "--light-b": b } as CSSProperties} />
     </div>
   )
 }
@@ -82,6 +106,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
 function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
   realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onProject: (id: number) => void; onSent: (id: string) => void
 }) {
+  const now = useNow()
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
@@ -115,7 +140,7 @@ function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
   return (
     <div>
       <h1 className="text-center text-[26px] leading-tight font-medium tracking-tight text-balance md:text-[30px]">
-        What shall we do today{first ? `, ${first}` : ""}?
+        {greeting(now, first)}
       </h1>
       <div className="mt-8 flex items-end gap-1.5 rounded-[26px] bg-bubble py-1.5 pr-1.5 pl-5">
         <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} disabled={busy}
