@@ -14,7 +14,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - no image is loaded, from anywhere: its alt text and its domain are shown in its place, so a remote image cannot tell its server who reads, and when;
   - a link opens in a new tab with `rel="noopener noreferrer"`, its domain on hover; only `http`, `https` and `mailto` addresses are kept, anything else (`javascript:`, `data:`, `vbscript:`…) leaves the text without a link.
 - These rules stand on their own. The request cited decision 56, which is about approvals, not rendering.
-- **The look:** headings 15 to 17 px, never larger than the page's title; tables with thin borders, a tinted header, figures aligned right, and their own horizontal scroll on a narrow screen; code in the mono font.
+- **The look:** headings `#` to `###` at 17, 16 and 15 px, weight 600, the deeper ones at the text's size in bold, never larger than the page's title; tables with thin borders, a tinted header, figures aligned right, and their own horizontal scroll on a narrow screen; code in the mono font.
 - **Left as typed:** a draft waiting for approval (it is published as written, so `**` must show), and text from outside (a source's excerpt).
 
 *Why:* reports showed `##`, `**` and `|` raw, worst on a phone. One renderer means one set of rules for untrusted text.

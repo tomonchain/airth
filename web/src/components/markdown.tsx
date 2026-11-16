@@ -117,8 +117,9 @@ export function Markdown({ text, className }: { text: string; className?: string
 
 /** CSV (or semicolon- or tab-separated) rows; quoted fields may hold the
     separator, quotes doubled, and line breaks. */
-function csv(text: string): string[][] {
-  const first = text.split("\n")[0] ?? ""
+export function csv(text: string): string[][] {
+  // The separator is the one the header uses most, counted outside quotes.
+  const first = (text.split("\n")[0] ?? "").replace(/"(?:[^"]|"")*"/g, "")
   const sep = ["\t", ";", ","].map((c) => [c, first.split(c).length] as const).sort((a, b) => b[1] - a[1])[0][0]
   const rows: string[][] = []
   let row: string[] = [], field = "", quoted = false
@@ -153,24 +154,38 @@ function CsvTable({ rows }: { rows: string[][] }) {
   )
 }
 
-type Spec = { type?: "bar" | "line"; title?: string; unit?: string; labels: string[]; series: { name?: string; values: number[] }[] }
+type Spec = { type?: "bar" | "line"; title?: string; unit?: string; labels: string[]; series: { name?: string; values: (number | null)[] }[] }
 const COLORS = ["#0ea5e9", "#f59e0b", "#10b981", "#8b5cf6", "#f43f5e"]
+
+const optional = (v: unknown) => v === undefined || typeof v === "string"
+
+/** The chart an agent's JSON describes, or null when it is not one exactly:
+    text where text goes, finite numbers (or nothing) for values. Anything
+    else would reach the page as an object, so it shows as code instead. */
+export function chart(spec: string): Spec | null {
+  let c: Spec
+  try { c = JSON.parse(spec) } catch { return null }
+  if (!c || typeof c !== "object" || !optional(c.title) || !optional(c.unit) || (c.type !== undefined && c.type !== "bar" && c.type !== "line")) return null
+  if (!Array.isArray(c.labels) || !c.labels.every((l) => typeof l === "string")) return null
+  if (!Array.isArray(c.series) || !c.series.length) return null
+  for (const s of c.series) {
+    if (!s || typeof s !== "object" || !optional(s.name) || !Array.isArray(s.values)) return null
+    if (!s.values.every((v) => v === null || (typeof v === "number" && Number.isFinite(v)))) return null
+  }
+  return c.series.some((s) => s.values.some((v) => typeof v === "number")) ? c : null
+}
 
 /** A chart an agent wrote as JSON: bars (side by side for several series)
     or lines over the labels. JSON that is not a chart shows as code. */
 function ChartBlock({ spec }: { spec: string }): ReactNode {
-  let c: Spec
-  try {
-    c = JSON.parse(spec)
-    if (!Array.isArray(c.labels) || !Array.isArray(c.series) || !c.series.every((s) => Array.isArray(s.values))) throw new Error()
-  } catch {
-    return <pre className={PRE}>{spec}</pre>
-  }
+  const c = chart(spec)
+  if (!c) return <pre className={PRE}>{spec}</pre>
   const all = c.series.flatMap((s) => s.values.filter((v) => typeof v === "number"))
-  const max = Math.max(Number.MIN_VALUE, ...all)
+  // Bars grow from zero: one below it has no height.
+  const max = Math.max(0, ...all)
   // Bars start at zero; a line spans its own values, so a trend shows.
-  const low = c.type === "line" ? Math.min(...all) - (max - Math.min(...all)) * 0.1 : 0
-  const y = (v: number) => 38 - (36 * ((v ?? 0) - low)) / Math.max(max - low, Number.MIN_VALUE)
+  const low = c.type === "line" ? Math.min(...all) - (Math.max(...all) - Math.min(...all)) * 0.1 : 0
+  const y = (v: number) => 38 - (36 * ((v ?? 0) - low)) / Math.max(Math.max(...all) - low, Number.MIN_VALUE)
   const fmt = (v: number) => `${v.toLocaleString("en-GB", { maximumFractionDigits: 2 })}${c.unit ? ` ${c.unit}` : ""}`
   const every = Math.ceil(c.labels.length / 8)
   return (
@@ -185,14 +200,14 @@ function ChartBlock({ spec }: { spec: string }): ReactNode {
         <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-36 w-full overflow-visible">
           {c.series.map((s, i) => (
             <polyline key={i} fill="none" stroke={COLORS[i % COLORS.length]} strokeWidth="1.5" vectorEffect="non-scaling-stroke"
-              points={s.values.map((v, k) => `${(k / Math.max(c.labels.length - 1, 1)) * 100},${y(v)}`).join(" ")} />
+              points={s.values.map((v, k) => (v === null ? "" : `${(k / Math.max(c.labels.length - 1, 1)) * 100},${y(v)}`)).filter(Boolean).join(" ")} />
           ))}
         </svg>
       ) : (
         <div className="flex h-36 items-end gap-[3px]">
           {c.labels.map((l, k) => (
             <div key={k} className="flex h-full min-w-0 flex-1 items-end gap-px" title={`${l}\n${c.series.map((s) => `${s.name ? `${s.name}: ` : ""}${fmt(s.values[k] ?? 0)}`).join("\n")}`}>
-              {c.series.map((s, i) => <span key={i} className="min-w-0 flex-1 rounded-t-sm hover:opacity-80" style={{ height: `${(100 * (s.values[k] ?? 0)) / max}%`, background: COLORS[i % COLORS.length] }} />)}
+              {c.series.map((s, i) => <span key={i} className="min-w-0 flex-1 rounded-t-sm hover:opacity-80" style={{ height: `${max > 0 ? (100 * Math.max(0, s.values[k] ?? 0)) / max : 0}%`, background: COLORS[i % COLORS.length] }} />)}
             </div>
           ))}
         </div>
