@@ -59,6 +59,10 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   const [shown, setShown] = useState<number | null>(null)
   useEffect(() => setShown(null), [realm])
   useEffect(() => { if (startProject) { setShown(startProject.id); if (startProject.id != null) onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A project the address names that does not exist (or no longer): the list.
+  useEffect(() => {
+    if (projects.data && shown != null && !projects.data.projects.some((p) => p.id === shown)) setShown(null)
+  }, [projects.data, shown])
   // Reported when it changes, not on mount, where nothing is open yet.
   const told = useRef(shown)
   useEffect(() => { if (told.current !== shown) { told.current = shown; onProject?.(shown) } }, [shown]) // eslint-disable-line react-hooks/exhaustive-deps

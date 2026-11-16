@@ -129,7 +129,9 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
   const like = (it: Item) => items.filter((o) => o === it || same(o, it))
   const [sweeping, setSweeping] = useState(false)
   const [sel, setSel] = useState<number | null>(start?.id ?? null)
-  useEffect(() => { if (start) setSel(start.id) }, [start])
+  // A new request has a new `at`; the app keeps `id` on what is open for
+  // when the page comes back.
+  useEffect(() => { if (start) setSel(start.id) }, [start?.at]) // eslint-disable-line react-hooks/exhaustive-deps
   const pos = sorted.findIndex((i) => i.id === sel)
   // The item picked, for the address; one that is no longer here is not.
   const picked = pos >= 0 ? sel : null

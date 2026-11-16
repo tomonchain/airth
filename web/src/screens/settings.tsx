@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Bot, Brain, Building2, Network, Check, ChevronRight, Cpu, RotateCw, FolderGit2, Info, KeyRound, Mail, Plug, Shield, Smartphone, Sparkles, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Back, Loading, Panel, SideHead } from "@/components/page"
@@ -59,21 +59,32 @@ const ANY = "any"
 
 /** Settings: the founder's account and the business's models, connections,
     keys, permissions, repositories and phone. */
-export function Settings({ realm, start, onSection }: { realm: string; start?: { section: Section; at: number } | null; onSection?: (s: Section) => void }) {
+export function Settings({ realm, start, onSection }: { realm: string; start?: { section: Section | null; at: number } | null; onSection?: (s: Section | null) => void }) {
   // A section the address names that does not exist opens Account.
-  const known = (s?: Section) => (s && SECTIONS.some((x) => x.id === s) ? s : undefined)
+  const known = (s?: Section | null) => (s && SECTIONS.some((x) => x.id === s) ? s : undefined)
   const [section, setSection] = useState<Section>(known(start?.section) ?? "account")
   // On a phone the sections come first, and one opens when picked.
   const [picked, setPicked] = useState(!!known(start?.section))
-  // An unknown one is corrected in the address to what is shown.
-  useEffect(() => { const s = known(start?.section); if (s) { setSection(s); setPicked(true) } else if (start) onSection?.(section) }, [start]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A new request has a new `at`; none, or an unknown one, is the sections
+  // (Account beside them on a wide screen).
+  useEffect(() => {
+    if (!start) return
+    const s = known(start.section)
+    if (s) { setSection(s); setPicked(true) } else { setSection("account"); setPicked(false); if (start.section) onSection?.(null) }
+  }, [start?.at]) // eslint-disable-line react-hooks/exhaustive-deps
+  // What is open, for the address: a section picked, or none. Reported on
+  // every change (a link inside a section, Back), and on mount to correct
+  // an unknown section the address named.
+  const shown = picked ? section : null
+  const told = useRef<Section | null>(start?.section ?? null)
+  useEffect(() => { if (told.current !== shown) { told.current = shown; onSection?.(shown) } }, [shown]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <nav className={cn("w-(--side) shrink-0 border-r pb-3 max-md:w-full max-md:border-r-0", picked && "max-md:hidden")}>
         <SideHead title="Settings" />
         <div className="px-3">
         {SECTIONS.map((s) => (
-          <button key={s.id} onClick={() => { setSection(s.id); setPicked(true); onSection?.(s.id) }}
+          <button key={s.id} onClick={() => { setSection(s.id); setPicked(true) }}
             className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground", section === s.id && "bg-accent text-foreground")}>
             <s.icon className="size-4" /> {s.label}
           </button>

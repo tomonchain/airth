@@ -47,6 +47,10 @@ function opened(): { page: Page; sub: string | null } {
   return { page: a.page, sub: a.sub }
 }
 
+// An address that names a page, not a business alone (which its menu
+// writes, and which keeps the page shown).
+const PAGED = /^#\/b\/[^/]+\/./
+
 // What the address says is open, for each page that can open something.
 const startOf = (page: Page, sub: string | null) => ({
   thread: page === "home" && sub === "conversation",
@@ -73,7 +77,7 @@ export default function App() {
   const [asking, setAsking] = useState(false)
   // Pages opened on something from another page: a file, a settings section.
   const [doc, setDoc] = useState<{ path: string | null; at: number } | null>(first.doc ? { path: first.doc, at: 0 } : null)
-  const [setting, setSetting] = useState<{ section: SettingsSection; at: number } | null>(first.section ? { section: first.section as SettingsSection, at: 0 } : null)
+  const [setting, setSetting] = useState<{ section: SettingsSection | null; at: number } | null>(first.section ? { section: first.section as SettingsSection, at: 0 } : null)
   // What is open in a page, as the page reports it, for the address.
   const [openDoc, setOpenDoc] = useState<string | null>(first.doc)
   const [openSection, setOpenSection] = useState<string | null>(first.section)
@@ -113,24 +117,12 @@ export default function App() {
       if (location.hash === known.current) return
       known.current = location.hash
       setHash(route()); setWelcome(location.hash === "#/welcome")
-      if (!/^#\/b\/[^/]+\/[a-z]/.test(location.hash)) return
-      const to = opened()
-      const s = startOf(to.page, to.sub)
-      const at = Date.now()
+      if (!PAGED.test(location.hash)) return
       restoring.current = true
       // If what it opens is already open, nothing renders to clear the mark.
       setTimeout(() => { restoring.current = false }, 500)
-      setPage(to.page)
-      if (to.page === "home") setHomeMode(s.thread ? "thread" : "start")
-      if (s.agent) { setCurrent(s.agent); setTabs((t) => (t.includes(s.agent!) ? t : [...t, s.agent!])) }
-      if (to.page === "tasks") {
-        setTask(s.task)
-        setOpenProjectId(s.project)
-        if (!s.task) setProject({ id: s.project, at })
-      }
-      if (to.page === "documents") { setOpenDoc(s.doc); setDoc({ path: s.doc, at }) }
-      if (to.page === "settings") { setOpenSection(s.section); if (s.section) setSetting({ section: s.section as SettingsSection, at }) }
-      if (to.page === "needs") { setOpenItem(s.item); setNeedsStart({ id: s.item, at }) }
+      const to = opened()
+      restore(to.page, to.sub)
     }
     addEventListener("hashchange", on)
     addEventListener("popstate", on)
@@ -198,13 +190,36 @@ export default function App() {
   // An agent's idea is told in its conversation, not in Needs you (decision 119).
   const items = (data.data?.items ?? []).filter((i) => i.kind !== "idea")
 
-  // Another business: its own agents' tabs. Not on the first render, which
+  // Open what an address says (Back, a link, another business's page).
+  function restore(to: Page, sub: string | null) {
+    const s = startOf(to, sub)
+    const at = Date.now()
+    setPage(to)
+    if (to === "home") setHomeMode(s.thread ? "thread" : "start")
+    if (to === "agents") { setCurrent(s.agent); if (s.agent) setTabs((t) => (t.includes(s.agent!) ? t : [...t, s.agent!])) }
+    if (to === "tasks") {
+      setTask(s.task)
+      setOpenProjectId(s.project)
+      if (!s.task) setProject({ id: s.project, at })
+    }
+    if (to === "documents") { setOpenDoc(s.doc); setDoc({ path: s.doc, at }) }
+    if (to === "settings") { setOpenSection(s.section); setSetting({ section: s.section as SettingsSection | null, at }) }
+    if (to === "needs") { setOpenItem(s.item); setNeedsStart({ id: s.item, at }) }
+  }
+
+  // Another business: nothing of the last one stays open, unless the
+  // address names what to open in this one. Not on the first render, which
   // opens what the address says.
   const shownRealm = useRef(realm)
   useEffect(() => {
     if (shownRealm.current === realm) return
     shownRealm.current = realm
     setCurrent(null); setTabs([]); setTask(null); setHomeMode("start")
+    setOpenDoc(null); setDoc(null); setOpenSection(null); setSetting(null)
+    setOpenProjectId(null); setProject(null); setOpenItem(null); setNeedsStart(null)
+    const here = parse(location.hash)
+    if (here.realm === realm && PAGED.test(location.hash)) restore(here.page, here.sub)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realm])
   // The address follows the page and what is open in it. A new page, or
   // opening and closing something, is a step Back comes back to; the first
@@ -228,7 +243,7 @@ export default function App() {
     // is written once that business is open.
     if (here.realm && here.realm !== realm) return
     // A business alone (#/b/acme, from its menu): completed, not a new step.
-    const bare = !/^#\/b\/[^/]+\/[a-z]/.test(location.hash)
+    const bare = !PAGED.test(location.hash)
     const to = { realm, page, sub }
     const at = write(to)
     const replace = !settled.current || bare || restoring.current || quiet.current || !isStep(here, to)
@@ -356,18 +371,18 @@ export default function App() {
             businesses={(realms.data ?? []).filter((r) => !r.archived || r.name === realm).map((r) => ({ name: r.name, title: named(r.name, r.title) }))} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} onProject={(id) => { setOpenProjectId(id); if (id == null) setProject(null) }} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
-          : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} onOpen={(p) => { setOpenDoc(p); if (!p) setDoc(null) }} />
+          : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} onOpen={(p) => { setOpenDoc(p); setDoc((d) => ({ path: p, at: d?.at ?? 0 })) }} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq shared={hq.data as Parameters<typeof Hq>[0]["shared"]} onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={business} agents={agents} onImported={hq.refresh} />
-          : page === "settings" ? <Settings realm={realm} start={setting} onSection={setOpenSection} />
+          : page === "settings" ? <Settings realm={realm} start={setting} onSection={(x) => { setOpenSection(x); setSetting((d) => ({ section: x, at: d?.at ?? 0 })) }} />
           : page === "marketplace" ? <Marketplace realm={realm} />
           : page === "company" ? <Company realm={realm} description={business?.description ?? null}
               onFile={(path) => { setDoc({ path, at: Date.now() }); setPage("documents") }} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
           : (
           <>
           {page === "needs" ? (
-            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} start={needsStart} onOpen={setOpenItem} />
+            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} start={needsStart} onOpen={(id) => { setOpenItem(id); setNeedsStart((d) => ({ id, at: d?.at ?? 0 })) }} />
           ) : (
           <>
           {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}

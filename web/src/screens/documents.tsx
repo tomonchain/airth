@@ -76,8 +76,9 @@ export function Documents({ realm, onAsk, start, onOpen }: {
     } catch (e) { toast.error((e as Error).message) }
   }, [base_])
   useEffect(() => { setDirs({}); setTabs([]); setActive(null); setFolder(""); setExpanded(new Set([""])); load("") }, [realm, load])
-  // Opened from another page on a file (Company's "Fill in"): that file,
-  // its folder unfolded.
+  // Opened from another page on a file (Company's "Fill in"), or again on
+  // the file last open: that file, its folder unfolded. A new request has a
+  // new `at`; the app keeps `path` on what is open for when the page comes back.
   useEffect(() => {
     if (!start) return
     if (start.path === null) { setActive(null); return }
@@ -86,7 +87,7 @@ export function Documents({ realm, onAsk, start, onOpen }: {
     for (const d of ["", ...dir.split("/").map((_, i, a) => a.slice(0, i + 1).join("/"))]) if (d || !dirs[""]) load(d)
     open(start.path)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start])
+  }, [start?.at])
 
   // What the agents write appears without a reload.
   useEffect(() => {
