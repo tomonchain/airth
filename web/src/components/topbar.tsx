@@ -1,18 +1,18 @@
-import { Building, Check, ChevronsUpDown, PenLine, Plus, Server, Sparkles, X } from "lucide-react"
+import { Building, Check, ChevronsUpDown, Plus, Server, Sparkles, X } from "lucide-react"
 import { Character } from "@/components/character"
-import { UpdateNotice } from "@/components/update-notice"
 import { mac, titleBar } from "@/lib/shell"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { PhoneUpdate } from "@/components/update-notice"
 import { named, type Agent, type Realm } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-/** The window's top: the open conversations as tabs (on the Team page),
-    the update notice and, at the far right, the
+/** The window's top: the open conversations as tabs (on the Team page)
+    and, at the far right, the
     business. In the Mac app it is the title bar. */
-export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onAsk, onHq }: {
+export function TopBar({ server, realms, realm, onAgents, tabs, current, agents, onTab, onClose, onNewBusiness, onHq }: {
   server: string | null; realms: Realm[]; realm: string; onAgents: boolean; tabs: string[]; current: string | null; agents: Agent[]
-  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onAsk: () => void; onHq: () => void
+  onTab: (name: string) => void; onClose: (name: string) => void; onNewBusiness: () => void; onHq: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   const closed = agents.filter((a) => !tabs.includes(a.name))
@@ -59,14 +59,6 @@ export function TopBar({ server, realms, realm, onAgents, tabs, current, agents,
           </DropdownMenu>
         )}
       </nav>
-      {/* Ask from anywhere (⌘J): to the interlocutor, without leaving the page. */}
-      <button onClick={onAsk} onMouseDown={(e) => e.stopPropagation()}
-        className="flex h-8 w-64 shrink-0 items-center gap-2 rounded-lg bg-foreground/[0.05] px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground max-lg:w-auto max-md:hidden">
-        <PenLine className="size-3.5 shrink-0" />
-        <span className="flex-1 truncate text-left max-lg:hidden">Ask the team…</span>
-        <kbd className="rounded bg-muted px-1.5 font-sans text-[10.5px] max-lg:hidden">⌘J</kbd>
-      </button>
-      <UpdateNotice working={agents.filter((a) => a.state === "working").length} />
       {/* Which Airth this is, when the founder named it (Settings, About). */}
       {server && (
         <span className="flex h-8 max-w-32 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground" title="This Airth's name, set in Settings, About">
@@ -117,8 +109,8 @@ function BusinessItems({ realms, realm, onHq, onNewBusiness }: { realms: Realm[]
 /** On a phone there is no header (the founder's choice): Airth's mark
     floats at the top left as glass, and opens the business menu, with the
     server's name; an update, when there is one, floats at the top right. */
-export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }: {
-  server: string | null; realms: Realm[]; realm: string; agents: Agent[]; onNewBusiness: () => void; onHq: () => void
+export function PhoneMenu({ server, realms, realm, working, onNewBusiness, onHq }: {
+  server: string | null; realms: Realm[]; realm: string; working: number; onNewBusiness: () => void; onHq: () => void
 }) {
   const others = realms.filter((r) => r.name !== realm && !r.archived).reduce((n, r) => n + (r.needs_approval || 0), 0)
   return (
@@ -134,7 +126,7 @@ export function PhoneMenu({ server, realms, realm, agents, onNewBusiness, onHq }
           <PhoneItems realms={realms} realm={realm} server={server} onHq={onHq} onNewBusiness={onNewBusiness} />
         </DropdownMenuContent>
       </DropdownMenu>
-      <div className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] right-3 z-40 rounded-full empty:hidden"><UpdateNotice working={agents.filter((a) => a.state === "working").length} phone /></div>
+      <div className="glass fixed top-[calc(env(safe-area-inset-top)+8px)] right-3 z-40 rounded-full empty:hidden"><PhoneUpdate working={working} /></div>
     </>
   )
 }

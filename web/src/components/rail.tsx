@@ -3,6 +3,7 @@ import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, Fol
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
+import { RailUpdate } from "@/components/update-notice"
 import { useTheme } from "@/hooks/use-theme"
 import { cn } from "@/lib/utils"
 
@@ -67,7 +68,7 @@ export const MORE = GROUPS.flatMap((g) => g.pages)
 
 /** The app's rail: the three pages the founder lives in, then the team's
     and the business's, a group each; Settings at its foot. */
-export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean }) {
+export function Rail({ page, onPage, needs, live, working }: { page: Page; onPage: (p: Page) => void; needs: number; live: boolean; working: number }) {
   const { theme, setTheme } = useTheme()
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 overflow-y-auto pt-1 pb-3">
@@ -80,6 +81,8 @@ export function Rail({ page, onPage, needs, live }: { page: Page; onPage: (p: Pa
         </div>
       ))}
       <div className="mt-auto flex flex-col items-center gap-1.5">
+        {/* A new Airth, above what the models cost. */}
+        <RailUpdate working={working} />
         <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
         <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
