@@ -60,6 +60,9 @@
     --logo-from: #8f8f94;
     --logo-mid: #5c5c61;
     --logo-to: #2e2e32;
+    /* Navigation icons, in the ring's greys, top to bottom. */
+    --icon-from: #8f8f94;
+    --icon-to: #2e2e32;
     --background: #ececee;
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -102,6 +105,9 @@
     --logo-from: #f4f4f5;
     --logo-mid: #a3a3a8;
     --logo-to: #5c5c61;
+    /* Metallic grey at the top, white at the bottom. */
+    --icon-from: #8e8e93;
+    --icon-to: #ffffff;
     --background: #0e0e0f;
     --surface: #161617;
     --bubble: #1f1f21;
@@ -328,4 +334,9 @@ button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transpar
   textarea, select, [contenteditable="true"], .cm-content {
     font-size: 16px;
   }
+}
+
+/* A navigation icon drawn with the metal gradient (rail.tsx, MetalGradient). */
+.icon-metal {
+    stroke: url(#airth-metal);
 }

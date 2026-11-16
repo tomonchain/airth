@@ -8,17 +8,36 @@ import { cn } from "@/lib/utils"
 
 export type Page = "home" | "overview" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "documents" | "finance" | "usage" | "hq" | "company" | "settings" | "marketplace"
 
+/** The gradient navigation icons are drawn with: top to bottom, in the
+    theme's --icon-from and --icon-to. In the icons' own 24-unit space, so a
+    straight line (no height of its own) still takes it. Rendered once. */
+export function MetalGradient() {
+  return (
+    <svg width="0" height="0" className="absolute" aria-hidden>
+      <defs>
+        <linearGradient id="airth-metal" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="22">
+          <stop offset="0" style={{ stopColor: "var(--icon-from)" }} />
+          <stop offset="1" style={{ stopColor: "var(--icon-to)" }} />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
+
+// Dimmed until hovered or open, so the open page still stands out.
+const metal = (on?: boolean) => cn("icon-metal transition-opacity", on ? "opacity-100" : "opacity-60 group-hover:opacity-100")
+
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean
 }) {
   const cls = cn(
-    "relative grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+    "group relative grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
     active && "bg-accent text-foreground",
     soon && "cursor-default opacity-40 hover:bg-transparent hover:text-muted-foreground",
   )
   const inner = (
     <>
-      <Icon className="size-[19px]" strokeWidth={1.8} />
+      <Icon className={cn("size-[19px]", metal(active))} strokeWidth={1.8} />
       {!!badge && (
         <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white ring-2 ring-background">{badge}</span>
       )}
@@ -93,8 +112,8 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
           return (
             <button key={label} onClick={() => p === "more" ? setMore(true) : onPage(p)} aria-current={active ? "page" : undefined}
               aria-label={badge > 0 ? `${label}, ${badge} waiting` : label} title={label}
-              className={cn("relative grid place-items-center rounded-[23px] text-foreground/55 transition-colors active:scale-95", active && "text-foreground")}>
-              <Icon className="size-6" strokeWidth={active ? 2.2 : 1.8} />
+              className={cn("group relative grid place-items-center rounded-[23px] text-foreground/55 transition-colors active:scale-95", active && "text-foreground")}>
+              <Icon className={cn("size-6", metal(active))} strokeWidth={active ? 2.2 : 1.8} />
               {badge > 0 && <span className="absolute top-1.5 left-[calc(50%+6px)] grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{badge}</span>}
             </button>
           )
@@ -125,13 +144,13 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
                 <div className="grid grid-cols-4 gap-1">
                   {g.pages.map(([p, label, Icon]) => (
                     <button key={p} onClick={() => { onPage(p); setMore(false) }}
-                      className={cn("flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
-                      <Icon className="size-[22px]" strokeWidth={1.8} /> {label}
+                      className={cn("group flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent", page === p && "bg-accent text-foreground")}>
+                      <Icon className={cn("size-[22px]", metal(page === p))} strokeWidth={1.8} /> {label}
                     </button>
                   ))}
                   {i === GROUPS.length - 1 && (
-                    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
-                      {theme === "dark" ? <Sun className="size-[22px]" strokeWidth={1.8} /> : <Moon className="size-[22px]" strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
+                    <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="group flex flex-col items-center gap-1.5 rounded-xl py-3 text-xs text-muted-foreground hover:bg-accent">
+                      {theme === "dark" ? <Sun className={cn("size-[22px]", metal())} strokeWidth={1.8} /> : <Moon className={cn("size-[22px]", metal())} strokeWidth={1.8} />} {theme === "dark" ? "Light" : "Dark"}
                     </button>
                   )}
                 </div>
