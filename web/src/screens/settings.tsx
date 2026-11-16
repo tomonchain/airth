@@ -66,7 +66,8 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
   useEffect(() => { if (start) { setSection(start.section); setPicked(true) } }, [start])
   return (
     <>
-      <nav className={cn("w-(--side) shrink-0 border-r pb-3 max-md:w-full max-md:border-r-0", picked && "max-md:hidden")}>
+      {/* Narrower than a list of items: section names are short. */}
+      <nav className={cn("w-[224px] shrink-0 border-r pb-3 max-md:w-full max-md:border-r-0", picked && "max-md:hidden")}>
         <SideHead title="Settings" />
         <div className="px-3">
         {SECTIONS.map((s) => (

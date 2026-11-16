@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Bell, Code2, GitPullRequest, Loader, Plus, Smartphone, X } from "lucide-react"
 import { toast } from "sonner"
+import { CropDialog } from "@/components/crop-dialog"
 import { Loading, Panel } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,16 +52,6 @@ async function patch(realm: string, body: object, done: string) {
   catch (e) { toast.error((e as Error).message); return false }
 }
 
-/** A picked image as a 256×256 PNG, centred (the classic interface's). */
-async function square(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
-  const side = Math.min(bitmap.width, bitmap.height)
-  const canvas = document.createElement("canvas")
-  canvas.width = canvas.height = 256
-  canvas.getContext("2d")!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256)
-  return new Promise((ok, no) => canvas.toBlob((b) => (b ? ok(b) : no(new Error("cannot read this image"))), "image/png"))
-}
-
 /** A picture kept by the server, fetched with the key; its initial without one. */
 export function Picture({ path, version, text, round, className }: { path: string; version: string | null; text: string; round?: boolean; className?: string }) {
   const [url, setUrl] = useState<string | null>(null)
@@ -77,11 +68,13 @@ export function Picture({ path, version, text, round, className }: { path: strin
   )
 }
 
+/** A picture: picked, framed in a dialog (moved and zoomed), then saved. */
 export function PictureEditor({ path, version, text, round, onDone }: { path: string; version: string | null; text: string; round?: boolean; onDone: () => void }) {
   const input = useRef<HTMLInputElement>(null)
+  const [picked, setPicked] = useState<File | null>(null)
   async function send(method: "PUT" | "DELETE", body?: Blob) {
-    try { await raw(path, { method, body }); toast.success(method === "PUT" ? "Picture saved." : "Picture removed."); onDone() }
-    catch (e) { toast.error((e as Error).message) }
+    try { await raw(path, { method, body }); toast.success(method === "PUT" ? "Picture saved." : "Picture removed."); onDone(); return true }
+    catch (e) { toast.error((e as Error).message); return false }
   }
   return (
     <div className="flex items-center gap-3">
@@ -89,7 +82,9 @@ export function PictureEditor({ path, version, text, round, onDone }: { path: st
       <Button size="sm" variant="outline" onClick={() => input.current?.click()}>{version ? "Change picture" : "Add picture"}</Button>
       {version && <Button size="sm" variant="ghost" onClick={() => send("DELETE")}>Remove</Button>}
       <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden
-        onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) send("PUT", await square(f).catch((err: Error) => { toast.error(err.message); throw err })) }} />
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setPicked(f) }} />
+      <CropDialog file={picked} round={round} onCancel={() => setPicked(null)}
+        onSave={async (b) => { if (await send("PUT", b)) setPicked(null) }} />
     </div>
   )
 }
