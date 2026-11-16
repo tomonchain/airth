@@ -159,10 +159,12 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
   const order = businessOrder(realm, businesses)
   const others = order.filter((b) => b.name !== realm)
   const grouping = by === "business" && businesses.length > 1 ? "business" : by === "business" ? "agent" : by
-  const away = usePoll<Away[]>(grouping === "business"
-    ? async () => (await Promise.all(others.map((b) => readBusiness(b.name).catch(() => null)))).filter((x): x is Away => !!x)
+  // A business that cannot be read is said so, never silently left out.
+  const away = usePoll<(Away | { realm: string; error: string })[]>(grouping === "business"
+    ? () => Promise.all(others.map((b) => readBusiness(b.name).catch((e) => ({ realm: b.name, error: (e as Error).message }))))
     : null, 30000, [realm, grouping, others.map((b) => b.name).join(",")])
-  const elsewhere = useMemo(() => (grouping === "business" ? away.data ?? [] : []), [grouping, away.data])
+  const elsewhere = useMemo(() => (grouping === "business" ? (away.data ?? []).filter((x): x is Away => !("error" in x)) : []), [grouping, away.data])
+  const unread = grouping === "business" ? (away.data ?? []).filter((x): x is { realm: string; error: string } => "error" in x) : []
   const items = useMemo(() => [...here.map((i) => ({ ...i, business: realm })), ...elsewhere.flatMap((b) => b.items)], [here, realm, elsewhere])
   const all = useMemo(() => [...rows, ...elsewhere.flatMap((b) => b.rows)], [rows, elsewhere])
   const [folded, setFolded] = useState<Record<string, boolean>>(() => stored("airth-routines-folded", {}))
@@ -174,10 +176,20 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
   const shown = filter(all, f, items)
   const look = needsLook(shown, items)
   const grouped = groups(shown, grouping, agents.map((a) => ({ name: a.name, title: a.title })), order)
-  const owned = agents.filter((a) => rows.some((r) => r.agent === a.name))
+  // Grouped by business, an agent is named with its business: two
+  // businesses may each have a Chief of staff.
+  const owned = grouping === "business"
+    ? [{ realm, agents }, ...elsewhere].flatMap((b) => b.agents.filter((a) => all.some((r) => r.business === b.realm && r.agent === a.name))
+      .map((a) => ({ value: `${b.realm}/${a.name}`, label: `${a.title} · ${order.find((x) => x.name === b.realm)?.title ?? b.realm}` })))
+    : agents.filter((a) => rows.some((r) => r.agent === a.name)).map((a) => ({ value: a.name, label: a.title }))
   const face = (name: string | null, business = realm) => (business === realm ? agents : elsewhere.find((b) => b.realm === business)?.agents ?? []).find((a) => a.name === name)
   const opening = (r: Row) => setOpen({ kind: r.kind, name: r.name, business: r.business })
   const there = open?.business && open.business !== realm ? elsewhere.find((b) => b.realm === open.business) : undefined
+  // Another business's routine whose data is gone (the grouping or the
+  // business changed): the panel closes, never falling back on a routine of
+  // the same name here, where a save would land.
+  const lost = !!open?.business && open.business !== realm && !there
+  useEffect(() => { if (lost) setOpen(null) }, [lost])
 
   return (
     <Page wide title="Routines" lede={loaded ? `${rows.length} routine${rows.length === 1 ? "" : "s"}, the agents' recurring work.` : undefined}
@@ -185,11 +197,13 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
         <Button size="sm" disabled={!graphs.data || !agents.length} onClick={() => setOpen({ kind: "new-graph" })} title={agents.length ? undefined : "Hire an agent first"}><Workflow /> New routine</Button>
         <Button size="sm" variant="outline" onClick={() => setNewTask(true)}><Plus /> New agent routine</Button>
       </div>}>
-      {!loaded ? <Loading /> : !rows.length ? (
+      {!loaded ? <Loading /> : !rows.length && businesses.length < 2 ? (
         <Empty icon={Repeat} title="No routine yet">Draw one: a trigger, then blocks you drag in and link. Or give an agent a task to do on a schedule.</Empty>
       ) : (
         <>
           <Toolbar f={f} setF={setF} by={grouping} setBy={setBy} agents={owned} several={businesses.length > 1} />
+          {!rows.length && grouping !== "business" && <p className="text-sm text-muted-foreground">No routine in this business yet. Group by business to see the others'.</p>}
+          {unread.map((u) => <p key={u.realm} className="text-xs text-red-600 dark:text-red-400">{order.find((b) => b.name === u.realm)?.title ?? u.realm} could not be read: {u.error}</p>)}
           {f.show !== "paused" && look.length > 0 && (
             <Section title="Needs a look" note={`${look.length} routine${look.length === 1 ? "" : "s"}`}>
               <Panel className="divide-y divide-border/60 overflow-hidden">
@@ -199,7 +213,7 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
             </Section>
           )}
           {f.show === "look" ? (!look.length && <p className="text-sm text-muted-foreground">{f.search || f.agent ? "No routine matches." : "Nothing needs a look."}</p>)
-            : !shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
+            : !shown.length ? (rows.length || grouping === "business" ? <p className="text-sm text-muted-foreground">No routine matches.</p> : null) : (
             <section className="space-y-3">
               {grouping === "business" && !away.data && <p className="text-xs text-muted-foreground">Reading the other businesses' routines…</p>}
               <Columns />
@@ -236,7 +250,7 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
         <RoutineSheet realm={there.realm} open={open} setOpen={(o) => setOpen(o && { ...o, business: there.realm })} agents={there.agents} items={there.items} rows={there.rows}
           onAgent={(name) => { location.hash = `#/b/${enc(there.realm)}/agents/${enc(name)}` }}
           graphs={{ data: there.graphs, refresh: away.refresh }} tasks={{ data: there.tasks, refresh: away.refresh }} fixed={there.pipelines} />
-      ) : (
+      ) : lost ? null : (
         <RoutineSheet realm={realm} open={open} setOpen={setOpen} agents={agents} items={items} rows={rows} onAgent={onAgent}
           graphs={graphs} tasks={tasks} fixed={fixed.data?.pipelines ?? []} />
       )}
@@ -256,7 +270,7 @@ export function Routines({ realm, agents, items: here, businesses, onAgent }: {
 }
 
 function Toolbar({ f, setF, by, setBy, agents, several }: {
-  f: Filter; setF: (f: Filter) => void; by: By; setBy: (b: By) => void; agents: Agent[]; several: boolean
+  f: Filter; setF: (f: Filter) => void; by: By; setBy: (b: By) => void; agents: { value: string; label: string }[]; several: boolean
 }) {
   const ANY = "-any"
   return (
@@ -268,10 +282,10 @@ function Toolbar({ f, setF, by, setBy, agents, several }: {
       <Seg label="Show" value={f.show} onPick={(show) => setF({ ...f, show })} options={[["all", "All"], ["look", "Needs a look"], ["paused", "Paused"]]} />
       {agents.length > 1 && (
         <Select value={f.agent ?? ANY} onValueChange={(v) => setF({ ...f, agent: v === ANY || !v ? null : String(v) })}>
-          <SelectTrigger size="sm" className="h-8 w-40" aria-label="Agent"><SelectValue>{(v: string) => (v === ANY ? "Any agent" : agents.find((a) => a.name === v)?.title ?? v)}</SelectValue></SelectTrigger>
+          <SelectTrigger size="sm" className="h-8 w-40" aria-label="Agent"><SelectValue>{(v: string) => (v === ANY ? "Any agent" : agents.find((a) => a.value === v)?.label ?? v)}</SelectValue></SelectTrigger>
           <SelectContent>
             <SelectItem value={ANY}>Any agent</SelectItem>
-            {agents.map((a) => <SelectItem key={a.name} value={a.name}>{a.title}</SelectItem>)}
+            {agents.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
           </SelectContent>
         </Select>
       )}

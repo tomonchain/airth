@@ -148,3 +148,10 @@ test("an item counts only for a routine of its own business, even under the same
   assert.deepEqual(needsLook([here, there], items).map((r) => r.business), ["atelier"])
   assert.deepEqual(filter([here, there], { search: "", show: "look", agent: null }, items).map((r) => r.business), ["atelier"])
 })
+
+test("an agent filter names its business when the list holds several", () => {
+  const rows = [row("a", { agent: "chief-of-staff", business: "hedgen" }), row("b", { agent: "chief-of-staff", business: "atelier" })]
+  const f = { search: "", show: "all" as const, agent: "atelier/chief-of-staff" }
+  assert.deepEqual(filter(rows, f, []).map((r) => r.name), ["b"])
+  assert.deepEqual(filter(rows, { ...f, agent: "chief-of-staff" }, []).map((r) => r.name), ["a", "b"])
+})

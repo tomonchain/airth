@@ -207,7 +207,9 @@ export function filter(rows: Row[], f: Filter, items: Waiting[]): Row[] {
   const q = f.search.trim().toLowerCase()
   return rows.filter((r) => {
     if (q && !r.name.toLowerCase().includes(q)) return false
-    if (f.agent && r.agent !== f.agent) return false
+    // An agent named alone, or with its business ("business/agent") when
+    // the list holds several businesses.
+    if (f.agent && r.agent !== f.agent && `${r.business}/${r.agent}` !== f.agent) return false
     const s = state(r, items)
     if (f.show === "look") return s === "incident" || s === "waiting"
     if (f.show === "paused") return r.paused
