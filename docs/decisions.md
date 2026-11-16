@@ -23,14 +23,15 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 142. The interface's deterministic logic is tested with Vitest
 
-**Accepted** (founder, 16 November 2026: "Vitest + CI", for the tests the Routines page and the Markdown rendering ask for).
+**Accepted** (founder, 16 November 2026: "Vitest + CI", then, once `main` tested with `node --test`, "passer à Vitest, une seule façon").
 
 - **Vitest** (5.1.0, pinned) is a development dependency of `web/`. `npm test` runs it; CI's `web` job runs it after the type check.
-- **What is tested:** logic with a single right answer — how a trigger is said, which routines need a look, what a piece of Markdown becomes. Tests sit beside their module (`time.test.ts` beside `time.ts`) and run in Node: a component is rendered to a string with `react-dom/server`, so no browser emulation is added.
+- **It replaces `node --test`**, which the Routines page brought (#317): Node's runner cannot load a `.tsx` component, and the Markdown rendering is tested by rendering one. The three tests already there keep their `node:assert` checks; only their `test` comes from Vitest. One runner, one way.
+- **What is tested:** logic with a single right answer: how a trigger is said, which routines need a look, how a calendar lays out, what a piece of Markdown becomes. Tests sit beside their module (`time.test.ts` beside `time.ts`) and run in Node: a component is rendered to a string with `react-dom/server`, so no browser emulation is added.
 - **What is not:** the look of a screen. It is shown to the founder in screenshots, as before.
-- `CLAUDE.md`'s checks for a change to `web/` gain `npm test`.
+- `CLAUDE.md`'s checks for a change to `web/` include `npm test`.
 
-*Why:* `web/` had no tests; the founder asked for some with these two changes. Vitest reads `vite.config.ts` (the `@` alias, the React plugin), so the tests import modules exactly as the app does; Node's own test runner cannot load `.tsx`.
+*Why:* the founder asked for tests with the Markdown rendering, and they must render the component. Vitest reads `vite.config.ts` (the `@` alias, the React plugin), so the tests import modules exactly as the app does.
 
 *Cost:* one development dependency and its own (only in `node_modules`, never in `web/dist`). A test that needs the DOM would need an emulation, and its own decision.
 
@@ -75,7 +76,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Why:* the beta is Hedgen running on its own for four weeks; an agent in a loop, or a routine gone wrong, must not be able to spend without bound while the founder is away. Caps per agent let a costly role (a developer) be bounded without stopping the rest.
 
-*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. An agent's cap does not see its routines' calls. A task's spend is read from its run record, as the spending gauge and the usage report read it: a chat the founder deletes takes its spend with it.
+*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. An agent's cap does not see its routines' calls. A task's spend is read from its run record, as the spending gauge and the usage report read it: a chat the founder deletes takes its spend with it. Two starts at the same moment can both take what is left: the check and the run's save are not one step, so the month can go past a cap by one run's budget at most. An objective's run counts for the bot recorded on it when it started, or for the business alone.
 
 ## 138. A connector's sign-in comes back to the address the founder used
 

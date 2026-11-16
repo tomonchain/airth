@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ago, left, took } from "./time"
+import { ago, left, took } from "./time.ts"
 
 const now = Date.parse("2026-11-16T12:00:00Z")
 const before = (s: number) => new Date(now - s * 1000).toISOString()

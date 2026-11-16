@@ -70,9 +70,8 @@ jobs:
           git config --global user.email "ci@airth.invalid"
           cargo test --locked
 
-  # The interface in web/ (decision 73): it type-checks, its tests pass
-  # (decision 142), it builds, and the build committed in web/dist (which the
-  # binary embeds) is that build.
+  # The interface in web/ (decision 73): it type-checks, it builds, and the
+  # build committed in web/dist (which the binary embeds) is that build.
   web:
     runs-on: ubuntu-24.04
     defaults:
@@ -92,7 +91,7 @@ jobs:
       - name: Check
         run: npm run check
 
-      - name: Tests
+      - name: Test
         run: npm test
 
       - name: Build

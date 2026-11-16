@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Archive, ArchiveRestore, ArrowUp, Check, Circle, CircleDot, CornerDownRight, Ellipsis, FolderKanban, Pencil, SkipForward, Trash2, X } from "lucide-react"
-import { Back, SideHead } from "@/components/page"
+import { Archive, ArchiveRestore, ArrowUp, Check, ChevronDown, Circle, CircleDot, Ellipsis, FolderKanban, Pencil, Plus, SkipForward, Trash2, X } from "lucide-react"
+import { Back } from "@/components/page"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { MicButton } from "@/components/mic"
@@ -49,6 +49,8 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   // The app's list, refreshed every few seconds: not asked again here.
   const tasks = { data: shared, refresh: onTasks }
   const [archived, setArchived] = useState(false)
+  // Two levels, never mixed: the projects, and every task.
+  const [view, setView] = useState<"projects" | "tasks">("projects")
   // The projects (decision 129): the open ones first in the list, the done
   // ones with what is archived.
   const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
@@ -57,7 +59,6 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   useEffect(() => { if (startProject) { setShown(startProject.id); onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
   const byRun = useMemo(() => new Map((runs.data ?? []).map((r) => [r.id, r])), [runs.data])
   const all = projects.data?.projects ?? []
-  const ours = new Set(all.flatMap((p) => [p.run, ...p.tasks.map((t) => t.run)]).filter((x): x is string => !!x))
   const listed = all.filter((p) => (p.status === "done") === archived)
   const project = all.find((p) => p.id === shown) ?? null
   const agentOf = useMemo(() => {
@@ -66,8 +67,14 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
     return m
   }, [tasks.data])
   const waiting = new Set((tasks.data?.waiting ?? []).map((t) => t.id))
-  // A project's tasks and the task it was planned in show in the project.
-  const list = (runs.data ?? []).filter((r) => r.archived === archived && !ours.has(r.id))
+  // Each task shows once, in the Tasks list, with its project's name.
+  const projectOf = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of all) for (const r of [p.run, ...p.tasks.map((t) => t.run)]) if (r) m.set(r, p.name)
+    return m
+  }, [all])
+  const list = (runs.data ?? []).filter((r) => r.archived === archived)
+  const live = (runs.data ?? []).filter((r) => !r.archived).length
   // A plan's tasks (decision 120) sit under the task that passed them on,
   // which is grouped by the most pressing of them all.
   const fromOf = useMemo(() => {
@@ -77,90 +84,176 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   }, [tasks.data])
   const kids = (id: string) => list.filter((r) => fromOf.get(r.id) === id)
   const top = list.filter((r) => { const p = fromOf.get(r.id); return !p || !list.some((x) => x.id === p) })
-  const planGroup = (r: Run) => ORDER[Math.min(...[r, ...kids(r.id)].map((x) => ORDER.indexOf(group(x, waiting))))]
+  // A plan's whole tree, however deep, each task with its depth under the
+  // task it hangs from; `seen` keeps a loop from running forever.
+  const tree = (r: Run, depth = 0, seen = new Set<string>()): { r: Run; depth: number }[] =>
+    seen.has(r.id) ? [] : (seen.add(r.id), [{ r, depth }, ...kids(r.id).flatMap((k) => tree(k, depth + 1, seen))])
+  const planGroup = (r: Run) => ORDER[Math.min(...tree(r).map((x) => ORDER.indexOf(group(x.r, waiting))))]
   const groups = ORDER.map((g) => [g, top.filter((r) => planGroup(r) === g)] as const).filter(([, l]) => l.length)
   const titleOf = (n: string | null | undefined) => { const a = agents.find((x) => x.name === n); return a ? called(a) : n ?? "An agent" }
   const passedOf = (id: string): Passed[] => kids(id).map((k) => ({ id: k.id, agent: agentOf.get(k.id) ?? "", title: titleOf(agentOf.get(k.id)), order: name(k), status: k.live ? "running" : k.status }))
   const fromTitle = (id: string) => { const p = fromOf.get(id); return p ? titleOf(agentOf.get(p)) : undefined }
   const current = runs.data?.find((r) => r.id === open) ?? null
 
+  // Each project's place: under way, not started yet, or done.
+  const stage = (p: Project) => {
+    if (p.status === "done") return "Completed"
+    const g = glance(p, byRun)
+    return g.running || g.done > 0 || g.stuck > 0 ? "In progress" : "Planned"
+  }
+  const projectGroups = (["In progress", "Planned", "Completed"] as const)
+    .map((g) => [g, listed.filter((p) => stage(p) === g)] as const).filter(([, l]) => l.length)
+  const [asking, setAsking] = useState(false)
+  // Shown by itself while the list is empty, until the founder closes it.
+  const [dismissed, setDismissed] = useState(false)
+  useEffect(() => { if (prefill) setAsking(true) }, [prefill])
+  const [folded, setFolded] = useState<Set<string>>(new Set())
+  const fold = (g: string) => setFolded((f) => { const n = new Set(f); if (n.has(g)) n.delete(g); else n.add(g); return n })
+
+  if (current) return (
+    <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
+      backLabel={project ? project.name : view === "tasks" ? "Tasks" : "Projects"}
+      from={fromTitle(current.id)} passed={passedOf(current.id)} onOpenTask={onOpen}
+      onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
+  )
+  if (project) return (
+    <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} onBack={() => setShown(null)}
+      onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
+  )
+  const empty = view === "projects" ? !listed.length : !groups.length
+  const composing = asking || (empty && !archived && !dismissed)
   return (
-    <div className="flex min-w-0 flex-1">
-      <aside className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", (current || project) && "max-md:hidden")}>
-        <SideHead title="Projects" />
-        <Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); onOpen(id) }} />
-        <div className="flex items-center gap-1 px-4 pt-3 pb-1.5 text-xs">
-          {[[false, "Open"], [true, "Archived"]].map(([v, l]) => (
-            <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("rounded-md px-2 py-1", archived === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{l as string}</button>
+    <div className="flex min-w-0 flex-1 flex-col">
+      {/* Linear's way: the views on top, one dense list under, groups that fold. */}
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b pr-3 pl-4 max-md:h-[60px] max-md:pl-[68px]">
+        <nav role="tablist" aria-label="Projects or tasks" className="flex items-center gap-0.5">
+          {([["projects", "Projects", all.filter((p) => p.status !== "done").length, FolderKanban], ["tasks", "Tasks", live, CircleDot]] as const).map(([v, l, n, Icon]) => (
+            <button key={v} role="tab" aria-selected={view === v} onClick={() => { setView(v); setArchived(false) }}
+              className={cn("flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] transition-colors", view === v ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
+              <Icon className="size-3.5" />{l}<span className="text-xs text-muted-foreground tabular-nums">{n}</span>
+            </button>
+          ))}
+        </nav>
+        <span className="mx-1.5 h-4 w-px bg-border max-sm:hidden" />
+        <div className="flex items-center gap-0.5 max-sm:hidden">
+          {[[false, view === "projects" ? "Open" : "Current"], [true, view === "projects" ? "Done" : "Archived"]].map(([v, l]) => (
+            <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("h-7 rounded-md px-2 text-xs", archived === v ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>{l as string}</button>
           ))}
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {listed.length > 0 && (
-            <section className="mb-2">
-              <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{archived ? "Done projects" : "Projects"} · {listed.length}</h2>
-              {listed.map((p) => {
-                const { done: ended, next, when, running } = glance(p, byRun)
+        <span className="flex-1" />
+        <Button size="sm" variant={composing ? "secondary" : "default"} className="h-7 gap-1 px-2.5 text-[13px]" onClick={() => { if (composing) { setAsking(false); setDismissed(true) } else setAsking(true) }}>
+          {composing ? <X /> : <Plus />}<span className="max-sm:sr-only">{composing ? "Close" : "Ask the team"}</span>
+        </Button>
+      </header>
+      {/* Hidden, not unmounted: a closed composer keeps what was typed and
+          does not take a request it already took again. */}
+      {(
+        <div className={cn("shrink-0 border-b bg-muted/30 py-1", !composing && "hidden")}>
+          <div className="mx-auto max-w-3xl"><Ask realm={realm} agents={agents} prefill={prefill} onStarted={(id) => { runs.refresh(); tasks.refresh(); setShown(null); setView("tasks"); setAsking(false); onOpen(id) }} /></div>
+        </div>
+      )}
+      {/* On a phone the filter has its own line. */}
+      <div className="flex items-center gap-0.5 border-b px-3 py-1.5 sm:hidden">
+        {[[false, view === "projects" ? "Open" : "Current"], [true, view === "projects" ? "Done" : "Archived"]].map(([v, l]) => (
+          <button key={String(v)} onClick={() => setArchived(v as boolean)} className={cn("h-7 rounded-md px-2.5 text-[13px]", archived === v ? "bg-accent text-foreground" : "text-muted-foreground")}>{l as string}</button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-24 md:pb-4">
+        {(view === "projects" ? !projects.data : !runs.data) ? <p className="px-5 py-4 text-sm text-muted-foreground">Loading…</p>
+          : empty ? (
+            <div className="px-6 py-16 text-center">
+              {view === "projects" ? <FolderKanban className="mx-auto size-7 text-muted-foreground/50" /> : <CircleDot className="mx-auto size-7 text-muted-foreground/50" />}
+              <p className="mt-3 text-sm font-medium">{view === "projects" ? (archived ? "No project done yet." : "No project yet.") : archived ? "Nothing archived." : "No task yet."}</p>
+              {!archived && <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{view === "projects" ? "Ask the team for something bigger than a task: it is planned as a project, with milestones and tasks." : "Ask the team for something: it goes to the agent that fits."}</p>}
+            </div>
+          ) : view === "projects" ? projectGroups.map(([g, l]) => (
+            <section key={g}>
+              <GroupHead label={g} count={l.length} icon={<StatusIcon kind={g === "Completed" ? "done" : g === "Planned" ? "todo" : "running"} />} folded={folded.has(g)} onFold={() => fold(g)} />
+              {!folded.has(g) && l.map((p) => {
+                const { done: ended, total, next, when } = glance(p, byRun)
+                const lead = agents.find((a) => a.name === p.agent)
+                const pct = total ? Math.round((100 * ended) / total) : 0
                 return (
-                  <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", shown === p.id && !current && "bg-accent")}>
-                    <span className={cn("grid size-[22px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", running && "bg-sky-500/10 text-sky-600 dark:text-sky-300")}><FolderKanban className="size-3.5" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium">{p.name}</span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {[`${ended}/${p.tasks.length} done`, next && `next: ${next.title}${when ? `, ${when.text.split(" · ")[0]}` : ""}`].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(p.updated_at)}</span>
+                  <button key={p.id} onClick={() => { setShown(p.id); onOpen(null) }} className="flex h-11 w-full items-center gap-3 border-b border-border/60 px-4 text-left text-[13px] hover:bg-accent/50 md:px-5">
+                    <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                    {next && <span className={cn("max-w-56 truncate text-xs text-muted-foreground max-md:hidden", when?.late && "text-red-500")}>{next.title}{when ? ` · ${when.text.split(" · ")[0]}` : ""}</span>}
+                    <span className="flex w-16 shrink-0 items-center justify-end gap-1.5 text-xs text-muted-foreground tabular-nums"><Ring share={total ? ended / total : 0} />{pct}%</span>
+                    {lead ? <Character agent={lead} size={20} still /> : <span className="size-5 shrink-0" />}
+                    <span className="w-12 shrink-0 text-right text-xs text-muted-foreground max-sm:hidden">{stamp(p.updated_at)}</span>
                   </button>
                 )
               })}
             </section>
-          )}
-          {!runs.data ? <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-            : !groups.length ? (!listed.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">{archived ? "Nothing archived." : "No project or task yet."}</p>)
-            : groups.map(([g, l]) => (
-              <section key={g} className="mb-2">
-                <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{g} · {l.length}</h2>
-                {l.flatMap((parent) => [parent, ...kids(parent.id)]).map((r) => {
-                  const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
-                  const child = fromOf.has(r.id) && list.some((x) => x.id === fromOf.get(r.id))
-                  const team = kids(r.id)
-                  const plan = team.length ? `project ${team.filter((k) => k.status === "completed").length}/${team.length} done` : null
-                  return (
-                    <button key={r.id} onClick={() => { setShown(null); onOpen(r.id) }} className={cn("flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/60", child && "pl-7", open === r.id && "bg-accent")}>
-                      {child && <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />}
-                      <Character agent={a} size={22} still={!r.live} />
-                      <span className="min-w-0 flex-1">
-                        <span className={cn("block truncate text-[13px]", team.length > 0 && "font-medium")}>{name(r)}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {[a.title, plan, r.routine && `routine ${r.routine}`, r.plan_total ? `${r.plan_done}/${r.plan_total} steps` : null, r.status !== "completed" && r.status].filter(Boolean).join(" · ")}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{stamp(r.updated_at)}</span>
-                    </button>
-                  )
-                })}
-              </section>
-            ))}
-        </div>
-      </aside>
-      {current ? (
-        <TaskView key={current.id} realm={realm} run={current} agent={agents.find((x) => x.name === agentOf.get(current.id)) ?? AIRTH} items={items} onBack={() => onOpen(null)}
-          backLabel={project ? project.name : "Projects"}
-          from={fromTitle(current.id)} passed={passedOf(current.id)} onOpenTask={onOpen}
-          onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
-      ) : project ? (
-        <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} onBack={() => setShown(null)}
-          onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
-      ) : (
-        <div className="grid flex-1 place-items-center p-8 text-center max-md:hidden">
-          <div>
-            <FolderKanban className="mx-auto size-8 text-muted-foreground/50" />
-            <p className="mt-3 text-sm font-medium">Choose a project or a task, or ask the team for something.</p>
-            <p className="mt-1 text-sm text-muted-foreground">Each one shows here with what was done, its plan and its change.</p>
-          </div>
-        </div>
-      )}
+          )) : groups.map(([g, l]) => (
+            <section key={g}>
+              <GroupHead label={g} count={l.length} icon={<StatusIcon kind={KIND[g]} />} folded={folded.has(g)} onFold={() => fold(g)} />
+              {!folded.has(g) && l.flatMap((parent) => tree(parent)).map(({ r, depth }) => {
+                const a = agents.find((x) => x.name === agentOf.get(r.id)) ?? AIRTH
+                const child = depth > 0
+                const team = kids(r.id)
+                // Said once, on the task its plan hangs from.
+                const inProject = child && projectOf.get(fromOf.get(r.id) ?? "") === projectOf.get(r.id) ? null : projectOf.get(r.id)
+                const kind: Kind = r.status === "failed" ? "failed" : r.status === "stopped" ? "stopped" : KIND[group(r, waiting)]
+                return (
+                  <button key={r.id} onClick={() => { setShown(null); onOpen(r.id) }} title={r.objective}
+                    className="flex h-11 w-full items-center gap-3 border-b border-border/60 px-4 text-left text-[13px] hover:bg-accent/50 md:px-5" style={depth ? { paddingLeft: 20 + 24 * depth } : undefined}>
+                    <StatusIcon kind={kind} />
+                    <span className={cn("min-w-0 flex-1 truncate", team.length > 0 && "font-medium")}>{name(r)}</span>
+                    {team.length > 0 && <span className="shrink-0 text-xs text-muted-foreground tabular-nums max-sm:hidden">{team.filter((k) => k.status === "completed").length}/{team.length}</span>}
+                    {r.plan_total > 0 && !team.length && <span className="shrink-0 text-xs text-muted-foreground tabular-nums max-sm:hidden">{r.plan_done}/{r.plan_total} steps</span>}
+                    {inProject && <span className="inline-flex max-w-40 shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground max-md:hidden"><FolderKanban className="size-3 shrink-0" /><span className="truncate">{inProject}</span></span>}
+                    {r.routine && <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground max-md:hidden">{r.routine}</span>}
+                    <Character agent={a} size={20} still={!r.live} />
+                    <span className="w-12 shrink-0 text-right text-xs text-muted-foreground max-sm:hidden">{stamp(r.updated_at)}</span>
+                  </button>
+                )
+              })}
+            </section>
+          ))}
+      </div>
     </div>
+  )
+}
+
+type Kind = "waiting" | "running" | "review" | "done" | "todo" | "failed" | "stopped"
+const KIND: Record<string, Kind> = { "Waiting for you": "waiting", Running: "running", "To review": "review", Done: "done" }
+
+/** Linear's status marks: a ring that fills as the work goes, a check when
+    done, a cross when it failed. */
+function StatusIcon({ kind }: { kind: Kind }) {
+  const tone = { waiting: "text-amber-500", running: "text-yellow-500", review: "text-emerald-500", done: "text-indigo-500", todo: "text-muted-foreground", failed: "text-red-500", stopped: "text-muted-foreground" }[kind]
+  const fill = { waiting: 0.25, running: 0.5, review: 0.75 } as Record<Kind, number>
+  return (
+    <svg viewBox="0 0 14 14" className={cn("size-3.5 shrink-0", tone)} aria-label={kind}>
+      {kind === "done" ? (<><circle cx="7" cy="7" r="6.5" fill="currentColor" /><path d="M4.2 7.2l1.9 1.9 3.7-3.9" fill="none" stroke="var(--background)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></>)
+        : kind === "failed" || kind === "stopped" ? (<><circle cx="7" cy="7" r="6.5" fill="currentColor" opacity={kind === "stopped" ? 0.5 : 1} /><path d="M4.8 4.8l4.4 4.4M9.2 4.8l-4.4 4.4" stroke="var(--background)" strokeWidth="1.5" strokeLinecap="round" /></>)
+        : (<>
+          <circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray={kind === "todo" ? "2 1.6" : undefined} />
+          {fill[kind] ? <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" strokeWidth="5" strokeDasharray={`${fill[kind] * 15.71} 15.71`} transform="rotate(-90 7 7)" /> : null}
+        </>)}
+    </svg>
+  )
+}
+
+/** A project's progress, as a ring. */
+function Ring({ share }: { share: number }) {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4 shrink-0 -rotate-90" aria-hidden>
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
+      <circle cx="8" cy="8" r="6" fill="none" stroke={share >= 1 ? "rgb(99 102 241)" : "rgb(16 185 129)"} strokeWidth="2" strokeLinecap={share > 0 ? "round" : undefined} strokeDasharray={`${share * 37.7} 37.7`} />
+    </svg>
+  )
+}
+
+function GroupHead({ label, count, icon, folded, onFold }: { label: string; count: number; icon: React.ReactNode; folded: boolean; onFold: () => void }) {
+  return (
+    <button onClick={onFold} aria-expanded={!folded} className="sticky top-0 z-10 flex h-9 w-full items-center gap-2 border-b bg-muted/60 px-4 text-left text-[13px] backdrop-blur md:px-5">
+      <ChevronDown className={cn("size-3.5 text-muted-foreground transition-transform", folded && "-rotate-90")} />
+      {icon}
+      <span className="font-medium">{label}</span>
+      <span className="text-muted-foreground tabular-nums">{count}</span>
+    </button>
   )
 }
 
@@ -325,7 +418,7 @@ function TaskView({ realm, run, agent, items, onBack, backLabel = "Projects", on
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b px-5 py-3 max-md:min-h-[60px] max-md:pr-3 max-md:pl-[68px]">
-          <Back label={backLabel} onClick={onBack} />
+          <Back label={backLabel} onClick={onBack} always />
           {renaming !== null ? (
             <>
               <Input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") setRenaming(null) }} className="h-8" aria-label="Task name" />

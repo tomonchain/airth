@@ -475,6 +475,7 @@ mod tests {
             trigger: "schedule: daily 08:00".into(),
             job_version: None,
             chain: Vec::new(),
+            bot: None,
         });
         let runs = vec![
             ("acme".to_string(), scheduled),
