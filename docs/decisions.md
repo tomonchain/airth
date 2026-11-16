@@ -2,6 +2,21 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 147. One thread per project; the Home keeps what belongs to none
+
+**Accepted** (founder, 16 November 2026: un fil par projet, "je trouve ça plus pertinent et le reste un fil où on replie le passé", then "Go").
+
+- **What is stored.** A task (its run state) records the project its order is about: an optional `project` number, as `dispatched_by` is kept (decision 120). Only the founder's order sets it: `POST realms/<r>/orders` takes an optional `project`. A message to a task, a plan's tasks and anything an agent writes never set or change it.
+- **Checked at the door.** The number is looked up in the business's own `business.db`, through the access layer: a number the business does not have (another business's included) is refused, and so is a done project ("reopen it in Projects first"), since a plan may only add to an open one (decision 129). No task is made.
+- **How the agent is told.** Its first message, between its job and the order, names the project (number, name, description, milestones with their dates, open tasks) and says that a plan it proposes for it gives `project: <number>`. That project is always among the open ones its plan may add to, even past the ten most recent.
+- **The task list** says each task's project: the one its order named, or the one it was planned in or passed on for (decision 129's `projects.run` and `project_tasks.run`). The ten latest done tasks outside any project stay as before; a project's done tasks are kept beyond them (up to 40), so its thread keeps its past.
+- **The project page** is the project's thread, with the agent leading it: the task it was planned in, then every request about it, in time order, in the same view and the same box as the Home. A new order written there is about the project. The plan (description, milestones, tasks) sits beside it on a computer, behind a tab on a phone. Its old line "Add to this project", which wrote into the planning task, goes: the box does the same, in the thread.
+- **The Home** leaves out every task that belongs to a project, the planning one included. Over its box, one quiet line per project whose tasks moved in the last 7 days ("2 requests in Website redesign · open") opens that project.
+
+*Why:* the Home's conversation grew long, every subject mixed in one thread. A project is already the unit of work the founder follows (decision 129); its talk belongs with it.
+
+*Cost:* one more optional field in the run state and in the task list. An order sent from a project's box to another agent (`@name`) is not about the project: it goes to that agent's own conversation, as before. The task list returns up to 40 more done tasks.
+
 ## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
 
 **Accepted** (founder, 16 November 2026: "Pourquoi les MaJ de l'UI sont aussi longues ? J'ai l'impression qu'on rebuild tout", then "Go" on these three). Decision 100's update built every new commit of `main` twice in the slowest mode (`cargo build --release` and `cargo test --release`, with whole-program optimization and one codegen unit) and ran every Rust test, even for a change to the interface alone; and it looked for one every 30 minutes.

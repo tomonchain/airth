@@ -11,6 +11,7 @@ import { startOf, TaskThread } from "@/components/task-thread"
 import { usePoll } from "@/hooks/use-poll"
 import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
 import { api, called, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
+import { inThread, type Scope } from "@/lib/project-threads"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
@@ -30,11 +31,18 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 /** One agent's work as a conversation: its runs, what it sent up, the
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
-export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone, top }: {
+export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone, top, project, aside }: {
   realm: string; agent: Agent; agents?: Agent[]; onAgent?: (name: string) => void; tasks: Tasks | null; onDone: () => void
   /** At the top of the page: on a phone, it starts below Airth's floating mark. */
   top?: boolean
+  /** Whose tasks (decision 147): a project's only, with its orders sent
+      for it; none in a project (the Home); every one when left out. */
+  project?: Scope
+  /** Above the box: the Home's lines to its projects' threads. */
+  aside?: React.ReactNode
 }) {
+  // A project's thread is its tasks only: the agent's routines are elsewhere.
+  const own = typeof project === "number"
   const { prefs } = usePrefs()
   const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
   // The app's list, refreshed every few seconds: not asked again here.
@@ -44,10 +52,10 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   useEffect(() => setStarted([]), [agent.name])
   const taskIds = useMemo(() => {
     const ids = new Set<string>(started)
-    for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name) ids.add(t.id)
+    for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name && inThread(t, project)) ids.add(t.id)
     return [...ids].sort()
-  }, [tasks.data, started, agent.name])
-  const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
+  }, [tasks.data, started, agent.name, project])
+  const running = (tasks.data?.running ?? []).some((t) => t.agent === agent.name && inThread(t, project)) || started.some((id) => !(tasks.data?.done ?? []).some((t) => t.id === id))
   const latest = taskIds[taskIds.length - 1]
   // A task whose change was adopted or thrown away is closed: the next
   // message starts a new one (the server refuses to go on with it).
@@ -63,16 +71,16 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
 
   const entries = useMemo(() => {
     const e: Entry[] = []
-    for (const r of thread.data?.runs ?? []) if (r.at) e.push({ kind: "run", at: r.at, run: r })
+    for (const r of own ? [] : thread.data?.runs ?? []) if (r.at) e.push({ kind: "run", at: r.at, run: r })
     // A task's questions show in its own chat, not as items.
     // A report is read in Needs you, on the phone and on Telegram; in the
     // conversation it came between the founder and the agent (decision 134).
-    for (const i of thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
-    for (const id of taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
+    for (const i of own ? [] : thread.data?.items ?? []) if (!(i.run && taskIds.includes(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
+    for (const id of own ? taskIds : taskIds.slice(-8)) e.push({ kind: "task", at: startOf(id), id })
     // In time order, as a chat is: what waits for the founder stays where
     // it was sent, marked new, not moved after later messages.
     return e.sort((a, b) => a.at.localeCompare(b.at))
-  }, [thread.data, taskIds])
+  }, [thread.data, taskIds, own])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
@@ -109,7 +117,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
-  const busy = agent.state === "working" && !running
+  const busy = !own && agent.state === "working" && !running
   // Like a chat: the thread opens at its newest message and stays there as
   // messages and tasks load in, unless the founder scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null)
@@ -193,7 +201,8 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
             <ArrowDown className="size-4" />
           </button>
         )}
-        <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running}
+        {aside}
+        <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running} project={own ? project : undefined}
           tools={[...(agent.integrations ?? []), ...(agent.skills ?? [])]} others={agents.filter((a) => a.name !== agent.name)} onOther={onAgent}
           onSending={(text, task) => {
             if (task) mine.add(task)

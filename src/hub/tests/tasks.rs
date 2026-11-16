@@ -1258,3 +1258,107 @@ fn an_agents_tasks_use_the_model_its_file_names() {
     assert!(crate::business::check_agent_field("model", "nowhere/x", &own).is_err());
     assert!(crate::business::check_agent_field("model", "anthropic/claude opus", &own).is_err());
 }
+
+fn project(realm: &Realm, name: &str, tasks: &[&str]) -> i64 {
+    use crate::business::store::projects::{Additions, NewTask};
+    let tasks: Vec<NewTask> = tasks
+        .iter()
+        .map(|t| NewTask {
+            agent: "writer",
+            task: t,
+            milestone: Some(0),
+        })
+        .collect();
+    Store::of(realm)
+        .unwrap()
+        .create_project(
+            name,
+            &format!("{name}, described."),
+            "lead",
+            Some("planned-in"),
+            &Additions {
+                milestones: &[("Launch".into(), Some("2026-12-01".into()))],
+                tasks: &tasks,
+            },
+            Utc::now(),
+        )
+        .unwrap()
+        .0
+}
+
+/// Decision 147: an order about a project is recorded on its task, and its
+/// agent is told which project, with what it still has to do, so a plan it
+/// proposes adds to it.
+#[test]
+fn an_order_about_a_project_records_it_and_briefs_the_agent() {
+    let f = fixture();
+    agent(f.root.path(), "writer", "");
+    let id = project(&f.realm, "Website redesign", &["Draft the home page"]);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let state = hub
+        .start_task_for(&f.realm, "writer", "Where are we?", Some(id))
+        .unwrap();
+    assert_eq!(state.project, Some(id));
+    let first = format!("{:?}", state.messages[0]);
+    for told in [
+        "Website redesign",
+        "Website redesign, described.",
+        "Launch",
+        "2026-12-01",
+        "Draft the home page",
+        &format!("project: {id}"),
+        "Where are we?",
+    ] {
+        assert!(first.contains(told), "{told} missing: {first}");
+    }
+    // Saved with it: what the task list reads.
+    let saved = hub.load_run(&f.realm, &state.id).unwrap();
+    assert_eq!(saved.project, Some(id));
+    let listed = hub.runs(&f.realm).unwrap();
+    assert_eq!(listed[0].project, Some(id));
+    // An order about nothing in particular has no project.
+    let plain = hub.start_task(&f.realm, "writer", "Hello").unwrap();
+    assert_eq!(plain.project, None);
+    assert!(!format!("{:?}", plain.messages[0]).contains("project"));
+}
+
+/// The project is checked in the business's own database: an unknown id,
+/// another business's, or a done project is refused, and no task is made.
+#[test]
+fn an_order_about_an_unknown_foreign_or_done_project_is_refused() {
+    let f = fixture();
+    agent(f.root.path(), "writer", "");
+    let mine = project(&f.realm, "Mine", &[]);
+    let other = f
+        .home
+        .create_realm(NewRealm {
+            name: "other".into(),
+            description: String::new(),
+            root: None,
+            isolation: None,
+        })
+        .unwrap();
+    project(&other, "Theirs", &[]);
+    let theirs = project(&other, "Theirs too", &[]);
+    assert_ne!(mine, theirs);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let before = hub.runs(&f.realm).unwrap().len();
+    for id in [theirs, 999] {
+        let err = hub
+            .start_task_for(&f.realm, "writer", "Go", Some(id))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("no project {id}")),
+            "{err}"
+        );
+    }
+    Store::of(&f.realm)
+        .unwrap()
+        .edit_project(mine, None, None, Some("done"), Utc::now())
+        .unwrap();
+    let err = hub
+        .start_task_for(&f.realm, "writer", "Go", Some(mine))
+        .unwrap_err();
+    assert!(err.to_string().contains("is done"), "{err}");
+    assert_eq!(hub.runs(&f.realm).unwrap().len(), before, "no task made");
+}

@@ -9,6 +9,31 @@ impl Hub {
     /// integrations, skills and repository its file declares, never the
     /// whole realm's, and the business's task budget. Saved, not driven.
     pub fn start_task(&self, realm: &Realm, agent: &str, order: &str) -> Result<State> {
+        self.start_task_for(realm, agent, order, None)
+    }
+
+    /// A task, as [`Hub::start_task`], about the founder's `project`
+    /// (decision 147): looked up in the business's own database, refused
+    /// when unknown or done, recorded on the task, and told to its agent.
+    pub fn start_task_for(
+        &self,
+        realm: &Realm,
+        agent: &str,
+        order: &str,
+        project: Option<i64>,
+    ) -> Result<State> {
+        let briefing = match project {
+            Some(id) => {
+                let p = crate::business::store::Store::of(realm)?
+                    .project(id)?
+                    .with_context(|| format!("there is no project {id}"))?;
+                if p.status == "done" {
+                    bail!("project {id} is done: reopen it in Projects first");
+                }
+                briefing(&p)
+            }
+            None => String::new(),
+        };
         let root = realm.root()?;
         let job = crate::business::job(&root, agent)?;
         let scope = crate::business::scope(&root, agent)?;
@@ -22,10 +47,11 @@ impl Hub {
         let who = crate::business::first_name(&root, agent)
             .map_or(agent.to_string(), |n| format!("{n} (the agent {agent})"));
         state.messages = vec![Message::user_text(format!(
-            "You are {who}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\nThe founder's order:\n{}",
+            "You are {who}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\n{briefing}The founder's order:\n{}",
             job.text.trim(),
             order.trim()
         ))];
+        state.project = project;
         state.tools = Some(scope.integrations.into_iter().chain(scope.skills).collect());
         let (minutes, cost) = crate::business::task_budget(&root);
         let cost = left.map_or(cost, |l| cost.min(l));
@@ -119,4 +145,35 @@ impl Hub {
         }
         Ok(out)
     }
+}
+
+/// What an agent is told of the project an order is about: enough to
+/// answer where it stands, and how to add to it rather than start another.
+fn briefing(p: &crate::business::store::projects::Project) -> String {
+    let mut out = format!("This order is about project {}, \"{}\".\n", p.id, p.name);
+    if !p.description.trim().is_empty() {
+        out += &format!("{}\n", p.description.trim());
+    }
+    if !p.milestones.is_empty() {
+        out += "Milestones:\n";
+        for m in &p.milestones {
+            let due = m.due.as_deref().map(|d| format!(" (by {d})"));
+            out += &format!("- {}{}\n", m.title, due.unwrap_or_default());
+        }
+    }
+    let open: Vec<_> = p
+        .tasks
+        .iter()
+        .filter(|t| t.outcome.is_none() && t.skipped.is_none())
+        .collect();
+    if !open.is_empty() {
+        out += "Open tasks:\n";
+        for t in open {
+            out += &format!("- {} ({})\n", t.task, t.agent);
+        }
+    }
+    out + &format!(
+        "A plan you propose for it adds to it: give `project: {}`.\n\n",
+        p.id
+    )
 }

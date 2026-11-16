@@ -45,13 +45,15 @@ impl Hub {
                 (name, line)
             })
             .collect();
-        // The open projects a plan may add to (decision 129).
+        // The open projects a plan may add to (decision 129), the one the
+        // task is about always among them (decision 147).
         let projects: Vec<(i64, String)> = Store::of(realm)?
             .projects()?
             .into_iter()
             .filter(|p| p.status == "active")
-            .take(10)
-            .map(|p| (p.id, p.name))
+            .enumerate()
+            .filter(|(i, p)| *i < 10 || Some(p.id) == state.project)
+            .map(|(_, p)| (p.id, p.name))
             .collect();
         let hire = self.hire_for(realm, agent, &state.id);
         let (realm, agent, run) = (realm.clone(), agent.clone(), state.id.clone());
