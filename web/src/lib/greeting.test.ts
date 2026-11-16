@@ -25,8 +25,15 @@ describe("greeting", () => {
 
   it("stays the same through a moment of a day, and moves on with the day", () => {
     expect(greeting(at(17, 9), "Thomas")).toBe(greeting(at(17, 11, 30), "Thomas"))
-    const week = [16, 17, 18, 19, 20, 21, 22, 23, 24, 25].map((d) => greeting(at(d, 14), "Thomas"))
-    expect(new Set(week).size).toBeGreaterThan(2)
+    // Tuesday to Thursday afternoons: never twice the same in a row.
+    const days = [17, 18, 19].map((d) => greeting(at(d, 14), "Thomas"))
+    expect(days[0]).not.toBe(days[1])
+    expect(days[1]).not.toBe(days[2])
+  })
+
+  it("keeps a night's line past midnight", () => {
+    expect(greeting(at(17, 23, 30), "Thomas")).toBe(greeting(at(18, 2), "Thomas"))
+    expect(greeting(at(18, 23, 30), "Thomas")).not.toBe(greeting(at(17, 23, 30), "Thomas"))
   })
 
   it("reads well without a name", () => {

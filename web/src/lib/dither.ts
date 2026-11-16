@@ -35,16 +35,26 @@ const SPOTS: Record<Moment, { x: number; y: number; r: number; k: number }[]> = 
   night: [{ x: 0.5, y: 0.5, r: 0.3, k: 0.6 }, { x: 0.78, y: 0.25, r: 0.18, k: 0.3 }],
 }
 
-/** The light at (u, v) in 0..1 at time `t` (seconds): the moment's spots,
-    each drifting slowly on its own small circle, fading to nothing at the
-    page's edges. Always in 0..1. */
-export function field(m: Moment, u: number, v: number, t: number): number {
-  let s = 0
-  SPOTS[m].forEach((p, i) => {
-    const cx = p.x + 0.05 * Math.sin(t / (23 + i * 7) + i)
-    const cy = p.y + 0.04 * Math.cos(t / (29 + i * 5) + i * 2)
-    const d = ((u - cx) ** 2 + (v - cy) ** 2) / (p.r * p.r)
-    s += p.k * Math.exp(-d)
-  })
-  return Math.min(1, Math.max(0, s))
+export type Spot = { x: number; y: number; r2: number; k: number }
+
+/** The moment's spots at time `t` (seconds), each drifted on its own small
+    circle: computed once per frame, then read for every dot. */
+export function spots(m: Moment, t: number): Spot[] {
+  return SPOTS[m].map((p, i) => ({
+    x: p.x + 0.05 * Math.sin(t / (23 + i * 7) + i),
+    y: p.y + 0.04 * Math.cos(t / (29 + i * 5) + i * 2),
+    r2: p.r * p.r,
+    k: p.k,
+  }))
 }
+
+/** The light at (u, v) in 0..1 from the spots: each fades with distance
+    (a Gaussian), so the page's far corners stay nearly dark. Always in 0..1. */
+export function lightAt(s: Spot[], u: number, v: number): number {
+  let sum = 0
+  for (const p of s) sum += p.k * Math.exp(-((u - p.x) ** 2 + (v - p.y) ** 2) / p.r2)
+  return sum > 1 ? 1 : sum
+}
+
+/** The light at (u, v) for the moment at time `t`. */
+export const field = (m: Moment, u: number, v: number, t: number) => lightAt(spots(m, t), u, v)

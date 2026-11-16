@@ -81,12 +81,12 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   )
 }
 
-/** The time, again every few minutes: the greeting and its background follow
+/** The time, again each minute: the greeting and its background follow
     the day while the page stays open. */
 function useNow(): Date {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 5 * 60 * 1000)
+    const t = setInterval(() => setNow(new Date()), 60 * 1000)
     return () => clearInterval(t)
   }, [])
   return now
