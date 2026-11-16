@@ -16,6 +16,32 @@ use serde_json::Value;
 const DAILY_LIMIT: u32 = 20;
 pub(super) const CANCEL_MINUTES: u32 = 30;
 
+/// A task's new question to the founder replaces its earlier ones about
+/// the same action: once the founder answered in words and the agent asked
+/// again, the first card no longer stands, so it leaves Needs you, marked
+/// expired. Only a task's approvals: a routine's run proposes each of its
+/// items on its own, and what waits to run or was prepared asks nothing.
+pub(super) fn propose_replacing(store: &mut Store, item: &NewItem) -> Result<i64> {
+    let id = store.propose(item)?;
+    let Some(run) = item
+        .run
+        .filter(|_| item.kind == "approval" && item.routine.is_none())
+    else {
+        return Ok(id);
+    };
+    for old in store.queue(&["pending"])? {
+        if old.id != id
+            && old.kind == "approval"
+            && old.routine.is_none()
+            && old.run.as_deref() == Some(run)
+            && old.action.as_deref() == item.action
+        {
+            store.expire_item(old.id, &format!("replaced by item {id}"))?;
+        }
+    }
+    Ok(id)
+}
+
 pub struct BusinessAuthority {
     realm: Realm,
     agent: String,
@@ -138,21 +164,24 @@ impl Authority for FounderAuthority {
             Some(_) => format!("{action}: {}", request.trim()),
             None => format!("{action}, from a task you started"),
         };
-        let item = Store::of(&self.realm)?.propose(&NewItem {
-            kind: "approval",
-            title: &title,
-            // The task's agent: the question shows in its chat, where the
-            // founder answers it and the task goes on.
-            agent: self.agent.as_deref(),
-            routine: None,
-            run: Some(&self.run),
-            action: Some(action),
-            args: &arguments.to_string(),
-            execute_at: None,
-            // Done as proposed, once, on approval (Hub::answer_item).
-            source: &serde_json::json!({"tool": tool}).to_string(),
-            model_call: None,
-        })?;
+        let item = propose_replacing(
+            &mut Store::of(&self.realm)?,
+            &NewItem {
+                kind: "approval",
+                title: &title,
+                // The task's agent: the question shows in its chat, where the
+                // founder answers it and the task goes on.
+                agent: self.agent.as_deref(),
+                routine: None,
+                run: Some(&self.run),
+                action: Some(action),
+                args: &arguments.to_string(),
+                execute_at: None,
+                // Done as proposed, once, on approval (Hub::answer_item).
+                source: &serde_json::json!({"tool": tool}).to_string(),
+                model_call: None,
+            },
+        )?;
         Ok(Decision::Stop(format!(
             "not done: {action} commits the business and nobody is watching this run, so it waits for the founder's approval in Needs you (item {item}), and is done once if approved. The run stops here."
         )))
@@ -166,23 +195,26 @@ impl Authority for FounderAuthority {
         let Some(agent) = &self.agent else {
             return Ok(None);
         };
-        let item = Store::of(&self.realm)?.propose(&NewItem {
-            kind: "approval",
-            title: &format!("{agent} asks to use {}", request.capability.as_str()),
-            agent: Some(agent),
-            routine: None,
-            run: Some(&self.run),
-            action: None,
-            args: &serde_json::json!({"preview": request.preview}).to_string(),
-            execute_at: None,
-            source: &serde_json::json!({
-                "show": "preview",
-                "tool": tool,
-                "ask": {"capability": request.capability.as_str(), "scope": request.scope},
-            })
-            .to_string(),
-            model_call: None,
-        })?;
+        let item = propose_replacing(
+            &mut Store::of(&self.realm)?,
+            &NewItem {
+                kind: "approval",
+                title: &format!("{agent} asks to use {}", request.capability.as_str()),
+                agent: Some(agent),
+                routine: None,
+                run: Some(&self.run),
+                action: None,
+                args: &serde_json::json!({"preview": request.preview}).to_string(),
+                execute_at: None,
+                source: &serde_json::json!({
+                    "show": "preview",
+                    "tool": tool,
+                    "ask": {"capability": request.capability.as_str(), "scope": request.scope},
+                })
+                .to_string(),
+                model_call: None,
+            },
+        )?;
         Ok(Some(format!(
             "not done: nobody is watching this task, so the founder is asked in Needs you (item {item}); the task stops here and goes on once allowed."
         )))

@@ -1088,3 +1088,76 @@ fn the_days_plan_starts_at_the_level_the_founder_gave_it() {
     assert_eq!(released.len(), 1, "{released:?}");
     assert_eq!(hub.take_hand_offs().unwrap().len(), 1);
 }
+
+/// When the founder answers a question in words and the agent asks again,
+/// the new card replaces the first: it leaves Needs you, marked expired.
+/// Another kind of question from the same task stays, and so does another
+/// task's.
+#[test]
+fn a_task_asking_again_replaces_its_earlier_card() {
+    use crate::tools::dispatch::{Hiring, Proposal, Step};
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    agent(
+        &root,
+        "chief-of-staff",
+        "title: Chief of staff\ndispatch: true\n",
+    );
+    agent(&root, "writer", "title: Writer\n");
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let plan = |task: &str| Proposal {
+        name: "Year-end".into(),
+        steps: vec![Step {
+            agent: "writer".into(),
+            task: task.into(),
+            after: vec![],
+            milestone: None,
+        }],
+        ..Default::default()
+    };
+    let chief = hub
+        .start_task(&f.realm, "chief-of-staff", "Year-end")
+        .unwrap();
+    let dispatch = hub.dispatch_for(&f.realm, &chief).unwrap().unwrap();
+    let other = hub
+        .start_task(&f.realm, "chief-of-staff", "Spring")
+        .unwrap();
+    let elsewhere = hub.dispatch_for(&f.realm, &other).unwrap().unwrap();
+
+    (dispatch.propose)(&plan("A recap"), None).unwrap();
+    (elsewhere.propose)(&plan("A preview"), None).unwrap();
+    (dispatch.hire)(&Hiring {
+        name: "sales-lead".into(),
+        title: "Sales lead".into(),
+        department: "sales".into(),
+        job: "Find the firms.".into(),
+        why: "Nobody sells.".into(),
+    })
+    .unwrap();
+    // The founder said what to change; the agent proposes the plan again.
+    (dispatch.propose)(&plan("A recap, with the figures"), None).unwrap();
+
+    let store = Store::of(&f.realm).unwrap();
+    let pending = store.queue(&["pending"]).unwrap();
+    let plans: Vec<_> = pending
+        .iter()
+        .filter(|i| i.action.as_deref() == Some("airth.dispatch"))
+        .map(|i| (i.run.clone().unwrap(), i.args["steps"][0]["task"].clone()))
+        .collect();
+    assert_eq!(
+        plans,
+        vec![
+            (other.id.clone(), json!("A preview")),
+            (chief.id.clone(), json!("A recap, with the figures")),
+        ]
+    );
+    assert!(
+        pending
+            .iter()
+            .any(|i| i.action.as_deref() == Some("airth.hire")),
+        "the hiring is another question: it stays"
+    );
+    let expired = store.queue(&["expired"]).unwrap();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(expired[0].args["steps"][0]["task"], json!("A recap"));
+}

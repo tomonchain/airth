@@ -85,20 +85,23 @@ impl Hub {
                     ),
                     _ => ("delayed", Some(now)),
                 };
-                let id = store.propose(&crate::business::store::autonomy::NewItem {
-                    kind,
-                    title: &title,
-                    agent: Some(&agent),
-                    routine: None,
-                    run: Some(&run),
-                    action: Some(DISPATCH),
-                    args: &json!({"steps": plan, "text": text, "project": project}).to_string(),
-                    execute_at: at,
-                    // The founder may edit the plan before approving it.
-                    source: &json!({"show": "text", "editable": "text", "tool": DISPATCH})
-                        .to_string(),
-                    model_call: None,
-                })?;
+                let id = super::autonomy::propose_replacing(
+                    &mut store,
+                    &crate::business::store::autonomy::NewItem {
+                        kind,
+                        title: &title,
+                        agent: Some(&agent),
+                        routine: None,
+                        run: Some(&run),
+                        action: Some(DISPATCH),
+                        args: &json!({"steps": plan, "text": text, "project": project}).to_string(),
+                        execute_at: at,
+                        // The founder may edit the plan before approving it.
+                        source: &json!({"show": "text", "editable": "text", "tool": DISPATCH})
+                            .to_string(),
+                        model_call: None,
+                    },
+                )?;
                 Ok(match kind {
                     "approval" => format!(
                         "The plan waits for the founder in Needs you (item {id}); they may edit it. Once they approve it, each agent gets its task when the ones it waits for have finished, and you are told when all have ended. End your turn now, saying in two lines what you planned."
@@ -135,7 +138,7 @@ impl Hub {
                 if crate::business::job(&realm.root()?, &h.name).is_ok() {
                     bail!("{} is already an agent of the team", h.name);
                 }
-                let id = Store::of(&realm)?.propose(&crate::business::store::autonomy::NewItem {
+                let id = super::autonomy::propose_replacing(&mut Store::of(&realm)?, &crate::business::store::autonomy::NewItem {
                 kind: "approval",
                 title: &format!("Hire a {}", h.title),
                 agent: Some(&agent),
