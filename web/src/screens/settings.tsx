@@ -59,18 +59,21 @@ const ANY = "any"
 
 /** Settings: the founder's account and the business's models, connections,
     keys, permissions, repositories and phone. */
-export function Settings({ realm, start }: { realm: string; start?: { section: Section; at: number } | null }) {
-  const [section, setSection] = useState<Section>(start?.section ?? "account")
+export function Settings({ realm, start, onSection }: { realm: string; start?: { section: Section; at: number } | null; onSection?: (s: Section) => void }) {
+  // A section the address names that does not exist opens Account.
+  const known = (s?: Section) => (s && SECTIONS.some((x) => x.id === s) ? s : undefined)
+  const [section, setSection] = useState<Section>(known(start?.section) ?? "account")
   // On a phone the sections come first, and one opens when picked.
-  const [picked, setPicked] = useState(!!start)
-  useEffect(() => { if (start) { setSection(start.section); setPicked(true) } }, [start])
+  const [picked, setPicked] = useState(!!known(start?.section))
+  // An unknown one is corrected in the address to what is shown.
+  useEffect(() => { const s = known(start?.section); if (s) { setSection(s); setPicked(true) } else if (start) onSection?.(section) }, [start]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <nav className={cn("w-(--side) shrink-0 border-r pb-3 max-md:w-full max-md:border-r-0", picked && "max-md:hidden")}>
         <SideHead title="Settings" />
         <div className="px-3">
         {SECTIONS.map((s) => (
-          <button key={s.id} onClick={() => { setSection(s.id); setPicked(true) }}
+          <button key={s.id} onClick={() => { setSection(s.id); setPicked(true); onSection?.(s.id) }}
             className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground", section === s.id && "bg-accent text-foreground")}>
             <s.icon className="size-4" /> {s.label}
           </button>
