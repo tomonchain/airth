@@ -535,7 +535,9 @@ pub fn keep_look(root: &Path, name: &str) -> Result<String> {
         Some(rest) => format!("---\nlook: {seed}\n{rest}"),
         None => format!("---\nlook: {seed}\n---\n{text}"),
     };
-    std::fs::write(&path, kept)?;
+    // Whole or not at all, as its other writes: a crash midway must not
+    // leave an agent with half a file.
+    crate::realm::write_atomic(&path, &kept)?;
     Ok(seed)
 }
 

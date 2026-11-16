@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Bot, Brain, Building2, Network, Check, Cpu, RotateCw, FolderGit2, Info, KeyRound, Mail, Plug, Shield, Smartphone, User, type LucideIcon } from "lucide-react"
+import { Bot, Brain, Building2, Network, Check, ChevronRight, Cpu, RotateCw, FolderGit2, Info, KeyRound, Mail, Plug, Shield, Smartphone, Sparkles, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Back, Loading, Panel, SideHead } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -19,8 +19,9 @@ import { McpServers } from "@/screens/settings-mcp"
 import { Business, Departments, Memory, Permissions, Phone, PictureEditor, Repositories } from "@/screens/settings-business"
 import { Keys } from "@/screens/settings-keys"
 import { Mailboxes } from "@/screens/settings-mail"
+import { WhatsNew } from "@/screens/settings-changelog"
 
-export type Section = "account" | "business" | "departments" | "models" | "keys" | "connections" | "mailboxes" | "permissions" | "repositories" | "memory" | "phone" | "about"
+export type Section = "account" | "business" | "departments" | "models" | "keys" | "connections" | "mailboxes" | "permissions" | "repositories" | "memory" | "phone" | "changes" | "about"
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "account", label: "Account", icon: User },
   { id: "business", label: "Business", icon: Building2 },
@@ -33,6 +34,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "repositories", label: "Repositories", icon: FolderGit2 },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "phone", label: "Phone", icon: Smartphone },
+  { id: "changes", label: "What's new", icon: Sparkles },
   { id: "about", label: "About", icon: Info },
 ]
 
@@ -92,7 +94,8 @@ export function Settings({ realm, start }: { realm: string; start?: { section: S
             : section === "permissions" ? <Permissions realm={realm} />
             : section === "repositories" ? <Repositories realm={realm} onKeys={() => setSection("keys")} />
             : section === "phone" ? <Phone />
-            : <About />}
+            : section === "changes" ? <WhatsNew />
+            : <About onChanges={() => setSection("changes")} />}
         </div>
       </div>
     </>
@@ -343,8 +346,8 @@ function Connections({ realm }: { realm: string }) {
 
 
 
-function About() {
-  const { data, refresh } = usePoll<{ name: string | null; home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])
+function About({ onChanges }: { onChanges: () => void }) {
+  const { data, refresh } = usePoll<{ name: string | null; version: string; home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])
   const [name, setName] = useState<string | null>(null)
   const shown = name ?? data?.name ?? ""
   async function save() {
@@ -367,6 +370,11 @@ function About() {
               <Input value={shown} onChange={(e) => setName(e.target.value)} placeholder="VPS" maxLength={30} className="h-8 w-36" aria-label="Name of this Airth" />
               <Button size="sm" variant="outline" type="submit" disabled={name === null || name === (data.name ?? "")}>Save</Button>
             </form>
+          </Row>
+          <Row label="Version" hint="What changed in it, and before.">
+            <button onClick={onChanges} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
+              <span className="font-mono tabular-nums">{data.version}</span> What's new <ChevronRight className="size-3.5" />
+            </button>
           </Row>
           <Row label="Airth home" hint="Data, secrets and run records. Agents cannot reach it."><span className="font-mono text-xs text-muted-foreground">{data.home.split("/").slice(-2).join("/")}</span></Row>
           <Row label="Sandbox" hint="Commands of missions run isolated.">{data.sandbox ? <span className="text-xs text-emerald-500">On</span> : <span className="text-xs text-red-500">Off</span>}</Row>

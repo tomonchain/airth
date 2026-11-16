@@ -271,7 +271,16 @@ fn a_routine_run_by_hand_runs_and_is_recorded_as_at_its_time() {
     assert_eq!(beats[0].1.due_at, None, "run by hand, not due");
     assert_eq!(store().queue(&["pending"]).unwrap().len(), 1);
 
+    // A name that is no routine: refused, and nothing recorded.
     assert!(hub.run_routine_by_hand(&f.realm, "ghost").is_err());
+    assert_eq!(store().heartbeats().unwrap().len(), 1);
+    assert!(
+        store()
+            .queue(&["pending"])
+            .unwrap()
+            .iter()
+            .all(|i| i.kind != "incident")
+    );
 }
 
 /// Decision 81: a routine that fails at its time is tried again before it

@@ -56,7 +56,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Why:* the beta is Hedgen running on its own for four weeks; an agent in a loop, or a routine gone wrong, must not be able to spend without bound while the founder is away. Caps per agent let a costly role (a developer) be bounded without stopping the rest.
 
-*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. An agent's cap does not see its routines' calls. A task's spend is read from its run record, as the spending gauge and the usage report read it: a chat the founder deletes takes its spend with it.
+*Cost:* a cap is checked against list prices, not the provider's bill, so it is an estimate, as the spending gauge is. An agent's cap does not see its routines' calls. A task's spend is read from its run record, as the spending gauge and the usage report read it: a chat the founder deletes takes its spend with it. Two starts at the same moment can both take what is left: the check and the run's save are not one step, so the month can go past a cap by one run's budget at most. An objective's run counts for the bot recorded on it when it started, or for the business alone.
 
 ## 138. A connector's sign-in comes back to the address the founder used
 

@@ -9,6 +9,13 @@ cargo build && git commit -am "Airth 0.2.0"
 git tag v0.2.0 && git push origin main v0.2.0
 ```
 
+The version bump also adds the version's entry at the top of
+`web/src/lib/changelog.ts`, shown in Settings → What's new: what changed,
+written for the founder rather than copied from the pull requests' titles.
+Then run `npm run build` in `web/`, and commit the entry and `web/dist/`
+with `Cargo.toml` in the bump commit. `npm test`, run in `web/`, fails
+while the newest entry is not the version in `Cargo.toml`.
+
 Where a tag cannot be pushed (a cloud session pushes its working branch
 only), bump the version through a pull request as above, then run the
 **Tag a release** workflow (`.github/workflows/tag.yml`) with the version,

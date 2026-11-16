@@ -28,6 +28,25 @@ impl Hub {
             Some(bot) => Some(crate::business::job(&realm.root()?, bot)?),
             None => None,
         };
+        // The month's budgets bind it as they bind a task (decision 139):
+        // its bot's and the business's; none starts once one is reached.
+        // Past one, this firing is skipped, as a routine's is: told once,
+        // not tried again at every tick of the scheduler.
+        let left = match self.month_allows(realm, objective.bot.as_deref(), now) {
+            Ok(left) => left,
+            Err(e) => {
+                if super::budget::cap_reached(&e) {
+                    let fingerprint = watched_fingerprint(realm, &objective)?;
+                    store.update(id, |o| {
+                        o.last_at = Some(now);
+                        o.last_status = Some("waited: the monthly budget is reached".into());
+                        o.fingerprint = fingerprint;
+                        advance(o, now);
+                    })?;
+                }
+                return Err(e);
+            }
+        };
         let mut state =
             self.create_run_in(realm, &objective.objective, objective.repo.as_deref())?;
         let mut brief = objective_brief(realm, &objective, trigger, payload);
@@ -40,33 +59,28 @@ impl Hub {
         append_user_text(&mut state.messages, &brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
+        if let Some(left) = left {
+            state.budget.max_cost_usd =
+                Some(state.budget.max_cost_usd.map_or(left, |c| c.min(left)));
+        }
         state.tools = objective.tools.clone();
         state.origin = Some(Origin {
             objective: objective.id.clone(),
             trigger: trigger.to_string(),
             job_version: job.map(|j| j.version),
             chain: Vec::new(),
+            bot: objective.bot.clone(),
         });
         state.save()?;
 
-        let fingerprint = match &objective.trigger {
-            Trigger::Watch { path } => Some(objective::fingerprint(&objective::watched_path(
-                &realm.root()?,
-                path,
-            )?)),
-            _ => objective.fingerprint.clone(),
-        };
+        let fingerprint = watched_fingerprint(realm, &objective)?;
         let run_id = state.id.clone();
         store.update(id, |o| {
             o.last_run = Some(run_id);
             o.last_at = Some(now);
             o.last_status = Some("running".into());
             o.fingerprint = fingerprint;
-            if let Trigger::Schedule { every } = &o.trigger
-                && let Ok(schedule) = Schedule::parse(every)
-            {
-                o.next_at = Some(schedule.next_after(now));
-            }
+            advance(o, now);
         })?;
         Ok((state, objective))
     }
@@ -168,4 +182,25 @@ fn objective_brief(realm: &Realm, o: &Objective, trigger: &str, payload: Option<
         ));
     }
     out
+}
+
+/// What a watched objective's path looks like now, so the same change does
+/// not fire it again; the stored one for other triggers.
+fn watched_fingerprint(realm: &Realm, objective: &Objective) -> Result<Option<String>> {
+    Ok(match &objective.trigger {
+        Trigger::Watch { path } => Some(objective::fingerprint(&objective::watched_path(
+            &realm.root()?,
+            path,
+        )?)),
+        _ => objective.fingerprint.clone(),
+    })
+}
+
+/// A scheduled objective's next time, after one firing (run or waited).
+fn advance(o: &mut Objective, now: DateTime<Utc>) {
+    if let Trigger::Schedule { every } = &o.trigger
+        && let Ok(schedule) = Schedule::parse(every)
+    {
+        o.next_at = Some(schedule.next_after(now));
+    }
 }
