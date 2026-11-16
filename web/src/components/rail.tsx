@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, FolderOpen, Inbox, MessageCircle, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow, LayoutDashboard } from "lucide-react"
+import { Bot, Building2, CalendarClock, ChartColumn, Ellipsis, FolderKanban, FolderOpen, Inbox, MessageCircle, Moon, Settings, Store, Sun, type LucideIcon, Wallet, Workflow } from "lucide-react"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
@@ -61,7 +61,9 @@ function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
 export const MAIN: [Page, string, LucideIcon][] = [["home", "Chat", MessageCircle], ["needs", "Needs you", Inbox], ["tasks", "Projects", FolderKanban]]
 export const GROUPS: { title: string; pages: [Page, string, LucideIcon][] }[] = [
   { title: "Team", pages: [["agents", "Team", Bot], ["routines", "Routines", Workflow], ["calendar", "Calendar", CalendarClock]] },
-  { title: "Business", pages: [["overview", "Overview", LayoutDashboard], ["finance", "Finance", Wallet], ["documents", "Documents", FolderOpen], ["company", "Business", Building2], ["marketplace", "Marketplace", Store]] },
+  // Overview is hidden for now (the founder: too much in it, not relevant
+  // enough); its page stays, reachable by its address, until it is redone.
+  { title: "Business", pages: [["finance", "Finance", Wallet], ["documents", "Documents", FolderOpen], ["company", "Business", Building2], ["marketplace", "Marketplace", Store]] },
   { title: "Airth", pages: [["usage", "Usage", ChartColumn], ["settings", "Settings", Settings]] },
 ]
 export const MORE = GROUPS.flatMap((g) => g.pages)

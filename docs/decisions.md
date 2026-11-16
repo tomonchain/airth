@@ -16,6 +16,35 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Cost:* a time per message in each run's file (about 35 bytes each). Text added to a message already saved (the founder's words appended to the agent's last tool results, when a run is picked up again) gives that message the time of the save that adds it, so the founder's words show when they were said; the tool results in the same message take that time too. A turn of the agent's work shows as one block at its first step's time: what came while it went on shows after it, never between its steps. Tasks are not interleaved with each other: a task that began during another shows after it, whole.
 
+## 147. One thread per project; the Home keeps what belongs to none
+
+**Accepted** (founder, 16 November 2026: un fil par projet, "je trouve ça plus pertinent et le reste un fil où on replie le passé", then "Go").
+
+- **What is stored.** A task (its run state) records the project its order is about: an optional `project` number, as `dispatched_by` is kept (decision 120). Only the founder's order sets it: `POST realms/<r>/orders` takes an optional `project`. A message to a task, a plan's tasks and anything an agent writes never set or change it.
+- **Checked at the door.** The number is looked up in the business's own `business.db`, through the access layer: a number the business does not have (another business's included) is refused, and so is a done project ("reopen it in Projects first"). No task is made. This rule is for the founder's order; an agent's plan that names a done project still makes it active again when approved (decision 129).
+- **How the agent is told.** Its first message, between its job and the order, names the project (number, name, description up to 2,000 characters, milestones with their dates, open tasks) and says that a plan it proposes for it gives `project: <number>`. That project is always among the open ones its plan may add to, even past the ten most recent.
+- **The task list** says each task's project: the one its order named, or the one it was planned in or passed on for (decision 129's `projects.run` and `project_tasks.run`). The ten latest done tasks outside any project stay as before; a project's done tasks are kept beyond them (up to 40), so its thread keeps its past.
+- **The project page** is the project's thread, with the agent leading it: the task it was planned in, then every request about it, in time order, in the same view and the same box as the Home. A new order written there is about the project. The plan (description, milestones, tasks) sits beside it on a computer, behind a tab on a phone. Its old line "Add to this project", which wrote into the planning task, goes: the box does the same, in the thread.
+- **The Home** leaves out every task that belongs to a project, the planning one included. Over its box, and over the greeting's, one quiet line per open project whose tasks moved in the last 7 days ("2 requests in Website redesign · open") opens that project: the three that moved last.
+
+*Why:* the Home's conversation grew long, every subject mixed in one thread. A project is already the unit of work the founder follows (decision 129); its talk belongs with it.
+
+*Cost:* one more optional field in the run state and in the task list. An order sent from a project's box to another agent (`@name`) is not about the project: it goes to that agent's own conversation, as before. The task list returns up to 40 more done tasks.
+
+## 146. An agent links a workspace file, and the founder opens it in the app
+
+**Accepted** (founder, 16 November 2026: "un agent pourrait envoyer le lien d'un document présent dans le workspace et en cliquant on devrait pouvoir l'ouvrir").
+
+- **The link:** a Markdown link whose target is a path from the workspace's root, `[the Q3 plan](docs/finance/q3-plan.md)`. Agents are told so in one sentence of the system prompt. No new scheme: a relative path is what an agent already writes.
+- **In `<Markdown>`** (decision 144), such a link becomes a button that opens the file in the Documents page, through the same path the business profile already uses. It is never an address: no `href`, nothing the browser follows or a page could reach.
+- **What counts as one** (`web/src/lib/workspace-link.ts`): read once for `%` encodings, then refused if it has a scheme (`http:`, `file:`, `javascript:`, a drive `C:`), starts with `/` or `~`, holds a backslash, an `@`, a query, a fragment, a control character or a leftover encoding, or steps out with `..`. `.` and empty segments are dropped. It must read as a file (its last part has an extension) and not as an address without its scheme (`acme.com`, `www.acme.com/pricing`). Anything refused stays plain text, as before.
+- **The boundary is the server's.** The Documents page reads through `documents::resolve`, which takes only plain path components and checks the real path (after symlinks) is under the workspace's root. The client's check only decides what is offered as a link.
+- Where no page can open files (no provider), the link is plain text.
+
+*Why:* agents write reports and plans into the business folder and point to them; the founder had to find the file by hand.
+
+*Cost:* a link to a file that does not exist opens Documents on an error. A link whose text an agent chose may say something other than the file; the button's title names the path. In an isolated run, the link opens the realm's checkout, not the run's worktree: a file the run created shows once its change is adopted.
+
 ## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
 
 **Accepted** (founder, 16 November 2026: "Pourquoi les MaJ de l'UI sont aussi longues ? J'ai l'impression qu'on rebuild tout", then "Go" on these three). Decision 100's update built every new commit of `main` twice in the slowest mode (`cargo build --release` and `cargo test --release`, with whole-program optimization and one codegen unit) and ran every Rust test, even for a change to the interface alone; and it looked for one every 30 minutes.

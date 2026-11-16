@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Check, CircleCheck, Flag, Loader, MessageSquare, Pencil, RotateCcw, X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Check, CircleCheck, Flag, ListChecks, MessageSquare, Pencil, RotateCcw, X } from "lucide-react"
 import { toast } from "sonner"
 import { Back } from "@/components/page"
 import { Character } from "@/components/character"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { api, called, enc, type Agent, type Project } from "@/lib/api"
-import { sendOrder } from "@/lib/orders"
+import { api, called, enc, type Agent, type Project, type Tasks } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { Conversation } from "@/screens/conversation"
 
 /** What a project's task view needs of a run. */
 export type RunLite = { id: string; status: string; live: boolean }
@@ -66,25 +66,19 @@ export function due(iso: string, reached: boolean): { text: string; late: boolea
   return { text: `${date} · ${-days} day${days < -1 ? "s" : ""} late`, late: true }
 }
 
-/** One project (decision 129): what it is for, its milestones with their
-    dates, every task under the milestone it serves, and a line to add to
-    it, which goes to the agent leading it. */
-export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, onChange }: {
-  realm: string; project: Project; runs: Map<string, RunLite>; agents: Agent[]
-  onBack: () => void; onTask: (run: string) => void; onChange: () => void
+/** One project (decision 129): its thread with the agent leading it, the
+    task it was planned in and every request about it, written to as the
+    Home is (decision 147); beside it, what it is for, its milestones with
+    their dates, and every task under the milestone it serves. On a phone,
+    one or the other. */
+export function ProjectView({ realm, project: p, runs, agents, tasks, onTasks, onAgent, onBack, onTask, onChange }: {
+  realm: string; project: Project; runs: Map<string, RunLite>; agents: Agent[]; tasks: Tasks | null; onTasks: () => void
+  onAgent: (name: string) => void; onBack: () => void; onTask: (run: string) => void; onChange: () => void
 }) {
   const [naming, setNaming] = useState<string | null>(null)
   const [describing, setDescribing] = useState<string | null>(null)
-  const [more, setMore] = useState("")
-  const [busy, setBusy] = useState(false)
-  const box = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { setNaming(null); setDescribing(null); setMore("") }, [p.id])
-  useEffect(() => {
-    const el = box.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
-  }, [more])
+  const [view, setView] = useState<"thread" | "plan">("thread")
+  useEffect(() => { setNaming(null); setDescribing(null) }, [p.id])
 
   const lead = agents.find((a) => a.name === p.agent)
   const ofAgent = (n: string) => agents.find((a) => a.name === n)
@@ -98,21 +92,6 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
   async function save(body: Record<string, string>) {
     try { await api(`realms/${enc(realm)}/projects/${p.id}`, body, "PUT"); onChange(); return true }
     catch (e) { toast.error((e as Error).message); return false }
-  }
-  async function add() {
-    const t = more.trim()
-    if (!t || busy) return
-    setBusy(true)
-    // The agent leading it adds to it, in the task the project was planned
-    // in, so the project's conversation stays one.
-    const ask = `For project ${p.id}, "${p.name}": ${t}`
-    try {
-      if (p.run) await api(`realms/${enc(realm)}/runs/${enc(p.run)}/messages`, { message: ask })
-      else await sendOrder(realm, ask, p.agent)
-      setMore("")
-      toast.success(`Sent to ${lead ? called(lead) : p.agent}`, { description: "Its plan for this comes to Needs you." })
-      onChange()
-    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
 
   return (
@@ -129,7 +108,14 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
         ) : (
           <>
             <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{p.name}</h2>
-            {p.run && <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => onTask(p.run!)}><MessageSquare /> <span className="max-md:hidden">Conversation</span></Button>}
+            <div className="flex shrink-0 rounded-lg bg-muted p-0.5 lg:hidden" role="tablist">
+              {([["thread", MessageSquare, "Conversation"], ["plan", ListChecks, "Plan"]] as const).map(([v, Icon, label]) => (
+                <button key={v} role="tab" aria-selected={view === v} aria-label={label} onClick={() => setView(v)}
+                  className={cn("flex h-7 items-center gap-1.5 rounded-md px-2 text-xs", view === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                  <Icon className="size-3.5" /><span className="max-md:hidden">{label}</span>
+                </button>
+              ))}
+            </div>
             <Button size="icon-sm" variant="ghost" title="Rename" aria-label="Rename" onClick={() => setNaming(p.name)}><Pencil /></Button>
             {p.status === "active"
               ? <Button size="sm" variant="outline" onClick={() => save({ status: "done" })}><Check /> Done</Button>
@@ -137,8 +123,14 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
           </>
         )}
       </header>
-      <div className="no-dock min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 pt-6 pb-6 [overflow-wrap:anywhere] md:px-6">
+      <div className="flex min-h-0 flex-1">
+      <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", view !== "thread" && "max-lg:hidden")}>
+        {lead
+          ? <Conversation key={p.id} realm={realm} agent={lead} agents={agents} onAgent={onAgent} tasks={tasks} onDone={() => { onTasks(); onChange() }} project={p.id} />
+          : <p className="py-20 text-center text-sm text-muted-foreground">No agent of the team leads this project.</p>}
+      </div>
+      <div className={cn("no-dock min-h-0 overflow-y-auto lg:w-[400px] lg:shrink-0 lg:border-l", view !== "plan" && "max-lg:hidden", "max-lg:flex-1")}>
+        <div className="mx-auto max-w-3xl px-4 pt-6 pb-6 [overflow-wrap:anywhere] md:px-6 lg:px-5">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {lead && <Character agent={lead} size={18} still />}
             <span>{lead ? `Led by ${called(lead)}` : "Led by the team"}</span>
@@ -207,17 +199,6 @@ export function ProjectView({ realm, project: p, runs, agents, onBack, onTask, o
           })}
         </div>
       </div>
-      <div className="dock-lift mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
-        <div className="flex items-end gap-1.5 rounded-[22px] bg-bubble py-1 pr-1 pl-4">
-          <textarea ref={box} value={more} onChange={(e) => setMore(e.target.value)} rows={1} disabled={busy}
-            placeholder="Add to this project…" aria-label="Add to this project"
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); add() } }}
-            className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-sm leading-6 outline-none placeholder:text-muted-foreground" />
-          <Button size="icon-sm" className="mb-0.5 size-8 shrink-0 rounded-full" disabled={busy || !more.trim()} onClick={add} aria-label="Send">
-            {busy ? <Loader className="animate-spin" /> : <ArrowUp />}
-          </Button>
-        </div>
-        <p className="mt-1.5 px-2 text-xs text-muted-foreground">{lead ? called(lead) : "The agent leading it"} plans it; the plan comes to Needs you.</p>
       </div>
     </div>
   )
