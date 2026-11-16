@@ -350,7 +350,7 @@ function AgentModel({ realm, agent, onSaved }: { realm: string; agent: Agent; on
     setBusy(true)
     try {
       await api(`realms/${enc(realm)}/agents/${enc(agent.name)}`, { job: agent.body || agent.job || "", model: v === BUSINESS ? "" : v }, "PUT")
-      toast.success(v === BUSINESS ? `${called(agent)} uses the business's model.` : `${called(agent)} now works with ${v.split("/")[1]}.`)
+      toast.success(v === BUSINESS ? `${called(agent)} uses the business's model.` : `${called(agent)} now works with ${v.split("/").slice(1).join("/")}.`)
       onSaved()
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
@@ -358,10 +358,10 @@ function AgentModel({ realm, agent, onSaved }: { realm: string; agent: Agent; on
     <section className="flex items-center gap-4 max-sm:flex-col max-sm:items-start max-sm:gap-1.5">
       <div className="min-w-0 flex-1">
         <Label>Model</Label>
-        <p className="text-xs text-muted-foreground">What its tasks and agent routines think with. A model picked in a conversation still wins there.</p>
+        <p className="text-xs text-muted-foreground">What its tasks and agent routines think with. Drawn routines' AI blocks keep the business's models, and a model picked in a conversation still wins there.</p>
       </div>
       <Select value={current} disabled={busy} onValueChange={(v) => v && pick(String(v))}>
-        <SelectTrigger className="w-64 max-sm:w-full" aria-label="Model"><SelectValue>{(v: string) => (v === BUSINESS ? "The business's model" : v.split("/")[1] ?? v)}</SelectValue></SelectTrigger>
+        <SelectTrigger className="w-64 max-sm:w-full" aria-label="Model"><SelectValue>{(v: string) => (v === BUSINESS ? "The business's model" : v.split("/").slice(1).join("/") || v)}</SelectValue></SelectTrigger>
         <SelectContent>
           <SelectItem value={BUSINESS}>The business's model</SelectItem>
           {/* One no longer offered stays shown, so it can be changed. */}

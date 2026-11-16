@@ -1233,15 +1233,20 @@ fn an_agents_tasks_use_the_model_its_file_names() {
     f.realm.set_secret("DEEPSEEK_API_KEY", "sk-test").unwrap();
     let (hub, _, _) = make_hub(&f.home, vec![]);
     let connections = hub.connections_for(&f.realm).unwrap();
+    // The model the run's requests go to first.
     let used = |state: &mut State| {
-        hub.model_for_drive(&f.realm, &connections, state).unwrap();
-        state.answered_by.clone().unwrap()
+        use crate::models::Model;
+        hub.model_for_drive(&f.realm, &connections, state)
+            .unwrap()
+            .name()
     };
 
     let mut writer = hub.start_task(&f.realm, "writer", "Draft").unwrap();
     assert_eq!(used(&mut writer), "deepseek/deepseek-chat");
     let mut editor = hub.start_task(&f.realm, "editor", "Edit").unwrap();
-    assert_eq!(used(&mut editor), "auto");
+    let business = used(&mut editor);
+    assert!(!business.starts_with("deepseek/"), "{business}");
+    assert_eq!(editor.answered_by.as_deref(), Some("auto"));
     writer.model_choice = Some("deepseek/deepseek-reasoner".into());
     assert_eq!(used(&mut writer), "deepseek/deepseek-reasoner");
 
@@ -1251,4 +1256,5 @@ fn an_agents_tasks_use_the_model_its_file_names() {
     assert!(crate::business::check_agent_field("model", "", &own).is_ok());
     assert!(crate::business::check_agent_field("model", "claude", &own).is_err());
     assert!(crate::business::check_agent_field("model", "nowhere/x", &own).is_err());
+    assert!(crate::business::check_agent_field("model", "anthropic/claude opus", &own).is_err());
 }

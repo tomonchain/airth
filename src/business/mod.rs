@@ -248,6 +248,26 @@ pub fn first_name(root: &Path, name: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
+/// An agent's model (decision 141): `provider/model`, a provider Airth
+/// knows, a model name as the business's tiers take it.
+pub fn check_model(value: &str) -> Result<()> {
+    let (provider, model) = value
+        .trim()
+        .split_once('/')
+        .filter(|(p, m)| !p.is_empty() && !m.is_empty())
+        .context("a model is provider/model, e.g. anthropic/claude-opus-5-5")?;
+    if model.len() > 200 || model.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        bail!("a model name has no spaces");
+    }
+    if !crate::models::provider_catalog()
+        .iter()
+        .any(|(id, _, _)| *id == provider)
+    {
+        bail!("unknown provider '{provider}' for {model}");
+    }
+    Ok(())
+}
+
 /// The model the agent `name`'s tasks use, when its file names one
 /// (decision 141).
 pub fn agent_model(root: &Path, name: &str) -> Option<String> {
@@ -478,18 +498,7 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
         }
         // The model its tasks use (decision 141): provider/model, a
         // provider Airth knows; empty: the business's.
-        "model" if !value.is_empty() => {
-            let (provider, model) = value
-                .split_once('/')
-                .filter(|(p, m)| !p.is_empty() && !m.is_empty())
-                .context("a model is provider/model, e.g. anthropic/claude-opus-5-5")?;
-            if !crate::models::provider_catalog()
-                .iter()
-                .any(|(id, _, _)| *id == provider)
-            {
-                bail!("unknown provider '{provider}' for {model}");
-            }
-        }
+        "model" if !value.is_empty() => check_model(value)?,
         "model" => {}
         // A role's mailbox (decision 70); empty removes it.
         "mailbox" if !value.is_empty() && !crate::mail::valid_address(value) => {

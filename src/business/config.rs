@@ -400,6 +400,9 @@ fn check_agent(d: &Doc, own: &[String]) -> Result<Vec<&'static str>> {
         department(&v, own)?;
     }
     monthly_cap(d)?;
+    if let Some(m) = d.text("model").filter(|m| !m.trim().is_empty()) {
+        super::check_model(&m)?;
+    }
     Ok(vec!["title", "department"])
 }
 
@@ -636,6 +639,12 @@ mod tests {
                 "neither founder nor an agent",
             ),
             ("agents/x.md", "---\nlines: [nope]\n---\n", "line 'nope'"),
+            ("agents/x.md", "---\nmodel: claude\n---\n", "provider/model"),
+            (
+                "agents/x.md",
+                "---\nmodel: nowhere/x\n---\n",
+                "unknown provider 'nowhere'",
+            ),
             ("agents/Bad Name.md", "---\n---\n", "lowercase"),
             (
                 "business/lines/l.md",
