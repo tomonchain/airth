@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Bot, Brain, Building2, Network, Check, ChevronRight, Cpu, RotateCw, FolderGit2, Info, KeyRound, Mail, Plug, Shield, Smartphone, Sparkles, User, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Back, Loading, Panel, SideHead } from "@/components/page"
@@ -59,11 +59,25 @@ const ANY = "any"
 
 /** Settings: the founder's account and the business's models, connections,
     keys, permissions, repositories and phone. */
-export function Settings({ realm, start }: { realm: string; start?: { section: Section; at: number } | null }) {
-  const [section, setSection] = useState<Section>(start?.section ?? "account")
+export function Settings({ realm, start, onSection }: { realm: string; start?: { section: Section | null; at: number } | null; onSection?: (s: Section | null) => void }) {
+  // A section the address names that does not exist opens Account.
+  const known = (s?: Section | null) => (s && SECTIONS.some((x) => x.id === s) ? s : undefined)
+  const [section, setSection] = useState<Section>(known(start?.section) ?? "account")
   // On a phone the sections come first, and one opens when picked.
-  const [picked, setPicked] = useState(!!start)
-  useEffect(() => { if (start) { setSection(start.section); setPicked(true) } }, [start])
+  const [picked, setPicked] = useState(!!known(start?.section))
+  // A new request has a new `at`; none, or an unknown one, is the sections
+  // (Account beside them on a wide screen).
+  useEffect(() => {
+    if (!start) return
+    const s = known(start.section)
+    if (s) { setSection(s); setPicked(true) } else { setSection("account"); setPicked(false); if (start.section) onSection?.(null) }
+  }, [start?.at]) // eslint-disable-line react-hooks/exhaustive-deps
+  // What is open, for the address: a section picked, or none. Reported on
+  // every change (a link inside a section, Back), and on mount to correct
+  // an unknown section the address named.
+  const shown = picked ? section : null
+  const told = useRef<Section | null>(start?.section ?? null)
+  useEffect(() => { if (told.current !== shown) { told.current = shown; onSection?.(shown) } }, [shown]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {/* Narrower than a list of items: section names are short. */}

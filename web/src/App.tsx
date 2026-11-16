@@ -8,6 +8,7 @@ import { PhoneMenu, TopBar } from "@/components/topbar"
 import { useNarrow } from "@/hooks/use-narrow"
 import { useSwipe } from "@/hooks/use-swipe"
 import { cn } from "@/lib/utils"
+import { isStep, parse, write } from "@/lib/address"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
@@ -35,42 +36,63 @@ const Settings = lazy(() => import("@/screens/settings").then((m) => ({ default:
 const Tasks = lazy(() => import("@/screens/tasks").then((m) => ({ default: m.Tasks })))
 const Welcome = lazy(() => import("@/screens/welcome").then((m) => ({ default: m.Welcome })))
 
-const PAGES: Page[] = ["home", "overview", "agents", "needs", "routines", "tasks", "calendar", "documents", "finance", "usage", "hq", "company", "settings", "marketplace"]
-
 function route(): string | null {
-  const m = location.hash.match(/^#\/b\/([^/?&]+)/)
-  return m ? decodeURIComponent(m[1]) : null
+  return parse(location.hash).realm
 }
 
-// The page and agent open, after the business in the address
-// (#/b/acme/agents/writer): a reload comes back to them, and a link opens them.
-function opened(): { page: Page; agent: string | null } {
-  const m = location.hash.match(/^#\/b\/[^/?&]+\/([a-z]+)(?:\/([^/?&]+))?/)
-  const page = PAGES.find((p) => p === m?.[1]) ?? "home"
-  return { page, agent: page === "agents" && m?.[2] ? decodeURIComponent(m[2]) : null }
+// The page and what is open in it, after the business in the address
+// (#/b/acme/tasks/20261116-0912, #/b/acme/documents/docs/plan.md): a reload
+// comes back to them, a link opens them, and Back moves between them.
+function opened(): { page: Page; sub: string | null } {
+  const a = parse(location.hash)
+  return { page: a.page, sub: a.sub }
 }
+
+// An address that names a page, not a business alone (which its menu
+// writes, and which keeps the page shown).
+const PAGED = /^#\/b\/[^/]+\/./
+
+// What the address says is open, for each page that can open something.
+const startOf = (page: Page, sub: string | null) => ({
+  thread: page === "home" && sub === "conversation",
+  agent: page === "agents" ? sub : null,
+  task: page === "tasks" && sub && !sub.startsWith("project/") ? sub : null,
+  project: page === "tasks" && sub?.startsWith("project/") && Number.isInteger(Number(sub.slice(8))) ? Number(sub.slice(8)) : null,
+  doc: page === "documents" ? sub : null,
+  section: page === "settings" ? sub : null,
+  item: page === "needs" && sub && Number.isInteger(Number(sub)) ? Number(sub) : null,
+})
 
 type Data = { agents: Agent[]; departments: Department[]; broken: string[]; items: Item[]; tasks: Tasks | null }
 
 export default function App() {
   const narrow = useNarrow()
+  // What the address opens on the first load.
+  const [first] = useState(() => { const o = opened(); return startOf(o.page, o.sub) })
   const [hash, setHash] = useState(route)
   const [welcome, setWelcome] = useState(() => location.hash === "#/welcome")
   const [founding, setFounding] = useState(false)
-  const [task, setTask] = useState<string | null>(null)
+  const [task, setTask] = useState<string | null>(first.task)
   const [palette, setPalette] = useState(false)
   // Ask from anywhere: the order goes, the page stays.
   const [asking, setAsking] = useState(false)
   // Pages opened on something from another page: a file, a settings section.
-  const [doc, setDoc] = useState<{ path: string; at: number } | null>(null)
-  const [setting, setSetting] = useState<{ section: SettingsSection; at: number } | null>(null)
+  const [doc, setDoc] = useState<{ path: string | null; at: number } | null>(first.doc ? { path: first.doc, at: 0 } : null)
+  const [setting, setSetting] = useState<{ section: SettingsSection | null; at: number } | null>(first.section ? { section: first.section as SettingsSection, at: 0 } : null)
+  // What is open in a page, as the page reports it, for the address.
+  const [openDoc, setOpenDoc] = useState<string | null>(first.doc)
+  const [openSection, setOpenSection] = useState<string | null>(first.section)
+  const [openProjectId, setOpenProjectId] = useState<number | null>(first.project)
+  const [needsStart, setNeedsStart] = useState<{ id: number | null; at: number } | null>(first.item != null ? { id: first.item, at: 0 } : null)
+  const [openItem, setOpenItem] = useState<number | null>(first.item)
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
   // A project opened from the Home or the Overview (decision 129).
-  const [project, setProject] = useState<{ id: number; at: number } | null>(null)
+  const [project, setProject] = useState<{ id: number | null; at: number } | null>(first.project != null ? { id: first.project, at: 0 } : null)
   const openProject = (id: number) => { setTask(null); setProject({ id, at: Date.now() }); setPage("tasks") }
-  // Opening Chat from the rail or the tab bar starts on New request.
-  const [chatAt, setChatAt] = useState(0)
-  const go = (p: Page) => { if (p === "home") setChatAt(Date.now()); setPage(p) }
+  // Chat: New request, or the conversation. Opening Chat from the rail,
+  // the tab bar or ⌘K starts on New request.
+  const [homeMode, setHomeMode] = useState<"start" | "thread">(first.thread ? "thread" : "start")
+  const go = (p: Page) => { if (p === "home") setHomeMode("start"); setPage(p) }
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
   // ⌘K goes anywhere; ⌘J, or ⌘⇧O (the classic interface's key), asks the team.
@@ -85,18 +107,27 @@ export default function App() {
     return () => removeEventListener("keydown", key)
   }, [])
 
+  // Back, Forward, a link or an address typed: open what it says, without
+  // writing it back as a new step.
+  const restoring = useRef(false)
+  // The address last read or written: a browser may tell the same move twice
+  // (hashchange and popstate), and it is read once.
+  const known = useRef(location.hash)
   useEffect(() => {
     const on = () => {
+      if (location.hash === known.current) return
+      known.current = location.hash
       setHash(route()); setWelcome(location.hash === "#/welcome")
-      // A link to a page or an agent opens it.
+      if (!PAGED.test(location.hash)) return
+      restoring.current = true
+      // If what it opens is already open, nothing renders to clear the mark.
+      setTimeout(() => { restoring.current = false }, 500)
       const to = opened()
-      if (/^#\/b\/[^/]+\/[a-z]/.test(location.hash)) {
-        setPage(to.page)
-        if (to.agent) { setCurrent(to.agent); setTabs((t) => (t.includes(to.agent!) ? t : [...t, to.agent!])) }
-      }
+      restore(to.page, to.sub)
     }
     addEventListener("hashchange", on)
-    return () => removeEventListener("hashchange", on)
+    addEventListener("popstate", on)
+    return () => { removeEventListener("hashchange", on); removeEventListener("popstate", on) }
   }, [])
   const realms = usePoll(() => api<Realm[]>("realms"), 15000, [])
   const realm = hash ?? realms.data?.find((r) => r.default)?.name ?? realms.data?.[0]?.name ?? null
@@ -152,31 +183,82 @@ export default function App() {
     setPage(next)
   }, [page])
   useSwipe(mainEl, narrow, onSwipe)
-  const [current, setCurrent] = useState<string | null>(() => opened().agent)
-  const [tabs, setTabs] = useState<string[]>(() => (opened().agent ? [opened().agent!] : []))
+  const [current, setCurrent] = useState<string | null>(first.agent)
+  const [tabs, setTabs] = useState<string[]>(first.agent ? [first.agent] : [])
   // An agent opens on its conversation, as a chat does; its other tabs hold
   // its overview, rights, tools, routines, memory and mail (decision 140).
   const agents = data.data?.agents ?? []
   // An agent's idea is told in its conversation, not in Needs you (decision 119).
   const items = (data.data?.items ?? []).filter((i) => i.kind !== "idea")
 
-  // Another business: its own agents' tabs. Not on the first render, which
+  // Open what an address says (Back, a link, another business's page).
+  function restore(to: Page, sub: string | null) {
+    const s = startOf(to, sub)
+    const at = Date.now()
+    setPage(to)
+    if (to === "home") setHomeMode(s.thread ? "thread" : "start")
+    if (to === "agents") { setCurrent(s.agent); if (s.agent) setTabs((t) => (t.includes(s.agent!) ? t : [...t, s.agent!])) }
+    if (to === "tasks") {
+      setTask(s.task)
+      setOpenProjectId(s.project)
+      if (!s.task) setProject({ id: s.project, at })
+    }
+    if (to === "documents") { setOpenDoc(s.doc); setDoc({ path: s.doc, at }) }
+    if (to === "settings") { setOpenSection(s.section); setSetting({ section: s.section as SettingsSection | null, at }) }
+    if (to === "needs") { setOpenItem(s.item); setNeedsStart({ id: s.item, at }) }
+  }
+
+  // Another business: nothing of the last one stays open, unless the
+  // address names what to open in this one. Not on the first render, which
   // opens what the address says.
   const shownRealm = useRef(realm)
   useEffect(() => {
     if (shownRealm.current === realm) return
     shownRealm.current = realm
-    setCurrent(null); setTabs([]); setTask(null)
+    setCurrent(null); setTabs([]); setTask(null); setHomeMode("start")
+    setOpenDoc(null); setDoc(null); setOpenSection(null); setSetting(null)
+    setOpenProjectId(null); setProject(null); setOpenItem(null); setNeedsStart(null)
+    const here = parse(location.hash)
+    if (here.realm === realm && PAGED.test(location.hash)) restore(here.page, here.sub)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realm])
+  // The address follows the page and what is open in it. A new page, or
+  // opening and closing something, is a step Back comes back to; the first
+  // load, what Back or a link just opened, an agent opened for the founder,
+  // and moving from one open thing to the next only correct the address.
+  const settled = useRef(false)
+  const quiet = useRef(false)
+  const sub = page === "home" ? (homeMode === "thread" ? "conversation" : null)
+    : page === "agents" ? current
+    : page === "tasks" ? task ?? (openProjectId != null ? `project/${openProjectId}` : null)
+    : page === "documents" ? openDoc
+    : page === "settings" ? openSection
+    : page === "needs" ? (openItem != null ? String(openItem) : null)
+    : null
   useEffect(() => {
     if (!realm) return
-    const at = `#/b/${encodeURIComponent(realm)}/${page}${page === "agents" && current ? `/${encodeURIComponent(current)}` : ""}`
-    if (location.hash !== at && route() === realm) history.replaceState(null, "", at)
-  }, [realm, page, current])
+    // Another kind of address (the welcome guide, a pairing link): left as is.
+    if (location.hash && !location.hash.startsWith("#/b/")) return
+    const here = parse(location.hash)
+    // Another business was just asked for (its menu writes the address): it
+    // is written once that business is open.
+    if (here.realm && here.realm !== realm) return
+    // A business alone (#/b/acme, from its menu): completed, not a new step.
+    const bare = !PAGED.test(location.hash)
+    const to = { realm, page, sub }
+    const at = write(to)
+    const replace = !settled.current || bare || restoring.current || quiet.current || !isStep(here, to)
+    settled.current = true; restoring.current = false; quiet.current = false
+    known.current = at
+    if (location.hash === at) return
+    if (replace) history.replaceState(null, "", at)
+    else history.pushState(null, "", at)
+  }, [realm, page, sub])
   useEffect(() => {
     // On a phone the list comes first: the founder picks.
     if (narrow || page !== "agents" || current || !agents.length) return
     const first = agents.find((a) => a.waiting > 0) ?? agents[0]
+    quiet.current = true
     open(first.name)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents.length, current, page, narrow])
@@ -284,27 +366,27 @@ export default function App() {
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} tasks={data.data?.tasks ?? null}
-              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} fresh={chatAt} />
+              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} mode={homeMode} onMode={setHomeMode} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               onAgent={open} onNeeds={() => setPage("needs")}
               onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} onProject={openProject} />
           ) : page === "routines" ? <Routines realm={realm} agents={agents} items={items} onAgent={open}
             businesses={(realms.data ?? []).filter((r) => !r.archived || r.name === realm).map((r) => ({ name: r.name, title: named(r.name, r.title) }))} />
-          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} />
+          : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} onProject={(id) => { setOpenProjectId(id); if (id == null) setProject(null) }} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
-          : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />
+          : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} onOpen={(p) => { setOpenDoc(p); setDoc((d) => ({ path: p, at: d?.at ?? 0 })) }} />
           : page === "usage" ? <Usage realm={realm} />
           : page === "hq" ? <Hq shared={hq.data as Parameters<typeof Hq>[0]["shared"]} onOpen={(r) => { location.hash = `#/b/${encodeURIComponent(r)}`; setPage("home") }} />
           : page === "finance" ? <Finance realm={realm} business={business} agents={agents} onImported={hq.refresh} />
-          : page === "settings" ? <Settings realm={realm} start={setting} />
+          : page === "settings" ? <Settings realm={realm} start={setting} onSection={(x) => { setOpenSection(x); setSetting((d) => ({ section: x, at: d?.at ?? 0 })) }} />
           : page === "marketplace" ? <Marketplace realm={realm} />
           : page === "company" ? <Company realm={realm} description={business?.description ?? null}
               onFile={openFile} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
           : (
           <>
           {page === "needs" ? (
-            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} />
+            <Inbox realm={realm} items={items} agents={agents} onDone={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} start={needsStart} onOpen={(id) => { setOpenItem(id); setNeedsStart((d) => ({ id, at: d?.at ?? 0 })) }} />
           ) : (
           <>
           {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}

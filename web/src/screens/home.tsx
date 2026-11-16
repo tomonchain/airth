@@ -29,10 +29,10 @@ const EVERY = 6000
     once it is open); a glass pill at the top right on a computer. */
 const SLOT = "glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground"
 
-export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject, fresh }: {
+export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject, mode, onMode }: {
   realm: string; agents: Agent[] | null; items: Item[]; tasks: Tasks | null
-  /** Changes each time the founder opens Chat from the rail: back to New request. */
-  fresh?: number
+  /** New request or the conversation: the app's, so the address keeps it. */
+  mode: "start" | "thread"; onMode: (m: "start" | "thread") => void
   onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void; onProject: (id: number) => void
 }) {
   const team = agents ?? []
@@ -46,8 +46,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   // Chat opens on New request, every time (the founder's choice); the
   // conversation is one click away, under Conversation.
   const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name).map((t) => t.id).sort(), [tasks, lead])
-  const [mode, setMode] = useState<"start" | "thread">("start")
-  useEffect(() => setMode("start"), [realm, fresh])
+  const setMode = onMode
   const shown = lead && mode === "thread" ? "thread" : "start"
 
   if (shown === "thread" && lead) {
