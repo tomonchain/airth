@@ -24,8 +24,9 @@ export function MetalGradient() {
   )
 }
 
-// Dimmed until hovered or open, so the open page still stands out.
-const metal = (on?: boolean) => cn("icon-metal transition-opacity", on ? "opacity-100" : "opacity-60 group-hover:opacity-100")
+// Dimmed until hovered or open, so the open page still stands out; never
+// so far that an icon falls under 3:1 against the rail.
+const metal = (on?: boolean) => cn("icon-metal transition-opacity", on ? "opacity-100" : "opacity-75 group-hover:opacity-100")
 
 function RailButton({ icon: Icon, label, active, badge, onClick, href, soon }: {
   icon: LucideIcon; label: string; active?: boolean; badge?: number; onClick?: () => void; href?: string; soon?: boolean

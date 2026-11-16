@@ -61,7 +61,7 @@
     --logo-mid: #5c5c61;
     --logo-to: #2e2e32;
     /* Navigation icons, in the ring's greys, top to bottom. */
-    --icon-from: #8f8f94;
+    --icon-from: #5c5c61;
     --icon-to: #2e2e32;
     --background: #ececee;
     --foreground: oklch(0.145 0 0);
