@@ -265,7 +265,9 @@ export type Passed = { id: string; agent: string; title: string; order: string; 
     the task's messages (decision 148). `node` draws it, ending its group
     when `last`; `waiting` when it waits for the founder, so it shows even
     where the exchange around it is folded. */
-export type Between = { key: string; at: number | null; side: "left" | "right"; waiting?: boolean; node: (last: boolean) => React.ReactNode }
+/** `answered`: a Needs you item the founder answered, which a folded
+    exchange hides; a routine's run or an item still waiting stays shown. */
+export type Between = { key: string; at: number | null; side: "left" | "right"; answered?: boolean; node: (last: boolean) => React.ReactNode }
 
 export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent, between = [], latest = true }: {
   realm: string; id: string; agent: Agent; items: Item[]; fresh: boolean; echoes?: string[]; onEcho?: (text: string) => void; onChange: () => void
@@ -293,9 +295,9 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   const timed = !!view?.state.message_at?.some((t) => t)
   const slot = useMemo(() => slots(shownTurns.map((t) => t.time), between.map((b) => b.at), timed), [shownTurns, between, timed])
   const breaks = (i: number) => slot.includes(i + 1)
-  // Folded: only what waits for the founder still shows.
+  // Folded: what was answered goes with the exchange; the rest still shows.
   function showBetween(i: number | null, folded = false) {
-    const here = between.filter((b, k) => (i === null || slot[k] === i) && (!folded || b.waiting))
+    const here = between.filter((b, k) => (i === null || slot[k] === i) && (!folded || !b.answered))
     return here.map((b, k) => <Fragment key={b.key}>{b.node(here[k + 1]?.side !== b.side)}</Fragment>)
   }
   // What the agent is writing: a sentence is most often a note before its
@@ -376,7 +378,8 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
     const toggle = () => { remember(storage(), key, !open); setFolds((f) => ({ ...f, [key]: !open })) }
     const answer = shownTurns.slice(e.start, e.end).reverse().find((t) => t.kind === "answer")
     const said = summary(first.kind === "founder" ? first.text : answer?.kind === "answer" ? answer.text : "", answer?.kind === "answer" ? answer.text : null, outcome)
-    const when = stamp(e.start === 0 || first.time === null ? startOf(id) : new Date(first.time).toISOString())
+    // A later exchange without a known time says none, rather than the task's.
+    const when = e.start === 0 ? stamp(startOf(id)) : first.time === null ? "" : stamp(new Date(first.time).toISOString())
     const inner = Array.from({ length: e.end - e.start - 1 }, (_, j) => e.start + 1 + j)
     if (!open) {
       return (

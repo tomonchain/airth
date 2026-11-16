@@ -48,6 +48,8 @@ describe("summary", () => {
   it("cuts long lines and drops Markdown's marks", () => {
     expect(firstLine("**Three** prints, see [the sheet](https://x.y) and `stock`", 80)).toBe("Three prints, see the sheet and stock")
     expect(firstLine("## Week 47", 80)).toBe("Week 47")
+    expect(firstLine("1. Review the deck", 80)).toBe("Review the deck")
+    expect(firstLine("2) Send it", 80)).toBe("Send it")
     expect(firstLine("\n\n- first point", 80)).toBe("first point")
     const long = firstLine("a".repeat(200), 80)
     expect(long).toHaveLength(80)

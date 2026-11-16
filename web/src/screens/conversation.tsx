@@ -99,14 +99,14 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
   // "fold": an answered item, which draws its own line.
-  type Unit = { side: "left" | "right" | "task" | "fold"; key: string; at: string; waiting?: boolean; node: (last: boolean) => React.ReactNode }
+  type Unit = { side: "left" | "right" | "task" | "fold"; key: string; at: string; node: (last: boolean) => React.ReactNode }
   // A run or an item as bubbles: an answered item is the agent's message,
   // then the founder's answer, folded into one line unless it is the last.
   function eventUnits(x: Entry, last = false): Unit[] {
     if (x.kind === "run") return [{ side: "left", key: `r${x.run.run}`, at: x.at, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> }]
     if (x.kind !== "item") return []
     const it = x.item
-    const ask: Unit = { side: "left", key: `i${it.id}`, at: x.at, waiting: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> }
+    const ask: Unit = { side: "left", key: `i${it.id}`, at: x.at, node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> }
     if (it.status === "pending") return [ask]
     const a = ANSWERED[it.status] ?? ANSWERED.done
     const answer: Unit = { side: "right", key: `a${it.id}`, at: x.at, node: () => <Mine text={a.reply(it)} at={it.created_at} /> }
@@ -127,8 +127,14 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
         const titleOf = (name: string | null | undefined) => { const a = agents.find((g) => g.name === name); return a ? called(a) : name ?? "An agent" }
         const self = all.find((t) => t.id === x.id)
         const passed = all.filter((t) => t.from?.task === x.id && t.agent).map((t) => ({ id: t.id, agent: t.agent!, title: titleOf(t.agent), order: t.order ?? "", status: t.status }))
-        const between: Between[] = (inside.get(x.id) ?? []).flatMap((e) => eventUnits(e)).map((b) => ({
-          key: b.key, at: moment(b.at), side: b.side === "right" ? "right" : "left", waiting: b.waiting, node: (last) => place(b, last),
+        // What came during it, at its time; the last of it is the newest
+        // exchange when it came after the task's last activity, and the
+        // task is the conversation's last.
+        const came = inside.get(x.id) ?? []
+        const end = moment(self?.at ?? self?.updated_at)
+        const newest = (e: Entry, k: number) => x === entries.at(-1) && k === came.length - 1 && (end === null || (moment(e.at) ?? 0) >= end)
+        const between: Between[] = came.flatMap((e, k) => eventUnits(e, newest(e, k))).map((b) => ({
+          key: b.key, at: moment(b.at), side: b.side === "right" ? "right" : "left", answered: b.side === "fold", node: (last) => place(b, last),
         }))
         u.push({ side: "task", key: `t${x.id}`, at: x.at, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }}
           from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} between={between} latest={x.id === lastTask} /> })
@@ -150,7 +156,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const known = useRef<Set<string> | null>(null)
   useEffect(() => { known.current = null }, [agent.name])
   // What shows inside a task counts too: it was there as well.
-  if (thread.data && !known.current) known.current = new Set([...units.map((u) => u.key), ...[...inside.values()].flat().flatMap(eventUnits).map((u) => u.key)])
+  if (thread.data && !known.current) known.current = new Set([...units.map((u) => u.key), ...[...inside.values()].flat().flatMap((e) => eventUnits(e)).map((u) => u.key)])
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
   const busy = agent.state === "working" && !running

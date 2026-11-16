@@ -35,7 +35,7 @@ export function isOpen(byDefault: boolean, saved: boolean | null): boolean {
 /** The first line of a text, without Markdown's marks, cut at `max`. */
 export function firstLine(text: string, max: number): string {
   const line = (text.split("\n").find((l) => l.trim()) ?? "").trim()
-    .replace(/^#{1,6}\s+|^[-*•]\s+|^>\s*/, "")
+    .replace(/^#{1,6}\s+|^[-*•]\s+|^\d+[.)]\s+|^>\s*/, "")
     .replace(/\*\*|__|`|~~/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line
