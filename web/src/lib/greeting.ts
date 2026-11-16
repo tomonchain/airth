@@ -44,7 +44,8 @@ export function greeting(now: Date, first: string | null): string {
   // A night belongs to the day it began on.
   const day = new Date(now)
   if (moment(now) === "night" && now.getHours() < 5) day.setDate(day.getDate() - 1)
-  const line = options[dayNumber(day) % options.length]
+  const n = options.length
+  const line = options[((dayNumber(day) % n) + n) % n]
   return line.replace("{, name}", first ? `, ${first}` : "")
 }
 
