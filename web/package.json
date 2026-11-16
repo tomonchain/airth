@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "check": "tsc -b",
+    "test": "node --test 'src/**/*.test.ts'",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
