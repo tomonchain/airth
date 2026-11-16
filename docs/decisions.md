@@ -2,6 +2,19 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 142. The interface's deterministic logic is tested with Vitest
+
+**Accepted** (founder, 16 November 2026: "Vitest + CI", for the tests the Routines page and the Markdown rendering ask for).
+
+- **Vitest** (5.1.0, pinned) is a development dependency of `web/`. `npm test` runs it; CI's `web` job runs it after the type check.
+- **What is tested:** logic with a single right answer — how a trigger is said, which routines need a look, what a piece of Markdown becomes. Tests sit beside their module (`time.test.ts` beside `time.ts`) and run in Node: a component is rendered to a string with `react-dom/server`, so no browser emulation is added.
+- **What is not:** the look of a screen. It is shown to the founder in screenshots, as before.
+- `CLAUDE.md`'s checks for a change to `web/` gain `npm test`.
+
+*Why:* `web/` had no tests; the founder asked for some with these two changes. Vitest reads `vite.config.ts` (the `@` alias, the React plugin), so the tests import modules exactly as the app does; Node's own test runner cannot load `.tsx`.
+
+*Cost:* one development dependency and its own (only in `node_modules`, never in `web/dist`). A test that needs the DOM would need an emulation, and its own decision.
+
 ## 140. An agent's page, its levels in the app, and its package to take to another business
 
 **Accepted** (founder, 15 November 2026: a fuller agent page with tabs, each agent's rights, connectors and skills, and exporting an agent; "agent, routines and prompts"; import "right after").
