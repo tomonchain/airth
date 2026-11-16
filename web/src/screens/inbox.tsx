@@ -107,8 +107,12 @@ const preview = (it: Item) => (it.kind === "approval" && it.text ? it.text : it.
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
     the left, the open item in full on the right; answering opens the next.
     J and K move, A, E and R answer. */
-export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
+export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, onOpen }: {
   realm: string; items: Item[]; agents: Agent[]; onDone: () => void; onAgent: (name: string) => void; onTask: (id: string) => void
+  /** An item to open (from the address), or none. */
+  start?: { id: number | null; at: number } | null
+  /** The item the founder picked, for the address. */
+  onOpen?: (id: number | null) => void
 }) {
   const [q, setQ] = useState("")
   const sorted = useMemo(
@@ -124,8 +128,15 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask }: {
   // The incidents each line stands for, itself included.
   const like = (it: Item) => items.filter((o) => o === it || same(o, it))
   const [sweeping, setSweeping] = useState(false)
-  const [sel, setSel] = useState<number | null>(null)
+  const [sel, setSel] = useState<number | null>(start?.id ?? null)
+  // A new request has a new `at`; the app keeps `id` on what is open for
+  // when the page comes back.
+  useEffect(() => { if (start) setSel(start.id) }, [start?.at]) // eslint-disable-line react-hooks/exhaustive-deps
   const pos = sorted.findIndex((i) => i.id === sel)
+  // The item picked, for the address; one that is no longer here is not.
+  const picked = pos >= 0 ? sel : null
+  const told = useRef(picked)
+  useEffect(() => { if (told.current !== picked) { told.current = picked; onOpen?.(picked) } }, [picked]) // eslint-disable-line react-hooks/exhaustive-deps
   // On a phone the list comes first, and an item opens when picked.
   const narrow = useNarrow()
   const open = pos >= 0 ? sorted[pos] : narrow ? null : sorted[0] ?? null

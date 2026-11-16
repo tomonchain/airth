@@ -263,10 +263,9 @@ export type Passed = { id: string; agent: string; title: string; order: string; 
 /** What else the conversation holds that came during this task (a
     routine's run, something sent to Needs you), shown at its time between
     the task's messages (decision 148). `node` draws it, ending its group
-    when `last`; `waiting` when it waits for the founder, so it shows even
-    where the exchange around it is folded. */
-/** `answered`: a Needs you item the founder answered, which a folded
-    exchange hides; a routine's run or an item still waiting stays shown. */
+    when `last`; `answered` when it is a Needs you item the founder
+    answered, which a folded exchange hides (a routine's run, or an item
+    still waiting, stays shown). */
 export type Between = { key: string; at: number | null; side: "left" | "right"; answered?: boolean; node: (last: boolean) => React.ReactNode }
 
 export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho, onChange, from, passed = [], onAgent, between = [], latest = true }: {

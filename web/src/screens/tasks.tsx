@@ -38,12 +38,14 @@ const ORDER = ["Waiting for you", "Running", "To review", "Done"]
     its routines started; a task that passed work on to the team is a
     project, its tasks under it. Ask the team for something; follow, rename,
     archive or delete a task; read its plan and details. */
-export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks, startProject }: {
+export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, tasks: shared, onTasks, startProject, onProject }: {
   realm: string; agents: Agent[]; items: Item[]; open: string | null; onOpen: (id: string | null) => void; onAgent: (name: string) => void
   tasks: TasksData | null; onTasks: () => void
   prefill?: { text: string; at: number } | null
-  /** A project opened from another page. */
-  startProject?: { id: number; at: number } | null
+  /** A project opened from another page, or closed (null) by the address. */
+  startProject?: { id: number | null; at: number } | null
+  /** The project open, for the address. */
+  onProject?: (id: number | null) => void
 }) {
   const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 5000, [realm])
   // The app's list, refreshed every few seconds: not asked again here.
@@ -56,7 +58,14 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
   const [shown, setShown] = useState<number | null>(null)
   useEffect(() => setShown(null), [realm])
-  useEffect(() => { if (startProject) { setShown(startProject.id); onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (startProject) { setShown(startProject.id); if (startProject.id != null) onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A project the address names that does not exist (or no longer): the list.
+  useEffect(() => {
+    if (projects.data && shown != null && !projects.data.projects.some((p) => p.id === shown)) setShown(null)
+  }, [projects.data, shown])
+  // Reported when it changes, not on mount, where nothing is open yet.
+  const told = useRef(shown)
+  useEffect(() => { if (told.current !== shown) { told.current = shown; onProject?.(shown) } }, [shown]) // eslint-disable-line react-hooks/exhaustive-deps
   const byRun = useMemo(() => new Map((runs.data ?? []).map((r) => [r.id, r])), [runs.data])
   const all = projects.data?.projects ?? []
   const listed = all.filter((p) => (p.status === "done") === archived)
@@ -117,7 +126,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
   )
   if (project) return (
-    <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} onBack={() => setShown(null)}
+    <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} tasks={tasks.data} onTasks={tasks.refresh} onAgent={onAgent} onBack={() => setShown(null)}
       onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
   )
   const empty = view === "projects" ? !listed.length : !groups.length

@@ -246,6 +246,10 @@ pub struct State {
     /// and the plan's item, `run/item`, to tell it when the plan's tasks end.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dispatched_by: Option<String>,
+    /// The founder's project this task is about (decision 147), checked
+    /// against the business's own projects when the order came in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<i64>,
     /// How many times the run was sent back to correct its change to the
     /// business config (decision 93).
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -343,6 +347,7 @@ impl State {
             agent: None,
             resume: None,
             dispatched_by: None,
+            project: None,
             config_fixes: 0,
             routine: None,
             tools: None,

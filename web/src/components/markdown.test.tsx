@@ -1,8 +1,39 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { Markdown, chart, csv, figure } from "./markdown"
+import { FileLinks, Markdown, chart, csv, figure } from "./markdown"
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} />)
+
+describe("a link to a workspace file (decision 146)", () => {
+  // The button calls the provider with the path it shows in `data-file`.
+  const inApp = (text: string) => renderToStaticMarkup(<FileLinks.Provider value={() => {}}><Markdown text={text} /></FileLinks.Provider>)
+
+  it("opens in the app, never as an address", () => {
+    const out = inApp("See [the Q3 plan](docs/finance/q3-plan.md).")
+    expect(out).toMatch(/<button type="button"[^>]*data-file="docs\/finance\/q3-plan.md"[^>]*>the Q3 plan<\/button>/)
+    expect(out).not.toContain("href=")
+  })
+
+  it("is plain text where nothing opens files", () => {
+    const out = html("See [the Q3 plan](docs/finance/q3-plan.md).")
+    expect(out).toContain("<span>the Q3 plan</span>")
+    expect(out).not.toContain("<button")
+  })
+
+  it("stays text when it leaves the workspace or is not a path", () => {
+    for (const bad of ["../secrets.env", "/etc/passwd", "docs/../../x", "docs/%2e%2e/x", "C:\\x", "file:///etc/passwd", "javascript:alert(1)", "acme.com", "john@example.com"]) {
+      const out = inApp(`[x](${bad})`)
+      expect(out, bad).not.toContain("<button")
+      expect(out, bad).not.toContain("href=")
+    }
+  })
+
+  it("leaves web links as they were", () => {
+    const out = inApp("[the deck](https://docs.example.com/deck)")
+    expect(out).toContain('href="https://docs.example.com/deck"')
+    expect(out).toContain('rel="noopener noreferrer"')
+  })
+})
 
 const REPORT = `# Sales pipeline 2026-W47
 
