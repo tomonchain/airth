@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 143. An agent's words are rendered as Markdown, by one component, as untrusted content
+## 144. An agent's words are rendered as Markdown, by one component, as untrusted content
 
 **Accepted** (founder, 16 November 2026: "afficher le markdown mis en forme partout où un agent écrit", with react-markdown and remark-gfm, and the security rules below).
 
@@ -21,7 +21,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Cost:* two dependencies and theirs (the unified/remark family), about 30 KB gzipped in the main bundle (191 to 220 KB). A link to a relative address or an anchor no longer works in an agent's text.
 
-## 142. The interface's deterministic logic is tested with Vitest
+## 143. The interface's deterministic logic is tested with Vitest
 
 **Accepted** (founder, 16 November 2026: "Vitest + CI", then, once `main` tested with `node --test`, "passer à Vitest, une seule façon").
 
@@ -34,6 +34,32 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 *Why:* the founder asked for tests with the Markdown rendering, and they must render the component. Vitest reads `vite.config.ts` (the `@` alias, the React plugin), so the tests import modules exactly as the app does.
 
 *Cost:* one development dependency and its own (only in `node_modules`, never in `web/dist`). A test that needs the DOM would need an emulation, and its own decision.
+## 142. An agent may name the model its tasks use
+
+**Accepted** (founder, 16 November 2026: "un modèle par agent", for Hedgen's year report written by a stronger model than the business's).
+
+- **The field.** An agent's file may hold `model: provider/model`, for example `anthropic/claude-opus-5-5`. The provider is one Airth knows (`models::provider_catalog`); empty means the business's model.
+- **Where it applies.** When a run is driven, a model picked for that run in a conversation wins. Otherwise the model named by the run's agent applies: a task's agent, or the bot an agent routine ran for. Otherwise the business's routing applies.
+  - Like a model picked in a conversation, it uses that provider's own key, and falls back to the business's connections if the provider fails.
+  - A provider whose key is missing stops the run at its start, saying so (decision 139's "could not start").
+- **The page.** The agent's page has a Model choice, among the configured providers' models, saved when picked.
+- **Not changed.** A drawn routine's AI blocks keep the business's tiers, main and fast.
+
+*Why:* one agent may need a stronger model than the rest of the team, a year report for instance, without the whole business paying for it.
+
+*Cost:* the field travels in the agent's package (decision 140). A business without that provider's key cannot run the agent until it changes the model or adds the key.
+## 141. A landing page for Airth, in site/, published by GitHub Pages
+
+**Accepted** (founder, 15 November 2026: "a fairly basic landing page to promote Airth"; in the repository, published by GitHub Pages, in English, sending visitors to GitHub and the download).
+
+- **What:** one static page, `site/index.html`, with the logo, two screenshots of the app (light and dark, taken from a demo business) and nothing else. No build step, no script, no font or file fetched from elsewhere: the system's fonts, as in the app.
+- **What it says:** the pitch from `CLAUDE.md`, how a business, its team and Needs you work, the autonomy levels and their fixed ceilings, and how to install. It links to the latest release and to the repository. It names no business that uses Airth.
+- **Published by** `.github/workflows/pages.yml`, on a change to `site/` on `main`. Pages is set to "GitHub Actions" in the repository's settings once, by the founder. Its address is `tomonchain.github.io/airth` until a domain is chosen.
+- **Outside the beta's milestones:** the founder asked for it. It changes nothing in Airth itself.
+
+*Why:* the repository is public and releases are published, but nothing presents Airth to someone who is not reading its README, which still describes the earlier personal assistant.
+
+*Cost:* the page's copy and screenshots follow the product by hand; when a page shown changes, they are taken again. The address in the page's preview image (`og:image`) changes with the domain.
 
 ## 140. An agent's page, its levels in the app, and its package to take to another business
 

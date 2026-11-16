@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 // An agent's words, formatted: headings, bold, lists and task lists,
 // strikethrough, tables, code, and Airth's own blocks (a ```csv table, a
-// ```chart). What an agent writes is untrusted (decision 143): no HTML is
+// ```chart). What an agent writes is untrusted (decision 144): no HTML is
 // rendered, no image is loaded, and a link goes only to http(s) or mailto.
 
 /** A URL a link may lead to: the web or an address, nothing that runs. */
