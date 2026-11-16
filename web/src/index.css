@@ -344,10 +344,10 @@ button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transpar
 /* The Home's two lights (home.tsx, lib/greeting.ts): soft, behind the
    greeting, a little stronger on a dark page. */
 :root {
-    --light-strength: 0.13;
+    --light-strength: 0.2;
 }
 .dark {
-    --light-strength: 0.17;
+    --light-strength: 0.28;
 }
 .home-light {
     background:
