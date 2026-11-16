@@ -1,13 +1,15 @@
-import type { ReactNode } from "react"
+import { createContext, useContext, type ReactNode } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { ImageOff } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { workspacePath } from "@/lib/workspace-link"
 
 // An agent's words, formatted: headings, bold, lists and task lists,
 // strikethrough, tables, code, and Airth's own blocks (a ```csv table, a
 // ```chart). What an agent writes is untrusted (decision 144): no HTML is
-// rendered, no image is loaded, and a link goes only to http(s) or mailto.
+// rendered, no image is loaded, and a link goes only to http(s), mailto or
+// a file of the workspace, opened in the Documents page (decision 146).
 
 /** A URL a link may lead to: the web or an address, nothing that runs. */
 const SAFE = /^(https?:|mailto:)/i
@@ -54,7 +56,27 @@ function figures() {
     where it is (it is never loaded). */
 function url(value: string, key: string): string | null {
   if (key === "src") return value
-  return SAFE.test(value.trim()) ? value : null
+  return SAFE.test(value.trim()) || workspacePath(value) ? value : null
+}
+
+/** What opens a workspace file in the Documents page (App provides it).
+    Without it, a workspace link is plain text. */
+export const FileLinks = createContext<((path: string) => void) | null>(null)
+
+const LINK = "underline decoration-current/30 underline-offset-2 hover:decoration-current"
+
+/** A link: to the web in a new tab, to a workspace file in the app, else
+    its text alone. */
+function Link({ href, children }: { href?: string; children?: ReactNode }) {
+  const open = useContext(FileLinks)
+  if (href && SAFE.test(href)) {
+    return <a href={href} target="_blank" rel="noopener noreferrer" title={domain(href)} className={LINK}>{children}</a>
+  }
+  const path = workspacePath(href)
+  if (path && open) {
+    return <button type="button" onClick={() => open(path)} title={`Open ${path}`} data-file={path} className={cn(LINK, "cursor-pointer text-left")}>{children}</button>
+  }
+  return <span>{children}</span>
 }
 
 const TABLE = "max-w-full overflow-x-auto rounded-lg border"
@@ -80,9 +102,7 @@ const components: Components = {
   input: ({ checked }) => <input type="checkbox" defaultChecked={!!checked} disabled className="mr-1.5 size-3.5 translate-y-[2px] accent-foreground" />,
   blockquote: ({ children }) => <blockquote className="space-y-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>,
   hr: () => <hr className="my-3 border-border" />,
-  a: ({ href, children }) => href && SAFE.test(href)
-    ? <a href={href} target="_blank" rel="noopener noreferrer" title={domain(href)} className="underline decoration-current/30 underline-offset-2 hover:decoration-current">{children}</a>
-    : <span>{children}</span>,
+  a: ({ href, children }) => <Link href={href}>{children}</Link>,
   // Never loaded: a remote image would tell its server who reads, and when.
   img: ({ src, alt }) => (
     <span className="inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-xs text-muted-foreground">

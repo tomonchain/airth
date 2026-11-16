@@ -19,6 +19,7 @@ import { PageBoundary } from "@/components/error-boundary"
 import { Pair } from "@/components/pair"
 import { DeviceAsks } from "@/components/device-asks"
 import { Palette } from "@/components/palette"
+import { FileLinks } from "@/components/markdown"
 
 // The pages opened now and then load when first opened, so the first
 // screen comes up sooner.
@@ -247,7 +248,10 @@ export default function App() {
     return <div className="grid h-svh place-items-center text-sm text-muted-foreground">{realms.error ? `Airth is not answering: ${realms.error}` : "Loading…"}</div>
   }
 
+  // A workspace file an agent links to opens in Documents (decision 146).
+  const openFile = (path: string) => { setDoc({ path, at: Date.now() }); setPage("documents") }
   return (
+    <FileLinks.Provider value={openFile}>
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] max-md:bg-surface">
       {narrow ? (
         <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} working={running} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
@@ -293,7 +297,7 @@ export default function App() {
           : page === "settings" ? <Settings realm={realm} start={setting} />
           : page === "marketplace" ? <Marketplace realm={realm} />
           : page === "company" ? <Company realm={realm} description={business?.description ?? null}
-              onFile={(path) => { setDoc({ path, at: Date.now() }); setPage("documents") }} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
+              onFile={openFile} onRepos={() => { setSetting({ section: "repositories", at: Date.now() }); setPage("settings") }} />
           : (
           <>
           {page === "needs" ? (
@@ -317,5 +321,6 @@ export default function App() {
       </div>
       {narrow && <TabBar page={page} onPage={(p) => { setPage(p); if (p === "agents") setCurrent(null) }} needs={items.length} />}
     </div>
+    </FileLinks.Provider>
   )
 }
