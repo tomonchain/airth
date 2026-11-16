@@ -14,8 +14,9 @@ type Info = {
 }
 
 /** A newer Airth, prepared and checked in the background, installed on a
-    restart: its state, and the restart. `working`: tasks in progress, which
-    the restart stops (they can be resumed), so it asks once more. */
+    restart: its state, and the restart. `working`: runs in progress in
+    every business, which the restart stops (they can be resumed), so it
+    asks once more. */
 export function useUpdate(working: number) {
   const { data, refresh } = usePoll<Info>(() => api("info"), 60000, [])
   const [sure, setSure] = useState(false)

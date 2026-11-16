@@ -109,6 +109,8 @@ export default function App() {
 
   // The tab says how many things wait for the founder, in every business.
   const waiting = (realms.data ?? []).reduce((n, r) => n + (r.archived ? 0 : r.needs_approval || 0), 0)
+  // Runs at work in every business: a restart to update stops them all.
+  const running = (realms.data ?? []).reduce((n, r) => n + (r.archived ? 0 : r.live || 0), 0)
   useEffect(() => { document.title = `${waiting ? `(${waiting}) ` : ""}${realm ? `${named(realm, realms.data?.find((r) => r.name === realm)?.title)} · ` : ""}Airth${server ? ` · ${server}` : ""}` }, [waiting, realm, realms.data, server])
 
   const data = usePoll<Data>(
@@ -248,7 +250,7 @@ export default function App() {
   return (
     <div className="relative flex h-svh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] max-md:bg-surface">
       {narrow ? (
-        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} working={agents.filter((a) => a.state === "working").length} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
+        <PhoneMenu server={server} realms={realms.data ?? []} realm={realm} working={running} onNewBusiness={() => setFounding(true)} onHq={() => setPage("hq")} />
       ) : (
         <TopBar
           server={server} realms={realms.data ?? []} realm={realm} onAgents={page === "agents"} tabs={tabs} current={page === "agents" ? current : null} agents={agents}
@@ -267,7 +269,7 @@ export default function App() {
         onPage={setPage} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onAsk={() => setAsking(true)} />
       <DeviceAsks />
       <div className="flex min-h-0 flex-1">
-        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} working={agents.filter((a) => a.state === "working").length} />}
+        {!narrow && <Rail page={page} onPage={setPage} needs={items.length} live={agents.some((a) => a.state === "working")} working={running} />}
         <main ref={setMainEl} onAnimationEnd={(e) => e.target === e.currentTarget && setSlide(null)}
           className={cn("flex min-w-0 flex-1 overflow-hidden bg-surface md:mr-2 md:mb-2 md:rounded-xl md:border md:shadow-sm",
             slide && "animate-in fade-in-0 duration-200 ease-out", slide?.from === "right" && "slide-in-from-right-10", slide?.from === "left" && "slide-in-from-left-10")}>
