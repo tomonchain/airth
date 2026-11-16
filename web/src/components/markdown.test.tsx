@@ -5,8 +5,8 @@ import { FileLinks, Markdown, chart, csv, figure } from "./markdown"
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} />)
 
 describe("a link to a workspace file (decision 146)", () => {
-  const opened: string[] = []
-  const inApp = (text: string) => renderToStaticMarkup(<FileLinks.Provider value={(p) => opened.push(p)}><Markdown text={text} /></FileLinks.Provider>)
+  // The button calls the provider with the path it shows in `data-file`.
+  const inApp = (text: string) => renderToStaticMarkup(<FileLinks.Provider value={() => {}}><Markdown text={text} /></FileLinks.Provider>)
 
   it("opens in the app, never as an address", () => {
     const out = inApp("See [the Q3 plan](docs/finance/q3-plan.md).")
@@ -21,7 +21,7 @@ describe("a link to a workspace file (decision 146)", () => {
   })
 
   it("stays text when it leaves the workspace or is not a path", () => {
-    for (const bad of ["../secrets.env", "/etc/passwd", "docs/../../x", "docs/%2e%2e/x", "C:\\x", "file:///etc/passwd", "javascript:alert(1)"]) {
+    for (const bad of ["../secrets.env", "/etc/passwd", "docs/../../x", "docs/%2e%2e/x", "C:\\x", "file:///etc/passwd", "javascript:alert(1)", "acme.com", "john@example.com"]) {
       const out = inApp(`[x](${bad})`)
       expect(out, bad).not.toContain("<button")
       expect(out, bad).not.toContain("href=")
