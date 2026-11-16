@@ -338,7 +338,7 @@ function Profile({ realm, agent, departments, onSaved, onGone, onDirty }: {
 type Providers = { providers: { id: string; name: string; configured: boolean; models: string[] }[] }
 const BUSINESS = "-business"
 
-/** The model its tasks use (decision 141): the business's, or one of the
+/** The model its tasks use (decision 142): the business's, or one of the
     models a configured provider offers. Saved as soon as it is picked. */
 function AgentModel({ realm, agent, onSaved }: { realm: string; agent: Agent; onSaved: () => void }) {
   const options = usePoll<Providers>(() => api(`realms/${enc(realm)}/models`), 600000, [realm])

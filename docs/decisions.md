@@ -2,7 +2,7 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
-## 141. An agent may name the model its tasks use
+## 142. An agent may name the model its tasks use
 
 **Accepted** (founder, 16 November 2026: "un modèle par agent", for Hedgen's year report written by a stronger model than the business's).
 
@@ -16,6 +16,18 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 *Why:* one agent may need a stronger model than the rest of the team, a year report for instance, without the whole business paying for it.
 
 *Cost:* the field travels in the agent's package (decision 140). A business without that provider's key cannot run the agent until it changes the model or adds the key.
+## 141. A landing page for Airth, in site/, published by GitHub Pages
+
+**Accepted** (founder, 15 November 2026: "a fairly basic landing page to promote Airth"; in the repository, published by GitHub Pages, in English, sending visitors to GitHub and the download).
+
+- **What:** one static page, `site/index.html`, with the logo, two screenshots of the app (light and dark, taken from a demo business) and nothing else. No build step, no script, no font or file fetched from elsewhere: the system's fonts, as in the app.
+- **What it says:** the pitch from `CLAUDE.md`, how a business, its team and Needs you work, the autonomy levels and their fixed ceilings, and how to install. It links to the latest release and to the repository. It names no business that uses Airth.
+- **Published by** `.github/workflows/pages.yml`, on a change to `site/` on `main`. Pages is set to "GitHub Actions" in the repository's settings once, by the founder. Its address is `tomonchain.github.io/airth` until a domain is chosen.
+- **Outside the beta's milestones:** the founder asked for it. It changes nothing in Airth itself.
+
+*Why:* the repository is public and releases are published, but nothing presents Airth to someone who is not reading its README, which still describes the earlier personal assistant.
+
+*Cost:* the page's copy and screenshots follow the product by hand; when a page shown changes, they are taken again. The address in the page's preview image (`og:image`) changes with the domain.
 
 ## 140. An agent's page, its levels in the app, and its package to take to another business
 

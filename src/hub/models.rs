@@ -229,7 +229,7 @@ impl Hub {
         state: &mut State,
     ) -> Result<Routed> {
         // A model picked for this run wins; else the one its agent's file
-        // names (decision 141); else the realm's routing.
+        // names (decision 142); else the realm's routing.
         let choice = state.model_choice.clone().or_else(|| {
             let agent = state
                 .agent

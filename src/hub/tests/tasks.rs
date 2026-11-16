@@ -1216,7 +1216,7 @@ fn a_permission_asked_again_replaces_only_the_same_one() {
     assert_eq!(expired, vec![write]);
 }
 
-/// Decision 141: an agent's file may name the model its tasks use; a model
+/// Decision 142: an agent's file may name the model its tasks use; a model
 /// picked for one run still wins, and an agent without one uses the
 /// business's routing.
 #[test]

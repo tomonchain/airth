@@ -51,7 +51,7 @@ const AGENT: &[&str] = &[
     "mail_server", "imap_port", "smtp_port",
     // A cap on its tasks' model cost each month (decision 139).
     "monthly_max_cost_usd",
-    // The model its tasks use, instead of the business's (decision 141).
+    // The model its tasks use, instead of the business's (decision 142).
     "model",
 ];
 

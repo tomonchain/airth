@@ -294,7 +294,7 @@ impl App {
                 "skills": doc.text("skills").map(|t| split_names(&t)).unwrap_or_default(),
                 // The repositories its tasks work in (decision 64).
                 "repos": doc.text("repos").map(|t| split_names(&t)).unwrap_or_default(),
-                // The model its tasks use, if not the business's (decision 141).
+                // The model its tasks use, if not the business's (decision 142).
                 "model": doc.text("model").map(|m| m.trim().to_string()).filter(|m| !m.is_empty()),
                 "routines": routines,
                 "waiting": waits,

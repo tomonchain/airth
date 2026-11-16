@@ -132,7 +132,7 @@ export type Agent = {
   integrations: string[]
   /** The repositories its tasks work in (decision 64). */
   repos?: string[]
-  /** The model its tasks use, `provider/model`; none: the business's (decision 141). */
+  /** The model its tasks use, `provider/model`; none: the business's (decision 142). */
   model?: string | null
   skills: string[]
   accessory: "pen" | "lens" | "book" | null
