@@ -150,7 +150,7 @@ impl Hub {
             bail!("the message is empty");
         }
         let mut state = self.reopen(realm, run)?;
-        append_user_text(&mut state.messages, message);
+        state.append_user_text(message);
         state.status = Status::Running;
         state.report = None;
         state.save()?;
@@ -168,7 +168,7 @@ impl Hub {
             );
         }
         let message = resume_message(&state);
-        append_user_text(&mut state.messages, &message);
+        state.append_user_text(&message);
         state.status = Status::Running;
         state.report = None;
         state.save()?;
@@ -640,22 +640,11 @@ fn latest_ask(state: &State) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-/// Add a user message, merging into the last message if it is already a user
-/// turn (e.g. tool results from a run that hit its iteration limit).
 /// Whether two paths name the same place, symlinks resolved.
 fn same_path(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
-    }
-}
-
-pub(crate) fn append_user_text(messages: &mut Vec<Message>, text: &str) {
-    match messages.last_mut() {
-        Some(last) if last.role == Role::User => last.content.push(ContentBlock::Text {
-            text: text.to_string(),
-        }),
-        _ => messages.push(Message::user_text(text)),
     }
 }
 

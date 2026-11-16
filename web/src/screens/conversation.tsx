@@ -7,13 +7,13 @@ import { Typing } from "@/components/typing"
 import { NeedCard } from "@/components/need-card"
 import { OrderBox } from "@/components/order-box"
 import { RunTimeline } from "@/components/run-timeline"
-import { startOf, TaskThread } from "@/components/task-thread"
+import { startOf, TaskThread, type Between } from "@/components/task-thread"
 import { usePoll } from "@/hooks/use-poll"
 import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
 import { api, called, enc, type Agent, type Item, type Tasks, type Thread, type ThreadRun } from "@/lib/api"
 import { inThread, type Scope } from "@/lib/project-threads"
 import { stamp } from "@/lib/time"
-import { chronological, taskAt } from "@/lib/timeline"
+import { chronological, during, moment, type Span } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 type Entry =
@@ -75,27 +75,57 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   useEffect(() => setOutbox([]), [agent.name])
   const echoed = useCallback((text: string) => setOutbox((o) => { const i = o.findIndex((s) => s.text === text); return i < 0 ? o : [...o.slice(0, i), ...o.slice(i + 1)] }), [])
 
-  const entries = useMemo(() => {
-    const e: Entry[] = []
-    for (const r of own ? [] : thread.data?.runs ?? []) if (r.at) e.push({ kind: "run", at: r.at, run: r })
+  const { entries, inside } = useMemo(() => {
+    const events: Entry[] = []
+    for (const r of own ? [] : thread.data?.runs ?? []) if (r.at) events.push({ kind: "run", at: r.at, run: r })
     // A task's questions show in its own chat, not as items.
     // A report is read in Needs you, on the phone and on Telegram; in the
     // conversation it came between the founder and the agent (decision 134).
-    for (const i of own ? [] : thread.data?.items ?? []) if (!(i.run && anyTask.has(i.run) && !i.routine) && i.kind !== "report") e.push({ kind: "item", at: i.created_at, item: i })
-    // A task is shown whole, its newest messages last: it goes at its last
-    // activity, so nothing that came before the founder's last words shows
-    // under them. Its messages carry no time of their own.
+    for (const i of own ? [] : thread.data?.items ?? []) if (!(i.run && anyTask.has(i.run) && !i.routine) && i.kind !== "report") events.push({ kind: "item", at: i.created_at, item: i })
+    // A task goes at its start; what came while it went on is shown inside
+    // it, between its messages, each at its time (decision 148).
     const listed = new Map(Object.values(tasks.data ?? {}).flat().map((t) => [t.id, t.at ?? t.updated_at]))
-    for (const id of own ? taskIds : taskIds.slice(-8)) e.push({ kind: "task", at: taskAt(listed.get(id), startOf(id)), id })
+    const shown = own ? taskIds : taskIds.slice(-8)
+    // A task the list no longer has (one started here, past the last ten
+    // done) ended at the latest when the next one began; only the latest
+    // can still be going on.
+    const spans: Span[] = shown.flatMap((id, n) => {
+      const from = moment(startOf(id))
+      const next = shown[n + 1]
+      const to = moment(listed.get(id)) ?? (next ? moment(startOf(next)) : null)
+      return from === null ? [] : [{ id, from, to }]
+    })
+    const e: Entry[] = shown.map((id) => ({ kind: "task", at: startOf(id), id }))
+    const inside = new Map<string, Entry[]>()
+    for (const x of events) {
+      const task = during(spans, moment(x.at))
+      if (task) inside.set(task, [...(inside.get(task) ?? []), x])
+      else e.push(x)
+    }
+    for (const [task, xs] of inside) inside.set(task, chronological(xs))
     // In time order, as a chat is: what waits for the founder stays where
     // it was sent, marked new, not moved after later messages.
-    return chronological(e)
+    return { entries: chronological(e), inside }
   }, [thread.data, taskIds, tasks.data, own, anyTask])
 
   // Each entry as chat bubbles: the agent on the left, the founder on the
   // right. An answered item is the agent's message, then the founder's answer.
+  type Unit = { side: "left" | "right" | "task"; key: string; at: string; node: (last: boolean) => React.ReactNode }
+  // A run or an item as bubbles: an answered item is the agent's message,
+  // then the founder's answer.
+  function eventUnits(x: Entry): Unit[] {
+    if (x.kind === "run") return [{ side: "left", key: `r${x.run.run}`, at: x.at, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> }]
+    if (x.kind !== "item") return []
+    const it = x.item
+    const u: Unit[] = [{ side: "left", key: `i${it.id}`, at: x.at, node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> }]
+    if (it.status !== "pending") {
+      const a = ANSWERED[it.status] ?? ANSWERED.done
+      u.push({ side: "right", key: `a${it.id}`, at: x.at, node: () => <Mine text={a.reply(it)} at={it.created_at} /> })
+    }
+    return u
+  }
   const units = useMemo(() => {
-    const u: { side: "left" | "right" | "task"; key: string; node: (last: boolean) => React.ReactNode; isNew?: boolean }[] = []
+    const u: Unit[] = []
     for (const x of entries) {
       if (x.kind === "task") {
         // Who passed it on, and what it passed on (decision 120).
@@ -103,28 +133,30 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
         const titleOf = (name: string | null | undefined) => { const a = agents.find((g) => g.name === name); return a ? called(a) : name ?? "An agent" }
         const self = all.find((t) => t.id === x.id)
         const passed = all.filter((t) => t.from?.task === x.id && t.agent).map((t) => ({ id: t.id, agent: t.agent!, title: titleOf(t.agent), order: t.order ?? "", status: t.status }))
-        u.push({ side: "task", key: `t${x.id}`, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }}
-          from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} /> })
+        const between: Between[] = (inside.get(x.id) ?? []).flatMap(eventUnits).map((b) => ({
+          key: b.key, at: moment(b.at), side: b.side === "right" ? "right" : "left", node: (last) => place(b, last),
+        }))
+        u.push({ side: "task", key: `t${x.id}`, at: x.at, node: () => <TaskThread realm={realm} id={x.id} agent={agent} items={thread.data?.items ?? []} fresh={mine.has(x.id)} echoes={outbox.filter((s) => s.task === x.id).map((s) => s.text)} onEcho={echoed} onChange={() => { thread.refresh(); tasks.refresh(); onDone() }}
+          from={self?.from ? titleOf(self.from.agent) : undefined} passed={passed} onAgent={onAgent} between={between} /> })
       }
-      else if (x.kind === "run") u.push({ side: "left", key: `r${x.run.run}`, node: () => <RunMessage run={x.run} stream={fresh(`r${x.run.run}`)} /> })
-      else {
-        const it = x.item
-        u.push({ side: "left", key: `i${it.id}`, isNew: it.status === "pending", node: () => <ItemMessage realm={realm} item={it} onDone={refresh} stream={fresh(`i${it.id}`)} /> })
-        if (it.status !== "pending") {
-          const a = ANSWERED[it.status] ?? ANSWERED.done
-          u.push({ side: "right", key: `a${it.id}`, node: () => <Mine text={a.reply(it)} at={it.created_at} /> })
-        }
-      }
+      else u.push(...eventUnits(x))
     }
     return u
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, realm, agent, tasks.data, agents])
-  const firstNew = units.findIndex((x) => x.isNew)
+  }, [entries, inside, realm, agent, tasks.data, agents])
+  // The first of what waits for the founder, wherever it shows (inside a
+  // task or not): the line marking what is new goes above it.
+  const firstNew = useMemo(() => {
+    const waiting = [...entries, ...[...inside.values()].flat()].filter((x) => x.kind === "item" && x.item.status === "pending")
+    const first = chronological(waiting)[0]
+    return first?.kind === "item" ? `i${first.item.id}` : null
+  }, [entries, inside])
   // What was there when the thread opened shows at once; what arrives while
   // the founder watches comes in, the agent's words written as they stream.
   const known = useRef<Set<string> | null>(null)
   useEffect(() => { known.current = null }, [agent.name])
-  if (thread.data && !known.current) known.current = new Set(units.map((u) => u.key))
+  // What shows inside a task counts too: it was there as well.
+  if (thread.data && !known.current) known.current = new Set([...units.map((u) => u.key), ...[...inside.values()].flat().flatMap(eventUnits).map((u) => u.key)])
   function fresh(key: string) { return !!known.current && !known.current.has(key) }
   // A routine at work (a task at work shows in its own chat).
   const busy = !own && agent.state === "working" && !running && !elsewhere
@@ -162,6 +194,28 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
 
   function refresh() { thread.refresh(); onDone() }
 
+  // A run's or an item's bubbles, on their side, in the conversation or
+  // inside a task; the line marking what is new above the first that waits.
+  function place(x: Unit, lastOfGroup: boolean) {
+    return (
+      <>
+        {x.key === firstNew && (
+          <div id="first-new" className="my-6 flex scroll-mt-6 items-center gap-3 text-[11px] font-semibold tracking-[0.14em] text-sky-500 uppercase">
+            <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
+          </div>
+        )}
+        {x.side === "left" ? (
+          <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
+            <span className="mb-6 hidden w-8 shrink-0 md:block">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
+            <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
+          </div>
+        ) : (
+          <div className={cn(lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>{x.node(lastOfGroup)}</div>
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroller} onScroll={scrolled} className="no-dock min-h-0 flex-1 overflow-y-auto">
@@ -172,24 +226,8 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
             <Empty agent={agent} />
           ) : (
             units.map((x, i) => {
-              const lastOfGroup = units[i + 1]?.side !== x.side || i + 1 === firstNew
-              return (
-                <div key={x.key}>
-                  {i === firstNew && (
-                    <div id="first-new" className="my-6 flex scroll-mt-6 items-center gap-3 text-[11px] font-semibold tracking-[0.14em] text-sky-500 uppercase">
-                      <span className="h-px flex-1 bg-sky-500/40" /> New <span className="h-px flex-1 bg-sky-500/40" />
-                    </div>
-                  )}
-                  {x.side === "task" ? x.node(lastOfGroup) : x.side === "left" ? (
-                    <div className={cn("flex items-end gap-2.5", lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>
-                      <span className="mb-6 hidden w-8 shrink-0 md:block">{lastOfGroup && <Character agent={agent} size={32} still />}</span>
-                      <div className="min-w-0 flex-1">{x.node(lastOfGroup)}</div>
-                    </div>
-                  ) : (
-                    <div className={cn(lastOfGroup ? "mb-5" : "mb-1.5", fresh(x.key) && "fade-up")}>{x.node(lastOfGroup)}</div>
-                  )}
-                </div>
-              )
+              const lastOfGroup = units[i + 1]?.side !== x.side || units[i + 1]?.key === firstNew
+              return <div key={x.key}>{x.side === "task" ? x.node(lastOfGroup) : place(x, lastOfGroup)}</div>
             })
           )}
           {outbox.map((s, i) => (

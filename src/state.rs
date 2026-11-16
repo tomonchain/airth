@@ -283,6 +283,17 @@ pub struct State {
     pub context_update: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction: Option<Compaction>,
+    /// When each of `messages` was added, in the same order (decision 148),
+    /// for the founder's chat to place them in time; null for those older
+    /// than this record. Never part of what the model is sent: messages go
+    /// to the providers on their own, and this field is not among them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_at: Option<Vec<Option<DateTime<Utc>>>>,
+    /// A message already saved that text was added to since (the founder's
+    /// words after the agent's last tool results): it takes the time of the
+    /// next save, so those words show when they were said.
+    #[serde(skip)]
+    grown: Option<usize>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -344,8 +355,10 @@ impl State {
             context: None,
             context_update: None,
             compaction: None,
+            message_at: Some(Vec::new()),
             model_choice: None,
             answered_by: None,
+            grown: None,
             path,
         }
     }
@@ -357,6 +370,10 @@ impl State {
         let mut state: State = serde_json::from_str(&text)
             .with_context(|| format!("parsing run {}", path.display()))?;
         state.path = Some(path.to_path_buf());
+        // A run saved before decision 148: its messages' times are unknown.
+        if state.message_at.is_none() {
+            state.message_at = Some(vec![None; state.messages.len()]);
+        }
         Ok(state)
     }
 
@@ -429,8 +446,50 @@ impl State {
         self.path.as_deref()
     }
 
+    /// Give the messages added since the last save the time of this one,
+    /// so `message_at` stays as long as `messages`. Messages are only ever
+    /// appended, so the new ones are at the end.
+    fn stamp_messages(&mut self, now: DateTime<Utc>) {
+        let len = self.messages.len();
+        let at = self.message_at.get_or_insert_with(|| vec![None; len]);
+        let saved = at.len();
+        at.truncate(len);
+        at.resize(len, Some(now));
+        if let Some(i) = self.grown.filter(|&i| i < saved.min(len)) {
+            at[i] = Some(now);
+        }
+    }
+
+    /// Add the founder's (or Airth's) words: to the last message when it is
+    /// already the user's (two in a row are one turn for the model), else
+    /// as a new one.
+    pub fn append_user_text(&mut self, text: &str) {
+        match self.messages.last_mut() {
+            Some(last) if last.role == Role::User => {
+                last.content.push(ContentBlock::Text {
+                    text: text.to_string(),
+                });
+                self.grown = Some(self.messages.len() - 1);
+            }
+            _ => self.messages.push(Message::user_text(text)),
+        }
+    }
+
     pub fn save(&mut self) -> Result<()> {
         self.updated_at = Utc::now();
+        // The times are kept only once the file holds them: a failed write
+        // leaves them as they were, for the next save to give.
+        let (at, grown) = (self.message_at.clone(), self.grown);
+        self.stamp_messages(self.updated_at);
+        if let Err(e) = self.write() {
+            (self.message_at, self.grown) = (at, grown);
+            return Err(e);
+        }
+        self.grown = None;
+        Ok(())
+    }
+
+    fn write(&self) -> Result<()> {
         if let Some(path) = &self.path {
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)?;
@@ -498,6 +557,139 @@ mod tests {
         assert_eq!(loaded.status, Status::Completed);
         assert_eq!(loaded.messages, state.messages);
         assert_eq!(loaded.path(), state.path());
+    }
+
+    /// An answer from the agent.
+    fn said(text: &str) -> Message {
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text { text: text.into() }],
+        }
+    }
+
+    #[test]
+    fn each_message_keeps_the_time_it_was_saved_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.save().unwrap();
+        let first = state.message_at.clone().unwrap();
+        assert_eq!(first.len(), 1);
+        assert!(first[0].is_some());
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        state.messages.push(said("done"));
+        state.save().unwrap();
+        let at = State::load(state.path().unwrap())
+            .unwrap()
+            .message_at
+            .unwrap();
+        assert_eq!(at.len(), 2);
+        // The first message keeps its time; the second has a later one.
+        assert_eq!(at[0], first[0]);
+        assert!(at[1] > at[0], "{at:?}");
+    }
+
+    #[test]
+    fn words_added_to_a_saved_message_take_the_time_they_were_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.messages.push(said("Shall I send it?"));
+        state.messages.push(Message::user_text("tool results"));
+        state.save().unwrap();
+        let before = state.message_at.clone().unwrap();
+
+        // Picked up again later: the founder's answer joins the last turn.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut state = State::load(state.path().unwrap()).unwrap();
+        state.append_user_text("Yes, send it.");
+        assert_eq!(state.messages.len(), 3, "one turn, not two");
+        state.save().unwrap();
+        let at = State::load(state.path().unwrap())
+            .unwrap()
+            .message_at
+            .unwrap();
+        assert_eq!(at[..2], before[..2], "the others keep theirs");
+        assert!(at[2] > before[2], "{at:?}");
+
+        // Saved again with nothing added: the time stays.
+        state.save().unwrap();
+        assert_eq!(state.message_at.as_ref().unwrap()[2], at[2]);
+    }
+
+    #[test]
+    fn a_failed_save_keeps_no_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.save().unwrap();
+        let before = state.message_at.clone();
+        // The runs folder is now a file: the write fails.
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        std::fs::write(dir.path(), "").unwrap();
+        state.messages.push(said("done"));
+        assert!(state.save().is_err());
+        assert_eq!(
+            state.message_at, before,
+            "not stamped for a save that failed"
+        );
+    }
+
+    #[test]
+    fn a_run_saved_before_message_times_loads_with_them_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.messages.push(said("done"));
+        state.save().unwrap();
+        // As written before decision 148: no `message_at`.
+        let path = state.path().unwrap().to_path_buf();
+        let mut json: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        json.as_object_mut().unwrap().remove("message_at");
+        std::fs::write(&path, json.to_string()).unwrap();
+
+        let mut old = State::load(&path).unwrap();
+        assert_eq!(old.message_at, Some(vec![None, None]));
+        // A message added later gets its time; the old ones stay unknown.
+        old.messages.push(Message::user_text("more"));
+        old.save().unwrap();
+        let at = State::load(&path).unwrap().message_at.unwrap();
+        assert_eq!(at[..2], [None, None]);
+        assert!(at[2].is_some());
+    }
+
+    #[test]
+    fn message_times_never_reach_what_the_model_is_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut stamped = State::new("obj", Some(dir.path()));
+        stamped.messages.push(Message::user_text("obj"));
+        stamped.messages.push(said("step"));
+        stamped.save().unwrap();
+        stamped.messages.push(Message::user_text("more"));
+        stamped.compaction = Some(Compaction {
+            summary: "so far".into(),
+            upto: 1,
+            count: 1,
+        });
+        stamped.save().unwrap();
+        assert!(
+            stamped
+                .message_at
+                .as_ref()
+                .unwrap()
+                .iter()
+                .all(Option::is_some)
+        );
+
+        let mut plain = stamped.clone();
+        plain.message_at = None;
+        assert_eq!(stamped.model_messages(), plain.model_messages());
+        // Nothing of the times is in the messages themselves.
+        let sent = serde_json::to_string(&*stamped.model_messages()).unwrap();
+        let year = stamped.updated_at.format("%Y-%m-%d").to_string();
+        assert!(!sent.contains(&year), "{sent}");
     }
 
     #[test]

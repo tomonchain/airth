@@ -33,9 +33,34 @@ export function chronological<T extends { kind: Kind; at: string | null | undefi
     .map((x) => x.e)
 }
 
-/** Where a task goes: at its last activity, since it is shown whole and ends
-    with its newest messages (the founder's last words and the answer);
-    at its start when it is not listed yet. */
-export function taskAt(listedAt: string | null | undefined, startedAt: string): string {
-  return listedAt || startedAt
+/** A task in time: from its start to its last activity; open (`to` null)
+    while it is not listed yet. */
+export type Span = { id: string; from: number; to: number | null }
+
+/** The task an event at `at` came during, if any: of the tasks whose span
+    holds it, the one started last. A task goes at its start, and what came
+    during it is shown inside it, between its messages (decision 148). */
+export function during(spans: Span[], at: number | null): string | null {
+  if (at === null) return null
+  let found: Span | null = null
+  for (const s of spans) {
+    if (s.from <= at && (s.to === null || at <= s.to) && (!found || s.from > found.from)) found = s
+  }
+  return found?.id ?? null
+}
+
+/** Where each event goes among a task's turns, given each turn's time:
+    the index of the first turn that began after it, or `turns.length` for
+    after them all. A turn with no time is older than the record of times:
+    nothing is placed before it. A task without any time (`timed` false)
+    keeps the old way: everything that came during it above it, whole.
+    A turn of work is one block at its first step's time: what came while
+    it went on shows after it, between turns, never between its steps. */
+export function slots(turns: (number | null)[], events: (number | null)[], timed: boolean): number[] {
+  return events.map((at) => {
+    if (!timed) return 0
+    if (at === null) return turns.length
+    const i = turns.findIndex((t) => t !== null && t > at)
+    return i < 0 ? turns.length : i
+  })
 }
