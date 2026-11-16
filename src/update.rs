@@ -4,10 +4,12 @@
 //! version is the tip of that checkout's `main`, or of its upstream when the
 //! upstream is ahead: what was merged, whatever branch the checkout is on. An
 //! update is prepared away from the owner's checkout: a detached worktree at
-//! the new commit in Airth's home, built and tested there (`cargo build
-//! --release`, `cargo test --release`). Only a version whose tests pass is
-//! installed, and only when the owner asks: the binary is swapped atomically,
-//! the previous one kept for `airth update --rollback`, and Airth restarts.
+//! the new commit in Airth's home, built and tested there with the `update`
+//! profile (decision 145); the tests are skipped when only the interface or
+//! the docs changed, since the Rust is then the running version's. Only a
+//! version so tested is installed, and only when the owner asks: the binary
+//! is swapped atomically, the previous one kept for `airth update
+//! --rollback`, and Airth restarts.
 //!
 //! Nothing a run can do reaches this: the worktree and build live in the home,
 //! and the owner triggers installation.
@@ -308,6 +310,20 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
     if dir_size(&target) > TARGET_LIMIT {
         let _ = std::fs::remove_dir_all(&target);
     }
+    // Updates were built with the release profile before decision 145.
+    let _ = std::fs::remove_dir_all(target.join("release"));
+    // What changed since the running version: when only the interface or the
+    // docs did, the Rust is the one this version already passed its tests
+    // with, so they are not run again. A version built from uncommitted
+    // changes is always tested.
+    let tested = match COMMIT {
+        Some(current) if DIRTY != Some("1") => {
+            git(&repo, &["diff", "--name-only", current, &available.commit])
+                .map(|out| !rust_unchanged(&out.lines().collect::<Vec<_>>()))
+                .unwrap_or(true)
+        }
+        _ => true,
+    };
     step("checking out");
     let _ = git(
         &repo,
@@ -356,9 +372,13 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
             }
             Ok(())
         };
-        cargo(&["build", "--release", "--locked"], "building")?;
-        cargo(&["test", "--release", "--locked"], "testing")?;
-        let built = target.join("release/airth");
+        cargo(&["build", "--profile", "update", "--locked"], "building")?;
+        if tested {
+            cargo(&["test", "--profile", "update", "--locked"], "testing")?;
+        } else {
+            step("only the interface changed: its Rust was already tested");
+        }
+        let built = target.join("update/airth");
         let staged = work.join(format!("airth-{}", available.short));
         std::fs::copy(&built, &staged)?;
         Ok(staged)
@@ -368,6 +388,21 @@ fn prepare_source(available: &Available, work: &Path, step: &dyn Fn(&str)) -> Re
         &["worktree", "remove", "--force", &src.display().to_string()],
     );
     result
+}
+
+/// Whether a change touches only what leaves the compiled Rust as it was:
+/// the interface (`web/`, whose build is embedded as data and checked by
+/// CI's `web` job), the docs, the site, CI's own files and the Markdown at
+/// the root. Anything else (`src/`, `library/`, `Cargo.*`, `build.rs`, a
+/// prompt) may change what the tests check, and an empty list says nothing.
+fn rust_unchanged(paths: &[&str]) -> bool {
+    !paths.is_empty()
+        && paths.iter().all(|p| {
+            ["web/", "docs/", "site/", ".github/"]
+                .iter()
+                .any(|dir| p.starts_with(dir))
+                || (!p.contains('/') && p.ends_with(".md"))
+        })
 }
 
 /// Swap the running binary for `staged`, keeping the old one for
@@ -696,6 +731,40 @@ mod tests {
 
     /// Decision 100: the checkout being on another branch changes nothing;
     /// what `main` and its upstream hold is the update, forward only.
+    #[test]
+    fn an_interface_or_docs_change_skips_the_rust_tests_and_nothing_else_does() {
+        assert!(rust_unchanged(&[
+            "web/src/App.tsx",
+            "web/dist/index.html",
+            "web/dist/assets/index-x.js"
+        ]));
+        assert!(rust_unchanged(&[
+            "docs/decisions.md",
+            "site/index.html",
+            ".github/workflows/ci.yml",
+            "README.md",
+            "CLAUDE.md"
+        ]));
+        // Whatever the binary's code or what its tests read: tested.
+        for path in [
+            "src/update.rs",
+            "src/prompts/route.md",
+            "src/legal/gb/annual-accounts.md",
+            "library/teams/media/team.md",
+            "Cargo.toml",
+            "Cargo.lock",
+            "build.rs",
+            "scripts/try",
+            "packaging/Info.plist",
+        ] {
+            assert!(!rust_unchanged(&["web/src/App.tsx", path]), "{path}");
+        }
+        // A look-alike outside web/ is not web/.
+        assert!(!rust_unchanged(&["webhooks/x.rs"]));
+        // Nothing listed: nothing to go on, so tested.
+        assert!(!rust_unchanged(&[]));
+    }
+
     #[test]
     fn a_checkout_build_follows_main_whatever_branch_is_checked_out() {
         let dir = tempfile::tempdir().unwrap();
