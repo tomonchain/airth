@@ -43,6 +43,8 @@ export function CropDialog({ file, round, onCancel, onSave }: { file: File | nul
     )
     return () => { live = false; URL.revokeObjectURL(url) }
   }, [file])
+  // A decoded picture holds its pixels until closed.
+  useEffect(() => () => img?.bitmap.close(), [img])
 
   const w = img?.bitmap.width ?? 1
   const h = img?.bitmap.height ?? 1
@@ -63,7 +65,7 @@ export function CropDialog({ file, round, onCancel, onSave }: { file: File | nul
   }
 
   // The same framing, smaller: how the picture will show.
-  const Preview = ({ size }: { size: number }) => {
+  function preview(size: number) {
     const k = size / VIEW
     return (
       <span className={cn("relative block shrink-0 overflow-hidden bg-muted", round ? "rounded-full" : "rounded-xl")} style={{ width: size, height: size }}>
@@ -78,10 +80,18 @@ export function CropDialog({ file, round, onCancel, onSave }: { file: File | nul
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Frame your picture</DialogTitle>
-          <DialogDescription>Drag to move it, zoom to fit. What is inside the {round ? "circle" : "square"} is kept.</DialogDescription>
+          <DialogDescription>Drag to move it (or use the arrow keys), zoom to fit. What is inside the {round ? "circle" : "square"} is kept.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center gap-4">
-          <div className="relative cursor-grab touch-none overflow-hidden rounded-xl bg-muted select-none active:cursor-grabbing" style={{ width: VIEW, height: VIEW }}
+          <div tabIndex={0} role="group" aria-label="Picture frame: arrow keys move it"
+            className="relative cursor-grab touch-none overflow-hidden rounded-xl bg-muted outline-none select-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing" style={{ width: VIEW, height: VIEW }}
+            onKeyDown={(e) => {
+              const step = e.shiftKey ? 40 : 10
+              const d = ({ ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] } as Record<string, [number, number]>)[e.key]
+              if (!d || !img) return
+              e.preventDefault()
+              setCrop((c) => moved(c, d[0], d[1], w, h, VIEW))
+            }}
             onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, y: e.clientY } }}
             onPointerMove={(e) => {
               if (!drag.current || !img) return
@@ -108,7 +118,7 @@ export function CropDialog({ file, round, onCancel, onSave }: { file: File | nul
             <Button size="icon-sm" variant="ghost" aria-label="Zoom in" disabled={!img || crop.zoom >= MAX_ZOOM} onClick={() => setCrop((c) => zoomed(c, c.zoom + 0.25, w, h, VIEW))}><Plus /></Button>
           </div>
           <div className="flex items-center gap-3 self-stretch rounded-xl bg-muted/60 px-3 py-2.5">
-            <Preview size={44} />
+            {preview(44)}
             <span className="text-xs text-muted-foreground">How it will show in Airth.</span>
           </div>
           {error && <p className="self-stretch rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">{error}</p>}
