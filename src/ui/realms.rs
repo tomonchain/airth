@@ -359,14 +359,19 @@ impl App {
                     ),
                     v => v.as_str().map(str::to_string),
                 };
-                const FIELDS: [&str; 6] = [
+                const FIELDS: [&str; 7] = [
                     "title",
                     "first_name",
                     "department",
                     "integrations",
                     "skills",
                     "repos",
+                    "model",
                 ];
+                // A model is one name, never a list.
+                if body["model"].is_array() {
+                    bail!("a model is one provider/model, not a list");
+                }
                 for key in FIELDS {
                     if let Some(value) = field(key) {
                         crate::business::check_agent_field(key, &value, &own)?;

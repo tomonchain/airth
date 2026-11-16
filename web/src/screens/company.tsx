@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Building2, Calendar, Check, Compass, ExternalLink, FileText, Flag, FolderGit2, Globe, Layers, Pencil, Target } from "lucide-react"
 import { toast } from "sonner"
 import { Empty, Loading, Page, Panel, Section } from "@/components/page"
-import { Rich } from "@/components/rich"
+import { Markdown } from "@/components/markdown"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
@@ -250,7 +250,7 @@ function Strategy({ realm }: { realm: string }) {
           </div>
         </div>
       ) : text.trim() ? (
-        <Panel className="px-4 py-3.5 text-sm leading-relaxed"><Rich text={shown} /></Panel>
+        <Panel className="px-4 py-3.5 text-sm leading-relaxed"><Markdown text={shown} /></Panel>
       ) : (
         <Empty icon={Compass} title="No strategy yet">
           The goals, the line every agent follows, what the team may do alone. <button className="text-sky-500 hover:underline" onClick={() => setDraft("")}>Write it</button>

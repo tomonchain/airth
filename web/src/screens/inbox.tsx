@@ -296,20 +296,26 @@ function Header({ it, agent, onAgent, onTask }: { it: Item; agent?: Agent; onAge
     <header>
       <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium", k.tone)}><k.icon className="size-3.5" /> {k.label}</span>
       {!(it.kind === "approval" && it.text) && <h2 className="mt-3 text-xl leading-snug font-semibold tracking-tight">{it.title}</h2>}
+      {/* Who and where from, on two lines, so a long agent or routine name
+          never wraps on a phone: the agent, then the routine and when. */}
       <div className="mt-3 flex items-center gap-2.5 text-sm">
-        {agent && <Character agent={agent} size={26} still />}
-        <span className="font-medium">{agent?.title ?? "Airth"}</span>
-        {it.routine && <span className="font-mono text-xs text-muted-foreground">{it.routine}</span>}
-        <span className="text-xs text-muted-foreground">· {ago(it.created_at)}</span>
-        <span className="ml-auto flex items-center gap-1">
+        {agent && <Character agent={agent} size={32} still />}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{agent?.title ?? "Airth"}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {it.routine && <><span className="font-mono">{it.routine}</span> · </>}{ago(it.created_at)}
+          </p>
+        </div>
+        {/* On a phone, the buttons keep their icon only. */}
+        <span className="flex shrink-0 items-center gap-1">
           {it.source?.link && (
-            <a href={it.source.link} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground")}>
-              <ExternalLink /> Source
+            <a href={it.source.link} target="_blank" rel="noreferrer" aria-label="Source" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground")}>
+              <ExternalLink /> <span className="max-md:hidden">Source</span>
             </a>
           )}
           {/* What a task asked: the task itself, with its plan and what it did so far. A routine's item has its run in Routines. */}
-          {it.run && !it.routine && <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onTask(it.run!)}><ListChecks /> Its task</Button>}
-          {agent && <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onAgent(agent.name)}><MessageSquare /> Conversation</Button>}
+          {it.run && !it.routine && <Button variant="ghost" size="sm" aria-label="Its task" className="text-muted-foreground" onClick={() => onTask(it.run!)}><ListChecks /> <span className="max-md:hidden">Its task</span></Button>}
+          {agent && <Button variant="ghost" size="sm" aria-label="Conversation" className="text-muted-foreground" onClick={() => onAgent(agent.name)}><MessageSquare /> <span className="max-md:hidden">Conversation</span></Button>}
         </span>
       </div>
     </header>

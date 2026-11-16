@@ -187,7 +187,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
-If you changed `web/`: `npm run check` and `npm run build` in `web/`, and commit `web/dist/`.
+If you changed `web/`: `npm run check`, `npm test` and `npm run build` in `web/`, and commit `web/dist/`.
 
 Never disable a lint, skip a test or mark one `#[ignore]` to make a change pass. If a check fails for a reason you do not understand, stop and report it.
 

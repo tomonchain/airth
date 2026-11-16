@@ -2,6 +2,65 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 144. An agent's words are rendered as Markdown, by one component, as untrusted content
+
+**Accepted** (founder, 16 November 2026: "afficher le markdown mis en forme partout où un agent écrit", with react-markdown and remark-gfm, and the security rules below).
+
+- **One component, `<Markdown>`** (`web/src/components/markdown.tsx`), wherever an agent's text is shown: reports, incidents and ideas in Needs you, the conversation (answers, drafts being written, the agent's working notes, a task passed on, a decision it proposes), a routine's last report and dry run, a company document's preview, an agent's mission. It replaces `Rich`, whose regular expressions dropped headings and quotes, missed task lists and strikethrough, and read tables only in some shapes.
+- **Two dependencies:** `react-markdown` 10.1.0 and `remark-gfm` 4.0.1, pinned. A parser is safer than regular expressions on text nobody controls.
+- **Airth's own blocks are kept:** a ```` ```csv ```` (or tsv) block is a table, a ```` ```chart ```` block a chart.
+- **The text is untrusted**, whatever the agent read to write it:
+  - no HTML is rendered (no `rehype-raw`; HTML in the text is skipped);
+  - no image is loaded, from anywhere: its alt text and its domain are shown in its place, so a remote image cannot tell its server who reads, and when;
+  - a link opens in a new tab with `rel="noopener noreferrer"`, its domain on hover; only `http`, `https` and `mailto` addresses are kept, anything else (`javascript:`, `data:`, `vbscript:`…) leaves the text without a link.
+- These rules stand on their own. The request cited decision 56, which is about approvals, not rendering.
+- **The look:** headings 15 to 17 px, never larger than the page's title; tables with thin borders, a tinted header, figures aligned right, and their own horizontal scroll on a narrow screen; code in the mono font.
+- **Left as typed:** a draft waiting for approval (it is published as written, so `**` must show), and text from outside (a source's excerpt).
+
+*Why:* reports showed `##`, `**` and `|` raw, worst on a phone. One renderer means one set of rules for untrusted text.
+
+*Cost:* two dependencies and theirs (the unified/remark family), about 30 KB gzipped in the main bundle (191 to 220 KB). A link to a relative address or an anchor no longer works in an agent's text.
+
+## 143. The interface's deterministic logic is tested with Vitest
+
+**Accepted** (founder, 16 November 2026: "Vitest + CI", then, once `main` tested with `node --test`, "passer à Vitest, une seule façon").
+
+- **Vitest** (5.1.0, pinned) is a development dependency of `web/`. `npm test` runs it; CI's `web` job runs it after the type check.
+- **It replaces `node --test`**, which the Routines page brought (#317): Node's runner cannot load a `.tsx` component, and the Markdown rendering is tested by rendering one. The three tests already there keep their `node:assert` checks; only their `test` comes from Vitest. One runner, one way.
+- **What is tested:** logic with a single right answer: how a trigger is said, which routines need a look, how a calendar lays out, what a piece of Markdown becomes. Tests sit beside their module (`time.test.ts` beside `time.ts`) and run in Node: a component is rendered to a string with `react-dom/server`, so no browser emulation is added.
+- **What is not:** the look of a screen. It is shown to the founder in screenshots, as before.
+- `CLAUDE.md`'s checks for a change to `web/` include `npm test`.
+
+*Why:* the founder asked for tests with the Markdown rendering, and they must render the component. Vitest reads `vite.config.ts` (the `@` alias, the React plugin), so the tests import modules exactly as the app does.
+
+*Cost:* one development dependency and its own (only in `node_modules`, never in `web/dist`). A test that needs the DOM would need an emulation, and its own decision.
+## 142. An agent may name the model its tasks use
+
+**Accepted** (founder, 16 November 2026: "un modèle par agent", for Hedgen's year report written by a stronger model than the business's).
+
+- **The field.** An agent's file may hold `model: provider/model`, for example `anthropic/claude-opus-5-5`. The provider is one Airth knows (`models::provider_catalog`); empty means the business's model.
+- **Where it applies.** When a run is driven, a model picked for that run in a conversation wins. Otherwise the model named by the run's agent applies: a task's agent, or the bot an agent routine ran for. Otherwise the business's routing applies.
+  - Like a model picked in a conversation, it uses that provider's own key, and falls back to the business's connections if the provider fails.
+  - A provider whose key is missing stops the run at its start, saying so (decision 139's "could not start").
+- **The page.** The agent's page has a Model choice, among the configured providers' models, saved when picked.
+- **Not changed.** A drawn routine's AI blocks keep the business's tiers, main and fast.
+
+*Why:* one agent may need a stronger model than the rest of the team, a year report for instance, without the whole business paying for it.
+
+*Cost:* the field travels in the agent's package (decision 140). A business without that provider's key cannot run the agent until it changes the model or adds the key.
+## 141. A landing page for Airth, in site/, published by GitHub Pages
+
+**Accepted** (founder, 15 November 2026: "a fairly basic landing page to promote Airth"; in the repository, published by GitHub Pages, in English, sending visitors to GitHub and the download).
+
+- **What:** one static page, `site/index.html`, with the logo, two screenshots of the app (light and dark, taken from a demo business) and nothing else. No build step, no script, no font or file fetched from elsewhere: the system's fonts, as in the app.
+- **What it says:** the pitch from `CLAUDE.md`, how a business, its team and Needs you work, the autonomy levels and their fixed ceilings, and how to install. It links to the latest release and to the repository. It names no business that uses Airth.
+- **Published by** `.github/workflows/pages.yml`, on a change to `site/` on `main`. Pages is set to "GitHub Actions" in the repository's settings once, by the founder. Its address is `tomonchain.github.io/airth` until a domain is chosen.
+- **Outside the beta's milestones:** the founder asked for it. It changes nothing in Airth itself.
+
+*Why:* the repository is public and releases are published, but nothing presents Airth to someone who is not reading its README, which still describes the earlier personal assistant.
+
+*Cost:* the page's copy and screenshots follow the product by hand; when a page shown changes, they are taken again. The address in the page's preview image (`og:image`) changes with the domain.
+
 ## 140. An agent's page, its levels in the app, and its package to take to another business
 
 **Accepted** (founder, 15 November 2026: a fuller agent page with tabs, each agent's rights, connectors and skills, and exporting an agent; "agent, routines and prompts"; import "right after").
