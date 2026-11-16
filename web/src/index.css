@@ -340,3 +340,25 @@ button.glass:hover { background: color-mix(in oklab, var(--accent) 85%, transpar
 .icon-metal {
     stroke: url(#airth-metal);
 }
+
+/* The Home's dithered background (components/dither.tsx): light dots on a
+   dark page, dark dots on a light one, faint enough to read over, and
+   fading out behind the greeting and the box, where the eye reads. */
+:root {
+    --dither-ink: 0 0 0;
+    --dither-alpha: 0.08;
+}
+.dark {
+    --dither-ink: 255 255 255;
+    --dither-alpha: 0.09;
+}
+.dither {
+    image-rendering: pixelated;
+    mask-image: radial-gradient(ellipse 36% 24% at 50% 47%, transparent 35%, black 100%);
+}
+@media (max-width: 767px) {
+    /* On a phone the greeting and the box sit low, within the thumb's reach. */
+    .dither {
+        mask-image: radial-gradient(ellipse 70% 22% at 50% 72%, transparent 35%, black 100%);
+    }
+}
