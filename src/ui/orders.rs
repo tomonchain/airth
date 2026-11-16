@@ -59,7 +59,13 @@ impl App {
                 let agent = body["agent"].as_str().context("pick the agent")?;
                 let order = body["text"].as_str().unwrap_or_default();
                 self.hub.model_for(&realm).context("no model available")?;
-                let state = self.hub.start_task(&realm, agent, order)?;
+                // About one of the business's projects (decision 147),
+                // checked against its own database.
+                let project = match &body["project"] {
+                    Value::Null => None,
+                    p => Some(p.as_i64().context("a project is its number")?),
+                };
+                let state = self.hub.start_task_for(&realm, agent, order, project)?;
                 let id = state.id.clone();
                 // Written in the agent's chat, the founder is there to answer
                 // its questions as they come (decision 75); from the command
@@ -100,12 +106,25 @@ impl App {
                 .find(|r| r.id == id)
                 .and_then(|r| r.agent.clone())
         };
+        // The project each task is about (decision 147): the one its order
+        // named, or the one it was planned in or passed on for.
+        let mut project_of = std::collections::HashMap::new();
+        for p in Store::of(realm)?.projects()? {
+            for run in p
+                .run
+                .iter()
+                .chain(p.tasks.iter().filter_map(|t| t.run.as_ref()))
+            {
+                project_of.insert(run.clone(), p.id);
+            }
+        }
         let (mut groups, mut done) = (
             json!({"waiting": [], "review": [], "running": []}),
             Vec::new(),
         );
         for run in runs.iter().cloned() {
             let status = run.display_status();
+            let project = run.project.or_else(|| project_of.get(&run.id).copied());
             let line = run.report.clone().unwrap_or_else(|| match run.plan_total {
                 0 => String::new(),
                 n => format!("{} of {n} steps done", run.plan_done),
@@ -115,6 +134,7 @@ impl App {
                 "order": run.objective.split("\n\n(Passed on by ").next().unwrap_or_default(),
                 "from": run.dispatched_by.as_deref().map(|t| json!({"task": t, "agent": agent_of(t)})),
                 "agent": run.agent,
+                "project": project,
                 "status": status,
                 "line": line,
                 "at": run.updated_at,
@@ -128,14 +148,31 @@ impl App {
                 ("running", _, _) => "running",
                 ("completed", _, Some(crate::isolation::ChangeStatus::Open)) => "review",
                 _ => {
-                    done.push(task);
+                    done.push((project.is_some(), task));
                     continue;
                 }
             };
             groups[group].as_array_mut().expect("an array").push(task);
         }
-        done.truncate(10);
-        groups["done"] = done.into();
+        // The last ten done, and a project's past beyond them: its thread
+        // keeps it (decision 147). Counted from the newest (the runs come
+        // oldest first), listed in the same order as before.
+        let (mut general, mut in_projects) = (0, 0);
+        let mut keep = vec![false; done.len()];
+        for (i, (in_project, _)) in done.iter().enumerate().rev() {
+            let seen = if *in_project {
+                &mut in_projects
+            } else {
+                &mut general
+            };
+            *seen += 1;
+            keep[i] = *seen <= if *in_project { 40 } else { 10 };
+        }
+        groups["done"] = done
+            .into_iter()
+            .zip(keep)
+            .filter_map(|((_, t), k)| k.then_some(t))
+            .collect();
         Ok(groups)
     }
 
@@ -262,5 +299,81 @@ mod tests {
         assert_eq!(passed["from"]["task"], chief.id.as_str());
         let own = all.iter().find(|t| t["agent"] == "chief").unwrap();
         assert!(own["from"].is_null());
+    }
+
+    /// Decision 147: the task list says each task's project, the one its
+    /// order named or the one it was planned in, and a project's past is
+    /// kept beyond the ten done tasks the main chat shows.
+    #[test]
+    fn the_task_list_says_each_tasks_project() {
+        use crate::business::store::projects::Additions;
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(crate::home::NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(root.join("agents/chief.md"), "Lead.").unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let done = |order: &str, project: Option<i64>| {
+            let mut s = app
+                .hub
+                .start_task_for(&realm, "chief", order, project)
+                .unwrap();
+            s.status = crate::state::Status::Completed;
+            s.save().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(3));
+            s
+        };
+        let planned = done("Redo the website", None);
+        let (id, _) = Store::of(&realm)
+            .unwrap()
+            .create_project(
+                "Website redesign",
+                "",
+                "chief",
+                Some(&planned.id),
+                &Additions {
+                    milestones: &[],
+                    tasks: &[],
+                },
+                chrono::Utc::now(),
+            )
+            .unwrap();
+        let tagged = done("Where are we?", Some(id));
+        for n in 0..12 {
+            done(&format!("Chat {n}"), None);
+        }
+        let page = app.tasks(&realm).unwrap();
+        let tasks = page["done"].as_array().unwrap();
+        let of = |run: &str| {
+            tasks
+                .iter()
+                .find(|t| t["id"] == run)
+                .map(|t| t["project"].clone())
+        };
+        assert_eq!(of(&planned.id), Some(json!(id)), "planned in it");
+        assert_eq!(of(&tagged.id), Some(json!(id)), "its order named it");
+        let general: Vec<_> = tasks.iter().filter(|t| t["project"].is_null()).collect();
+        assert_eq!(general.len(), 10, "the main chat's ten");
+        // The latest ten, not the first.
+        let orders: Vec<_> = general
+            .iter()
+            .map(|t| t["order"].as_str().unwrap())
+            .collect();
+        assert_eq!(orders.first(), Some(&"Chat 2"));
+        assert_eq!(orders.last(), Some(&"Chat 11"));
+        // Refused at the door: another business's or an unknown project.
+        assert!(
+            app.hub
+                .start_task_for(&realm, "chief", "Go", Some(id + 1))
+                .is_err()
+        );
     }
 }

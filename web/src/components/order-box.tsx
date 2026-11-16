@@ -21,11 +21,13 @@ const handle = (a: Agent) => (a.first_name ? a.first_name.replace(/\s+/g, "-") :
 /** Writing to an agent. A message continues the agent's latest task, as a
     chat does; a new task is started on purpose. Sent from here, the founder
     watches it, so its questions come back here (decision 75). */
-export function OrderBox({ realm, agent, title, task, closed, working, tools = [], others = [], onOther, onSending, onSent, onFailed }: {
+export function OrderBox({ realm, agent, title, task, closed, working, tools = [], others = [], onOther, onSending, onSent, onFailed, project }: {
   realm: string; agent: string; title: string; task?: string; closed?: string | null; working: boolean
   /** The agent's tools, offered after "/"; the business's other agents, after "@". */
   tools?: string[]; others?: Agent[]; onOther?: (name: string) => void
   onSending: (text: string, task: string | null) => void; onSent: (taskId: string | null) => void; onFailed: () => void
+  /** A new order is about this project (decision 147). */
+  project?: number
 }) {
   const [text, setText] = useState("")
   const box = useRef<HTMLTextAreaElement>(null)
@@ -93,7 +95,7 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
       if (goOn) {
         onSent(null)
       } else {
-        const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text: t, agent, watched: true })
+        const out = await api<{ id: string }>(`realms/${enc(realm)}/orders`, { text: t, agent, watched: true, project })
         onSent(out.id)
         setFresh(false)
       }

@@ -9,6 +9,7 @@ import { Dither } from "@/components/dither"
 import { greeting, moment } from "@/lib/greeting"
 import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
+import { inThread, projectLines } from "@/lib/project-threads"
 import { Conversation } from "@/screens/conversation"
 import type { Page } from "@/components/rail"
 
@@ -40,12 +41,13 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   const owner = usePoll<{ name: string }>(() => api("owner"), 600000, []).data
   const company = usePoll<Company>(() => api(`realms/${enc(realm)}/company`), 300000, [realm]).data
   const cal = usePoll<Calendar>(() => api(`realms/${enc(realm)}/calendar`), 300000, [realm]).data
-  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 300000, [realm]).data?.projects
+  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 60000, [realm]).data?.projects
   const first = owner?.name?.trim().split(/\s+/)[0] || null
 
   // Chat opens on New request, every time (the founder's choice); the
-  // conversation is one click away, under Conversation.
-  const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name).map((t) => t.id).sort(), [tasks, lead])
+  // conversation is one click away, under Conversation. A project's tasks
+  // are in its own thread (decision 147), not here.
+  const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name && inThread(t, null)).map((t) => t.id).sort(), [tasks, lead])
   const setMode = onMode
   const shown = lead && mode === "thread" ? "thread" : "start"
 
@@ -57,7 +59,8 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
           className={SLOT}>
           <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
         </Button>
-        <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top />
+        <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top project={null}
+          aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} />} />
       </div>
     )
   }
@@ -74,9 +77,29 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       {/* On a phone the greeting and the box sit in the lower half, within
           the thumb's reach, clear of the tab bar. */}
       <div className="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
+        <ProjectLines tasks={tasks} projects={projects} onProject={onProject} />
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
       </div>
+    </div>
+  )
+}
+
+/** Over the box, one quiet line per project that moved this week: it
+    opens the project's thread (decision 147). */
+function ProjectLines({ tasks, projects, onProject }: { tasks: Tasks | null; projects: Project[] | undefined; onProject: (id: number) => void }) {
+  const lines = projectLines(tasks, projects ?? [], new Date())
+  if (!lines.length) return null
+  return (
+    <div className="mb-2 flex flex-wrap justify-center gap-1.5">
+      {lines.slice(0, 3).map((l) => (
+        <button key={l.id} onClick={() => onProject(l.id)}
+          className="glass inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground">
+          <FolderKanban className="size-3.5 shrink-0" />
+          <span className="truncate">{l.count} {l.count > 1 ? "requests" : "request"} in <span className="font-medium text-foreground/80">{l.name}</span></span>
+          <span aria-hidden>·</span><span className="shrink-0">open</span>
+        </button>
+      ))}
     </div>
   )
 }

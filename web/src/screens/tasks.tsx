@@ -126,7 +126,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
       onChange={() => { runs.refresh(); tasks.refresh() }} onGone={() => { onOpen(null); runs.refresh(); tasks.refresh() }} onAgent={onAgent} />
   )
   if (project) return (
-    <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} onBack={() => setShown(null)}
+    <ProjectView key={project.id} realm={realm} project={project} runs={byRun} agents={agents} tasks={tasks.data} onTasks={tasks.refresh} onAgent={onAgent} onBack={() => setShown(null)}
       onTask={onOpen} onChange={() => { projects.refresh(); runs.refresh(); tasks.refresh() }} />
   )
   const empty = view === "projects" ? !listed.length : !groups.length

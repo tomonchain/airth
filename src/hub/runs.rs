@@ -69,6 +69,7 @@ impl Hub {
                     .as_deref()
                     .and_then(|m| m.split('/').next())
                     .map(str::to_string),
+                project: s.project,
                 report: s
                     .report
                     .as_deref()
@@ -257,6 +258,8 @@ pub struct RunSummary {
     pub agent: Option<String>,
     /// For a task a plan passed on: the interlocutor's run (decision 120).
     pub dispatched_by: Option<String>,
+    /// The project a task is about (decision 147).
+    pub project: Option<i64>,
     /// The first line of its report, if it has one.
     pub report: Option<String>,
 }
