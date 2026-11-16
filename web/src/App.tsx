@@ -280,7 +280,7 @@ export default function App() {
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               onAgent={open} onNeeds={() => setPage("needs")}
               onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onImported={hq.refresh} onProject={openProject} />
-          ) : page === "routines" ? <Routines realm={realm} agents={agents} onAgent={open} />
+          ) : page === "routines" ? <Routines realm={realm} agents={agents} items={items} onAgent={open} />
           : page === "tasks" ? <Tasks realm={realm} agents={agents} items={items} open={task} onOpen={setTask} onAgent={open} prefill={prefill} tasks={data.data?.tasks ?? null} onTasks={data.refresh} startProject={project} />
           : page === "calendar" ? <Calendar realm={realm} agents={agents} onAgent={open} />
           : page === "documents" ? <Documents realm={realm} onAsk={ask} start={doc} />

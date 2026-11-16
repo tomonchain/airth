@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useTheme } from "@/hooks/use-theme"
 import { api, called, enc, type Agent, type GraphBlock, type Routine } from "@/lib/api"
+import { graphTrigger, schedule, triggerText } from "@/lib/routine-list"
 import { cn } from "@/lib/utils"
 
 // The five blocks the founder drags in (CLAUDE.md); the trigger is always there.
@@ -26,31 +27,6 @@ const KINDS: { type: string; icon: LucideIcon; label: string; hint: string }[] =
   { type: "act", icon: Zap, label: "Act", hint: "One declared action" },
 ]
 const KIND = Object.fromEntries(KINDS.map((k) => [k.type, k]))
-
-const DAYS: Record<string, string> = { mon: "Mondays", tue: "Tuesdays", wed: "Wednesdays", thu: "Thursdays", fri: "Fridays", sat: "Saturdays", sun: "Sundays" }
-
-/** A schedule as the founder reads it: "weekdays 09:00" → "Weekdays at 09:00". */
-export function schedule(every: string): string {
-  const t = every.trim().toLowerCase()
-  const m = t.match(/^every (\d+)\s*(m|min|mins|h|hr|hrs|d|day|days)$/)
-  if (m) {
-    const n = Number(m[1])
-    const unit = m[2][0] === "m" ? "min" : m[2][0] === "h" ? (n === 1 ? "hour" : "hours") : (n === 1 ? "day" : "days")
-    return n === 1 && unit !== "min" ? `Every ${unit}` : `Every ${n} ${unit}`
-  }
-  const at = t.match(/^(\S+) (\d{1,2}:\d{2})$/)
-  if (!at) return every
-  const days = ({ daily: "Every day", weekdays: "Weekdays", weekends: "Weekends" } as Record<string, string>)[at[1]]
-    ?? at[1].split(",").map((d) => DAYS[d] ?? d).join(", ")
-  return `${days} at ${at[2]}`
-}
-
-export function triggerText(t: Record<string, unknown>): string {
-  if (typeof t.schedule === "string") return schedule(t.schedule)
-  if (t.telegram) return t.telegram === "x_post" ? "When you send a post link on Telegram" : `On Telegram: ${String(t.telegram)}`
-  if (t.webhook) return `On a webhook: ${String(t.webhook)}`
-  return "By hand"
-}
 
 /** A block's title and one line on what it does. */
 export function describe(b: GraphBlock): [string, string] {
@@ -185,7 +161,7 @@ function Canvas({ realm, routine, agents, actions, prompts, onClose, onSaved }: 
 
   const nodes: Node<NodeData>[] = useMemo(() => [
     { id: TRIGGER, type: "block", position: { x: at[TRIGGER][0], y: at[TRIGGER][1] }, deletable: false, selected: selected === TRIGGER,
-      data: { kind: TRIGGER, title: triggerText(draft.trigger), sub: ((x) => (x ? called(x) : draft.agent))(agents.find((a) => a.name === draft.agent)), wrong: false } },
+      data: { kind: TRIGGER, title: triggerText(graphTrigger(draft.trigger as Parameters<typeof graphTrigger>[0])), sub: ((x) => (x ? called(x) : draft.agent))(agents.find((a) => a.name === draft.agent)), wrong: false } },
     ...draft.blocks.map((b) => {
       const [title, sub] = describe(b)
       const r = report?.blocks.find((x) => x.id === b.id)
