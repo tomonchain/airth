@@ -14,7 +14,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 *Why:* the chat placed a task at its last activity, whole, because its messages had no time of their own. An approval that came at noon, during a task the founder last spoke to at 14:05, showed above the whole task, before words it came after. With a time per message the conversation reads in the order things happened.
 
-*Cost:* a time per message in each run's file (about 35 bytes each). Text added to a message already saved (the founder's words appended to the agent's last tool results, when a run is picked up again) keeps that message's time. Tasks are not interleaved with each other: a task that began during another shows after it, whole.
+*Cost:* a time per message in each run's file (about 35 bytes each). Text added to a message already saved (the founder's words appended to the agent's last tool results, when a run is picked up again) gives that message the time of the save that adds it, so the founder's words show when they were said; the tool results in the same message take that time too. A turn of the agent's work shows as one block at its first step's time: what came while it went on shows after it, never between its steps. Tasks are not interleaved with each other: a task that began during another shows after it, whole.
 
 ## 145. An update is ready sooner: a faster build, tests only when the Rust changed, a look every 5 minutes
 

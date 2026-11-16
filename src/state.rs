@@ -285,6 +285,11 @@ pub struct State {
     /// to the providers on their own, and this field is not among them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_at: Option<Vec<Option<DateTime<Utc>>>>,
+    /// A message already saved that text was added to since (the founder's
+    /// words after the agent's last tool results): it takes the time of the
+    /// next save, so those words show when they were said.
+    #[serde(skip)]
+    grown: Option<usize>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -348,6 +353,7 @@ impl State {
             message_at: Some(Vec::new()),
             model_choice: None,
             answered_by: None,
+            grown: None,
             path,
         }
     }
@@ -441,13 +447,44 @@ impl State {
     fn stamp_messages(&mut self, now: DateTime<Utc>) {
         let len = self.messages.len();
         let at = self.message_at.get_or_insert_with(|| vec![None; len]);
+        let saved = at.len();
         at.truncate(len);
         at.resize(len, Some(now));
+        if let Some(i) = self.grown.filter(|&i| i < saved.min(len)) {
+            at[i] = Some(now);
+        }
+    }
+
+    /// Add the founder's (or Airth's) words: to the last message when it is
+    /// already the user's (two in a row are one turn for the model), else
+    /// as a new one.
+    pub fn append_user_text(&mut self, text: &str) {
+        match self.messages.last_mut() {
+            Some(last) if last.role == Role::User => {
+                last.content.push(ContentBlock::Text {
+                    text: text.to_string(),
+                });
+                self.grown = Some(self.messages.len() - 1);
+            }
+            _ => self.messages.push(Message::user_text(text)),
+        }
     }
 
     pub fn save(&mut self) -> Result<()> {
         self.updated_at = Utc::now();
+        // The times are kept only once the file holds them: a failed write
+        // leaves them as they were, for the next save to give.
+        let (at, grown) = (self.message_at.clone(), self.grown);
         self.stamp_messages(self.updated_at);
+        if let Err(e) = self.write() {
+            (self.message_at, self.grown) = (at, grown);
+            return Err(e);
+        }
+        self.grown = None;
+        Ok(())
+    }
+
+    fn write(&self) -> Result<()> {
         if let Some(path) = &self.path {
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)?;
@@ -546,6 +583,52 @@ mod tests {
         // The first message keeps its time; the second has a later one.
         assert_eq!(at[0], first[0]);
         assert!(at[1] > at[0], "{at:?}");
+    }
+
+    #[test]
+    fn words_added_to_a_saved_message_take_the_time_they_were_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.messages.push(said("Shall I send it?"));
+        state.messages.push(Message::user_text("tool results"));
+        state.save().unwrap();
+        let before = state.message_at.clone().unwrap();
+
+        // Picked up again later: the founder's answer joins the last turn.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut state = State::load(state.path().unwrap()).unwrap();
+        state.append_user_text("Yes, send it.");
+        assert_eq!(state.messages.len(), 3, "one turn, not two");
+        state.save().unwrap();
+        let at = State::load(state.path().unwrap())
+            .unwrap()
+            .message_at
+            .unwrap();
+        assert_eq!(at[..2], before[..2], "the others keep theirs");
+        assert!(at[2] > before[2], "{at:?}");
+
+        // Saved again with nothing added: the time stays.
+        state.save().unwrap();
+        assert_eq!(state.message_at.as_ref().unwrap()[2], at[2]);
+    }
+
+    #[test]
+    fn a_failed_save_keeps_no_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new("obj", Some(dir.path()));
+        state.messages.push(Message::user_text("obj"));
+        state.save().unwrap();
+        let before = state.message_at.clone();
+        // The runs folder is now a file: the write fails.
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        std::fs::write(dir.path(), "").unwrap();
+        state.messages.push(said("done"));
+        assert!(state.save().is_err());
+        assert_eq!(
+            state.message_at, before,
+            "not stamped for a save that failed"
+        );
     }
 
     #[test]

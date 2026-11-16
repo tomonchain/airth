@@ -53,7 +53,9 @@ export function during(spans: Span[], at: number | null): string | null {
     the index of the first turn that began after it, or `turns.length` for
     after them all. A turn with no time is older than the record of times:
     nothing is placed before it. A task without any time (`timed` false)
-    keeps the old way: everything that came during it above it, whole. */
+    keeps the old way: everything that came during it above it, whole.
+    A turn of work is one block at its first step's time: what came while
+    it went on shows after it, between turns, never between its steps. */
 export function slots(turns: (number | null)[], events: (number | null)[], timed: boolean): number[] {
   return events.map((at) => {
     if (!timed) return 0
