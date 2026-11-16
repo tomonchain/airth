@@ -76,10 +76,11 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
 
   // A drawn routine's level: the lowest of its agent's levels for its acts.
   const owners = [...new Set((graphs.data?.routines ?? []).map((r) => r.graph?.agent).filter((a): a is string => !!a))].sort()
-  const levels = usePoll<Record<string, Record<string, number>>>(
+  const levels = usePoll<Record<string, Record<string, number> | null>>(
     owners.length ? async () => Object.fromEntries(await Promise.all(owners.map(async (a) => {
-      const l = await api<{ actions: { action: string; level: number }[] }>(`realms/${enc(realm)}/agents/${enc(a)}/levels`).catch(() => ({ actions: [] }))
-      return [a, Object.fromEntries(l.actions.map((x) => [x.action, x.level]))]
+      // Not read: its level is not said, rather than guessed.
+      const l = await api<{ actions: { action: string; level: number }[] }>(`realms/${enc(realm)}/agents/${enc(a)}/levels`).catch(() => null)
+      return [a, l && Object.fromEntries(l.actions.map((x) => [x.action, x.level]))]
     }))) : null, 60000, [realm, owners.join(",")])
 
   const rows = useMemo<Row[]>(() => {
@@ -91,7 +92,7 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
       out.push({
         kind: "graph", name: r.name, agent: g?.agent ?? null, trigger: graphTrigger(g?.trigger), paused: false, broken: !g, next_at: r.next_at,
         last: r.runs[0] ? { at: r.runs[0].at, ok: r.runs[0].ok } : null,
-        // An action never set starts at its ceiling, 1 for what commits (decision 96).
+        // An action the business does not declare commits, and starts at 1 (decision 96).
         level: its && acts.length ? Math.min(...acts.map((a) => its[a] ?? 1)) : null,
       })
     }
@@ -144,7 +145,7 @@ export function Routines({ realm, agents, items, onAgent }: { realm: string; age
               </Panel>
             </Section>
           )}
-          {!shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
+          {f.show === "look" && !look.length ? <p className="text-sm text-muted-foreground">Nothing needs a look.</p> : f.show === "look" ? null : !shown.length ? <p className="text-sm text-muted-foreground">No routine matches.</p> : (
             <section className="space-y-3">
               <Columns />
               {grouped.map((g) => {
@@ -292,7 +293,9 @@ function RoutineSheet({ realm, open, setOpen, agents, items, rows, onAgent, grap
   const a = agents.find((x) => x.name === row?.agent)
   const s = row ? state(row, items) : "ok"
   return (
-    <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+    // While a routine is drawn, only the canvas's own back arrow leaves it:
+    // a click beside it or Escape would lose what is not saved.
+    <Sheet open={!!open} onOpenChange={(o) => !o && !drawing && setOpen(null)}>
       <SheetContent showCloseButton={!drawing}
         className={cn("gap-0 p-0 data-[side=right]:w-full", drawing ? "data-[side=right]:sm:max-w-[min(80rem,96vw)]" : "data-[side=right]:sm:max-w-xl")}>
         {drawing && graphs.data ? (
@@ -330,6 +333,14 @@ function RoutineSheet({ realm, open, setOpen, agents, items, rows, onAgent, grap
       </SheetContent>
     </Sheet>
   )
+}
+
+/** How late a scheduled run started, past the 15 minutes of grace. */
+function late(run?: { at: string; due_at?: string | null }): string | null {
+  if (!run?.due_at) return null
+  const min = Math.round((Date.parse(run.at) - Date.parse(run.due_at)) / 60000)
+  if (min <= 15) return null
+  return min < 120 ? `${min} min` : `${Math.round(min / 60)} h`
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
@@ -370,6 +381,7 @@ function GraphDetail({ realm, r, agent, onAgent, onEdit, onChanged }: { realm: s
       )}
       {!g && r.error && <p className="font-mono text-[11px] break-words text-red-500">{r.error}</p>}
       {last?.error && <p className="line-clamp-3 font-mono text-[11px] text-red-500">{last.error}</p>}
+      {late(last) && <p className="text-xs text-amber-600 dark:text-amber-400">Its last run started {late(last)} late.</p>}
       {r.runs.length > 0 && (
         <div className="space-y-1">
           <h3 className="text-xs font-semibold">Last runs</h3>

@@ -49,9 +49,14 @@ function parse(every: string): Parsed | null {
   if (t[0] === "every") {
     const m = t[1].match(/^(\d+)(m|min|mins|h|hr|hrs|d|day|days)$/)
     if (!m) return null
-    return { every: Number(m[1]), unit: m[2][0] === "m" ? "minute" : m[2][0] === "h" ? "hour" : "day" }
+    const unit = m[2][0] === "m" ? "minute" : m[2][0] === "h" ? "hour" : "day"
+    const minutes = Number(m[1]) * ({ minute: 1, hour: 60, day: 1440 } as const)[unit]
+    // The scheduler takes between a minute and a year.
+    if (minutes < 1 || minutes > 366 * 1440) return null
+    return { every: Number(m[1]), unit }
   }
-  if (!/^\d{1,2}:\d{2}$/.test(t[1])) return null
+  const hm = t[1].match(/^(\d{1,2}):(\d{2})$/)
+  if (!hm || Number(hm[1]) > 23 || Number(hm[2]) > 59) return null
   const time = t[1].padStart(5, "0")
   if (t[0] === "daily") return { days: DAY_ORDER, time, named: "daily" }
   if (t[0] === "weekdays") return { days: DAY_ORDER.slice(0, 5), time, named: "weekdays" }
@@ -115,14 +120,18 @@ export function frequency(t: Trigger): Frequency {
     if (p.unit !== "day") return "daily"
     return p.every < 7 ? "daily" : p.every < 28 ? "weekly" : "monthly"
   }
-  return p.days.length >= 5 || p.named ? "daily" : "weekly"
+  return p.days.length >= 5 ? "daily" : "weekly"
 }
 
 const WAITS = new Set(["approval", "prepared", "delayed"])
 
-/** What the founder's Needs you holds for this routine. */
+/** What the founder's Needs you holds for this routine. Only a drawn
+    routine's items name it; an agent routine's name its run; a fixed
+    sequence leaves none. A drawn routine and an agent routine may share a
+    name: each reads its own. */
 function mine(row: Row, items: Waiting[]) {
-  return items.filter((i) => i.status === "pending" && (i.routine === row.name || (!!row.last?.run && i.run === row.last.run)))
+  return items.filter((i) => i.status === "pending"
+    && (row.kind === "graph" ? i.routine === row.name : row.kind === "agent" && !!row.last?.run && i.run === row.last.run))
 }
 
 /** One state per routine, the most pressing first: something broke (its

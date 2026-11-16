@@ -29,7 +29,7 @@ test("each kind of schedule the scheduler takes reads as a sentence", () => {
 })
 
 test("a schedule the scheduler would refuse never shows its raw text", () => {
-  for (const text of ["0 7 * * *", "sometimes", "every week", "daily noon"]) assert.equal(schedule(text), "On a schedule", text)
+  for (const text of ["0 7 * * *", "sometimes", "every week", "daily noon", "every 0m", "every 367d", "daily 25:00", "mon 08:60"]) assert.equal(schedule(text), "On a schedule", text)
 })
 
 test("each kind of trigger reads as a sentence", () => {
@@ -45,7 +45,7 @@ test("how often a routine runs", () => {
   assert.equal(s("every 2h"), "daily")
   assert.equal(s("daily 07:00"), "daily")
   assert.equal(s("weekdays 09:00"), "daily")
-  assert.equal(s("weekends 09:00"), "daily")
+  assert.equal(s("weekends 09:00"), "weekly")
   assert.equal(s("mon 08:00"), "weekly")
   assert.equal(s("every 7d"), "weekly")
   assert.equal(s("every 30d"), "monthly")
@@ -69,8 +69,13 @@ test("a routine's state: what broke first, then what waits, then paused", () => 
   assert.equal(state(row("a"), [item("approval", "a", { status: "approved" })]), "ok")
   assert.equal(state(row("a"), [item("approval", "b")]), "ok")
   assert.equal(state(row("a"), [item("report", "a")]), "ok")
-  // An agent routine's draft names its run, not the routine.
-  assert.equal(state(row("a", { kind: "agent", last: { at: "2026-11-16T07:00:00Z", ok: true, run: "r1" } }), [item("approval", null, { run: "r1" })]), "waiting")
+  // An agent routine's draft names its run, not the routine; a drawn
+  // routine of the same name does not read it, nor the other way round.
+  const agentRow = row("a", { kind: "agent", last: { at: "2026-11-16T07:00:00Z", ok: true, run: "r1" } })
+  assert.equal(state(agentRow, [item("approval", null, { run: "r1" })]), "waiting")
+  assert.equal(state(agentRow, [item("approval", "a")]), "ok")
+  assert.equal(state(row("a"), [item("approval", null, { run: "r1" })]), "ok")
+  assert.equal(state(row("a", { kind: "sequence" }), [item("approval", "a")]), "ok")
 })
 
 test("needs a look: incidents, then what waits, and nothing when all is well", () => {
