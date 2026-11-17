@@ -52,6 +52,14 @@ pub fn cap_reached(e: &anyhow::Error) -> bool {
     e.chain().any(|c| c.is::<CapReached>())
 }
 
+/// One start at a time, from reading what the month leaves to saving the
+/// run that holds its share of it: two starts at once would both see the
+/// same room and together spend past the cap. One lock for the process,
+/// as a plan's is: starts are rare, and one that makes a worktree holds it
+/// a few seconds at most. A start from another process (`airth objective
+/// run` in a terminal) is not covered.
+pub(super) static STARTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The first instant of `now`'s month, UTC.
 pub fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)

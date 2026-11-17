@@ -38,7 +38,8 @@ impl Hub {
         let job = crate::business::job(&root, agent)?;
         let scope = crate::business::scope(&root, agent)?;
         // No more than the month's budgets leave (decision 139); none when
-        // one is reached.
+        // one is reached. Held until the task is saved with its share.
+        let _start = crate::supervise::Locked::locked(&super::budget::STARTS);
         let left = self.month_allows(realm, Some(agent), Utc::now())?;
         // One repository per task: the first its agent declares.
         let repo = scope.repos.first().map(String::as_str);
