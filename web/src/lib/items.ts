@@ -18,4 +18,5 @@ export function isRecord(text: string | null | undefined): boolean {
 export const draft = (it: Shown): string | null => (it.kind === "approval" && it.text && !isRecord(it.text) ? it.text : null)
 
 /** What the item is about in one line: its title, else its source's. */
-export const heading = (it: Shown): string => it.title || it.source?.title || it.source?.text || ""
+export const heading = (it: Shown): string =>
+  it.title || it.source?.title || (isRecord(it.source?.text) ? "" : it.source?.text) || ""

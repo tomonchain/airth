@@ -18,5 +18,6 @@ describe("an item's words", () => {
     expect(draft(post)).toBe("{Hello} world")
     expect(draft({ kind: "incident", title: "Late", text: "detail" })).toBeNull()
     expect(heading({ kind: "incident", title: "Late" })).toBe("Late")
+    expect(heading({ kind: "approval", title: "", source: { text: '{"a": 1}' } })).toBe("")
   })
 })
