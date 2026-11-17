@@ -10,6 +10,7 @@ import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { ago, day, left, stamp } from "@/lib/time"
+import { draft, heading } from "@/lib/items"
 import { cn } from "@/lib/utils"
 
 // What needs the founder's decision first, what the check holds and what
@@ -103,9 +104,11 @@ function Batch({ realm, label, items, onDone }: { realm: string; label: string; 
 
 const soon = (it: Item) => !!it.expires_at && Date.parse(it.expires_at) - Date.now() < 3 * 3600 * 1000
 
-// A draft's words; else its title, never a record's raw fields.
-const preview = (it: Item) => (it.kind === "approval" && it.text && !raw(it.text) ? it.text : it.title || it.source?.title || it.source?.text || "").replace(/\s+/g, " ")
-const raw = (text: string) => text.trimStart().startsWith("{")
+// What broke keeps one red mark: the rest is in greys.
+const broke = (it: Item) => it.kind === "incident" || it.flag === "blocking"
+
+// A draft's words; else what it is about, never a record's raw fields.
+const preview = (it: Item) => (draft(it) ?? heading(it)).replace(/\s+/g, " ")
 
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
     the left, the open item in full on the right; answering opens the next.
@@ -224,10 +227,10 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
                           {/* Who sent it, and what it is as a small mark on
                               their face: the section says the rest. */}
                           <span className="relative mt-0.5 size-[34px] shrink-0" title={k.label}>
-                            {a ? <Character agent={a} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-muted"><k.icon className="size-4 text-muted-foreground" /></span>}
+                            {a ? <Character agent={a} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-muted"><k.icon className={cn("size-4 text-muted-foreground", broke(it) && "text-red-500")} aria-label={k.label} /></span>}
                             {a && (
                               <span className="absolute -right-1.5 -bottom-1 grid size-[18px] place-items-center rounded-full bg-background shadow-[0_0_0_1.5px_var(--background)]">
-                                <k.icon className={cn("size-[11px] text-muted-foreground", (it.kind === "incident" || it.flag === "blocking") && "text-red-500")} aria-label={k.label} />
+                                <k.icon className={cn("size-[11px] text-muted-foreground", broke(it) && "text-red-500")} aria-label={k.label} />
                               </span>
                             )}
                           </span>
@@ -318,8 +321,8 @@ function Header({ it, agent, onAgent, onTask }: { it: Item; agent?: Agent; onAge
   return (
     <header>
       {/* What it is, said plainly above it: no coloured label. */}
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><k.icon className={cn("size-3.5", (it.kind === "incident" || it.flag === "blocking") && "text-red-500")} /> {k.label}</span>
-      {!(it.kind === "approval" && it.text) && <h2 className="mt-3 text-xl leading-snug font-semibold tracking-tight">{it.title}</h2>}
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><k.icon className={cn("size-3.5", broke(it) && "text-red-500")} /> {k.label}</span>
+      {!draft(it) && <h2 className="mt-3 text-xl leading-snug font-semibold tracking-tight">{heading(it)}</h2>}
       {/* Who and where from, on two lines, so a long agent or routine name
           never wraps on a phone: the agent, then the routine and when. */}
       <div className="mt-3 flex items-center gap-2.5 text-sm">
