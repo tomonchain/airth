@@ -16,6 +16,26 @@ export type Entry = {
 
 export const CHANGELOG: Entry[] = [
   {
+    version: "0.11.0",
+    date: "2026-11-17",
+    title: "Smoother conversations, and the business's own skills",
+    added: [
+      "The business's own skills, in the format Claude and other tools use. A new or changed skill waits for your approval in Needs you; once you approve it, the agents you give it to can use it.",
+    ],
+    improved: [
+      "Asked on the Home, your message shows in the conversation at once, the agent typing under it.",
+      "An answer stays where it is written, formatted from its first words: nothing folds away or jumps when it ends.",
+      "Scrolling up while an answer comes in leaves you where you are.",
+      "What a task sends up to you (a hire, an action to approve, an incident) is answered in its conversation.",
+      "The conversation and Needs you hear at once when the business changes: what an agent sends up shows within a second, not at the next look.",
+      "A task you allow from Needs you or Telegram goes on at once.",
+      "Back on a task's page after leaving it, its agent asks you there again instead of in Needs you.",
+    ],
+    fixed: [
+      "Two tasks started at the same moment can no longer spend past the month's budget together.",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-11-17",
     title: "A thread per project, and chats in time order",
