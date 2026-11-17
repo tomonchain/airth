@@ -80,7 +80,11 @@ pub fn found(root: &Path) -> Vec<Skill> {
 pub fn names(root: &Path) -> Vec<String> {
     let mut out: Vec<String> = folders(root)
         .into_iter()
-        .filter(|n| root.join(DIR).join(n).join("SKILL.md").is_file())
+        // A plain file, as `found` reads it: a link is no skill.
+        .filter(|n| {
+            std::fs::symlink_metadata(root.join(DIR).join(n).join("SKILL.md"))
+                .is_ok_and(|m| m.is_file())
+        })
         .collect();
     out.sort();
     out
@@ -293,6 +297,15 @@ mod tests {
             root.path().join("skills/x/hard.md"),
         )
         .unwrap();
+        // A skill whose SKILL.md is a link is no skill, by name either.
+        write(outside.path(), "w/SKILL.md", "---\nname: w\n---\n");
+        std::fs::create_dir_all(root.path().join("skills/w")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("w/SKILL.md"),
+            root.path().join("skills/w/SKILL.md"),
+        )
+        .unwrap();
+        assert_eq!(names(root.path()), ["x"]);
         let found = found(root.path());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].files.len(), 1);
