@@ -553,11 +553,11 @@ function Learned({ realm, said, agent, agentTitle, onChanged }: { realm: string;
                   </form>
                 )}
               </div>
-              <span className="flex shrink-0 flex-col items-end gap-0.5 self-start opacity-0 group-hover:opacity-100 max-md:opacity-100">
+              <span className="flex shrink-0 flex-col items-end gap-0.5 self-start opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-md:opacity-100">
                 {agent && keeping?.item !== f.item && (
                   // A redo or a reason is already the founder's rule, nearly;
                   // an edit says what, not why: they write the rule.
-                  <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => setKeeping({ item: f.item, text: f.kind === "edit" ? "" : f.said })}>Keep for good</Button>
+                  <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => setKeeping({ item: f.item, text: f.kind === "edit" ? "" : f.said.slice(0, 300) })}>Keep for good</Button>
                 )}
                 <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => forget(f)}>Forget</Button>
               </span>
