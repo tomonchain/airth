@@ -600,12 +600,17 @@ pub fn lessons(root: &Path, name: &str) -> Vec<String> {
 }
 
 /// Keep a lesson the founder gives the agent `name`, at the end of its
-/// lessons (only the founder does: runs cannot write an agent's file).
+/// lessons (only the founder does: runs cannot write an agent's file). One
+/// it already has is not written twice, so keeping it again (a retry)
+/// changes nothing.
 pub fn add_lesson(root: &Path, name: &str, lesson: &str) -> Result<()> {
     crate::realm::validate_name(name).context("invalid agent name")?;
     let lesson = lesson.split_whitespace().collect::<Vec<_>>().join(" ");
     if lesson.is_empty() || lesson.chars().count() > 300 {
         bail!("a lesson is one line of at most 300 characters");
+    }
+    if lessons(root, name).contains(&lesson) {
+        return Ok(());
     }
     let path = root.join(AGENTS).join(format!("{name}.md"));
     let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {name}"))?;
@@ -825,6 +830,15 @@ mod tests {
         assert!(
             text.contains("- Never a price target.\n- Short titles.\n\n## Notes"),
             "{text}"
+        );
+        // Kept again (a retry): written once.
+        add_lesson(root.path(), "writer", "Short   titles.").unwrap();
+        assert_eq!(
+            lessons(root.path(), "writer")
+                .iter()
+                .filter(|l| *l == "Short titles.")
+                .count(),
+            1
         );
         assert!(add_lesson(root.path(), "writer", "").is_err());
         assert!(add_lesson(root.path(), "../x", "a").is_err());
