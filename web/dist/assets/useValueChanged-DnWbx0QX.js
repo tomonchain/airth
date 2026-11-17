@@ -1,1 +1,0 @@
-import{a as e,n as t}from"./jsx-runtime-Wy9s6hX0.js";import{I as n,at as r}from"./page-DVt3qUXF.js";var i=e(t(),1);function a(e,t){let a=i.useRef(e),o=n(t);r(()=>{a.current!==e&&o(a.current),a.current=e},[e,o])}export{a as t};
