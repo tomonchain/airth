@@ -590,7 +590,6 @@ function StopButton({ onStop }: { onStop: () => void }) {
   return <button onClick={onStop} className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Stop" title="Stop"><Square className="size-3 fill-current" /></button>
 }
 
-/** An agent's words: streamed as they arrive, then formatted. */
 /** An answer, written out as it arrives: formatted from its first words,
     so headings and lists do not reflow when it ends. */
 function AgentText({ text, stream }: { text: string; stream: boolean }) {

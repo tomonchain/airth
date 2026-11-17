@@ -54,7 +54,14 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const tasks = { data: list, refresh: onDone }
   // Tasks started here and not yet listed by the server.
   const [started, setStarted] = useState<string[]>([])
-  useEffect(() => setStarted([]), [agent.name])
+  // Another agent's thread starts empty; the first render keeps what an
+  // opening already put there (the box's effects run before this one's).
+  const shownFor = useRef(agent.name)
+  useEffect(() => {
+    if (shownFor.current === agent.name) return
+    shownFor.current = agent.name
+    setStarted([]); setOutbox([])
+  }, [agent.name])
   const taskIds = useMemo(() => {
     const ids = new Set<string>(started)
     for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name && inThread(t, project)) ids.add(t.id)
@@ -74,9 +81,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const [mine] = useState(() => new Set<string>())
   // What the founder just sent, until its task shows it: the message that
   // started the agent, then those written while it works, in their order.
-  type Sent = { text: string; task: string | null; at: string; queued?: boolean }
+  type Sent = { id: number; text: string; task: string | null; at: string; queued?: boolean }
   const [outbox, setOutbox] = useState<Sent[]>([])
-  useEffect(() => setOutbox([]), [agent.name])
+  const sent = useRef(0)
   const echoed = useCallback((text: string) => setOutbox((o) => { const i = o.findIndex((s) => s.text === text); return i < 0 ? o : [...o.slice(0, i), ...o.slice(i + 1)] }), [])
 
   const { entries, inside } = useMemo(() => {
@@ -256,9 +263,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
               return <div key={x.key}>{x.side === "task" ? x.node(lastOfGroup) : place(x, lastOfGroup)}</div>
             })
           )}
-          {/* Keyed by when it was sent: one leaving does not redraw the others. */}
+          {/* Keyed by its own number: one leaving does not redraw the others. */}
           {outbox.map((s) => (
-            <div key={s.at} className="mb-5 fade-up"><Mine text={s.text} at={s.at} note={s.queued ? "Waiting: it reads this at its next step" : undefined} /></div>
+            <div key={s.id} className="mb-5 fade-up"><Mine text={s.text} at={s.at} note={s.queued ? "Waiting: it reads this at its next step" : undefined} /></div>
           ))}
           {outbox.length > 0 && !outbox[0].queued && (
             <div className="mb-5 flex items-end gap-2.5 fade-up">
@@ -281,7 +288,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
           tools={[...(agent.integrations ?? []), ...(agent.skills ?? [])]} others={agents.filter((a) => a.name !== agent.name)} onOther={onAgent}
           onSending={(text, task) => {
             if (task) mine.add(task)
-            setOutbox((o) => [...o, { text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
+            setOutbox((o) => [...o, { id: ++sent.current, text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
             pinned.current = true
             requestAnimationFrame(() => toBottom(true))
           }}
