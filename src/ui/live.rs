@@ -172,12 +172,27 @@ pub(super) struct UiApprover {
 }
 
 /// An objective's run, which nobody may be watching.
+#[derive(Clone)]
 pub(super) struct Away {
     pub(super) objective: String,
     pub(super) realm: String,
     pub(super) run: String,
     pub(super) wait_minutes: u32,
     pub(super) inbox: Inbox,
+}
+
+impl UiApprover {
+    /// The approver of one pass of a run's thread. An objective's run stays
+    /// away on each pass (a retry, a time budget renewed), however often
+    /// its page is looked at; once the founder writes to it, the thread
+    /// drops its `Away`: they are there to answer.
+    fn for_pass(live: &Arc<Live>, away: &Option<Away>) -> Self {
+        Self {
+            live: live.clone(),
+            next_id: 0,
+            away: away.clone(),
+        }
+    }
 }
 
 impl Approver for UiApprover {
@@ -322,12 +337,7 @@ impl Runner {
                     let (mut retries, mut budgets) = (0, 0);
                     loop {
                         let hooks = RunHooks {
-                            approver: Box::new(UiApprover {
-                                live: live.clone(),
-                                next_id: 0,
-                                // Who writes to a run is there to answer it.
-                                away: away.take(),
-                            }),
+                            approver: Box::new(UiApprover::for_pass(&live, &away)),
                             observer: &mut observer,
                             cancel: live.cancel.clone(),
                         };
@@ -394,6 +404,8 @@ impl Runner {
                         }
                         *said = Some(Vec::new());
                         drop(said);
+                        // Who writes to a run is there to answer it.
+                        away = None;
                         for text in &left {
                             state.append_user_text(text);
                         }
@@ -518,6 +530,27 @@ mod tests {
             );
         }
         assert_eq!(next_on_its_own(Status::Completed, None, 0, 0), None);
+    }
+
+    /// Decision 150 watches a run again once its page looks, but never an
+    /// objective's: every pass of its thread, a retry included, keeps it
+    /// away, even with its page open.
+    #[test]
+    fn every_pass_of_an_objectives_run_stays_unwatched() {
+        let live = live(Watch::from_now());
+        live.watch.seen();
+        let away = Some(Away {
+            objective: "o".into(),
+            realm: "r".into(),
+            run: "run1".into(),
+            wait_minutes: 5,
+            inbox: crate::notify::Inbox::new(tempfile::tempdir().unwrap().path().join("n.json")),
+        });
+        for _pass in 0..3 {
+            assert!(!UiApprover::for_pass(&live, &away).watched());
+        }
+        // Written to by the founder: the thread drops its Away.
+        assert!(UiApprover::for_pass(&live, &None).watched());
     }
 
     fn left(ago: u64) -> Watch {

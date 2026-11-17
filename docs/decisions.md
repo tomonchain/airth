@@ -1792,7 +1792,7 @@ Decision 45's levels apply to the runs Airth starts (routines, their missions). 
 - **Detaching is final.** Once nobody watches a run, every later action of that run is unwatched, even if someone comes back. *Replaced by decision 150: a founder back on the run's page watches it again.*
 - **Read and reversible actions** keep following the realm's permission policy in runs the founder starts, as today.
 
-How: a run the founder starts gets an authority of its own, next to the one that applies the levels (`hub/autonomy.rs`). It answers "the policy decides" for read and reversible actions; for a commit it asks the founder if the approver says they watch, otherwise it queues the call and stops the run. The approver says whether the founder watches (`Approver::watched`, no by default); the permission gate remembers when they stopped.
+How: a run the founder starts gets an authority of its own, next to the one that applies the levels (`hub/autonomy.rs`). It answers "the policy decides" for read and reversible actions; for a commit it asks the founder if the approver says they watch, otherwise it queues the call and stops the run. The approver says whether the founder watches (`Approver::watched`, no by default); the permission gate asks it at each check (decision 150; it used to remember when they stopped).
 
 *Why:* the command bar (milestone 5) starts runs the founder does not watch live. Such a run reads outside content (a page, a post, a mail at milestone 7), and an instruction hidden in that content must not be able to make it commit the business. The levels already guarantee this for routines (commits never above level 1); a run the founder starts must not be the way around them.
 
