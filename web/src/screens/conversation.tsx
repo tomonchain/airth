@@ -49,7 +49,7 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   // A project's thread is its tasks only: the agent's routines are elsewhere.
   const own = typeof project === "number"
   const { prefs } = usePrefs()
-  const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 4000, [realm, agent.name])
+  const thread = usePoll<Thread>(() => api(`realms/${enc(realm)}/agents/${enc(agent.name)}/thread`), 15000, [realm, agent.name], realm)
   // The app's list, refreshed every few seconds: not asked again here.
   const tasks = { data: list, refresh: onDone }
   // Tasks started here and not yet listed by the server.

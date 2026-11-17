@@ -41,7 +41,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   const owner = usePoll<{ name: string }>(() => api("owner"), 600000, []).data
   const company = usePoll<Company>(() => api(`realms/${enc(realm)}/company`), 300000, [realm]).data
   const cal = usePoll<Calendar>(() => api(`realms/${enc(realm)}/calendar`), 300000, [realm]).data
-  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 60000, [realm]).data?.projects
+  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 60000, [realm], realm).data?.projects
   const first = owner?.name?.trim().split(/\s+/)[0] || null
 
   // Chat opens on New request, every time (the founder's choice); the
