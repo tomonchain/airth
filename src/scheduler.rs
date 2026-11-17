@@ -16,23 +16,28 @@ pub const TICK: std::time::Duration = std::time::Duration::from_secs(10);
 /// Set when something the runtime does is due now, not at the next tick:
 /// a task the founder just allowed to go on resumes at once, whether the
 /// answer came from the app or from Telegram.
-static WAKE: (std::sync::Mutex<bool>, std::sync::Condvar) =
-    (std::sync::Mutex::new(false), std::sync::Condvar::new());
+static WAKE: Bell = (std::sync::Mutex::new(false), std::sync::Condvar::new());
 
 /// Asks the runtime to look now.
 pub fn wake() {
-    let (woken, bell) = &WAKE;
-    *crate::supervise::Locked::locked(woken) = true;
-    bell.notify_all();
+    ring(&WAKE);
 }
 
 /// Waits for the next tick, or less if woken meanwhile.
 pub fn wait_tick() {
-    wait_at_most(TICK);
+    wait_at_most(&WAKE, TICK);
 }
 
-fn wait_at_most(tick: std::time::Duration) {
-    let (woken, bell) = &WAKE;
+type Bell = (std::sync::Mutex<bool>, std::sync::Condvar);
+
+fn ring(bell: &Bell) {
+    let (woken, bell) = bell;
+    *crate::supervise::Locked::locked(woken) = true;
+    bell.notify_all();
+}
+
+fn wait_at_most(bell: &Bell, tick: std::time::Duration) {
+    let (woken, bell) = bell;
     let guard = crate::supervise::Locked::locked(woken);
     let (mut woken, _) = bell
         .wait_timeout_while(guard, tick, |w| !*w)
@@ -253,16 +258,22 @@ fn first_line(text: &str) -> String {
 mod wake_tests {
     use super::*;
 
-    /// Woken, the runtime looks at once instead of waiting out its tick.
+    /// Woken, the runtime looks at once instead of waiting out its tick;
+    /// not woken, it waits it out. A bell of its own: other tests wake the
+    /// runtime's.
     #[test]
     fn a_wake_ends_the_wait() {
+        static BELL: Bell = (std::sync::Mutex::new(false), std::sync::Condvar::new());
+        let started = std::time::Instant::now();
+        wait_at_most(&BELL, std::time::Duration::from_millis(300));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(300));
         let waiter = std::thread::spawn(|| {
             let started = std::time::Instant::now();
-            wait_at_most(std::time::Duration::from_secs(30));
+            wait_at_most(&BELL, std::time::Duration::from_secs(30));
             started.elapsed()
         });
         std::thread::sleep(std::time::Duration::from_millis(100));
-        wake();
+        ring(&BELL);
         assert!(waiter.join().unwrap() < std::time::Duration::from_secs(5));
     }
 }
