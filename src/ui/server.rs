@@ -401,7 +401,8 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|d| eprintln!("retried action {d}")),
             Err(e) => eprintln!("retried actions: {e:#}"),
         }
-        std::thread::sleep(scheduler::TICK);
+        // A tick, or less when an answer let a task go on (decision 64).
+        scheduler::wait_tick();
     }
 }
 
