@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 149. A start holds its business's month from the budget check to the save that promises it
+
+**Accepted** (founder, 17 November 2026: hold one lock per business from the check to the save, so two starts never both take what is left).
+
+- **One lock per business**, in Airth's process: `month_allows` takes it before it reads the month, and gives it back with what is left. A task or an objective's run keeps it until its state is saved with its budget, which is what holds that budget against the cap (decision 139). Only then may another start read the month.
+- **Which starts:** a task (the command bar, Telegram, a plan, a routine's mission) and an objective's run. A routine promises nothing ahead, since its calls are journaled as they are made, so it lets the lock go right after its check.
+- **One business never waits on another:** the lock is keyed by the business's directory. It lives in a `static`, as the other locks of `src/hub` do (`PLANS`), since the process makes more than one `Hub`.
+
+*Why:* the check and the save were two steps. Two orders at the same moment, or an order and an objective firing, read the same room and both took it: decision 139's cost, the month going past a cap by one run's budget. A test starts two tasks from two threads against a cap with room for one, and only one starts.
+
+*Cost:* starts in one business are one at a time. A start that creates a worktree (an isolated business) keeps the next waiting for the time of a `git worktree add`. Two Airth processes on one home are not serialised; the app runs as one.
+
 ## 148. Each message of a run keeps the time it was added; the model never sees it
 
 **Accepted** (founder, 16 November 2026: "Go" on giving each message its time, so the chat interleaves exactly).

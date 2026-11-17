@@ -45,7 +45,9 @@ fn a_task_spends_no_more_than_the_month_leaves_and_none_past_it() {
     let mut first = hub.start_task(&f.realm, "writer", "Draft").unwrap();
     assert_eq!(first.budget.max_cost_usd, Some(1.0));
     assert_eq!(
-        hub.month_allows(&f.realm, Some("writer"), now).unwrap(),
+        hub.month_allows(&f.realm, Some("writer"), now)
+            .unwrap()
+            .left,
         None
     );
     spend(&mut first);
@@ -391,6 +393,54 @@ fn a_run_that_cannot_start_holds_nothing_of_the_month() {
     // The whole $2 is free again.
     let left = hub
         .month_allows(&f.realm, Some("writer"), Utc::now())
-        .unwrap();
+        .unwrap()
+        .left;
     assert!((left.unwrap() - 2.0).abs() < 1e-9, "{left:?}");
+}
+
+/// Two orders at the same moment against a cap that leaves room for one:
+/// one starts, the other is refused. Without one lock from the check to the
+/// save, both read the same room and both take it.
+#[test]
+fn two_tasks_started_together_never_share_what_is_left() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "---\n---\nWrite.\n").unwrap();
+    std::fs::write(root.join("agents/editor.md"), "---\n---\nEdit.\n").unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    // Room for one task's $1 budget, never two.
+    crate::business::set_monthly_cap(&root, None, Some(1.0), &[]).unwrap();
+
+    // A race may be missed on one try: several, each from a free month.
+    for round in 0..20 {
+        let gate = std::sync::Barrier::new(2);
+        let results: Vec<Result<State>> = std::thread::scope(|s| {
+            let start = |agent: &'static str| {
+                let (hub, realm, gate) = (&hub, &f.realm, &gate);
+                s.spawn(move || {
+                    gate.wait();
+                    hub.start_task(realm, agent, "Draft")
+                })
+            };
+            let both = [start("writer"), start("editor")];
+            both.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let started: Vec<State> = results
+            .into_iter()
+            .filter_map(|r| match r {
+                Ok(state) => Some(state),
+                Err(e) => {
+                    assert!(crate::hub::budget::cap_reached(&e), "{e:#}");
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(started.len(), 1, "round {round}: both tasks started");
+        // It ends without spending: the month is free for the next round.
+        for mut state in started {
+            state.status = Status::Completed;
+            state.save().unwrap();
+        }
+    }
 }

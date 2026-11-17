@@ -6,9 +6,51 @@
 
 use super::*;
 use crate::business::store::Store;
+use crate::supervise::Locked;
 use chrono::{Datelike, TimeZone};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::path::PathBuf;
+use std::sync::{Condvar, Mutex};
+
+/// Realms whose month is being read and promised, by their directory: one
+/// start at a time per realm, so two never both take what is left.
+static HELD: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+static FREED: Condvar = Condvar::new();
+
+/// A realm's month, held from the check until the run that takes what is
+/// left is saved; released when dropped.
+#[derive(Debug)]
+struct Held(PathBuf);
+
+impl Held {
+    fn take(realm: &Realm) -> Self {
+        let dir = realm.dir().to_path_buf();
+        let mut held = HELD.locked();
+        while held.contains(&dir) {
+            held = FREED.wait(held).unwrap_or_else(|e| e.into_inner());
+        }
+        held.insert(dir.clone());
+        Self(dir)
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        HELD.locked().remove(&self.0);
+        FREED.notify_all();
+    }
+}
+
+/// What work may still spend this month, and the realm's month held until
+/// this is dropped: keep it until the run given `left` is saved, which is
+/// what records the promise.
+#[derive(Debug)]
+pub(super) struct Allowance {
+    /// None: no cap.
+    pub left: Option<f64>,
+    _held: Held,
+}
 
 /// A cap and where the month stands against it.
 #[derive(Debug, Clone, PartialEq)]
@@ -155,20 +197,29 @@ impl Hub {
     }
 
     /// What work for `agent` may still spend this month: None with no cap.
-    /// When a cap is reached, the founder is told once this month, and the
-    /// error, a `CapReached`, says which cap and how to go on.
+    /// The realm's month stays held while the allowance lives, so no other
+    /// start reads it before this one's run is saved. When a cap is
+    /// reached, the founder is told once this month, and the error, a
+    /// `CapReached`, says which cap and how to go on.
     pub(super) fn month_allows(
         &self,
         realm: &Realm,
         agent: Option<&str>,
         now: DateTime<Utc>,
-    ) -> Result<Option<f64>> {
+    ) -> Result<Allowance> {
+        let held = Held::take(realm);
         let caps = self.month_caps(realm, agent, now)?;
         let Some(tight) = caps.iter().min_by(|a, b| a.left().total_cmp(&b.left())) else {
-            return Ok(None);
+            return Ok(Allowance {
+                left: None,
+                _held: held,
+            });
         };
         if tight.left() > 0.0 {
-            return Ok(Some(tight.left()));
+            return Ok(Allowance {
+                left: Some(tight.left()),
+                _held: held,
+            });
         }
         let next = month_start(month_start(now) + chrono::Duration::days(32));
         let detail = format!(

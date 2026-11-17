@@ -31,9 +31,10 @@ impl Hub {
         // The month's budgets bind it as they bind a task (decision 139):
         // its bot's and the business's; none starts once one is reached.
         // Past one, this firing is skipped, as a routine's is: told once,
-        // not tried again at every tick of the scheduler.
-        let left = match self.month_allows(realm, objective.bot.as_deref(), now) {
-            Ok(left) => left,
+        // not tried again at every tick of the scheduler. Held until the
+        // run's save records what it takes.
+        let allowance = match self.month_allows(realm, objective.bot.as_deref(), now) {
+            Ok(allowance) => allowance,
             Err(e) => {
                 if super::budget::cap_reached(&e) {
                     let fingerprint = watched_fingerprint(realm, &objective)?;
@@ -59,7 +60,7 @@ impl Hub {
         state.append_user_text(&brief);
         state.grants = objective.approvals.clone();
         state.budget = objective.budget;
-        if let Some(left) = left {
+        if let Some(left) = allowance.left {
             state.budget.max_cost_usd =
                 Some(state.budget.max_cost_usd.map_or(left, |c| c.min(left)));
         }
@@ -72,6 +73,7 @@ impl Hub {
             bot: objective.bot.clone(),
         });
         state.save()?;
+        drop(allowance);
 
         let fingerprint = watched_fingerprint(realm, &objective)?;
         let run_id = state.id.clone();

@@ -117,6 +117,8 @@ impl Hub {
                     "routine {}/{name}: the monthly budget was not read: {e:#}",
                     realm.name()
                 ),
+                // A routine promises nothing ahead (its calls are journaled
+                // as they are made), so the month is let go at once.
                 Ok(_) => {}
             }
         }
