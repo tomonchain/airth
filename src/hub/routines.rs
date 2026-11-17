@@ -555,6 +555,8 @@ impl Hub {
             ));
             state.save()?;
             store.close_item(id, "done", "allowed: the task goes on")?;
+            // It goes on now, not at the runtime's next tick.
+            crate::scheduler::wake();
             let closed = store.queue(&["done"])?.into_iter().find(|i| i.id == id);
             return Ok((
                 closed.unwrap_or(item),

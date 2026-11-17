@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
+import { CHANGED } from "@/hooks/use-changes"
 import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
@@ -84,14 +85,23 @@ export function useRun(realm: string, id: string, active: boolean) {
         if (on) later(load, 1500)
       }
     }
-    // Back on the tab: look now, not at the end of the wait.
+    // Back on the tab, or the business changed (a run started or saved,
+    // this one resumed after an answer in Needs you): look now, not at the
+    // end of the wait.
     const shown = () => {
       if (document.visibilityState !== "visible" || timer === null) return
       clearTimeout(timer); timer = null; load()
     }
+    const changed = (e: Event) => { if ((e as CustomEvent).detail === realm) shown() }
     document.addEventListener("visibilitychange", shown)
+    window.addEventListener(CHANGED, changed)
     load()
-    return () => { on = false; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", shown) }
+    return () => {
+      on = false
+      if (timer) clearTimeout(timer)
+      document.removeEventListener("visibilitychange", shown)
+      window.removeEventListener(CHANGED, changed)
+    }
   }, [realm, id, active, tick])
   return { view, draft, refresh: () => { version.current = 0; setTick((t) => t + 1) } }
 }

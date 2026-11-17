@@ -13,6 +13,33 @@ use serde::Serialize;
 /// How often the background runtime looks for due objectives.
 pub const TICK: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Set when something the runtime does is due now, not at the next tick:
+/// a task the founder just allowed to go on resumes at once, whether the
+/// answer came from the app or from Telegram.
+static WAKE: (std::sync::Mutex<bool>, std::sync::Condvar) =
+    (std::sync::Mutex::new(false), std::sync::Condvar::new());
+
+/// Asks the runtime to look now.
+pub fn wake() {
+    let (woken, bell) = &WAKE;
+    *crate::supervise::Locked::locked(woken) = true;
+    bell.notify_all();
+}
+
+/// Waits for the next tick, or less if woken meanwhile.
+pub fn wait_tick() {
+    wait_at_most(TICK);
+}
+
+fn wait_at_most(tick: std::time::Duration) {
+    let (woken, bell) = &WAKE;
+    let guard = crate::supervise::Locked::locked(woken);
+    let (mut woken, _) = bell
+        .wait_timeout_while(guard, tick, |w| !*w)
+        .unwrap_or_else(|e| e.into_inner());
+    *woken = false;
+}
+
 /// An objective whose trigger fired.
 pub struct Due {
     pub realm: Realm,
@@ -219,5 +246,23 @@ fn first_line(text: &str) -> String {
         format!("{}…", line.chars().take(159).collect::<String>())
     } else {
         line.to_string()
+    }
+}
+
+#[cfg(test)]
+mod wake_tests {
+    use super::*;
+
+    /// Woken, the runtime looks at once instead of waiting out its tick.
+    #[test]
+    fn a_wake_ends_the_wait() {
+        let waiter = std::thread::spawn(|| {
+            let started = std::time::Instant::now();
+            wait_at_most(std::time::Duration::from_secs(30));
+            started.elapsed()
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        wake();
+        assert!(waiter.join().unwrap() < std::time::Duration::from_secs(5));
     }
 }
