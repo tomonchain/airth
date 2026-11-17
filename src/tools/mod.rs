@@ -68,6 +68,9 @@ pub struct RealmTools {
     pub integrations: Vec<Integration>,
     /// Where the realm's MCP servers and catalog skills are kept.
     pub skills_dir: PathBuf,
+    /// The business's own skills the founder approved, as approved
+    /// (decision 149).
+    pub own_skills: Vec<crate::business::skills::Skill>,
     /// For a bot's run: the realm's extensions it may use, by name
     /// (integrations, MCP servers, skills). None: all of them. What is left out is not offered, so it cannot be called.
     pub allowed: Option<Vec<String>>,
@@ -102,6 +105,11 @@ pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
             .into_iter()
             .map(|s| s.name),
     );
+    // The business's own, approved or not yet: the founder may give one
+    // before approving it; it is offered only once approved (decision 149).
+    if let Ok(root) = realm.root() {
+        names.extend(crate::business::skills::names(&root));
+    }
     names.sort();
     names.dedup();
     names
@@ -161,8 +169,13 @@ pub fn realm_tools(realm: RealmTools) -> Vec<Box<dyn Tool>> {
     }
     // Tools of the MCP servers the owner connected to this realm.
     tools.extend(mcp::tools_of(&realm.skills_dir, allows));
-    // Skills the owner installed from the catalog, read through `use_skill`.
-    tools.extend(catalog::tool_for(&realm.skills_dir, allows));
+    // Skills the owner installed from the catalog and the business's own,
+    // read through `use_skill`.
+    tools.extend(catalog::tool_for(
+        &realm.skills_dir,
+        realm.own_skills,
+        allows,
+    ));
     tools
 }
 
@@ -496,6 +509,7 @@ mod tests {
             plan: PlanHandle::default(),
             integrations: vec![integration("blog"), integration("bank")],
             skills_dir: skills.clone(),
+            own_skills: Vec::new(),
             allowed,
             delegation: None,
             dispatch: None,
@@ -533,6 +547,7 @@ mod tests {
                 plan: PlanHandle::default(),
                 integrations: Vec::new(),
                 skills_dir: skills,
+                own_skills: Vec::new(),
                 allowed,
                 delegation: None,
                 dispatch: None,

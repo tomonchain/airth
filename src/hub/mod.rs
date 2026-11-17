@@ -43,6 +43,7 @@ mod missions;
 mod models;
 mod objectives;
 pub(crate) mod orders;
+mod own_skills;
 mod pipelines;
 #[cfg(test)]
 pub(crate) use pipelines::TEST_FEEDS;
@@ -265,6 +266,7 @@ impl Hub {
                     plan: plan.clone(),
                     integrations: realm.config.integrations.clone(),
                     skills_dir: realm.skills_dir(),
+                    own_skills: self.offered_skills(realm)?,
                     allowed: state.tools.clone(),
                     delegation: self.delegation_for(realm, state)?,
                     dispatch: self.dispatch_for(realm, state)?,

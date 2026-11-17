@@ -18,6 +18,7 @@ pub mod queue;
 pub mod reports;
 pub mod retries;
 pub mod routines;
+pub mod skills;
 pub mod status;
 pub mod time;
 
@@ -454,6 +455,18 @@ const MIGRATIONS: &[&str] = &[
         sent_at TEXT NOT NULL
     );
     CREATE INDEX mail_sent_by_mailbox ON mail_sent(mailbox, sent_at);",
+    // 26: the business's own skills the founder approved (decision 149):
+    // each one's files as approved, by their hash, and its SKILL.md, to
+    // show what changed. Out of the business folder, so no run can approve
+    // a skill it wrote.
+    "CREATE TABLE skills (
+        name TEXT PRIMARY KEY,
+        hash TEXT NOT NULL,
+        files TEXT NOT NULL,
+        skill_md TEXT NOT NULL,
+        item INTEGER REFERENCES queue(id),
+        approved_at TEXT NOT NULL
+    );",
 ];
 
 pub struct Store {

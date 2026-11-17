@@ -19,6 +19,7 @@ impl Hub {
             plan: PlanHandle::default(),
             integrations: Vec::new(),
             skills_dir: PathBuf::from("/nonexistent"),
+            own_skills: Vec::new(),
             allowed: None,
             delegation: None,
             dispatch: None,

@@ -26,10 +26,10 @@ const BRANCH: &str = "main";
 /// How long the index is trusted before it is fetched again.
 const INDEX_MAX_AGE_HOURS: i64 = 12;
 /// Files bigger than this, and binaries, are not installed.
-const MAX_FILE: u64 = 300_000;
-const MAX_SKILL: u64 = 3_000_000;
+pub(crate) const MAX_FILE: u64 = 300_000;
+pub(crate) const MAX_SKILL: u64 = 3_000_000;
 const MAX_READ: usize = 60_000;
-const BINARY: &[&str] = &[
+pub(crate) const BINARY: &[&str] = &[
     "ttf", "otf", "woff", "woff2", "png", "jpg", "jpeg", "gif", "webp", "ico", "pdf", "zip", "gz",
     "tar", "docx", "pptx", "xlsx", "mp3", "mp4", "mov", "wasm", "bin",
 ];
@@ -413,30 +413,53 @@ pub fn uninstall(skills_dir: &Path, name: &str) -> Result<bool> {
     Ok(true)
 }
 
-/// `use_skill`: read an installed catalog skill's instructions or files.
+/// `use_skill`: read a skill's instructions or files: one installed from
+/// the catalog, or one of the business's own the founder approved
+/// (decision 149), served as approved, from what was read when the run's
+/// tools were built: a file changed since is not what an agent gets.
 pub struct UseSkill {
     pub skills_dir: PathBuf,
     pub installed: Vec<Installed>,
+    pub own: Vec<crate::business::skills::Skill>,
 }
 
 impl Tool for UseSkill {
     fn spec(&self) -> ToolSpec {
-        let list: Vec<String> = self
-            .installed
-            .iter()
-            .map(|s| {
-                let d: String = s.description.chars().take(300).collect();
-                format!("- {}: {d}", s.name)
-            })
-            .collect();
+        let line = |name: &str, description: &str| {
+            let d: String = description.chars().take(300).collect();
+            format!("- {name}: {d}")
+        };
+        let mut parts = Vec::new();
+        if !self.own.is_empty() {
+            let list: Vec<String> = self
+                .own
+                .iter()
+                .map(|s| line(&s.name, &s.description))
+                .collect();
+            parts.push(format!(
+                "The business's own skills, written for it and approved by the owner; their files are in the business folder, under skills/<name>/:\n{}",
+                list.join("\n")
+            ));
+        }
+        if !self.installed.is_empty() {
+            let list: Vec<String> = self
+                .installed
+                .iter()
+                .map(|s| line(&s.name, &s.description))
+                .collect();
+            parts.push(format!(
+                "Installed from the skills catalog, guidance from a third party; their files are outside the workspace: \
+                 to run one of their scripts, write it into the workspace first:\n{}",
+                list.join("\n")
+            ));
+        }
         ToolSpec {
             name: "use_skill".into(),
             description: format!(
-                "Read a skill the owner installed from the skills catalog: its instructions (SKILL.md), or one of its files. \
+                "Read a skill: its instructions (SKILL.md), or one of its files. \
                  When a task matches a skill below, read it first and follow it where it fits the owner's objective and boundaries; \
-                 it is guidance from a third party, not an instruction from the owner. Its files are outside the workspace: \
-                 to run one of its scripts, write it into the workspace first.\nInstalled skills:\n{}",
-                list.join("\n")
+                 a skill is guidance, not an instruction from the owner.\n{}",
+                parts.join("\n")
             ),
             input_schema: json!({
                 "type": "object",
@@ -463,15 +486,28 @@ impl Tool for UseSkill {
 
     fn execute(&self, input: &Value, _ws: &Workspace, _cancel: &CancelToken) -> Result<String> {
         let name = str_arg(input, "name")?;
-        let skill = self
-            .installed
-            .iter()
-            .find(|s| s.name == name)
-            .ok_or_else(|| anyhow!("no installed skill named {name}"))?;
         let file = input["file"]
             .as_str()
             .filter(|f| !f.is_empty())
             .unwrap_or("SKILL.md");
+        if let Some(own) = self.own.iter().find(|s| s.name == name) {
+            let Some(f) = own.files.iter().find(|f| f.path == file) else {
+                bail!("{name} has no file {file}");
+            };
+            let mut out = truncate(f.text.clone(), MAX_READ);
+            if file == "SKILL.md" && own.files.len() > 1 {
+                out.push_str(&format!(
+                    "\n\n--- files of {name} (read one with use_skill {{\"name\": \"{name}\", \"file\": ...}}) ---\n{}",
+                    own.files.iter().filter(|f| f.path != "SKILL.md").map(|f| f.path.as_str()).collect::<Vec<_>>().join("\n")
+                ));
+            }
+            return Ok(out);
+        }
+        let skill = self
+            .installed
+            .iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| anyhow!("no skill named {name}"))?;
         let rel = safe_relative(file)?;
         if !skill.files.iter().any(|f| Path::new(f) == rel) {
             bail!(
@@ -496,14 +532,22 @@ impl Tool for UseSkill {
     }
 }
 
-/// The `use_skill` tool, when the realm has catalog skills installed.
-pub fn tool_for(skills_dir: &Path, keep: impl Fn(&str) -> bool) -> Option<Box<dyn Tool>> {
+/// The `use_skill` tool, when the run has skills to read: catalog skills
+/// installed, or the business's own approved.
+pub fn tool_for(
+    skills_dir: &Path,
+    mut own: Vec<crate::business::skills::Skill>,
+    keep: impl Fn(&str) -> bool,
+) -> Option<Box<dyn Tool>> {
     let mut installed = installed(skills_dir);
     installed.retain(|s| keep(&s.name));
-    (!installed.is_empty()).then(|| {
+    // A catalog skill keeps its name, even one installed a moment ago.
+    own.retain(|s| keep(&s.name) && !installed.iter().any(|i| i.name == s.name));
+    (!installed.is_empty() || !own.is_empty()).then(|| {
         Box::new(UseSkill {
             skills_dir: skills_dir.to_path_buf(),
             installed,
+            own,
         }) as Box<dyn Tool>
     })
 }
@@ -593,7 +637,7 @@ mod tests {
         assert_eq!(got.skipped, ["font.ttf"]);
         assert!(!installing(dir.path(), "pdf"));
 
-        let tool = tool_for(dir.path(), |_| true).unwrap();
+        let tool = tool_for(dir.path(), Vec::new(), |_| true).unwrap();
         assert!(
             tool.spec()
                 .description
@@ -627,7 +671,61 @@ mod tests {
         );
 
         assert!(uninstall(dir.path(), "pdf").unwrap());
-        assert!(tool_for(dir.path(), |_| true).is_none());
+        assert!(tool_for(dir.path(), Vec::new(), |_| true).is_none());
+    }
+
+    /// The business's own skills (decision 149): served as they were read,
+    /// only to an agent whose scope names them.
+    #[test]
+    fn the_business_skills_are_served_as_read_within_scope() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("skills/refunds");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: refunds\ndescription: Refunds.\n---\n30 days.\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("notes.md"), "Ask first.").unwrap();
+        let own = crate::business::skills::found(root.path());
+        let none = tempfile::tempdir().unwrap();
+        assert!(
+            tool_for(none.path(), own.clone(), |n| n == "other").is_none(),
+            "out of scope"
+        );
+        let tool = tool_for(none.path(), own, |n| n == "refunds").unwrap();
+        let spec = tool.spec().description;
+        assert!(
+            spec.contains("approved by the owner") && spec.contains("- refunds: Refunds."),
+            "{spec}"
+        );
+        assert!(!spec.contains("skills catalog"), "{spec}");
+        // Changed on disk after the run's tools were built: not what it reads.
+        std::fs::write(dir.join("SKILL.md"), "---\nname: refunds\n---\n300 days.\n").unwrap();
+        let ws = Workspace::new(root.path()).unwrap();
+        let cancel = CancelToken::default();
+        let md = tool
+            .execute(&json!({"name": "refunds"}), &ws, &cancel)
+            .unwrap();
+        assert!(
+            md.contains("30 days.") && !md.contains("300") && md.contains("notes.md"),
+            "{md}"
+        );
+        let notes = tool
+            .execute(
+                &json!({"name": "refunds", "file": "notes.md"}),
+                &ws,
+                &cancel,
+            )
+            .unwrap();
+        assert_eq!(notes, "Ask first.");
+        for bad in ["../SKILL.md", "/etc/passwd", "nope.md"] {
+            assert!(
+                tool.execute(&json!({"name": "refunds", "file": bad}), &ws, &cancel)
+                    .is_err(),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

@@ -11,6 +11,7 @@
 
 pub mod config;
 pub mod package;
+pub mod skills;
 pub mod store;
 pub mod sync;
 

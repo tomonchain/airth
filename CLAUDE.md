@@ -109,6 +109,7 @@ Connectors declare their actions (fields, risk class). For an MCP connector, eac
   agents/                            one file per agent
   routines/                          one graph per routine
   prompts/                           one file per prompt
+  skills/                            the business's own skills, SKILL.md format (decision 149)
   docs/                              company documents: legal/, finance/, brand/, product/, minutes/
   code/                              the business's repositories
 ```

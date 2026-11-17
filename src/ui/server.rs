@@ -378,6 +378,11 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
             Err(e) => eprintln!("legal deadlines: {e:#}"),
         }
+        // The business's own skills, new or changed (decision 149).
+        match runner.hub.review_skills() {
+            Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
+            Err(e) => eprintln!("skills: {e:#}"),
+        }
         // Drafts not answered within their routine's window (`expires_after`).
         match runner.hub.expire_approvals(chrono::Utc::now()) {
             Ok(gone) => gone
