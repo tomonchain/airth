@@ -10,6 +10,7 @@ import { useNarrow } from "@/hooks/use-narrow"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, type Agent, type Item } from "@/lib/api"
 import { ago, day, left, stamp } from "@/lib/time"
+import { draft, heading } from "@/lib/items"
 import { cn } from "@/lib/utils"
 
 // What needs the founder's decision first, what the check holds and what
@@ -85,8 +86,9 @@ function Batch({ realm, label, items, onDone }: { realm: string; label: string; 
     onDone()
   }
   return (
-    <div className="flex items-center gap-2 px-2.5 pt-2 pb-1 text-[11.5px] text-muted-foreground">
-      <span className="truncate font-medium text-foreground/80">{label}</span>
+    <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-0.5 text-xs text-muted-foreground">
+      <span className="truncate">{label}</span>
+      <span aria-hidden>·</span>
       <span className="tabular-nums">{items.length}</span>
       {drafts.length > 1 && (sure ? (
         <span className="ml-auto flex shrink-0 items-center gap-1">
@@ -102,7 +104,11 @@ function Batch({ realm, label, items, onDone }: { realm: string; label: string; 
 
 const soon = (it: Item) => !!it.expires_at && Date.parse(it.expires_at) - Date.now() < 3 * 3600 * 1000
 
-const preview = (it: Item) => (it.kind === "approval" && it.text ? it.text : it.title).replace(/\s+/g, " ")
+// What broke keeps one red mark: the rest is in greys.
+const broke = (it: Item) => it.kind === "incident" || it.flag === "blocking"
+
+// A draft's words; else what it is about, never a record's raw fields.
+const preview = (it: Item) => (draft(it) ?? heading(it)).replace(/\s+/g, " ")
 
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
     the left, the open item in full on the right; answering opens the next.
@@ -192,16 +198,17 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
             if (!list.length) return null
             return (
               <section key={s.label} className="mt-2">
-                <h2 className="flex items-center gap-2 px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                  <span className="flex-1">{s.label}</span>
+                {/* A section says what is asked: no label on each line. */}
+                <h2 className="flex items-center gap-2 px-2.5 pt-3 pb-1 text-[13px] font-semibold">
+                  <span>{s.label}</span>
+                  <span className="flex-1 font-normal text-muted-foreground tabular-nums">{items.filter((i) => s.ranks.includes(rank(i))).length}</span>
                   {/* What broke goes in one gesture, once read. */}
                   {s.label === "Problems" && (sweeping ? (
-                    <span className="flex items-center gap-1 normal-case tracking-normal">
+                    <span className="flex items-center gap-1 font-normal">
                       <Button size="xs" onClick={async () => { await seeAll(realm, items.filter((i) => i.kind === "incident")); setSweeping(false); onDone() }}>Mark all seen</Button>
                       <Button size="xs" variant="ghost" onClick={() => setSweeping(false)}>Keep</Button>
                     </span>
-                  ) : <Button size="xs" variant="ghost" className="h-5 px-1.5 normal-case tracking-normal" onClick={() => setSweeping(true)}>Seen all</Button>)}
-                  <span className="tabular-nums">{items.filter((i) => s.ranks.includes(rank(i))).length}</span>
+                  ) : <Button size="xs" variant="ghost" className="h-6 px-2 font-normal text-muted-foreground" onClick={() => setSweeping(true)}>Seen all</Button>)}
                 </h2>
                 {batches(list).map((b) => (
                 <div key={b.key}>
@@ -215,20 +222,28 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
                       <li key={it.id}>
                         <button
                           onClick={() => setSel(it.id)}
-                          className={cn("flex w-full gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-accent/70", open?.id === it.id && "bg-accent")}
+                          className={cn("flex w-full gap-3 rounded-xl px-2.5 py-3 text-left transition-colors hover:bg-accent/70", open?.id === it.id && "bg-accent")}
                         >
-                          {a ? <Character agent={a} size={30} still className="mt-0.5" /> : <span className="grid size-[30px] shrink-0 place-items-center rounded-full bg-muted"><k.icon className="size-4" /></span>}
+                          {/* Who sent it, and what it is as a small mark on
+                              their face: the section says the rest. */}
+                          <span className="relative mt-0.5 size-[34px] shrink-0" title={k.label}>
+                            {a ? <Character agent={a} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-muted"><k.icon className={cn("size-4 text-muted-foreground", broke(it) && "text-red-500")} aria-label={k.label} /></span>}
+                            {a && (
+                              <span className="absolute -right-1.5 -bottom-1 grid size-[18px] place-items-center rounded-full bg-background shadow-[0_0_0_1.5px_var(--background)]">
+                                <k.icon className={cn("size-[11px] text-muted-foreground", broke(it) && "text-red-500")} aria-label={k.label} />
+                              </span>
+                            )}
+                          </span>
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2">
-                              <span className="truncate text-[13px] font-medium">{a?.title ?? "Airth"}</span>
-                              {like(it).length > 1 && <span className="shrink-0 rounded bg-foreground/[0.07] px-1 text-[10.5px] font-medium tabular-nums">×{like(it).length}</span>}
-                              <span className={cn("inline-flex shrink-0 items-center gap-1 rounded px-1 text-[10.5px] font-medium", k.tone)}><k.icon className="size-3" />{k.label}</span>
-                              <span className={cn("ml-auto shrink-0 text-[11px] text-muted-foreground", soon(it) && "text-amber-600 dark:text-amber-400")}
+                            <span className="flex items-baseline gap-2">
+                              <span className="truncate text-[13.5px] font-medium">{a?.title ?? "Airth"}</span>
+                              {like(it).length > 1 && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">×{like(it).length}</span>}
+                              <span className={cn("ml-auto shrink-0 text-xs text-muted-foreground tabular-nums", soon(it) && "text-amber-600 dark:text-amber-400")}
                                 title={it.expires_at ? `Leaves Needs you unanswered ${ago(it.expires_at).replace(" ago", "")}` : undefined}>
                                 {soon(it) ? left(it.expires_at) : stamp(it.created_at)}
                               </span>
                             </span>
-                            <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-muted-foreground">{preview(it)}</span>
+                            <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground">{preview(it)}</span>
                           </span>
                         </button>
                       </li>
@@ -305,8 +320,9 @@ function Header({ it, agent, onAgent, onTask }: { it: Item; agent?: Agent; onAge
   const k = kindOf(it)
   return (
     <header>
-      <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium", k.tone)}><k.icon className="size-3.5" /> {k.label}</span>
-      {!(it.kind === "approval" && it.text) && <h2 className="mt-3 text-xl leading-snug font-semibold tracking-tight">{it.title}</h2>}
+      {/* What it is, said plainly above it: no coloured label. */}
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><k.icon className={cn("size-3.5", broke(it) && "text-red-500")} /> {k.label}</span>
+      {!draft(it) && <h2 className="mt-3 text-xl leading-snug font-semibold tracking-tight">{heading(it)}</h2>}
       {/* Who and where from, on two lines, so a long agent or routine name
           never wraps on a phone: the agent, then the routine and when. */}
       <div className="mt-3 flex items-center gap-2.5 text-sm">

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
+import { draft, heading, isRecord } from "@/lib/items"
 import { cn } from "@/lib/utils"
 
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
@@ -176,7 +177,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
         </span>
       </header>}
 
-      {!page && !(it.kind === "approval" && it.text && it.action !== SKILL) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
+      {!page && !(draft(it) && it.action !== SKILL) && <h3 className="text-[13.5px] leading-snug font-medium">{heading(it)}</h3>}
 
       {it.flag_reason && (
         <div className={cn("mt-2.5 flex gap-2 rounded-lg px-2.5 py-2 text-xs leading-relaxed",
@@ -205,7 +206,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             ? <p className="mt-1 text-xs text-muted-foreground">The project's name on the first line, its description under it. A milestone: <code>## Title (by 2026-12-15)</code>, its tasks under it. One task a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a task.</p>
             : <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>}
         </div>
-      ) : it.text && it.kind === "approval" ? (
+      ) : it.text && draft(it) ? (
         page ? (
           <div className="mt-4 rounded-xl bg-bubble px-4 py-3.5">
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{it.text}</p>
@@ -221,7 +222,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             : <Markdown text={it.text} className="mt-1 text-[13.5px] leading-relaxed" />}
           {it.angle && <p className="mt-2 text-xs text-muted-foreground"><b className="font-medium">Why now:</b> {it.angle}</p>}
         </>
-      ) : page && it.text && it.text !== it.title ? (
+      ) : page && it.text && it.text !== it.title && !isRecord(it.text) ? (
         <div className="mt-4 max-h-96 overflow-auto rounded-xl bg-bubble px-4 py-3.5 text-sm leading-relaxed"><Markdown text={it.text} /></div>
       ) : it.note ? (
         <p className="mt-2 text-sm text-muted-foreground">{it.note}</p>
