@@ -73,14 +73,15 @@ pub(super) fn next_on_its_own(
 }
 
 /// Whether the founder watches a run in the app (decision 56): its page
-/// looks at it again and again. Once they left, they left, for the run.
+/// looks at it again and again. One who left and comes back to the page
+/// watches it again (decision 150).
 #[derive(Default)]
-pub(super) struct Watch(Mutex<(Option<std::time::Instant>, bool)>);
+pub(super) struct Watch(Mutex<Option<std::time::Instant>>);
 
 impl Watch {
     /// Watched from now: the founder just started or followed up the run.
     pub(super) fn from_now() -> Self {
-        Self(Mutex::new((Some(std::time::Instant::now()), false)))
+        Self(Mutex::new(Some(std::time::Instant::now())))
     }
 
     /// The founder asked for a `Drive` in the app: they watch it from now.
@@ -94,15 +95,11 @@ impl Watch {
 
     /// The run's page looked at it.
     pub(super) fn seen(&self) {
-        let mut w = self.0.locked();
-        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
-        w.0 = Some(std::time::Instant::now());
+        *self.0.locked() = Some(std::time::Instant::now());
     }
 
     pub(super) fn watching(&self) -> bool {
-        let mut w = self.0.locked();
-        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
-        !w.1
+        self.0.locked().is_some_and(|at| at.elapsed() <= WATCH_GAP)
     }
 }
 
@@ -175,12 +172,27 @@ pub(super) struct UiApprover {
 }
 
 /// An objective's run, which nobody may be watching.
+#[derive(Clone)]
 pub(super) struct Away {
     pub(super) objective: String,
     pub(super) realm: String,
     pub(super) run: String,
     pub(super) wait_minutes: u32,
     pub(super) inbox: Inbox,
+}
+
+impl UiApprover {
+    /// The approver of one pass of a run's thread. An objective's run stays
+    /// away on each pass (a retry, a time budget renewed), however often
+    /// its page is looked at; once the founder writes to it, the thread
+    /// drops its `Away`: they are there to answer.
+    fn for_pass(live: &Arc<Live>, away: &Option<Away>) -> Self {
+        Self {
+            live: live.clone(),
+            next_id: 0,
+            away: away.clone(),
+        }
+    }
 }
 
 impl Approver for UiApprover {
@@ -325,12 +337,7 @@ impl Runner {
                     let (mut retries, mut budgets) = (0, 0);
                     loop {
                         let hooks = RunHooks {
-                            approver: Box::new(UiApprover {
-                                live: live.clone(),
-                                next_id: 0,
-                                // Who writes to a run is there to answer it.
-                                away: away.take(),
-                            }),
+                            approver: Box::new(UiApprover::for_pass(&live, &away)),
                             observer: &mut observer,
                             cancel: live.cancel.clone(),
                         };
@@ -397,6 +404,8 @@ impl Runner {
                         }
                         *said = Some(Vec::new());
                         drop(said);
+                        // Who writes to a run is there to answer it.
+                        away = None;
                         for text in &left {
                             state.append_user_text(text);
                         }
@@ -523,28 +532,45 @@ mod tests {
         assert_eq!(next_on_its_own(Status::Completed, None, 0, 0), None);
     }
 
+    /// Decision 150 watches a run again once its page looks, but never an
+    /// objective's: every pass of its thread, a retry included, keeps it
+    /// away, even with its page open.
+    #[test]
+    fn every_pass_of_an_objectives_run_stays_unwatched() {
+        let live = live(Watch::from_now());
+        live.watch.seen();
+        let away = Some(Away {
+            objective: "o".into(),
+            realm: "r".into(),
+            run: "run1".into(),
+            wait_minutes: 5,
+            inbox: crate::notify::Inbox::new(tempfile::tempdir().unwrap().path().join("n.json")),
+        });
+        for _pass in 0..3 {
+            assert!(!UiApprover::for_pass(&live, &away).watched());
+        }
+        // Written to by the founder: the thread drops its Away.
+        assert!(UiApprover::for_pass(&live, &None).watched());
+    }
+
     fn left(ago: u64) -> Watch {
-        Watch(Mutex::new((
-            Some(Instant::now() - Duration::from_secs(ago)),
-            false,
-        )))
+        Watch(Mutex::new(Some(Instant::now() - Duration::from_secs(ago))))
     }
 
     #[test]
-    fn a_run_is_watched_while_its_page_looks_and_never_again_once_left() {
+    fn a_run_is_watched_while_its_page_looks_and_again_once_it_comes_back() {
         let w = Watch::from_now();
         assert!(w.watching());
         w.seen();
         assert!(w.watching());
-        // Its page stopped looking: left, even once it looks again.
+        // Its page stopped looking: left.
         let w = left(11);
         assert!(!w.watching());
+        // Back on the page (decision 150): watched again.
         w.seen();
-        assert!(!w.watching());
-        // Left between two looks, and nothing asked in between.
-        let w = left(11);
-        w.seen();
-        assert!(!w.watching());
+        assert!(w.watching());
+        // Never looked at: nobody watches.
+        assert!(!Watch::default().watching());
     }
 
     #[test]

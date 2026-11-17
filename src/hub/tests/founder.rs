@@ -173,13 +173,13 @@ fn an_unwatched_run_stops_and_the_commit_waits_in_needs_you() {
     assert_eq!(hits.load(Ordering::SeqCst), 1, "and only once");
 }
 
-/// The founder watches, then leaves: every later commit is unwatched, even
-/// if they come back.
+/// The founder watches, then leaves: a commit while they are away waits in
+/// Needs you, and the run stops there.
 #[test]
-fn once_the_founder_leaves_every_later_commit_is_unwatched() {
+fn a_commit_while_the_founder_is_away_waits_in_needs_you() {
     let (base, hits) = service(|_| {});
     let f = business(base);
-    let (approver, asked) = founder(vec![], vec![true, false, true]);
+    let (approver, asked) = founder(vec![], vec![true, false]);
     let state = task(
         &f,
         vec![
@@ -198,6 +198,35 @@ fn once_the_founder_leaves_every_later_commit_is_unwatched() {
     );
     assert_eq!(state.status, Status::Stopped);
     assert_eq!(pending(&f).len(), 1);
+}
+
+/// Decision 150: the founder leaves, then comes back to the run's page: its
+/// next commit is asked there again, for that call, as before they left.
+#[test]
+fn a_founder_who_comes_back_is_asked_in_the_run_again() {
+    let (base, hits) = service(|_| {});
+    let f = business(base);
+    let (approver, asked) = founder(vec![], vec![true, false, true]);
+    let state = task(
+        &f,
+        vec![
+            post("1", "posts"),
+            post("2", "drafts"),
+            post("3", "posts"),
+            done("done"),
+        ],
+        approver,
+    );
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 2, "both publishes, each on its own");
+    assert!(
+        asked
+            .iter()
+            .all(|r| r.warnings.iter().any(|w| w == COMMITS_WARNING))
+    );
+    assert_eq!(hits.load(Ordering::SeqCst), 3);
+    assert_eq!(state.status, Status::Completed);
+    assert!(pending(&f).is_empty());
 }
 
 /// Asked for a commit, the founder leaves before answering: it waits in

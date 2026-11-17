@@ -2,6 +2,18 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 150. A founder back on a run's page watches it again
+
+**Accepted** (founder, 17 November 2026: yes to "en revenant sur la page, les questions d'un agent te reviennent dans le fil", which changes decision 56).
+
+- **What changes:** decision 56 made detaching final: once nobody watched a run, every later action of it was unwatched, even if the founder came back. Now a run is watched while its page looks at it, whenever that is. A founder who leaves and comes back (another tab, Needs you, the phone locked) watches the run again from the page's next look.
+- **What stays:** an action that commits needs the founder's explicit approval for that very call, watched or not (decision 56). While nobody watches, it goes to Needs you and Telegram and the run stops there, as before; a read or reversible action follows the policy. Telegram never counts as watching. A run an objective starts is never watched. On Linux, a command is run unconfined only while someone watches (decision 67), now also once they are back.
+- **How:** the permission gate asks the approver each time (`PermissionGate::watched`, no longer remembered once false); the app's `Watch` says whether the run's page looked within the last 10 seconds.
+
+*Why:* the founder talks to an agent, looks at another page, comes back: the agent's next question went to Needs you and stopped the task, though the founder was there to answer it. The approval is the same in both places; only where it is asked changes.
+
+*Cost:* a question asked in the chat while the founder had just left waits up to 10 seconds before it goes to Needs you, as when they never came back. An agent that went on alone for a while asks its next commit in the chat, not in Needs you: the founder reads what it did above the question, as in any chat.
+
 ## 149. A business's own skills, in the Agent Skills format, offered once the founder approves them
 
 **Accepted** (founder, 17 November 2026: "il faut qu'on prenne un format clair et utilisé pour les Skills", then, of the sources offered, the business's own skills, then "Go").
@@ -1777,10 +1789,10 @@ Decision 45's levels apply to the runs Airth starts (routines, their missions). 
 - **Where it is asked:**
   - in a run the founder is watching (a chat open in the app, a run at a terminal), it is asked inline, as a permission is today, marked as covering this call only;
   - in a run nobody is watching (an order from the command bar, a run whose window was closed, a run left alone, a terminal with no one at it, or any doubt), it goes to Needs you and Telegram as an approval item, the run stops there, and the action is done once on approval (decision 45). Telegram answers the queue; it never counts as watching a run.
-- **Detaching is final.** Once nobody watches a run, every later action of that run is unwatched, even if someone comes back.
+- **Detaching is final.** Once nobody watches a run, every later action of that run is unwatched, even if someone comes back. *Replaced by decision 150: a founder back on the run's page watches it again.*
 - **Read and reversible actions** keep following the realm's permission policy in runs the founder starts, as today.
 
-How: a run the founder starts gets an authority of its own, next to the one that applies the levels (`hub/autonomy.rs`). It answers "the policy decides" for read and reversible actions; for a commit it asks the founder if the approver says they watch, otherwise it queues the call and stops the run. The approver says whether the founder watches (`Approver::watched`, no by default); the permission gate remembers when they stopped.
+How: a run the founder starts gets an authority of its own, next to the one that applies the levels (`hub/autonomy.rs`). It answers "the policy decides" for read and reversible actions; for a commit it asks the founder if the approver says they watch, otherwise it queues the call and stops the run. The approver says whether the founder watches (`Approver::watched`, no by default); the permission gate asks it at each check (decision 150; it used to remember when they stopped).
 
 *Why:* the command bar (milestone 5) starts runs the founder does not watch live. Such a run reads outside content (a page, a post, a mail at milestone 7), and an instruction hidden in that content must not be able to make it commit the business. The levels already guarantee this for routines (commits never above level 1); a run the founder starts must not be the way around them.
 
