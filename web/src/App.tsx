@@ -10,6 +10,7 @@ import { useSwipe } from "@/hooks/use-swipe"
 import { cn } from "@/lib/utils"
 import { isStep, parse, write } from "@/lib/address"
 import { usePoll } from "@/hooks/use-poll"
+import { useChanges } from "@/hooks/use-changes"
 import { api, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
 import { Home } from "@/screens/home"
@@ -159,9 +160,12 @@ export default function App() {
           return { agents: team.agents, departments: team.departments ?? [], broken: team.error ? [team.error] : team.broken ?? [], items: queue.items, tasks }
         }
       : null,
-    4000,
+    // The server says when the business changed; this is only the fallback.
+    15000,
     [realm],
+    realm,
   )
+  useChanges(realm)
   // The business's summary (Home, the last lines) is computed over every
   // business: asked less often than what the agents are doing.
   const hq = usePoll<{ businesses: Business[] }>(realm ? () => api("hq") : null, 15000, [realm])

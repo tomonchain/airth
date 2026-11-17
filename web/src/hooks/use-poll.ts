@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { CHANGED } from "@/hooks/use-changes"
 
-/** Loads `load()` now and again every `ms`, while the tab is visible:
-    the floor is live without a push channel from the server. */
-export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: unknown[]) {
+/** Loads `load()` now and again every `ms`, while the tab is visible.
+    With `live`, a business: also as soon as the server says it changed
+    (`useChanges`), so `ms` is only the fallback. */
+export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: unknown[], live?: string | null) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [at, setAt] = useState<number>(0)
@@ -12,6 +14,8 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
   // has left must not land on the one they opened since.
   const generation = useRef(0)
   const busy = useRef(false)
+  // A change heard while a load was under way: load again once it ends.
+  const again = useRef(false)
   const last = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -30,13 +34,17 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
     } catch (e) {
       if (mine === generation.current) setError((e as Error).message)
     } finally {
-      if (mine === generation.current) busy.current = false
+      if (mine === generation.current) {
+        busy.current = false
+        if (again.current) { again.current = false; refresh() }
+      }
     }
   }, [])
 
   useEffect(() => {
     generation.current++
     busy.current = false
+    again.current = false
     last.current = null
     setData(null)
     refresh()
@@ -46,7 +54,24 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
     // Back on the tab: what changed meanwhile, at once.
     const back = () => document.visibilityState === "visible" && !busy.current && refresh()
     document.addEventListener("visibilitychange", back)
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", back) }
+    // The business changed: once, shortly after, however many changes
+    // came together (a run saves at each step).
+    let soon: ReturnType<typeof setTimeout> | null = null
+    const changed = (e: Event) => {
+      if (!live || (e as CustomEvent).detail !== live || soon) return
+      soon = setTimeout(() => {
+        soon = null
+        if (busy.current) again.current = true
+        else tick()
+      }, 150)
+    }
+    window.addEventListener(CHANGED, changed)
+    return () => {
+      clearInterval(t)
+      if (soon) clearTimeout(soon)
+      document.removeEventListener("visibilitychange", back)
+      window.removeEventListener(CHANGED, changed)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 

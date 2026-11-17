@@ -1,6 +1,8 @@
 // Airth's API, as the server serves it (src/ui/*.rs). Nothing here decides
 // what an answer may do: the server does.
 
+import { either } from "@/lib/signals"
+
 const KEY = "airth-token"
 
 // Where the key is kept. On the Mac it lasts the tab. On the phone, reached
@@ -77,22 +79,28 @@ export async function accessStatus(secret: string): Promise<"waiting" | "allowed
 export const rekey = (key: string) => { store()?.setItem(KEY, key) }
 
 
-export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number): Promise<T> {
+export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number, cancel?: AbortSignal): Promise<T> {
   const verb = method ?? (body === undefined ? "GET" : "POST")
   // A request that never answers would hold its page's refresh for good: a
   // read gives up after 20 s, a change (which may call a service) after 60,
   // unless the caller knows it takes longer.
   const key = token()
-  const r = await fetch(`/api/${path}`, {
-    method: verb,
-    headers: { "X-Airth-Token": key, "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)),
-  }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
-  refused(r, key)
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
-  return data as T
+  const stop = either(AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)), cancel)
+  try {
+    const r = await fetch(`/api/${path}`, {
+      method: verb,
+      headers: { "X-Airth-Token": key, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      // `cancel`: the caller no longer wants the answer (a wait left behind).
+      signal: stop.signal,
+    }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
+    refused(r, key)
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(data.error ?? `${r.status} ${r.statusText}`)
+    return data as T
+  } finally {
+    stop.done()
+  }
 }
 
 export const enc = encodeURIComponent

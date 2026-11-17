@@ -8,6 +8,11 @@ use crate::supervise::Locked;
 /// looking until its last wait ends.
 const NEXT_CHANGE_WAIT: Duration = Duration::from_secs(8);
 
+/// How long a page waits for anything of a business to change before it
+/// asks again; how often the server looks meanwhile.
+const CHANGES_WAIT: Duration = Duration::from_secs(25);
+const CHANGES_LOOK: Duration = Duration::from_millis(250);
+
 impl App {
     /// The chats and objectives routes; None when the request is not one of them.
     pub(super) fn runs_routes(
@@ -19,6 +24,10 @@ impl App {
     ) -> Result<Option<HttpResponse>> {
         let ok = || json_response(200, json!({"ok": true}));
         Ok(Some(match (method, segments) {
+            // Something a page shows may have changed: it reloads then.
+            (Method::Get, ["realms", r, "changes"]) => {
+                json_response(200, self.changes(&self.realm(r)?, query))
+            }
             (Method::Get, ["realms", r, "runs"]) => json_response(200, self.runs(&self.realm(r)?)?),
             (Method::Post, ["realms", r, "runs"]) => {
                 let body = read_json(request)?;
@@ -248,6 +257,26 @@ impl App {
         }
     }
 
+    /// Waits until something a page shows of the business may have
+    /// changed (its database: Needs you, projects, tasks' records; or a
+    /// run: started, saved, ended), then says so with a new mark, which the
+    /// page sends back next time. Pages reload on it instead of asking every
+    /// few seconds; past the wait, the same mark comes back.
+    pub(super) fn changes(&self, realm: &Realm, query: &str) -> Value {
+        let since = query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("since="))
+            .map(str::to_string);
+        let started = std::time::Instant::now();
+        loop {
+            let now = changes_mark(realm);
+            if since.as_deref() != Some(now.as_str()) || started.elapsed() >= CHANGES_WAIT {
+                return json!({"mark": now});
+            }
+            std::thread::sleep(CHANGES_LOOK);
+        }
+    }
+
     fn run(&self, realm: &Realm, id: &str, query: &str) -> Result<Value> {
         let since: Option<u64> = query
             .split('&')
@@ -429,6 +458,29 @@ fn config_of(state: &State) -> crate::business::ConfigChanges {
     )
 }
 
+/// What changes when a business does: its database's files (a write goes
+/// to the log first), its runs' folder (a run saved is a file renamed
+/// into it; one started or ended, its lock written or removed), and the
+/// runs' titles and archive the founder sets.
+fn changes_mark(realm: &Realm) -> String {
+    use std::hash::{Hash, Hasher};
+    let db = realm.dir().join(crate::business::store::FILE);
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for path in [
+        db.with_extension("db-wal"),
+        db,
+        realm.runs_dir(),
+        realm.dir().join("run-titles.json"),
+        realm.dir().join("run-archived.json"),
+    ] {
+        std::fs::metadata(&path)
+            .ok()
+            .map(|m| (m.modified().ok(), m.len()))
+            .hash(&mut h);
+    }
+    format!("{:x}", h.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,5 +506,66 @@ mod tests {
         let view = app.run(&realm, &state.id, "").unwrap();
         assert_eq!(view["delivery"], "adopt");
         assert_eq!(view["repo"], Value::Null, "no change, no repository named");
+    }
+
+    /// A page waiting on the business hears at once that a run was saved,
+    /// or that something was written to its database; it waits while
+    /// nothing changed.
+    #[test]
+    fn a_page_hears_when_the_business_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        crate::business::store::Store::of(&realm).unwrap();
+        let app = super::super::tests::test_app(home, 0);
+        let first = app.changes(&realm, "")["mark"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(!first.is_empty());
+
+        // A run saved, 300 ms into the wait: heard then, not at its end.
+        let runs = realm.runs_dir();
+        let saver = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            State::new("draft the post", Some(&runs)).save().unwrap();
+        });
+        let started = std::time::Instant::now();
+        let saved = app.changes(&realm, &format!("since={first}"))["mark"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        saver.join().unwrap();
+        assert_ne!(saved, first);
+        assert!(started.elapsed() < Duration::from_secs(3));
+
+        // Something for the founder, written to the database: heard too.
+        let mut store = crate::business::store::Store::of(&realm).unwrap();
+        store
+            .propose(&crate::business::store::autonomy::NewItem {
+                kind: "incident",
+                title: "x",
+                agent: None,
+                routine: None,
+                run: None,
+                action: None,
+                args: "{}",
+                execute_at: None,
+                source: "{}",
+                model_call: None,
+            })
+            .unwrap();
+        let written = app.changes(&realm, &format!("since={saved}"))["mark"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_ne!(written, saved);
     }
 }
