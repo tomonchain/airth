@@ -33,10 +33,13 @@ const ANSWERED: Record<string, { label: string; icon: typeof Check; cls: string;
 /** One agent's work as a conversation: its runs, what it sent up, the
     founder's answers and orders; newest at the bottom, where the founder
     writes. */
-export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone, top, project, aside }: {
+export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, onDone, top, project, aside, opening }: {
   realm: string; agent: Agent; agents?: Agent[]; onAgent?: (name: string) => void; tasks: Tasks | null; onDone: () => void
   /** At the top of the page: on a phone, it starts below Airth's floating mark. */
   top?: boolean
+  /** A first message written on the Home: sent from here, so it shows in
+      the thread at once, the agent typing under it. */
+  opening?: { text: string; at: number }
   /** Whose tasks (decision 147): a project's only, with its orders sent
       for it; none in a project (the Home); every one when left out. */
   project?: Scope
@@ -51,7 +54,14 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const tasks = { data: list, refresh: onDone }
   // Tasks started here and not yet listed by the server.
   const [started, setStarted] = useState<string[]>([])
-  useEffect(() => setStarted([]), [agent.name])
+  // Another agent's thread starts empty; the first render keeps what an
+  // opening already put there (the box's effects run before this one's).
+  const shownFor = useRef(agent.name)
+  useEffect(() => {
+    if (shownFor.current === agent.name) return
+    shownFor.current = agent.name
+    setStarted([]); setOutbox([])
+  }, [agent.name])
   const taskIds = useMemo(() => {
     const ids = new Set<string>(started)
     for (const group of Object.values(tasks.data ?? {})) for (const t of group ?? []) if (t.agent === agent.name && inThread(t, project)) ids.add(t.id)
@@ -71,9 +81,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   const [mine] = useState(() => new Set<string>())
   // What the founder just sent, until its task shows it: the message that
   // started the agent, then those written while it works, in their order.
-  type Sent = { text: string; task: string | null; at: string; queued?: boolean }
+  type Sent = { id: number; text: string; task: string | null; at: string; queued?: boolean }
   const [outbox, setOutbox] = useState<Sent[]>([])
-  useEffect(() => setOutbox([]), [agent.name])
+  const sent = useRef(0)
   const echoed = useCallback((text: string) => setOutbox((o) => { const i = o.findIndex((s) => s.text === text); return i < 0 ? o : [...o.slice(0, i), ...o.slice(i + 1)] }), [])
 
   const { entries, inside } = useMemo(() => {
@@ -188,9 +198,18 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
   }, [])
   // Scrolled up to read: a button brings the newest back.
   const [away, setAway] = useState(false)
+  const lastTop = useRef(0)
   function scrolled() {
     const el = scroller.current
-    if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (!el) return
+    const left = el.scrollHeight - el.scrollTop - el.clientHeight
+    // Any move up lets go at once, even a small one while an answer
+    // streams in; at the very bottom (a fold above may have pulled it
+    // there) or near it on the way down, the thread follows again.
+    if (left < 2) pinned.current = true
+    else if (el.scrollTop < lastTop.current) pinned.current = false
+    else pinned.current = left < 80
+    lastTop.current = el.scrollTop
     setAway(!pinned.current)
   }
 
@@ -234,7 +253,8 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
       <div ref={scroller} onScroll={scrolled} className="no-dock min-h-0 flex-1 overflow-y-auto">
         <div ref={content} className={cn("mx-auto px-3 pt-4 [overflow-wrap:anywhere] md:px-6 md:pt-6", top && "max-md:pt-[68px]", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1, paddingBottom: room + 16 }}>
           {!thread.data ? (
-            <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
+            // What was just sent shows alone: no "Loading…" flashing above it.
+            !outbox.length && <p className="py-20 text-center text-sm text-muted-foreground">Loading…</p>
           ) : units.length === 0 ? (
             <Empty agent={agent} />
           ) : (
@@ -243,8 +263,9 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
               return <div key={x.key}>{x.side === "task" ? x.node(lastOfGroup) : place(x, lastOfGroup)}</div>
             })
           )}
-          {outbox.map((s, i) => (
-            <div key={`${s.at}${i}`} className="mb-5 fade-up"><Mine text={s.text} at={s.at} note={s.queued ? "Waiting: it reads this at its next step" : undefined} /></div>
+          {/* Keyed by its own number: one leaving does not redraw the others. */}
+          {outbox.map((s) => (
+            <div key={s.id} className="mb-5 fade-up"><Mine text={s.text} at={s.at} note={s.queued ? "Waiting: it reads this at its next step" : undefined} /></div>
           ))}
           {outbox.length > 0 && !outbox[0].queued && (
             <div className="mb-5 flex items-end gap-2.5 fade-up">
@@ -263,11 +284,11 @@ export function Conversation({ realm, agent, agents = [], onAgent, tasks: list, 
           </button>
         )}
         {aside}
-        <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running} project={own ? project : undefined}
+        <OrderBox realm={realm} agent={agent.name} title={called(agent)} task={closed ? undefined : latest} closed={closed} working={running} project={own ? project : undefined} opening={opening}
           tools={[...(agent.integrations ?? []), ...(agent.skills ?? [])]} others={agents.filter((a) => a.name !== agent.name)} onOther={onAgent}
           onSending={(text, task) => {
             if (task) mine.add(task)
-            setOutbox((o) => [...o, { text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
+            setOutbox((o) => [...o, { id: ++sent.current, text, task, at: new Date().toISOString(), queued: running || o.length > 0 }])
             pinned.current = true
             requestAnimationFrame(() => toBottom(true))
           }}
