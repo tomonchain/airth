@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 149. A business's own skills, in the Agent Skills format, offered once the founder approves them
 
-**Proposed** (founder, 17 November 2026: "il faut qu'on prenne un format clair et utilisé pour les Skills", then, of the sources offered, the business's own skills).
+**Accepted** (founder, 17 November 2026: "il faut qu'on prenne un format clair et utilisé pour les Skills", then, of the sources offered, the business's own skills, then "Go").
 
 - **The format is the open standard Airth already reads** (agentskills.io, decision 18): a folder with a `SKILL.md`, its YAML front matter giving `name` and `description`, its body the instructions, beside it the references and scripts it mentions. Claude, Codex and Hermes read the same folders, so a skill written for one moves to the others unchanged. Other front-matter fields are kept in the file and ignored by Airth; `allowed-tools` is never taken: what an agent may use is its scope and its levels, as for an imported agent (backlog).
 - **Where:** `skills/<name>/` in the business folder, beside `agents/` and `routines/`, versioned in git with them. `<name>` is the folder's name: lowercase letters, digits and hyphens, as the standard says. A name a catalog skill already has is refused, and the Marketplace says why.
@@ -14,11 +14,12 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
   - A new skill, or one whose files changed since, is not offered. It goes to Needs you once, as "New skill" or "Skill changed", with its `SKILL.md` and, for a change, what changed. Approve offers it; reject leaves it unoffered, its files in place.
   - An agent can so propose a skill: it writes the folder, and the founder decides. This does not reverse decision 40: Airth neither writes, tests nor runs skills of its own accord.
 - **Its scripts** are files of the workspace like any other: an agent runs one only through `execute_command`, under the business's permissions and sandbox, as it would any script there. Nothing in a skill runs on its own.
-- **In the interface:** the Marketplace's Skills lists the business's skills with their state (offered, waiting for you, changed), beside the catalog's; the Documents page edits them. A skill the founder saves from the app still goes through Needs you, in one click: one path for every change.
+- **When it is asked:** the scheduler looks at each business's skills once a minute. An ask shows the skill's description, its files (for a change: which changed, which are new, which went) and its `SKILL.md`, or for a change what changed in it. A version is asked once, whatever the answer: a rejected one is not asked again until its files change. A newer version replaces an ask still pending. An answer to an ask whose files changed since offers nothing and says so; the new version is asked.
+- **In the interface:** Needs you shows the ask as a "Skill" card. The Marketplace's Skills lists the business's skills with their state (offered, waiting for you, changed), beside the catalog's; the Documents page edits them. A skill the founder saves from the app still goes through Needs you, in one click: one path for every change.
 
 *Why:* a business's ways of working (its tone, its checklists, how it answers a dispute) belong to it, written once and used by every agent that needs them. The catalog only offers Anthropic's general skills. A standard format keeps them portable, and the approval keeps a skill from becoming a way for content from outside to reach every agent.
 
-*Cost:* a table in `business.db` and a check of each skill's files when a run's tools are built. Every change to a skill waits for the founder, even a typo fixed in the app. Skills from GitHub, a dropped file, or the teams of the Marketplace are not covered: each would need its own source and decision.
+*Cost:* a table in `business.db` (migration 26), and each skill's files read when a run's tools are built and once a minute. Every change to a skill waits for the founder, even a typo fixed in the app. Skills from GitHub, a dropped file, or the teams of the Marketplace are not covered: each would need its own source and decision.
 
 ## 148. Each message of a run keeps the time it was added; the model never sees it
 

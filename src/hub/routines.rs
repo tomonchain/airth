@@ -571,6 +571,18 @@ impl Hub {
             store.close_item(id, status, &detail)?;
             return Ok((item, Some(detail)));
         }
+        // A skill of the business's own (decision 149): offered from now on,
+        // if its files are still the ones the founder saw.
+        if item.action.as_deref() == Some(crate::business::store::skills::SKILL) {
+            return match self.approve_skill(realm, &item) {
+                Ok(what) => Ok((item, Some(what))),
+                Err(e) => {
+                    let detail = crate::routine::run::one_line(&format!("{e:#}"));
+                    store.close_item(id, "failed", &detail)?;
+                    Ok((item, Some(detail)))
+                }
+            };
+        }
         // An agent the interlocutor asked to hire (decision 136).
         if item.action.as_deref() == Some(super::dispatch::HIRE) {
             let (status, detail) = match self.hire(realm, &item) {

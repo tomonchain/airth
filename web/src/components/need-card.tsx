@@ -22,8 +22,13 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
   idea: { label: "Idea", icon: Lightbulb, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-300" },
 }
 
+/** A skill of the business's own, new or changed, to offer its agents
+    (decision 149). */
+const SKILL = "airth.skill"
+
 export function kindOf(it: Item) {
   if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
+  if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-sky-500 bg-sky-500/10" }
   if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
   return KIND[it.kind] ?? KIND.report
 }
@@ -165,13 +170,13 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       {/* In a conversation, a draft to approve needs no label: its buttons
           say it, and the thread gives its time. Other kinds keep a short
           one, so an incident or a deadline is not read as a draft. */}
-      {!page && !(it.kind === "approval" && !blocked && it.action !== "airth.dispatch") && <header className="mb-2 flex items-center gap-2 text-xs">
+      {!page && !(it.kind === "approval" && !blocked && it.action !== "airth.dispatch" && it.action !== SKILL) && <header className="mb-2 flex items-center gap-2 text-xs">
         <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium", k.tone)}>
           <k.icon className="size-3.5" /> {k.label}
         </span>
       </header>}
 
-      {!page && !(it.kind === "approval" && it.text) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
+      {!page && !(it.kind === "approval" && it.text && it.action !== SKILL) && <h3 className="text-[13.5px] leading-snug font-medium">{it.title}</h3>}
 
       {it.flag_reason && (
         <div className={cn("mt-2.5 flex gap-2 rounded-lg px-2.5 py-2 text-xs leading-relaxed",
@@ -209,7 +214,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
               <span className="ml-auto shrink-0 tabular-nums">{it.text.length} characters</span>
             </p>
           </div>
-        ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
+        ) : <p className={cn("mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap", it.action === SKILL && "line-clamp-6")}>{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : it.kind === "idea" && it.text ? (
         <>
           {stream && !streamed ? <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap"><StreamText text={it.text} caret={false} onDone={() => setStreamed(true)} /></p>
