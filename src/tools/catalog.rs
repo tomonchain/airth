@@ -541,7 +541,8 @@ pub fn tool_for(
 ) -> Option<Box<dyn Tool>> {
     let mut installed = installed(skills_dir);
     installed.retain(|s| keep(&s.name));
-    own.retain(|s| keep(&s.name));
+    // A catalog skill keeps its name, even one installed a moment ago.
+    own.retain(|s| keep(&s.name) && !installed.iter().any(|i| i.name == s.name));
     (!installed.is_empty() || !own.is_empty()).then(|| {
         Box::new(UseSkill {
             skills_dir: skills_dir.to_path_buf(),

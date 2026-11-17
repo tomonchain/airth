@@ -62,7 +62,7 @@ fn a_skill_is_offered_once_approved_and_again_only_once_its_change_is() {
 
     // Approved: offered, the item done.
     let (item, said) = answer(&hub, &f.realm, items[0].id, Said::Approve);
-    assert_eq!(item.status, "approved", "{said:?}");
+    assert_eq!(item.status, "done", "{said:?}");
     let done = Store::of(&f.realm).unwrap().queue(&["done"]).unwrap();
     assert!(done.iter().any(|i| i.id == items[0].id), "{said:?}");
     assert_eq!(
@@ -143,11 +143,68 @@ fn nothing_but_the_founders_answer_approves_a_skill() {
     let mut store = Store::of(&f.realm).unwrap();
     // Pending, not yet the founder's.
     assert!(store.approve_skill(item.id, &approved).is_err());
-    // Another skill, or other files, under an approved item.
-    answer(&hub, &f.realm, item.id, Said::Reject("no".into()));
-    assert!(store.approve_skill(item.id, &approved).is_err());
+    // Approved by the founder, but for other files, or another skill.
+    store
+        .answer(item.id, None, Said::Approve, "app", 5)
+        .unwrap();
+    let other_files = crate::business::store::skills::Approved {
+        hash: "0".repeat(64),
+        ..approved.clone()
+    };
+    let other_skill = crate::business::store::skills::Approved {
+        name: "returns".into(),
+        ..approved.clone()
+    };
+    assert!(store.approve_skill(item.id, &other_files).is_err());
+    assert!(store.approve_skill(item.id, &other_skill).is_err());
     assert!(store.approved_skills().unwrap().is_empty());
     assert!(offered(&hub, &f.realm).is_empty());
+    // As the founder approved it: offered.
+    store.approve_skill(item.id, &approved).unwrap();
+    assert_eq!(offered(&hub, &f.realm).len(), 1);
+
+    // Rejected: never.
+    write(&root, "skills/returns/SKILL.md", REFUNDS);
+    hub.ask_about_skills(&f.realm).unwrap();
+    let item = asked(&f.realm).remove(0);
+    answer(&hub, &f.realm, item.id, Said::Reject("no".into()));
+    let skill = crate::business::skills::found(&root).remove(1);
+    let rejected = crate::business::store::skills::Approved {
+        name: skill.name.clone(),
+        hash: skill.hash.clone(),
+        ..approved
+    };
+    assert!(store.approve_skill(item.id, &rejected).is_err());
+    assert_eq!(offered(&hub, &f.realm).len(), 1);
+}
+
+/// An ask whose files changed since goes, even when the new version is not
+/// asked (rejected before); those files back, they are asked again.
+#[test]
+fn an_ask_goes_with_its_files_and_comes_back_with_them() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    let v2 = REFUNDS.replace("30", "60");
+    // Version 2 asked and rejected.
+    write(&root, "skills/refunds/SKILL.md", &v2);
+    hub.ask_about_skills(&f.realm).unwrap();
+    let id = asked(&f.realm)[0].id;
+    answer(&hub, &f.realm, id, Said::Reject("no".into()));
+    // Version 1 asked, then the files go back to version 2: its ask goes,
+    // and version 2 is not asked again.
+    write(&root, "skills/refunds/SKILL.md", REFUNDS);
+    assert_eq!(hub.ask_about_skills(&f.realm).unwrap(), 1);
+    write(&root, "skills/refunds/SKILL.md", &v2);
+    assert_eq!(hub.ask_about_skills(&f.realm).unwrap(), 0);
+    assert!(asked(&f.realm).is_empty(), "the stale ask is gone");
+    // Version 1 back: asked again, its earlier ask having gone.
+    write(&root, "skills/refunds/SKILL.md", REFUNDS);
+    assert_eq!(hub.ask_about_skills(&f.realm).unwrap(), 1);
+    // The skill removed: its ask goes.
+    std::fs::remove_dir_all(root.join("skills")).unwrap();
+    assert_eq!(hub.ask_about_skills(&f.realm).unwrap(), 0);
+    assert!(asked(&f.realm).is_empty());
 }
 
 /// A catalog skill keeps its name: a business skill under the same one is
@@ -227,4 +284,7 @@ fn a_run_reads_the_skill_as_approved() {
     .unwrap();
     let read = format!("{:?}", state.messages);
     assert!(!read.contains("300 days"), "{read}");
+    // No skill to read at all: the call is refused, not answered.
+    assert!(!read.contains("30 days"), "{read}");
+    assert!(read.contains("is_error: true"), "{read}");
 }

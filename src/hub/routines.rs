@@ -575,7 +575,13 @@ impl Hub {
         // if its files are still the ones the founder saw.
         if item.action.as_deref() == Some(crate::business::store::skills::SKILL) {
             return match self.approve_skill(realm, &item) {
-                Ok(what) => Ok((item, Some(what))),
+                Ok(what) => {
+                    let closed = Store::of(realm)?
+                        .queue(&["done"])?
+                        .into_iter()
+                        .find(|i| i.id == id);
+                    Ok((closed.unwrap_or(item), Some(what)))
+                }
                 Err(e) => {
                     let detail = crate::routine::run::one_line(&format!("{e:#}"));
                     store.close_item(id, "failed", &detail)?;

@@ -56,41 +56,60 @@ pub fn valid_name(name: &str) -> bool {
 /// Every skill of the business folder at `root`, by name: each folder of
 /// `skills/` with a valid name and a `SKILL.md`.
 pub fn found(root: &Path) -> Vec<Skill> {
-    let mut out: Vec<Skill> = std::fs::read_dir(root.join(DIR))
+    // Where each skill must really be: a folder swapped for a link on the
+    // way is not read.
+    let Ok(real) = std::fs::canonicalize(root) else {
+        return Vec::new();
+    };
+    let mut out: Vec<Skill> = folders(root)
         .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| read(&e.path(), &e.file_name().to_string_lossy()))
+        .filter_map(|name| {
+            read(
+                &root.join(DIR).join(&name),
+                &real.join(DIR).join(&name),
+                &name,
+            )
+        })
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
 
-fn read(dir: &Path, name: &str) -> Option<Skill> {
-    if !valid_name(name) {
-        return None;
-    }
+/// The names of the skills, without reading them: each folder of
+/// `skills/` with a valid name and a `SKILL.md`.
+pub fn names(root: &Path) -> Vec<String> {
+    let mut out: Vec<String> = folders(root)
+        .into_iter()
+        .filter(|n| root.join(DIR).join(n).join("SKILL.md").is_file())
+        .collect();
+    out.sort();
+    out
+}
+
+fn folders(root: &Path) -> Vec<String> {
+    std::fs::read_dir(root.join(DIR))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| valid_name(n))
+        .collect()
+}
+
+fn read(dir: &Path, real: &Path, name: &str) -> Option<Skill> {
     let mut paths = Vec::new();
     walk(dir, "", 0, &mut paths);
     paths.sort();
     let (mut files, mut skipped, mut total) = (Vec::new(), Vec::new(), 0u64);
     for rel in paths {
-        // Never followed: a link could point anywhere on the machine.
-        let Ok(meta) = std::fs::symlink_metadata(dir.join(&rel)) else {
-            continue;
-        };
         let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-        let take = meta.is_file()
-            && meta.len() <= MAX_FILE
-            && total + meta.len() <= MAX_SKILL
-            && !BINARY.contains(&ext.as_str());
-        let text = take
-            .then(|| std::fs::read_to_string(dir.join(&rel)).ok())
+        let text = (!BINARY.contains(&ext.as_str()))
+            .then(|| read_inside(dir, real, &rel, MAX_FILE.min(MAX_SKILL - total)))
             .flatten();
         match text {
             Some(text) => {
-                total += meta.len();
+                total += text.len() as u64;
                 let hash = crate::update::sha256_hex(text.as_bytes());
                 files.push(File {
                     path: rel,
@@ -123,6 +142,43 @@ fn read(dir: &Path, name: &str) -> Option<Skill> {
         description,
         ..skill
     })
+}
+
+/// The text of file `rel` of the skill whose folder is `dir`, really at
+/// `real`, if it is a plain file of that folder of at most `max` bytes.
+/// Never through a link, even one swapped in while it is read: a link could
+/// point anywhere on the machine, the business's secrets included. Nor a
+/// second name of another file (a hard link), for the same reason.
+fn read_inside(dir: &Path, real: &Path, rel: &str, max: u64) -> Option<String> {
+    use std::io::Read;
+    let path = dir.join(rel);
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    // Not through a link at the last step, and never stuck on a pipe.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut open, libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let file = open.open(&path).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > max {
+        return None;
+    }
+    // What was opened is the file at its real place inside the skill's
+    // folder: a folder on the way swapped for a link opens something else.
+    let at = std::fs::canonicalize(&path).ok()?;
+    if !at.starts_with(real) {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let there = std::fs::metadata(&at).ok()?;
+        if meta.nlink() > 1 || (there.dev(), there.ino()) != (meta.dev(), meta.ino()) {
+            return None;
+        }
+    }
+    let mut text = String::new();
+    file.take(max).read_to_string(&mut text).ok()?;
+    Some(text)
 }
 
 /// Paths under `dir`, from the skill's folder: files and links, never
@@ -231,10 +287,22 @@ mod tests {
         // A whole skill that is a link is not one either.
         std::os::unix::fs::symlink(root.path().join("skills/x"), root.path().join("skills/y"))
             .unwrap();
+        // Nor a second name of a file elsewhere.
+        std::fs::hard_link(
+            outside.path().join("secrets.env"),
+            root.path().join("skills/x/hard.md"),
+        )
+        .unwrap();
         let found = found(root.path());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].files.len(), 1);
         assert!(found[0].files.iter().all(|f| !f.text.contains("KEY")));
-        assert_eq!(found[0].skipped, ["keys.md", "out"]);
+        assert_eq!(found[0].skipped, ["hard.md", "keys.md", "out"]);
+        // The whole skills folder swapped for a link: nothing is read.
+        let elsewhere = tempfile::tempdir().unwrap();
+        write(elsewhere.path(), "z/SKILL.md", "---\nname: z\n---\n");
+        std::fs::rename(root.path().join("skills"), root.path().join("old")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), root.path().join("skills")).unwrap();
+        assert!(super::found(root.path()).is_empty());
     }
 }

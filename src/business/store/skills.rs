@@ -35,7 +35,7 @@ impl Store {
         let mut out = BTreeMap::new();
         for row in rows {
             let (name, hash, files, skill_md) = row?;
-            let files = serde_json::from_str(&files).unwrap_or_default();
+            let files = serde_json::from_str(&files)?;
             out.insert(
                 name.clone(),
                 Approved {
@@ -81,14 +81,16 @@ impl Store {
         })
     }
 
-    /// Whether the founder was ever asked about this skill as these files,
-    /// whatever they answered: a version rejected is not asked again.
+    /// Whether this skill, as these files, waits for the founder or was
+    /// rejected: either way it is not asked again. An ask replaced by a
+    /// newer version, or approved for files that changed before, does not
+    /// count: those files back, they are asked again.
     pub fn skill_asked(&self, name: &str, hash: &str) -> Result<bool> {
         Ok(self
             .conn
             .query_row(
                 "SELECT 1 FROM queue WHERE action = ?1 AND json_extract(source, '$.skill') = ?2
-                 AND json_extract(source, '$.hash') = ?3 LIMIT 1",
+                 AND json_extract(source, '$.hash') = ?3 AND status IN ('pending', 'rejected') LIMIT 1",
                 params![SKILL, name, hash],
                 |_| Ok(()),
             )

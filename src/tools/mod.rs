@@ -108,11 +108,7 @@ pub fn extension_names(realm: &crate::realm::Realm) -> Vec<String> {
     // The business's own, approved or not yet: the founder may give one
     // before approving it; it is offered only once approved (decision 149).
     if let Ok(root) = realm.root() {
-        names.extend(
-            crate::business::skills::found(&root)
-                .into_iter()
-                .map(|s| s.name),
-        );
+        names.extend(crate::business::skills::names(&root));
     }
     names.sort();
     names.dedup();

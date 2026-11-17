@@ -36,10 +36,21 @@ impl Hub {
     /// were asked.
     pub fn ask_about_skills(&self, realm: &Realm) -> Result<usize> {
         let found = own::found(&realm.root()?);
+        let mut store = Store::of(realm)?;
+        // An ask about files no longer there goes, whatever comes next: its
+        // approval would only fail.
+        for old in store.queue(&["pending"])? {
+            let stale = old.action.as_deref() == Some(SKILL)
+                && !found.iter().any(|s| {
+                    old.source["skill"] == s.name.as_str() && old.source["hash"] == s.hash.as_str()
+                });
+            if stale {
+                store.expire_item(old.id, "its files changed since")?;
+            }
+        }
         if found.is_empty() {
             return Ok(0);
         }
-        let mut store = Store::of(realm)?;
         let approved = store.approved_skills()?;
         let catalog = catalog_names(realm);
         let mut asked = 0;
@@ -63,7 +74,7 @@ impl Hub {
             .to_string();
             let source =
                 json!({"show": "text", "skill": skill.name, "hash": skill.hash}).to_string();
-            let id = store.propose(&crate::business::store::autonomy::NewItem {
+            store.propose(&crate::business::store::autonomy::NewItem {
                 kind: "approval",
                 title: &title,
                 agent: None,
@@ -75,14 +86,6 @@ impl Hub {
                 source: &source,
                 model_call: None,
             })?;
-            for old in store.queue(&["pending"])? {
-                if old.id != id
-                    && old.action.as_deref() == Some(SKILL)
-                    && old.source["skill"] == skill.name.as_str()
-                {
-                    store.expire_item(old.id, &format!("replaced by item {id}"))?;
-                }
-            }
             asked += 1;
         }
         Ok(asked)

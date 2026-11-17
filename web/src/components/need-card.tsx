@@ -214,7 +214,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
               <span className="ml-auto shrink-0 tabular-nums">{it.text.length} characters</span>
             </p>
           </div>
-        ) : <p className={cn("mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap", it.action === SKILL && "line-clamp-6")}>{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
+        ) : <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap">{stream ? <StreamText text={it.text} caret={false} /> : it.text}</p>
       ) : it.kind === "idea" && it.text ? (
         <>
           {stream && !streamed ? <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap"><StreamText text={it.text} caret={false} onDone={() => setStreamed(true)} /></p>
