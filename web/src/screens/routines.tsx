@@ -476,16 +476,36 @@ function GraphDetail({ realm, r, agent, onAgent, onEdit, onChanged }: { realm: s
           ))}
         </div>
       )}
-      {!!r.feedback?.length && <Learned realm={realm} said={r.feedback} onChanged={onChanged} />}
+      {!!r.feedback?.length && <Learned realm={realm} said={r.feedback} agent={g?.agent ?? null} agentTitle={agent?.title ?? r.agent_title} onChanged={onChanged} />}
     </>
   )
 }
 
 /** What the routine's next drafts hear from the founder (decision 116):
     their last edits, reasons to reject and redos. One that no longer holds
-    can be taken back. */
-function Learned({ realm, said, onChanged }: { realm: string; said: Feedback[]; onChanged: () => void }) {
+    can be taken back; one that keeps coming back can be kept for good, as
+    a lesson of the routine's agent (decision 127), in the founder's words. */
+function Learned({ realm, said, agent, agentTitle, onChanged }: { realm: string; said: Feedback[]; agent: string | null; agentTitle: string | null; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
+  // The note being kept, and the lesson as the founder words it.
+  const [keeping, setKeeping] = useState<{ item: number; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function keep() {
+    if (!agent || !keeping || !keeping.text.trim()) return
+    setBusy(true)
+    try {
+      await api(`realms/${enc(realm)}/agents/${enc(agent)}/lessons`, { text: keeping.text.trim() })
+      // Kept for good: the note itself need not be heard twice.
+      await api(`realms/${enc(realm)}/queue/${keeping.item}/forget`, {})
+      toast.success(`Kept as a lesson for ${agentTitle ?? agent}: all its work hears it from now on.`)
+      setKeeping(null)
+      onChanged()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
   async function forget(f: Feedback) {
     try {
       await api(`realms/${enc(realm)}/queue/${f.item}/forget`, {})
@@ -520,8 +540,27 @@ function Learned({ realm, said, onChanged }: { realm: string; said: Feedback[]; 
                   </>
                 )}
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{ago(f.at)}</p>
+                {keeping?.item === f.item && (
+                  <form className="mt-2 flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); keep() }}>
+                    <Input autoFocus value={keeping.text} maxLength={300} disabled={busy}
+                      placeholder="The rule, in a line: what it should always do" aria-label="The lesson"
+                      onChange={(e) => setKeeping({ item: f.item, text: e.target.value })} />
+                    <span className="text-[11px] text-muted-foreground">Every task and routine of {agentTitle ?? agent} hears it, not only these drafts. Change or remove it in its Memory.</span>
+                    <span className="flex gap-1.5">
+                      <Button size="xs" type="submit" disabled={busy || !keeping.text.trim()}>Keep</Button>
+                      <Button size="xs" variant="ghost" type="button" onClick={() => setKeeping(null)}>Cancel</Button>
+                    </span>
+                  </form>
+                )}
               </div>
-              <Button size="xs" variant="ghost" className="shrink-0 self-start text-muted-foreground opacity-0 group-hover:opacity-100 max-md:opacity-100" onClick={() => forget(f)}>Forget</Button>
+              <span className="flex shrink-0 flex-col items-end gap-0.5 self-start opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 max-md:opacity-100">
+                {agent && keeping?.item !== f.item && (
+                  // A redo or a reason is already the founder's rule, nearly;
+                  // an edit says what, not why: they write the rule.
+                  <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => setKeeping({ item: f.item, text: f.kind === "edit" ? "" : f.said.slice(0, 300) })}>Keep for good</Button>
+                )}
+                <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => forget(f)}>Forget</Button>
+              </span>
             </li>
           ))}
         </ul>

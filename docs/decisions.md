@@ -396,6 +396,8 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
     The prompt's recorded version carries a mark of the lessons heard.
 
+- **From "Learned from you"** (the Routines page, decision 116), since 17 November 2026: **Keep for good** on a note opens one line, the founder's words for the rule (a redo's or a reason's text to start from; an edit's, empty). Kept, it is a lesson of the routine's agent, and the note is forgotten, so it is not heard twice. A lesson the agent already has is not written again, so a keep retried after a failure adds nothing.
+
 *Why:* a correction given once should not be needed again. Decision 116 carries the founder's words to a routine's next drafts, for 30 days. A lesson is the standing kind: what the founder wants of this agent, everywhere, until they take it back.
 
 *Cost:* a longer prompt for the agent's AI blocks, by its lessons. The lessons are not pruned: the founder keeps the list short by editing the file.
