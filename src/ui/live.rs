@@ -73,14 +73,15 @@ pub(super) fn next_on_its_own(
 }
 
 /// Whether the founder watches a run in the app (decision 56): its page
-/// looks at it again and again. Once they left, they left, for the run.
+/// looks at it again and again. One who left and comes back to the page
+/// watches it again (decision 150).
 #[derive(Default)]
-pub(super) struct Watch(Mutex<(Option<std::time::Instant>, bool)>);
+pub(super) struct Watch(Mutex<Option<std::time::Instant>>);
 
 impl Watch {
     /// Watched from now: the founder just started or followed up the run.
     pub(super) fn from_now() -> Self {
-        Self(Mutex::new((Some(std::time::Instant::now()), false)))
+        Self(Mutex::new(Some(std::time::Instant::now())))
     }
 
     /// The founder asked for a `Drive` in the app: they watch it from now.
@@ -94,15 +95,11 @@ impl Watch {
 
     /// The run's page looked at it.
     pub(super) fn seen(&self) {
-        let mut w = self.0.locked();
-        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
-        w.0 = Some(std::time::Instant::now());
+        *self.0.locked() = Some(std::time::Instant::now());
     }
 
     pub(super) fn watching(&self) -> bool {
-        let mut w = self.0.locked();
-        w.1 = w.1 || w.0.is_none_or(|at| at.elapsed() > WATCH_GAP);
-        !w.1
+        self.0.locked().is_some_and(|at| at.elapsed() <= WATCH_GAP)
     }
 }
 
@@ -524,27 +521,23 @@ mod tests {
     }
 
     fn left(ago: u64) -> Watch {
-        Watch(Mutex::new((
-            Some(Instant::now() - Duration::from_secs(ago)),
-            false,
-        )))
+        Watch(Mutex::new(Some(Instant::now() - Duration::from_secs(ago))))
     }
 
     #[test]
-    fn a_run_is_watched_while_its_page_looks_and_never_again_once_left() {
+    fn a_run_is_watched_while_its_page_looks_and_again_once_it_comes_back() {
         let w = Watch::from_now();
         assert!(w.watching());
         w.seen();
         assert!(w.watching());
-        // Its page stopped looking: left, even once it looks again.
+        // Its page stopped looking: left.
         let w = left(11);
         assert!(!w.watching());
+        // Back on the page (decision 150): watched again.
         w.seen();
-        assert!(!w.watching());
-        // Left between two looks, and nothing asked in between.
-        let w = left(11);
-        w.seen();
-        assert!(!w.watching());
+        assert!(w.watching());
+        // Never looked at: nobody watches.
+        assert!(!Watch::default().watching());
     }
 
     #[test]

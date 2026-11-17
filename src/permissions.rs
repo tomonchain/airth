@@ -213,8 +213,6 @@ pub struct PermissionGate {
     policy: Policy,
     approver: Box<dyn Approver>,
     grants: Vec<Grant>,
-    /// Once nobody watches the run, nobody does for the rest of it.
-    detached: bool,
     /// The run works in its own worktree (decision 80): what it writes
     /// reaches the founder's files only through an adoption they review.
     isolated_writes: bool,
@@ -226,7 +224,6 @@ impl PermissionGate {
             policy,
             approver,
             grants: Vec::new(),
-            detached: false,
             isolated_writes: false,
         }
     }
@@ -248,10 +245,11 @@ impl PermissionGate {
             && self.policy.rule(Capability::Write) == Rule::Ask
     }
 
-    /// Whether the founder watches the run now and has since it started.
+    /// Whether the founder watches the run now. One who left and came back
+    /// to it watches it again (decision 150): a commit is still theirs to
+    /// approve, call by call, whether asked here or in Needs you.
     pub fn watched(&mut self) -> bool {
-        self.detached = self.detached || !self.approver.watched();
-        !self.detached
+        self.approver.watched()
     }
 
     /// Ask the founder about this very call (decision 56): neither the
