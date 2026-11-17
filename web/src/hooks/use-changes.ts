@@ -12,6 +12,8 @@ export function useChanges(realm: string | null) {
   useEffect(() => {
     if (!realm) return
     let on = true
+    // Left (another business, the page gone): the server's wait ends too.
+    const stop = new AbortController()
     let mark: string | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
     const later = (ms: number) => { timer = setTimeout(() => { timer = null; wait() }, ms) }
@@ -20,7 +22,7 @@ export function useChanges(realm: string | null) {
       if (document.visibilityState !== "visible") { later(1500); return }
       try {
         const q = mark === null ? "" : `?since=${enc(mark)}`
-        const r = await api<{ mark: string }>(`realms/${enc(realm)}/changes${q}`, undefined, undefined, 35000)
+        const r = await api<{ mark: string }>(`realms/${enc(realm)}/changes${q}`, undefined, undefined, 35000, stop.signal)
         if (!on) return
         if (mark !== null && r.mark !== mark) window.dispatchEvent(new CustomEvent(CHANGED, { detail: realm }))
         mark = r.mark
@@ -31,6 +33,6 @@ export function useChanges(realm: string | null) {
       }
     }
     wait()
-    return () => { on = false; if (timer) clearTimeout(timer) }
+    return () => { on = false; stop.abort(); if (timer) clearTimeout(timer) }
   }, [realm])
 }

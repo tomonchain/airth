@@ -459,13 +459,20 @@ fn config_of(state: &State) -> crate::business::ConfigChanges {
 }
 
 /// What changes when a business does: its database's files (a write goes
-/// to the log first) and its runs' folder (a run saved is a file renamed
-/// into it; one started or ended, its lock written or removed).
+/// to the log first), its runs' folder (a run saved is a file renamed
+/// into it; one started or ended, its lock written or removed), and the
+/// runs' titles and archive the founder sets.
 fn changes_mark(realm: &Realm) -> String {
     use std::hash::{Hash, Hasher};
     let db = realm.dir().join(crate::business::store::FILE);
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    for path in [db.with_extension("db-wal"), db, realm.runs_dir()] {
+    for path in [
+        db.with_extension("db-wal"),
+        db,
+        realm.runs_dir(),
+        realm.dir().join("run-titles.json"),
+        realm.dir().join("run-archived.json"),
+    ] {
         std::fs::metadata(&path)
             .ok()
             .map(|m| (m.modified().ok(), m.len()))

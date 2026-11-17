@@ -14,6 +14,8 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
   // has left must not land on the one they opened since.
   const generation = useRef(0)
   const busy = useRef(false)
+  // A change heard while a load was under way: load again once it ends.
+  const again = useRef(false)
   const last = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -32,13 +34,17 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
     } catch (e) {
       if (mine === generation.current) setError((e as Error).message)
     } finally {
-      if (mine === generation.current) busy.current = false
+      if (mine === generation.current) {
+        busy.current = false
+        if (again.current) { again.current = false; refresh() }
+      }
     }
   }, [])
 
   useEffect(() => {
     generation.current++
     busy.current = false
+    again.current = false
     last.current = null
     setData(null)
     refresh()
@@ -53,7 +59,11 @@ export function usePoll<T>(load: (() => Promise<T>) | null, ms: number, deps: un
     let soon: ReturnType<typeof setTimeout> | null = null
     const changed = (e: Event) => {
       if (!live || (e as CustomEvent).detail !== live || soon) return
-      soon = setTimeout(() => { soon = null; tick() }, 150)
+      soon = setTimeout(() => {
+        soon = null
+        if (busy.current) again.current = true
+        else tick()
+      }, 150)
     }
     window.addEventListener(CHANGED, changed)
     return () => {
