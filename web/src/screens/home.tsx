@@ -50,6 +50,9 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name && inThread(t, null)).map((t) => t.id).sort(), [tasks, lead])
   const setMode = onMode
   const shown = lead && mode === "thread" ? "thread" : "start"
+  // What was asked on the Home goes to the conversation at once, which
+  // sends it: the founder sees it there, the agent typing under it.
+  const [opening, setOpening] = useState<{ text: string; at: number } | null>(null)
 
   if (shown === "thread" && lead) {
     return (
@@ -59,7 +62,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
           className={SLOT}>
           <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
         </Button>
-        <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top project={null}
+        <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top project={null} opening={opening ?? undefined}
           aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} />} />
       </div>
     )
@@ -79,7 +82,8 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       <div className="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
         <ProjectLines tasks={tasks} projects={projects} onProject={onProject} />
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
-          onSent={(id) => { onTasks(); if (lead) setMode("thread"); else onTask(id) }} />
+          onAsk={lead ? (text) => { setOpening({ text, at: Date.now() }); setMode("thread") } : undefined}
+          onSent={(id) => { onTasks(); onTask(id) }} />
       </div>
     </div>
   )
@@ -121,8 +125,12 @@ function Light() {
 }
 
 /** The greeting, the one line to ask, and the suggestion under it. */
-function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
-  realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onProject: (id: number) => void; onSent: (id: string) => void
+function Start({ realm, lead, first, suggestions, onPage, onProject, onAsk, onSent }: {
+  realm: string; lead: Agent | null; first: string | null; suggestions: Suggestion[]; onPage: (p: Page) => void; onProject: (id: number) => void
+  /** With a lead agent: the conversation sends it. */
+  onAsk?: (text: string) => void
+  /** Without one: routed here, the task's id once sent. */
+  onSent: (id: string) => void
 }) {
   const now = useNow()
   const [text, setText] = useState("")
@@ -140,11 +148,12 @@ function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
   async function send() {
     const t = text.trim()
     if (!t || busy) return
+    if (onAsk) { onAsk(t); return }
     setBusy(true)
     try {
-      const out = await sendOrder(realm, t, lead?.name ?? "route")
+      const out = await sendOrder(realm, t, "route")
       setText("")
-      if (!lead) toast.success("Sent", { description: "It goes on in Projects." })
+      toast.success("Sent", { description: "It goes on in Projects." })
       onSent(out.id)
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
@@ -161,7 +170,7 @@ function Start({ realm, lead, first, suggestions, onPage, onProject, onSent }: {
         {greeting(now, first)}
       </h1>
       <div className="mt-8 flex items-end gap-1.5 rounded-[26px] bg-bubble py-1.5 pr-1.5 pl-5">
-        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} disabled={busy}
+        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} readOnly={busy}
           placeholder={lead ? `Ask ${lead.first_name ?? lead.title}` : "Ask the team"} aria-label="What to ask"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(min-width: 768px)").matches) { e.preventDefault(); send() } }}
           className="max-h-[200px] min-h-10 flex-1 resize-none bg-transparent py-2 text-[16px] leading-6 outline-none placeholder:text-muted-foreground" />

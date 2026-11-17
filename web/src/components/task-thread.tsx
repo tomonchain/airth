@@ -2,7 +2,6 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
-import { StreamText } from "@/components/beautifui/stream-text"
 import { FoldedLine, OpenLine, storage } from "@/components/fold-line"
 import { ChangePanel, type Change, type Review } from "@/components/change-panel"
 import { Character } from "@/components/character"
@@ -53,24 +52,27 @@ export function useRun(realm: string, id: string, active: boolean) {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let on = true
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout> | null = null
     let seq = -1
+    // Waiting before looking again: the only moment a new look may start,
+    // so two loops never run at once.
+    const later = (f: () => void, ms: number) => { timer = setTimeout(() => { timer = null; f() }, ms) }
     const base = `realms/${enc(realm)}/runs/${enc(id)}`
     const load = async () => {
       // A hidden tab asks nothing; it looks again once shown.
-      if (document.visibilityState !== "visible") { timer = setTimeout(load, 1500); return }
+      if (document.visibilityState !== "visible") { later(load, 1500); return }
       try {
         const v = await api<RunView>(`${base}?since=${version.current}`)
         if (!on) return
         if (!v.unchanged) { version.current = v.version; setView(v); setDraft("") }
         if (v.live && !v.elsewhere) follow()
-        else timer = setTimeout(load, v.live || active ? 1500 : 20000)
+        else later(load, v.live || active ? 1500 : 20000)
       } catch {
-        if (on) timer = setTimeout(load, 5000)
+        if (on) later(load, 5000)
       }
     }
     const follow = async () => {
-      if (document.visibilityState !== "visible") { timer = setTimeout(load, 1500); return }
+      if (document.visibilityState !== "visible") { later(load, 1500); return }
       try {
         const n = await api<{ here: boolean; version: number; draft_seq: number; draft: string }>(`${base}/live?version=${version.current}&draft=${seq}`)
         if (!on) return
@@ -79,11 +81,17 @@ export function useRun(realm: string, id: string, active: boolean) {
         setDraft(n.draft)
         follow()
       } catch {
-        if (on) timer = setTimeout(load, 1500)
+        if (on) later(load, 1500)
       }
     }
+    // Back on the tab: look now, not at the end of the wait.
+    const shown = () => {
+      if (document.visibilityState !== "visible" || timer === null) return
+      clearTimeout(timer); timer = null; load()
+    }
+    document.addEventListener("visibilitychange", shown)
     load()
-    return () => { on = false; clearTimeout(timer) }
+    return () => { on = false; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", shown) }
   }, [realm, id, active, tick])
   return { view, draft, refresh: () => { version.current = 0; setTick((t) => t + 1) } }
 }
@@ -113,7 +121,8 @@ function Elapsed({ from }: { from: number }) {
 type Step = { name: string; input: Record<string, unknown>; error?: boolean; done: boolean }
 type Part = (
   | { kind: "founder"; text: string }
-  | { kind: "agent"; text: string }
+  // `final`: its message called no tool, so the agent's turn ended there.
+  | { kind: "agent"; text: string; final?: boolean }
   | { kind: "steps"; steps: Step[] }
   | { kind: "note"; text: string }
 ) & { time: number | null }
@@ -130,7 +139,7 @@ function parts(view: RunView): Part[] {
       if (b.type === "text") {
         const text = b.text.trim()
         if (!text) continue
-        if (m.role === "assistant") out.push({ kind: "agent", text, time })
+        if (m.role === "assistant") out.push({ kind: "agent", text, time, final: !m.content.some((x) => x.type === "tool_use") })
         // The agent's job and the order, which the founder wrote above; what
         // the founder wrote after, before the agent answered, is theirs.
         else if (i === 0 && b === m.content.find((x) => x.type === "text")) continue
@@ -178,9 +187,11 @@ function turns(ps: Part[], live: boolean): Shown[] {
   const flush = (end: boolean) => {
     if (!work.length) return
     // The turn's last words are its answer, once it is over; while the
-    // agent works they may be a note before its next step.
+    // agent works they may be a note before its next step, unless their
+    // message called no tool: then the turn ended there, and the answer
+    // stays where it was written instead of folding into the work line.
     const last = work[work.length - 1]
-    const answer = last.p.kind === "agent" && !(end && live) ? work.pop()! : null
+    const answer = last.p.kind === "agent" && (!(end && live) || last.p.final) ? work.pop()! : null
     if (work.length) out.push({ kind: "work", items: work.map((w) => w.p), at: work[0].at, live: end && live, time: work[0].p.time })
     if (answer && answer.p.kind === "agent") out.push({ kind: "answer", text: answer.p.text, at: answer.at, time: answer.p.time })
     work = []
@@ -207,7 +218,7 @@ function Work({ items, live, saying, tail }: { items: Part[]; live: boolean; say
     <div className="md:max-w-[85%]">
       <button onClick={() => setOpen(!open)} className="inline-flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
         <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")} />
-        {live ? <Shimmer className="truncate">{`${now.replace(/[\s.…:]+$/, "")}…`}</Shimmer> : <span>Worked{steps.length ? ` · ${steps.length} step${steps.length === 1 ? "" : "s"}` : ""}</span>}
+        {live ? <Shimmer className="truncate">{`${now.replace(/[\s.…:]+$/, "")}…`}</Shimmer> : <span className="whitespace-nowrap">Worked{steps.length ? ` · ${steps.length} step${steps.length === 1 ? "" : "s"}` : ""}</span>}
       </button>
       {tail}
       {open && (
@@ -280,6 +291,14 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
   latest?: boolean
 }) {
   const { view, draft, refresh } = useRun(realm, id, fresh || echoes.length > 0)
+  // The moment it stops working, the page around it hears it, not at its
+  // next look: "is working" goes with the agent's last words.
+  const wasLive = useRef(false)
+  useEffect(() => {
+    const live = !!view?.live
+    if (wasLive.current && !live) onChange()
+    wasLive.current = live
+  }, [view?.live, onChange])
   // Words the founder already read as they were written are not written
   // out again once they are in the run.
   const read = useRef("")
@@ -492,9 +511,11 @@ export function TaskThread({ realm, id, agent, items, fresh, echoes = [], onEcho
           <div className="fade-up"><Work items={[]} live saying={short} tail={timer} /></div>
         </Bubble>
       )}
-      {/* Its plan for the team, waiting for the founder (decision 120):
-          approved, edited or rejected here as in Needs you. */}
-      {items.filter((i) => i.run === id && i.action === "airth.dispatch" && i.status === "pending").map((plan) => (
+      {/* What it sent up to the founder and still waits on (its plan for
+          the team, decision 120; a hire, a draft, an action to approve):
+          answered here as in Needs you, without leaving the conversation.
+          A question it stopped on has its own card above. */}
+      {items.filter((i) => i.run === id && i.status === "pending" && i.id !== question?.id).map((plan) => (
         <div key={plan.id} className="mb-4 md:ml-10 md:max-w-[85%] fade-up">
           <NeedCard realm={realm} it={plan} onDone={() => { refresh(); onChange() }} />
         </div>
@@ -570,9 +591,21 @@ function StopButton({ onStop }: { onStop: () => void }) {
 }
 
 /** An agent's words: streamed as they arrive, then formatted. */
+/** An answer, written out as it arrives: formatted from its first words,
+    so headings and lists do not reflow when it ends. */
 function AgentText({ text, stream }: { text: string; stream: boolean }) {
-  const [done, setDone] = useState(!stream)
-  if (done) return <Markdown text={text} />
-  const plain = text.replace(/\*\*|__|`/g, "").replace(/^\s*#{1,6}\s+/gm, "")
-  return <span className="whitespace-pre-wrap"><StreamText text={plain} caret={false} onDone={() => setDone(true)} /></span>
+  const shown = useReveal(text, stream)
+  // A list item or a line just begun shows once it has words.
+  return <Markdown text={shown === text ? text : shown.replace(/\n\s*(?:[-*•]|\d+[.)])?\s*$/, "").trimEnd()} />
+}
+
+/** `text`, revealed a few words at a time when `stream`, else whole. */
+function useReveal(text: string, stream: boolean) {
+  const [count, setCount] = useState(stream ? 0 : text.length)
+  useEffect(() => {
+    if (count >= text.length) return
+    const t = setTimeout(() => setCount((n) => Math.min(text.length, n + Math.max(6, Math.ceil(text.length / 120)))), 30)
+    return () => clearTimeout(t)
+  }, [count, text.length])
+  return text.slice(0, count)
 }

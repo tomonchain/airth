@@ -15,19 +15,26 @@ function typing(text: string, caret: number): { kind: "/" | "@"; query: string; 
   return { kind: m[1] as "/" | "@", query: m[2].toLowerCase(), from: caret - m[2].length - 1 }
 }
 
+/** Openings already sent, by when they were written: the box comes and
+    goes with the page, and must not send one twice. */
+const OPENED = new Set<number>()
+
 /** How an agent is mentioned: its first name, else its file name. */
 const handle = (a: Agent) => (a.first_name ? a.first_name.replace(/\s+/g, "-") : a.name)
 
 /** Writing to an agent. A message continues the agent's latest task, as a
     chat does; a new task is started on purpose. Sent from here, the founder
     watches it, so its questions come back here (decision 75). */
-export function OrderBox({ realm, agent, title, task, closed, working, tools = [], others = [], onOther, onSending, onSent, onFailed, project }: {
+export function OrderBox({ realm, agent, title, task, closed, working, tools = [], others = [], onOther, onSending, onSent, onFailed, project, opening }: {
   realm: string; agent: string; title: string; task?: string; closed?: string | null; working: boolean
   /** The agent's tools, offered after "/"; the business's other agents, after "@". */
   tools?: string[]; others?: Agent[]; onOther?: (name: string) => void
   onSending: (text: string, task: string | null) => void; onSent: (taskId: string | null) => void; onFailed: () => void
   /** A new order is about this project (decision 147). */
   project?: number
+  /** Written elsewhere (the Home's first box): sent from here at once, as a
+      new task, as if typed here. */
+  opening?: { text: string; at: number }
 }) {
   const [text, setText] = useState("")
   const box = useRef<HTMLTextAreaElement>(null)
@@ -66,10 +73,20 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
   // At work, a message goes to what it is doing: it reads it at its next step.
   const continuing = !!task && (!fresh || working)
 
-  async function send() {
-    const t = text.trim()
+  // On a computer the box takes the keys: the founder writes on without a click.
+  useEffect(() => { if (matchMedia("(min-width: 768px)").matches) box.current?.focus() }, [agent])
+  useEffect(() => {
+    if (!opening || OPENED.has(opening.at)) return
+    OPENED.add(opening.at)
+    send(opening.text, true)
+    // Once per opening: `send` is the same each render in what it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opening])
+
+  async function send(written = text, fresh = false) {
+    const t = written.trim()
     if (!t) return
-    const other = addressed(t)
+    const other = fresh ? null : addressed(t)
     if (other) {
       setBusy(true)
       try {
@@ -85,12 +102,13 @@ export function OrderBox({ realm, agent, title, task, closed, working, tools = [
     // copy replaces it when it comes back.
     setText("")
     setLast(t)
-    onSending(t, continuing ? task! : null)
+    const goingOn = continuing && !fresh
+    onSending(t, goingOn ? task! : null)
     try {
       // Closed since the page last looked (its change adopted elsewhere), or
       // the agent now works in another repository: the message starts a new
       // task rather than failing.
-      const goOn = continuing && await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
+      const goOn = goingOn && await api(`realms/${enc(realm)}/runs/${enc(task!)}/messages`, { message: t })
         .then(() => true, (e: Error) => { if (/change was (adopted|discarded)|start a new task instead/.test(e.message)) return false; throw e })
       if (goOn) {
         onSent(null)
