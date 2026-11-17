@@ -47,7 +47,9 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   /** The project open, for the address. */
   onProject?: (id: number | null) => void
 }) {
-  const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 5000, [realm])
+  // Live: they reload as soon as the business changes (a task started,
+  // saved or ended; a project edited); the interval is only the fallback.
+  const runs = usePoll<Run[]>(() => api(`realms/${enc(realm)}/runs`), 15000, [realm], realm)
   // The app's list, refreshed every few seconds: not asked again here.
   const tasks = { data: shared, refresh: onTasks }
   const [archived, setArchived] = useState(false)
@@ -55,7 +57,7 @@ export function Tasks({ realm, agents, items, open, onOpen, onAgent, prefill, ta
   const [view, setView] = useState<"projects" | "tasks">("projects")
   // The projects (decision 129): the open ones first in the list, the done
   // ones with what is archived.
-  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 5000, [realm])
+  const projects = usePoll<{ projects: Project[] }>(() => api(`realms/${enc(realm)}/projects`), 15000, [realm], realm)
   const [shown, setShown] = useState<number | null>(null)
   useEffect(() => setShown(null), [realm])
   useEffect(() => { if (startProject) { setShown(startProject.id); if (startProject.id != null) onOpen(null) } }, [startProject]) // eslint-disable-line react-hooks/exhaustive-deps
