@@ -16,6 +16,33 @@ export type Entry = {
 
 export const CHANGELOG: Entry[] = [
   {
+    version: "0.10.0",
+    date: "2026-11-17",
+    title: "A thread per project, and chats in time order",
+    added: [
+      "One thread per project: a request written on a project's page is about it, and the agent knows the project. The Home keeps what belongs to no project, with a line for each project that moved this week.",
+      "Each page has its address: reload, Back, or a link you keep comes back to the same page, item or file.",
+      "An agent can link a file of the workspace in its answer; a click opens it in Documents.",
+      "Your photo is framed before it is saved: drag, zoom, and see how it will show.",
+      "An agent may name the model its tasks use.",
+      "A landing page for Airth.",
+    ],
+    improved: [
+      "Chats in time order: each message keeps its time, and what came during a task shows inside it, where it happened, not after your last words.",
+      "Past exchanges fold into one line each; the latest stays open.",
+      "Agents' answers read as formatted text: headings, lists, tables, links.",
+      "Chat opens on New request, every time. Overview is hidden for now.",
+      "The Home greets you for the moment of the day, over a grey dithered background.",
+      "Routines can be grouped by business, every business's routines in one list.",
+      "On a computer, an update waits at the foot of the menu, and the header drops \"Ask the team\". Navigation icons are in the logo's metal.",
+      "Settings has a narrower menu.",
+      "Updates on the server are ready sooner: a faster build, and tests only when the Rust changed.",
+    ],
+    fixed: [
+      "The theme you chose shows from the first screen, without a flash of the other one.",
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-11-16",
     title: "Routines, at a glance",
