@@ -394,3 +394,48 @@ fn a_run_that_cannot_start_holds_nothing_of_the_month() {
         .unwrap();
     assert!((left.unwrap() - 2.0).abs() < 1e-9, "{left:?}");
 }
+
+/// Two tasks started at the same moment, with room for one: one starts,
+/// the other is refused. Read apart from the save of what it holds, both
+/// saw the same room and together spent past the cap.
+#[test]
+fn tasks_started_at_once_share_the_month_and_never_exceed_it() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    std::fs::create_dir_all(root.join("agents")).unwrap();
+    std::fs::write(root.join("agents/writer.md"), "---\n---\nWrite.\n").unwrap();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    // Room for one task's $1, not two.
+    crate::business::set_monthly_cap(&root, None, Some(1.0), &[]).unwrap();
+
+    for round in 0..20 {
+        let gate = std::sync::Barrier::new(2);
+        let started: Vec<Result<State>> = std::thread::scope(|s| {
+            let go = || {
+                gate.wait();
+                hub.start_task(&f.realm, "writer", &format!("Draft {round}"))
+            };
+            let a = s.spawn(go);
+            let b = s.spawn(go);
+            vec![a.join().unwrap(), b.join().unwrap()]
+        });
+        let held: f64 = started
+            .iter()
+            .flatten()
+            .map(|t| t.budget.max_cost_usd.unwrap())
+            .sum();
+        assert!(held <= 1.0 + 1e-9, "round {round}: ${held} held of $1");
+        let refused = started.iter().filter(|r| r.is_err()).count();
+        assert_eq!(refused, 1, "round {round}");
+        for r in &started {
+            if let Err(e) = r {
+                assert!(crate::hub::budget::cap_reached(e), "{e:#}");
+            }
+        }
+        // Completed, the task gives its share back for the next round.
+        for mut t in started.into_iter().flatten() {
+            t.status = Status::Completed;
+            t.save().unwrap();
+        }
+    }
+}

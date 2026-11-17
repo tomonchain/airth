@@ -31,7 +31,9 @@ impl Hub {
         // The month's budgets bind it as they bind a task (decision 139):
         // its bot's and the business's; none starts once one is reached.
         // Past one, this firing is skipped, as a routine's is: told once,
-        // not tried again at every tick of the scheduler.
+        // not tried again at every tick of the scheduler. Held until the
+        // run is saved with its share.
+        let start = crate::supervise::Locked::locked(&super::budget::STARTS);
         let left = match self.month_allows(realm, objective.bot.as_deref(), now) {
             Ok(left) => left,
             Err(e) => {
@@ -72,6 +74,7 @@ impl Hub {
             bot: objective.bot.clone(),
         });
         state.save()?;
+        drop(start);
 
         let fingerprint = watched_fingerprint(realm, &objective)?;
         let run_id = state.id.clone();
