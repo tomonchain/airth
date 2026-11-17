@@ -5,6 +5,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SpendIndicator, SpendPanel, SpendRing, useSpend } from "@/components/spend"
 import { RailUpdate } from "@/components/update-notice"
 import { useTheme } from "@/hooks/use-theme"
+import { usePoll } from "@/hooks/use-poll"
+import { api } from "@/lib/api"
+import { parseVersion } from "@/lib/version"
 import { cn } from "@/lib/utils"
 
 export type Page = "home" | "overview" | "agents" | "needs" | "routines" | "tasks" | "calendar" | "documents" | "finance" | "usage" | "hq" | "company" | "settings" | "marketplace"
@@ -88,8 +91,32 @@ export function Rail({ page, onPage, needs, live, working }: { page: Page; onPag
         <SpendIndicator live={live} onUsage={() => onPage("usage")} />
         <RailButton icon={theme === "dark" ? Sun : Moon} label={theme === "dark" ? "Light mode" : "Dark mode"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} />
         <RailButton icon={Settings} label="Settings" active={page === "settings"} onClick={() => onPage("settings")} />
+        <RailVersion onPage={onPage} />
       </div>
     </nav>
+  )
+}
+
+/** The Airth this page talks to: its release and build, read once in a
+    while (an update restarts it, and the page reloads). */
+function useVersion() {
+  return parseVersion(usePoll<{ version: string }>(() => api("info"), 600000, []).data?.version)
+}
+
+/** At the rail's foot, quietly: the release, the build under it. What
+    changed in it is one click away, in Settings. */
+function RailVersion({ onPage }: { onPage: (p: Page) => void }) {
+  const v = useVersion()
+  if (!v) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<button onClick={() => onPage("settings")} aria-label={`Airth ${v.release}${v.build ? `, build ${v.build}` : ""}`}
+        className="mt-1 flex flex-col items-center font-mono text-[9.5px] leading-tight text-muted-foreground/70 tabular-nums hover:text-foreground" />}>
+        <span>{v.release}</span>
+        {v.build && <span>{v.build}</span>}
+      </TooltipTrigger>
+      <TooltipContent side="right">Airth {v.release}{v.build ? `, build ${v.build}` : ""}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -163,8 +190,16 @@ export function TabBar({ page, onPage, needs }: { page: Page; onPage: (p: Page) 
               </section>
             ))}
           </div>}
+          {!spending && <PhoneVersion />}
         </SheetContent>
       </Sheet>
     </nav>
   )
+}
+
+/** Under More, at its foot: the release and build this Airth runs. */
+function PhoneVersion() {
+  const v = useVersion()
+  if (!v) return null
+  return <p className="mt-2 px-2 text-center font-mono text-[11px] text-muted-foreground/70 tabular-nums">Airth {v.release}{v.build ? ` · build ${v.build}` : ""}</p>
 }
