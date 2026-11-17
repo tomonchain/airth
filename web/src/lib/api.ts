@@ -77,6 +77,18 @@ export async function accessStatus(secret: string): Promise<"waiting" | "allowed
 export const rekey = (key: string) => { store()?.setItem(KEY, key) }
 
 
+/** Aborted when `a` or `b` is: by hand, as `AbortSignal.any` is missing
+    from the iPhones of before iOS 17.4. */
+function either(a: AbortSignal, b?: AbortSignal): AbortSignal {
+  if (!b) return a
+  const both = new AbortController()
+  for (const s of [a, b]) {
+    if (s.aborted) { both.abort(s.reason); break }
+    s.addEventListener("abort", () => both.abort(s.reason), { once: true })
+  }
+  return both.signal
+}
+
 export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PATCH" | "DELETE", ms?: number, cancel?: AbortSignal): Promise<T> {
   const verb = method ?? (body === undefined ? "GET" : "POST")
   // A request that never answers would hold its page's refresh for good: a
@@ -88,7 +100,7 @@ export async function api<T>(path: string, body?: unknown, method?: "PUT" | "PAT
     headers: { "X-Airth-Token": key, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     // `cancel`: the caller no longer wants the answer (a wait left behind).
-    signal: cancel ? AbortSignal.any([AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)), cancel]) : AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)),
+    signal: either(AbortSignal.timeout(ms ?? (verb === "GET" ? 20000 : 60000)), cancel),
   }).catch((e: Error) => { throw new Error(e.name === "TimeoutError" ? "Airth did not answer in time." : "Airth is not answering.") })
   refused(r, key)
   const data = await r.json().catch(() => ({}))
