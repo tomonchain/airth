@@ -600,7 +600,7 @@ Revolut's API needs a plan upgrade (decision 68), and figures by hand were never
 
 *Why:* the founder corrects drafts every morning. Without this, the same correction was needed the next day, and only a change to the prompt files, made by hand, carried over.
 
-*Cost:* a longer prompt for drafting blocks, by up to 12 notes. A note can be overtaken by a later one that says otherwise: the newest come first, and the founder can forget. Turning a note that keeps coming back into the prompt file is still done by hand, or by asking.
+*Cost:* a longer prompt for drafting blocks, by up to 12 notes. A note can be overtaken by a later one that says otherwise: the newest come first, and the founder can forget. Turning a note that keeps coming back into the prompt file is still done by hand, or by asking; since 17 November 2026, **Keep for good** makes it a lesson of the routine's agent (decision 127), in the founder's words, and the note is forgotten.
 
 ## 115. The founder asks for a draft again, saying what should change
 
