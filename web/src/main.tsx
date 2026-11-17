@@ -17,7 +17,9 @@ startWorker()
     the thumb and the tab bar; on a computer, they stay at the bottom. */
 function Toasts() {
   const narrow = useNarrow()
-  return <Toaster position={narrow ? "top-center" : "bottom-center"} mobileOffset={{ top: "calc(env(safe-area-inset-top) + 8px)" }} />
+  // Sonner reads `mobileOffset` under 600 px only; a phone is under 768 here.
+  const top = { top: "calc(env(safe-area-inset-top) + 8px)" }
+  return <Toaster position={narrow ? "top-center" : "bottom-center"} offset={narrow ? top : undefined} mobileOffset={top} />
 }
 
 createRoot(document.getElementById("root")!).render(
