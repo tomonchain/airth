@@ -205,6 +205,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             ? <p className="mt-1 text-xs text-muted-foreground">The project's name on the first line, its description under it. A milestone: <code>## Title (by 2026-12-15)</code>, its tasks under it. One task a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a task.</p>
             : <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>}
         </div>
+      ) : it.kind === "approval" && it.source?.text && it.text?.trimStart().startsWith("{") ? (
+        // A record's raw fields, already said in words above: not shown twice.
+        null
       ) : it.text && it.kind === "approval" ? (
         page ? (
           <div className="mt-4 rounded-xl bg-bubble px-4 py-3.5">
@@ -249,7 +252,10 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
 
       {mode === "fix" ? (
         <RemedyPanel realm={realm} it={it} shown={shown} onDone={() => { setMode(null); onDone() }} onCancel={() => setMode(null)} onTask={onTask} />
-      ) : <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
+      ) : <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4",
+        // On a phone, the answers float in a glass bar over the tab bar,
+        // under the thumb, however long the item.
+        page && "max-md:sticky max-md:bottom-[calc(var(--dock)+8px)] max-md:z-10 max-md:-mx-1 max-md:mt-6 max-md:rounded-[22px] max-md:border max-md:border-foreground/10 max-md:bg-background/70 max-md:p-2 max-md:shadow-lg max-md:backdrop-blur-xl")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>

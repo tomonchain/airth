@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare } from "lucide-react"
+import { ChevronDown, ChevronUp, CircleCheckBig, ExternalLink, ListChecks, MessageSquare, Search } from "lucide-react"
+import { Dither } from "@/components/dither"
+import { moment } from "@/lib/greeting"
 import { Back, SideHead, SideSearch } from "@/components/page"
 import { Character } from "@/components/character"
 import { kindOf, NeedCard } from "@/components/need-card"
@@ -102,7 +104,17 @@ function Batch({ realm, label, items, onDone }: { realm: string; label: string; 
 
 const soon = (it: Item) => !!it.expires_at && Date.parse(it.expires_at) - Date.now() < 3 * 3600 * 1000
 
-const preview = (it: Item) => (it.kind === "approval" && it.text ? it.text : it.title).replace(/\s+/g, " ")
+/** "6 waiting · 2 problems", or that nothing does. */
+function waiting(items: Item[]): string {
+  if (!items.length) return "Nothing waits for you"
+  const problems = items.filter((i) => i.kind === "incident").length
+  const decide = items.length - problems
+  return [decide && `${decide} to decide`, problems && `${problems} problem${problems > 1 ? "s" : ""}`].filter(Boolean).join(" · ")
+}
+
+// A draft's words; else its title, never a record's raw fields.
+const preview = (it: Item) => (it.kind === "approval" && it.text && !raw(it.text) ? it.text : it.title || it.source?.title || it.source?.text || "").replace(/\s+/g, " ")
+const raw = (text: string) => text.trimStart().startsWith("{")
 
 /** Needs you: what the team sent up, as a mailbox. The list by urgency on
     the left, the open item in full on the right; answering opens the next.
@@ -181,18 +193,45 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
 
   return (
     <>
-      <div className={cn("flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", open && "max-md:hidden")}>
-        <SideHead title="Needs you" note={items.length} />
-        <SideSearch value={q} onChange={setQ} />
-        <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className={cn("relative flex w-(--side) shrink-0 flex-col border-r max-md:w-full max-md:border-r-0", open && "max-md:hidden")}>
+        {narrow ? (
+          // On a phone, as the Home: its light behind, quieter, a large
+          // title under the floating mark, a glass search.
+          <>
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-70 [mask-image:linear-gradient(to_bottom,black_30%,transparent)]">
+              <Dither moment={moment(new Date())} />
+            </div>
+            <div className="relative px-4 pt-[calc(env(safe-area-inset-top)+68px)] pb-3">
+              <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Needs you</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">{waiting(items)}</p>
+              <label className="glass mt-4 flex h-11 items-center gap-2 rounded-full px-4 text-[15px] text-muted-foreground">
+                <Search className="size-4" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" aria-label="Search"
+                  className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <SideHead title="Needs you" note={items.length} />
+            <SideSearch value={q} onChange={setQ} />
+          </>
+        )}
+        <div className="relative flex-1 overflow-y-auto px-2 pb-3 max-md:px-3">
           <Drafts realm={realm} />
-          {narrow && !sorted.length && <p className="px-2.5 py-8 text-center text-sm text-muted-foreground">All clear: nothing waits for you.</p>}
+          {narrow && !sorted.length && (
+            <div className="flex flex-col items-center py-16 text-center">
+              <CircleCheckBig className="size-9 text-emerald-500/80" />
+              <p className="mt-3 text-base font-medium">All clear</p>
+              <p className="mt-1 text-sm text-muted-foreground">What the team sends up lands here.</p>
+            </div>
+          )}
           {SECTIONS.map((s) => {
             const list = sorted.filter((i) => s.ranks.includes(rank(i)))
             if (!list.length) return null
             return (
-              <section key={s.label} className="mt-2">
-                <h2 className="flex items-center gap-2 px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              <section key={s.label} className="mt-2 max-md:mt-4">
+                <h2 className="flex items-center gap-2 px-2.5 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase max-md:px-1.5 max-md:pb-2">
                   <span className="flex-1">{s.label}</span>
                   {/* What broke goes in one gesture, once read. */}
                   {s.label === "Problems" && (sweeping ? (
@@ -207,7 +246,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
                 <div key={b.key}>
                 {/* A routine's batch has a header; incidents are already one line a kind. */}
                 {b.label && b.items.length > 1 && s.label !== "Problems" && <Batch realm={realm} label={b.label} items={b.items} onDone={onDone} />}
-                <ul className="space-y-0.5">
+                <ul className="space-y-0.5 max-md:space-y-2">
                   {b.items.map((it) => {
                     const a = agent(it.agent)
                     const k = kindOf(it)
@@ -215,9 +254,11 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
                       <li key={it.id}>
                         <button
                           onClick={() => setSel(it.id)}
-                          className={cn("flex w-full gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-accent/70", open?.id === it.id && "bg-accent")}
+                          className={cn("flex w-full gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-accent/70", open?.id === it.id && "bg-accent",
+                            // On a phone, each its own glass card, pressed like a button.
+                            narrow && "glass rounded-[22px] px-3.5 py-3 transition-transform active:scale-[0.98]")}
                         >
-                          {a ? <Character agent={a} size={30} still className="mt-0.5" /> : <span className="grid size-[30px] shrink-0 place-items-center rounded-full bg-muted"><k.icon className="size-4" /></span>}
+                          {a ? <Character agent={a} size={narrow ? 36 : 30} still className="mt-0.5" /> : <span className={cn("grid size-[30px] shrink-0 place-items-center rounded-full bg-muted", narrow && "size-9")}><k.icon className="size-4" /></span>}
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
                               <span className="truncate text-[13px] font-medium">{a?.title ?? "Airth"}</span>
@@ -228,7 +269,7 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
                                 {soon(it) ? left(it.expires_at) : stamp(it.created_at)}
                               </span>
                             </span>
-                            <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-muted-foreground">{preview(it)}</span>
+                            <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-muted-foreground max-md:mt-1 max-md:text-[13.5px]">{preview(it)}</span>
                           </span>
                         </button>
                       </li>
@@ -251,11 +292,14 @@ export function Inbox({ realm, items, agents, onDone, onAgent, onTask, start, on
         </div>
       ) : (
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4 max-md:h-[60px] max-md:pr-3 max-md:pl-[68px]">
-            <Back label="All items" onClick={() => setSel(null)} />
-            <Button variant="ghost" size="icon-sm" disabled={at <= 0} onClick={() => setSel(sorted[at - 1].id)} aria-label="Previous (K)"><ChevronUp /></Button>
-            <Button variant="ghost" size="icon-sm" disabled={at >= sorted.length - 1} onClick={() => setSel(sorted[at + 1].id)} aria-label="Next (J)"><ChevronDown /></Button>
-            <span className="ml-1 text-xs text-muted-foreground tabular-nums">{at + 1} of {sorted.length}</span>
+          <div className="flex h-12 shrink-0 items-center gap-1 border-b px-4 max-md:h-[calc(env(safe-area-inset-top)+60px)] max-md:border-b-0 max-md:pt-[env(safe-area-inset-top)] max-md:pr-3 max-md:pl-[68px]">
+            {/* On a phone, one glass pill beside the floating mark. */}
+            <span className={cn("flex items-center gap-1", narrow && "glass h-11 rounded-full px-1.5")}>
+              <Back label="All items" onClick={() => setSel(null)} />
+              <Button variant="ghost" size="icon-sm" disabled={at <= 0} onClick={() => setSel(sorted[at - 1].id)} aria-label="Previous (K)"><ChevronUp /></Button>
+              <Button variant="ghost" size="icon-sm" disabled={at >= sorted.length - 1} onClick={() => setSel(sorted[at + 1].id)} aria-label="Next (J)"><ChevronDown /></Button>
+              <span className="ml-1 text-xs text-muted-foreground tabular-nums max-md:mr-2">{at + 1} of {sorted.length}</span>
+            </span>
             {open.expires_at && <span className={cn("ml-2 text-xs text-muted-foreground", soon(open) && "text-amber-600 dark:text-amber-400")}>· {left(open.expires_at)}, then it leaves unanswered</span>}
             <span className="ml-auto hidden items-center gap-1 text-xs text-muted-foreground md:flex">
               <Kbd>J</Kbd><Kbd>K</Kbd> to move
