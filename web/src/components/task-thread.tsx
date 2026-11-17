@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
+import { CHANGED } from "@/hooks/use-changes"
 import { BookmarkPlus, Check, ChevronRight, CircleAlert, CornerDownRight, RotateCw, ShieldQuestion, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { Shimmer } from "@/components/beautifui/shimmer"
@@ -56,7 +57,10 @@ export function useRun(realm: string, id: string, active: boolean) {
     let seq = -1
     // Waiting before looking again: the only moment a new look may start,
     // so two loops never run at once.
-    const later = (f: () => void, ms: number) => { timer = setTimeout(() => { timer = null; f() }, ms) }
+    const later = (f: () => void, ms: number) => {
+      if (again) { again = false; ms = 0 }
+      timer = setTimeout(() => { timer = null; f() }, ms)
+    }
     const base = `realms/${enc(realm)}/runs/${enc(id)}`
     const load = async () => {
       // A hidden tab asks nothing; it looks again once shown.
@@ -84,14 +88,26 @@ export function useRun(realm: string, id: string, active: boolean) {
         if (on) later(load, 1500)
       }
     }
-    // Back on the tab: look now, not at the end of the wait.
+    // Back on the tab, or the business changed (a run started or saved,
+    // this one resumed after an answer in Needs you): look now, not at the
+    // end of the wait.
+    // A change heard while a look is under way: look once more after it.
+    let again = false
     const shown = () => {
-      if (document.visibilityState !== "visible" || timer === null) return
+      if (document.visibilityState !== "visible") return
+      if (timer === null) { again = true; return }
       clearTimeout(timer); timer = null; load()
     }
+    const changed = (e: Event) => { if ((e as CustomEvent).detail === realm) shown() }
     document.addEventListener("visibilitychange", shown)
+    window.addEventListener(CHANGED, changed)
     load()
-    return () => { on = false; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", shown) }
+    return () => {
+      on = false
+      if (timer) clearTimeout(timer)
+      document.removeEventListener("visibilitychange", shown)
+      window.removeEventListener(CHANGED, changed)
+    }
   }, [realm, id, active, tick])
   return { view, draft, refresh: () => { version.current = 0; setTick((t) => t + 1) } }
 }
