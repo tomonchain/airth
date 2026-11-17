@@ -12,16 +12,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-// Labels in the interface's greys, as the rest of it: the icon and the
-// word tell the kinds apart; only what broke keeps a red icon.
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
-  incident: { label: "Incident", icon: AlertTriangle, tone: "text-muted-foreground bg-foreground/[0.06] [&>svg]:text-red-500" },
-  approval: { label: "To approve", icon: Send, tone: "text-muted-foreground bg-foreground/[0.06]" },
-  prepared: { label: "You do it", icon: Hand, tone: "text-muted-foreground bg-foreground/[0.06]" },
-  delayed: { label: "Goes out unless you cancel", icon: Timer, tone: "text-muted-foreground bg-foreground/[0.06]" },
-  deadline: { label: "Deadline", icon: CalendarClock, tone: "text-muted-foreground bg-foreground/[0.06]" },
-  report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-foreground/[0.06]" },
-  idea: { label: "Idea", icon: Lightbulb, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  incident: { label: "Incident", icon: AlertTriangle, tone: "text-red-500 bg-red-500/10" },
+  approval: { label: "To approve", icon: Send, tone: "text-sky-500 bg-sky-500/10" },
+  prepared: { label: "You do it", icon: Hand, tone: "text-violet-500 bg-violet-500/10" },
+  delayed: { label: "Goes out unless you cancel", icon: Timer, tone: "text-amber-500 bg-amber-500/10" },
+  deadline: { label: "Deadline", icon: CalendarClock, tone: "text-amber-500 bg-amber-500/10" },
+  report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-muted" },
+  idea: { label: "Idea", icon: Lightbulb, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-300" },
 }
 
 /** A skill of the business's own, new or changed, to offer its agents
@@ -29,9 +27,9 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
 const SKILL = "airth.skill"
 
 export function kindOf(it: Item) {
-  if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-muted-foreground bg-foreground/[0.06]" }
-  if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-muted-foreground bg-foreground/[0.06]" }
-  if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-muted-foreground bg-foreground/[0.06] [&>svg]:text-red-500" }
+  if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
+  if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-sky-500 bg-sky-500/10" }
+  if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
   return KIND[it.kind] ?? KIND.report
 }
 
