@@ -12,14 +12,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
+// Labels in the interface's greys, as the rest of it: the icon and the
+// word tell the kinds apart; only what broke keeps a red icon.
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
-  incident: { label: "Incident", icon: AlertTriangle, tone: "text-red-500 bg-red-500/10" },
-  approval: { label: "To approve", icon: Send, tone: "text-sky-500 bg-sky-500/10" },
-  prepared: { label: "You do it", icon: Hand, tone: "text-violet-500 bg-violet-500/10" },
-  delayed: { label: "Goes out unless you cancel", icon: Timer, tone: "text-amber-500 bg-amber-500/10" },
-  deadline: { label: "Deadline", icon: CalendarClock, tone: "text-amber-500 bg-amber-500/10" },
-  report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-muted" },
-  idea: { label: "Idea", icon: Lightbulb, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-300" },
+  incident: { label: "Incident", icon: AlertTriangle, tone: "text-muted-foreground bg-foreground/[0.06] [&>svg]:text-red-500" },
+  approval: { label: "To approve", icon: Send, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  prepared: { label: "You do it", icon: Hand, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  delayed: { label: "Goes out unless you cancel", icon: Timer, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  deadline: { label: "Deadline", icon: CalendarClock, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-foreground/[0.06]" },
+  idea: { label: "Idea", icon: Lightbulb, tone: "text-muted-foreground bg-foreground/[0.06]" },
 }
 
 /** A skill of the business's own, new or changed, to offer its agents
@@ -27,9 +29,9 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
 const SKILL = "airth.skill"
 
 export function kindOf(it: Item) {
-  if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
-  if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-sky-500 bg-sky-500/10" }
-  if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
+  if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-muted-foreground bg-foreground/[0.06]" }
+  if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-muted-foreground bg-foreground/[0.06]" }
+  if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-muted-foreground bg-foreground/[0.06] [&>svg]:text-red-500" }
   return KIND[it.kind] ?? KIND.report
 }
 
@@ -252,10 +254,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
 
       {mode === "fix" ? (
         <RemedyPanel realm={realm} it={it} shown={shown} onDone={() => { setMode(null); onDone() }} onCancel={() => setMode(null)} onTask={onTask} />
-      ) : <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4",
-        // On a phone, the answers float in a glass bar over the tab bar,
-        // under the thumb, however long the item.
-        page && "max-md:sticky max-md:bottom-[calc(var(--dock)+8px)] max-md:z-10 max-md:-mx-1 max-md:mt-6 max-md:rounded-[22px] max-md:border max-md:border-foreground/10 max-md:bg-background/70 max-md:p-2 max-md:shadow-lg max-md:backdrop-blur-xl")}>
+      ) : <footer className={cn("mt-3 flex flex-wrap items-center gap-1", page && "mt-5 gap-2 border-t pt-4")}>
         {mode === "edit" ? (
           <>
             <Button size="sm" disabled={busy} onClick={() => answer("edit", text)}><Check /> Save the edit</Button>
