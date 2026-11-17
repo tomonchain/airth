@@ -395,7 +395,7 @@ function About({ onChanges }: { onChanges: () => void }) {
             </button>
           </Row>
           {version?.build && (
-            <Row label="Build" hint={`The commit it was built from${version.build.endsWith("+") ? ", with changes not yet committed" : ""}: on a server that follows main, which of main's versions runs.`}>
+            <Row label="Build" hint={`The commit it was built from${version.build.endsWith("+") ? ", with changes not yet committed" : ""}. On a server that follows main, it says which of main's versions runs.`}>
               <span className="font-mono text-xs text-muted-foreground tabular-nums select-all">{version.build}</span>
             </Row>
           )}
