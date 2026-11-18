@@ -35,25 +35,44 @@ impl Hub {
             None => String::new(),
         };
         let root = realm.root()?;
-        let job = crate::business::job(&root, agent)?;
         let scope = crate::business::scope(&root, agent)?;
+        // One repository per task: the first its agent declares.
+        let repo = scope.repos.first().map(String::as_str);
+        let first = format!("{briefing}The founder's order:\n{}", order.trim());
+        let tools = scope.integrations.into_iter().chain(scope.skills).collect();
+        self.new_task(realm, agent, order, repo, &first, |state| {
+            state.project = project;
+            state.tools = Some(tools);
+        })
+    }
+
+    /// A task for `agent`, titled `title`, in `repo`: its job, then
+    /// `first`, with the business's task budget and what `set` adds. Saved,
+    /// not driven.
+    pub(super) fn new_task(
+        &self,
+        realm: &Realm,
+        agent: &str,
+        title: &str,
+        repo: Option<&str>,
+        first: &str,
+        set: impl FnOnce(&mut State),
+    ) -> Result<State> {
+        let root = realm.root()?;
+        let job = crate::business::job(&root, agent)?;
         // No more than the month's budgets leave (decision 139); none when
         // one is reached. Held until the task is saved with its share.
         let _start = crate::supervise::Locked::locked(&super::budget::STARTS);
         let left = self.month_allows(realm, Some(agent), Utc::now())?;
-        // One repository per task: the first its agent declares.
-        let repo = scope.repos.first().map(String::as_str);
-        let mut state = self.create_run_in(realm, order, repo)?;
+        let mut state = self.create_run_in(realm, title, repo)?;
         // Its first name, when the founder gave it one (decision 94).
         let who = crate::business::first_name(&root, agent)
             .map_or(agent.to_string(), |n| format!("{n} (the agent {agent})"));
         state.messages = vec![Message::user_text(format!(
-            "You are {who}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\n{briefing}The founder's order:\n{}",
+            "You are {who}, one of the business's agents. Your job, as the founder wrote it:\n{}\n\n{first}",
             job.text.trim(),
-            order.trim()
         ))];
-        state.project = project;
-        state.tools = Some(scope.integrations.into_iter().chain(scope.skills).collect());
+        set(&mut state);
         let (minutes, cost) = crate::business::task_budget(&root);
         let cost = left.map_or(cost, |l| cost.min(l));
         state.budget = crate::agent::Budget {

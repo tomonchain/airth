@@ -250,6 +250,11 @@ pub struct State {
     /// against the business's own projects when the order came in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<i64>,
+    /// A task started by a mail (decision 152): the mail's id in
+    /// `business.db`. Such a task holds only `use_skill` and the reply to
+    /// that mail, whatever its agent's scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<i64>,
     /// How many times the run was sent back to correct its change to the
     /// business config (decision 93).
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -348,6 +353,7 @@ impl State {
             resume: None,
             dispatched_by: None,
             project: None,
+            mail: None,
             config_fixes: 0,
             routine: None,
             tools: None,

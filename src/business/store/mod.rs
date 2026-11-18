@@ -467,6 +467,20 @@ const MIGRATIONS: &[&str] = &[
         item INTEGER REFERENCES queue(id),
         approved_at TEXT NOT NULL
     );",
+    // 27: how each mail of the interlocutor's mailbox was passed on
+    // (decision 152): once, by its id, with the agent it went to and its
+    // task's run. Mail kept before this is never sorted: it was read by the
+    // routines as it is.
+    "CREATE TABLE mail_sorting (
+        mail INTEGER PRIMARY KEY REFERENCES mail_messages(id),
+        outcome TEXT NOT NULL CHECK (outcome IN ('sorting', 'agent', 'founder', 'bank', 'failed', 'old', 'before')),
+        agent TEXT,
+        summary TEXT,
+        model_call INTEGER REFERENCES model_calls(id),
+        run TEXT,
+        at TEXT NOT NULL
+    );
+    INSERT INTO mail_sorting (mail, outcome, at) SELECT id, 'before', fetched_at FROM mail_messages;",
 ];
 
 pub struct Store {
@@ -747,6 +761,88 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(old, 6);
+    }
+
+    /// Decision 152: mail kept before mail was passed on is never sorted;
+    /// mail kept since is, once.
+    #[test]
+    fn mail_kept_before_is_never_sorted_and_new_mail_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        let conn = Connection::open(&path).unwrap();
+        for sql in &MIGRATIONS[..26] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 26).unwrap();
+        conn.execute(
+            "INSERT INTO mail_messages (mailbox, agent, uid_validity, uid, thread, sender, recipients, subject, text, attachments, fetched_at)
+             VALUES ('contact@n.example', 'chief', 1, 1, 't', 'ann@b.example', '[]', 'Hi', 'Hi', '[]', '2026-11-17')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let mut store = Store::open(&path).unwrap();
+        assert!(
+            store
+                .mails_to_sort("contact@n.example", 10)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(store.mail_sorting(1).unwrap().unwrap().outcome, "before");
+        let mail = crate::mail::Mail {
+            thread: "t2".into(),
+            ..Default::default()
+        };
+        store
+            .keep_mail(&crate::business::store::mail::NewMail {
+                mailbox: "contact@n.example",
+                agent: "chief",
+                uid_validity: 1,
+                uid: 2,
+                mail: &mail,
+                at: chrono::Utc::now(),
+            })
+            .unwrap();
+        let waiting = store.mails_to_sort("contact@n.example", 10).unwrap();
+        assert_eq!(waiting.len(), 1);
+        let id = waiting[0].id;
+        assert!(store.claim_mail(id).unwrap());
+        assert!(!store.claim_mail(id).unwrap(), "taken once");
+        assert!(
+            store
+                .mails_to_sort("contact@n.example", 10)
+                .unwrap()
+                .is_empty()
+        );
+        let sorted = crate::business::store::mail::Sorting {
+            outcome: "agent".into(),
+            agent: Some("support".into()),
+            run: Some("r1".into()),
+            ..Default::default()
+        };
+        store.mail_sorted(id, &sorted).unwrap();
+        // Recorded once: what was passed on is not passed on again.
+        assert!(store.mail_sorted(id, &sorted).is_err());
+        assert_eq!(store.mail_sorting(id).unwrap().unwrap(), sorted);
+        // The newest first: a backlog never holds back what just came.
+        for uid in [3, 4] {
+            let mail = crate::mail::Mail {
+                thread: format!("t{uid}"),
+                ..Default::default()
+            };
+            store
+                .keep_mail(&crate::business::store::mail::NewMail {
+                    mailbox: "contact@n.example",
+                    agent: "chief",
+                    uid_validity: 1,
+                    uid,
+                    mail: &mail,
+                    at: chrono::Utc::now(),
+                })
+                .unwrap();
+        }
+        let next = store.mails_to_sort("contact@n.example", 1).unwrap();
+        assert_eq!(next[0].mail.thread, "t4");
     }
 
     /// Decision 59: a database of schema 13 with items, their log, an

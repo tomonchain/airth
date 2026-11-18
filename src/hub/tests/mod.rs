@@ -18,6 +18,7 @@ mod finance;
 mod founder;
 mod gate;
 mod legal;
+mod mail;
 mod models;
 mod objectives;
 mod own_skills;
