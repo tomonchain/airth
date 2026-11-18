@@ -242,6 +242,26 @@ pub fn load_all(cx: &Checks) -> Result<Vec<(String, Result<Graph>)>> {
         .collect())
 }
 
+/// Each approval block of a checked graph, with the actions it guards
+/// (decision 153), as the run reads them: acts for the founder left out.
+pub fn guarded(graph: &Graph) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for (i, block) in graph.blocks.iter().enumerate() {
+        if !matches!(block.kind, Kind::Approval { .. }) {
+            continue;
+        }
+        let mut acts: Vec<String> = run::guards(graph, i)
+            .unwrap_or_default()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        acts.sort();
+        acts.dedup();
+        out.push((block.id.clone(), acts));
+    }
+    out
+}
+
 /// The blocks an item goes to after block `i`.
 fn successors(graph: &Graph, i: usize) -> Result<Vec<usize>> {
     let index = |id: &str| {

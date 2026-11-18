@@ -86,7 +86,7 @@ fn guarded(graph: &Graph, at: usize) -> Result<Vec<usize>> {
 /// The actions approval block `at` guards. An act for the founder (a report,
 /// a task for the founder) is theirs to judge, as for the graph check: it
 /// does not keep the step waiting.
-fn guards(graph: &Graph, at: usize) -> Result<Vec<&str>> {
+pub(super) fn guards(graph: &Graph, at: usize) -> Result<Vec<&str>> {
     Ok(guarded(graph, at)?
         .into_iter()
         .filter_map(|j| match &graph.blocks[j].kind {

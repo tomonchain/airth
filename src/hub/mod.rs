@@ -46,6 +46,7 @@ mod objectives;
 pub(crate) mod orders;
 mod own_skills;
 mod pipelines;
+mod promotions;
 #[cfg(test)]
 pub(crate) use pipelines::TEST_FEEDS;
 mod repos;

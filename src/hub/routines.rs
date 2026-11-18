@@ -114,10 +114,40 @@ impl Hub {
         name: &str,
         max: usize,
     ) -> Result<crate::routine::run::eval::Evaluation> {
+        self.evaluate_answers(realm, name, max, None)
+    }
+
+    /// The same, on the founder's answers to `items` only: the cases a
+    /// promotion rests on (decision 153).
+    pub(super) fn evaluate_items(
+        &self,
+        realm: &Realm,
+        name: &str,
+        items: &[i64],
+    ) -> Result<crate::routine::run::eval::Evaluation> {
+        self.evaluate_answers(realm, name, items.len(), Some(items))
+    }
+
+    fn evaluate_answers(
+        &self,
+        realm: &Realm,
+        name: &str,
+        max: usize,
+        items: Option<&[i64]>,
+    ) -> Result<crate::routine::run::eval::Evaluation> {
         use crate::routine::run::eval;
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let since = Utc::now() - chrono::Duration::days(eval::DAYS);
-        let answered = Store::of(realm)?.founder_answers(name, since, max.min(eval::MAX))?;
+        let store = Store::of(realm)?;
+        let answered: Vec<_> = match items {
+            None => store.founder_answers(name, since, max.min(eval::MAX))?,
+            Some(ids) => store
+                .founder_answers(name, since, usize::MAX)?
+                .into_iter()
+                .filter(|a| ids.contains(&a.item.id))
+                .take(eval::MAX)
+                .collect(),
+        };
         let root = realm.root()?;
         let context = routine_context(realm)?;
         // It reads nothing: nothing to ask the founder on the way.
@@ -599,6 +629,21 @@ impl Hub {
         if item.kind == "idea" {
             store.close_item(id, "done", "useful, said the founder")?;
             return Ok((item, Some("useful".into())));
+        }
+        // A promotion the founder allowed (decision 153): the level is set.
+        if item.kind == "promotion" {
+            let (status, detail) = match self.accept_promotion(realm, &item) {
+                Ok(what) => ("done", what),
+                Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+            };
+            store.close_item(id, status, &detail)?;
+            // As it now stands: a failed Allow reads as one.
+            let item = crate::business::store::queue::Item {
+                status: status.into(),
+                revision: item.revision + 1,
+                ..item
+            };
+            return Ok((item, Some(detail)));
         }
         if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;

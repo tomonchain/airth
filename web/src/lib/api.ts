@@ -177,7 +177,7 @@ export type Business = {
 export type Item = {
   id: number
   status: "pending" | "approved" | "rejected" | "done" | "failed"
-  kind: "approval" | "incident" | "report" | "prepared" | "delayed" | "deadline" | "idea"
+  kind: "approval" | "incident" | "report" | "prepared" | "delayed" | "deadline" | "idea" | "promotion"
   agent: string | null
   routine: string | null
   run: string | null
@@ -200,6 +200,9 @@ export type Item = {
   angle?: string | null
   /** What the draft answers or is written from: the post replied to, the article. */
   source: { link: string | null; title: string | null; text?: string | null } | null
+  /** A promotion an agent earned (decision 153), in words: its record, the
+      check with today's prompts, and what changes if allowed. */
+  promotion?: { record: string; check: string | null; change: string } | null
 }
 
 export type Block = {
