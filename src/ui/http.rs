@@ -164,3 +164,88 @@ pub(super) fn open_in_browser(url: &str) {
         .stderr(std::process::Stdio::null())
         .spawn();
 }
+
+/// Whether the browser takes gzip, as every one does: the app's code is
+/// about a third of its size so, which counts on a phone's connection.
+pub(super) fn takes_gzip(request: &Request) -> bool {
+    header(request, "Accept-Encoding").is_some_and(|v| {
+        v.split(',').any(|e| {
+            e.split(';')
+                .next()
+                .is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip"))
+        })
+    })
+}
+
+/// What compresses: text. Fonts and images are compressed already.
+pub(super) fn compressible(kind: &str) -> bool {
+    kind.starts_with("text/")
+        || kind.starts_with("application/json")
+        || kind.starts_with("application/manifest+json")
+        || kind.starts_with("image/svg+xml")
+}
+
+/// Below this, gzip saves less than it costs.
+pub(super) const GZIP_FROM: usize = 1024;
+
+pub(super) fn gzip(body: &[u8], level: u32) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::new(level));
+    // Writing to a Vec cannot fail.
+    let _ = out.write_all(body);
+    out.finish().unwrap_or_default()
+}
+
+/// A built file of the app, gzipped once and kept for the process's life:
+/// the files are the binary's own and never change while it runs.
+pub(super) fn gzipped_file(body: &'static [u8]) -> Arc<Vec<u8>> {
+    static KEPT: Mutex<Option<HashMap<usize, Arc<Vec<u8>>>>> = Mutex::new(None);
+    let key = body.as_ptr() as usize;
+    if let Some(done) = crate::supervise::Locked::locked(&KEPT)
+        .get_or_insert_with(HashMap::new)
+        .get(&key)
+    {
+        return done.clone();
+    }
+    let done = Arc::new(gzip(body, 9));
+    crate::supervise::Locked::locked(&KEPT)
+        .get_or_insert_with(HashMap::new)
+        .insert(key, done.clone());
+    done
+}
+
+/// An API answer gzipped when the browser takes it and it is worth it (a
+/// long conversation's run is often hundreds of kilobytes of JSON). Fast
+/// level: it is made for each request.
+pub(super) fn compressed(request: &Request, response: HttpResponse) -> HttpResponse {
+    let kind = response
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("Content-Type"))
+        .map(|h| h.value.as_str().to_string())
+        .unwrap_or_default();
+    let done = response
+        .headers()
+        .iter()
+        .any(|h| h.field.equiv("Content-Encoding"));
+    if done || !compressible(&kind) || !takes_gzip(request) {
+        return response;
+    }
+    if response.data_length().is_some_and(|n| n < GZIP_FROM) {
+        return response;
+    }
+    let code = response.status_code();
+    let headers: Vec<Header> = response.headers().to_vec();
+    let mut body = Vec::new();
+    if std::io::Read::read_to_end(&mut response.into_reader(), &mut body).is_err() {
+        return json_response(500, json!({"error": "the answer could not be read"}));
+    }
+    let mut out = Response::from_data(gzip(&body, 1)).with_status_code(code);
+    for h in headers {
+        if !h.field.equiv("Content-Length") {
+            out = out.with_header(h);
+        }
+    }
+    out.with_header(Header::from_bytes("Content-Encoding", "gzip").unwrap())
+        .with_header(Header::from_bytes("Vary", "Accept-Encoding").unwrap())
+}
