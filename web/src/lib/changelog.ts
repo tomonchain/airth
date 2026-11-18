@@ -16,6 +16,23 @@ export type Entry = {
 
 export const CHANGELOG: Entry[] = [
   {
+    version: "0.11.1",
+    date: "2026-11-18",
+    title: "A plainer Needs you",
+    added: [
+      "On a routine's \"Learned from you\", Keep for good turns a note into a lasting lesson of its agent, in your words.",
+      "Settings, About shows the version and the build: on your server, which version of Airth runs.",
+    ],
+    improved: [
+      "Needs you is plainer: no coloured label on each line; a small mark on the sender's face says what it is, red only for what broke.",
+      "The Projects page hears at once when the business changes.",
+      "On a phone, notices come down from the top, clear of the tab bar.",
+    ],
+    fixed: [
+      "A weekly report waiting in Needs you no longer shows its raw fields as text.",
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-11-17",
     title: "Smoother conversations, and the business's own skills",
