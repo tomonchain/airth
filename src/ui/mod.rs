@@ -140,7 +140,7 @@ impl App {
             (Method::Get, p) if web_file(p).is_some() => {
                 let (body, kind) = web_file(p).unwrap();
                 // The app's code, gzipped once for every phone that asks.
-                let zip = takes_gzip(request) && compressible(kind) && body.len() >= GZIP_FROM;
+                let zip = takes_gzip(request) && compressible(kind);
                 let response = if zip {
                     static_bytes(&gzipped_file(body), kind)
                         .with_header(Header::from_bytes("Content-Encoding", "gzip").unwrap())
@@ -657,6 +657,11 @@ mod tests {
         std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&body[..]), &mut text)
             .unwrap();
         assert!(text.starts_with("{\"text\":\"words words"));
+        // A browser that says no to gzip ("gzip;q=0") gets none.
+        let refusing: Request = tiny_http::TestRequest::new()
+            .with_header(Header::from_bytes("Accept-Encoding", "gzip;q=0, br").unwrap())
+            .into();
+        assert!(!takes_gzip(&refusing));
         let small = compressed(&request, json_response(200, json!({"ok": true})));
         assert!(
             !small

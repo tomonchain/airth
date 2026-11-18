@@ -170,9 +170,18 @@ pub(super) fn open_in_browser(url: &str) {
 pub(super) fn takes_gzip(request: &Request) -> bool {
     header(request, "Accept-Encoding").is_some_and(|v| {
         v.split(',').any(|e| {
-            e.split(';')
+            let mut parts = e.split(';');
+            let named = parts
                 .next()
-                .is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip"))
+                .is_some_and(|n| n.trim().eq_ignore_ascii_case("gzip"));
+            // "gzip;q=0" is a browser saying no.
+            let refused = parts.any(|p| {
+                p.trim()
+                    .strip_prefix("q=")
+                    .and_then(|q| q.trim().parse::<f32>().ok())
+                    .is_some_and(|q| q <= 0.0)
+            });
+            named && !refused
         })
     })
 }
@@ -201,17 +210,12 @@ pub(super) fn gzip(body: &[u8], level: u32) -> Vec<u8> {
 pub(super) fn gzipped_file(body: &'static [u8]) -> Arc<Vec<u8>> {
     static KEPT: Mutex<Option<HashMap<usize, Arc<Vec<u8>>>>> = Mutex::new(None);
     let key = body.as_ptr() as usize;
-    if let Some(done) = crate::supervise::Locked::locked(&KEPT)
-        .get_or_insert_with(HashMap::new)
-        .get(&key)
-    {
-        return done.clone();
-    }
-    let done = Arc::new(gzip(body, 9));
+    // Made under the lock: two first asks at once make it once.
     crate::supervise::Locked::locked(&KEPT)
         .get_or_insert_with(HashMap::new)
-        .insert(key, done.clone());
-    done
+        .entry(key)
+        .or_insert_with(|| Arc::new(gzip(body, 9)))
+        .clone()
 }
 
 /// An API answer gzipped when the browser takes it and it is worth it (a
@@ -228,11 +232,13 @@ pub(super) fn compressed(request: &Request, response: HttpResponse) -> HttpRespo
         .headers()
         .iter()
         .any(|h| h.field.equiv("Content-Encoding"));
-    if done || !compressible(&kind) || !takes_gzip(request) {
+    if done || !compressible(&kind) {
         return response;
     }
-    if response.data_length().is_some_and(|n| n < GZIP_FROM) {
-        return response;
+    // Whether it goes gzipped depends on the ask: said, whichever way it goes.
+    let vary = || Header::from_bytes("Vary", "Accept-Encoding").unwrap();
+    if !takes_gzip(request) || response.data_length().is_some_and(|n| n < GZIP_FROM) {
+        return response.with_header(vary());
     }
     let code = response.status_code();
     let headers: Vec<Header> = response.headers().to_vec();
