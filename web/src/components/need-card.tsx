@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { Textarea } from "@/components/ui/textarea"
 import { api, enc, type Item } from "@/lib/api"
-import { draft, heading, isRecord } from "@/lib/items"
+import { draft, goes, heading, isRecord } from "@/lib/items"
 import { cn } from "@/lib/utils"
 
 const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string }> = {
@@ -31,6 +31,7 @@ export function kindOf(it: Item) {
   if (it.action === "airth.dispatch") return { label: "Project for the team", icon: Users, tone: "text-sky-500 bg-sky-500/10" }
   if (it.action === SKILL) return { label: "Skill", icon: Wrench, tone: "text-sky-500 bg-sky-500/10" }
   if (it.flag === "blocking") return { label: "Held by the check", icon: ShieldAlert, tone: "text-red-500 bg-red-500/10" }
+  if (it.kind === "delayed") return { ...KIND.delayed, label: goes(it.execute_at) }
   return KIND[it.kind] ?? KIND.report
 }
 
@@ -59,7 +60,10 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       const out = await api<{ report?: string; item: { status: string } }>(`realms/${enc(realm)}/queue/${it.id}`, {
         answer: kind, text: body, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000), ...extra,
       })
-      toast.success(kind === "edit" ? "Edited. It still waits for your approval." : out.report ?? `Done: ${out.item.status}`)
+      toast.success(
+        kind === "edit" && it.kind === "delayed" ? `Edited. ${goes(it.execute_at)}.`
+        : kind === "edit" ? "Edited. It still waits for your approval."
+        : out.report ?? `Done: ${out.item.status}`)
       setMode(null)
       onDone()
     } catch (e) {
@@ -188,7 +192,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       )}
 
       {/* What the draft answers or is written from, to judge it here. */}
-      {page && it.kind === "approval" && (it.source?.text || it.source?.title) && (
+      {page && (it.kind === "approval" || it.kind === "delayed") && (it.source?.text || it.source?.title) && (
         <figure className="mt-4 rounded-xl border px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
           <figcaption className="mb-1 flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
             From the source
