@@ -87,6 +87,35 @@ impl Hub {
             crate::routine::run::dry_run(name, &graph, dry, Utc::now())
         })
     }
+
+    /// Ask the routine `name`'s AI blocks again about the newest of its
+    /// items the founder answered, at most `max` of the last 60 days, as a
+    /// dry run, and compare with what the founder did (decision 151).
+    pub fn evaluate_routine(
+        &self,
+        realm: &Realm,
+        name: &str,
+        max: usize,
+    ) -> Result<crate::routine::run::eval::Evaluation> {
+        use crate::routine::run::eval;
+        let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
+        let since = Utc::now() - chrono::Duration::days(eval::DAYS);
+        let answered = Store::of(realm)?.founder_answers(name, since, max.min(eval::MAX))?;
+        let root = realm.root()?;
+        let context = routine_context(realm)?;
+        // It reads nothing: nothing to ask the founder on the way.
+        let approver = Box::new(super::pipelines::Unattended);
+        self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
+            let dry = crate::routine::run::Dry {
+                root: &root,
+                context: &context,
+                store,
+                io,
+                integrations: &realm.config.integrations,
+            };
+            eval::evaluate(name, &graph, dry, &answered)
+        })
+    }
 }
 
 impl Hub {

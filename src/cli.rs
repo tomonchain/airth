@@ -906,10 +906,19 @@ pub enum RoutinesCmd {
     /// Run a routine now, for real: its acts within the agent's levels,
     /// what needs you in the queue
     Run { name: String },
+    /// Ask a routine's AI blocks again about the drafts you answered in the
+    /// last 60 days (the newest 20), as a dry run, and compare with what
+    /// you did
+    Eval { name: String },
 }
 
 pub fn routines(ctx: &Ctx, command: Option<RoutinesCmd>) -> Result<bool> {
     let realm = ctx.realm()?;
+    if let Some(RoutinesCmd::Eval { name }) = command {
+        let max = crate::routine::run::eval::MAX;
+        println!("{}", ctx.hub().evaluate_routine(&realm, &name, max)?);
+        return Ok(true);
+    }
     if let Some(RoutinesCmd::Run { name }) = command {
         // The app's way of running one now: a heartbeat either way, an
         // incident when it fails, so a run from the terminal is not lost.

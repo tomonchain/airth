@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 151. A routine's AI blocks are checked against what the founder decided, before a prompt or model change is kept
 
-**Proposed** (founder, 17 November 2026: "on continue d'améliorer le core de Airth"; `CLAUDE.md` asks that model steps be covered by evaluations, replayed when a prompt or a model changes, and nothing does it yet).
+**Accepted** (founder, 18 November 2026: "Go 151"; proposed on 17 November: "on continue d'améliorer le core de Airth"; `CLAUDE.md` asks that model steps be covered by evaluations, replayed when a prompt or a model changes, and nothing does it yet).
 
 - **The reference set is the founder's own answers**, already in `business.db`: for a routine, the items its blocks sent to Needs you in the last 60 days, each with what the founder did: approved as it was, edited (and into what), rejected (and why). Nothing to write by hand; a business with no history has no evaluation yet, and the screen says so.
 - **What is replayed:** each AI block of the routine, over the fields each item was drafted from (an item keeps them in its `args`, beside the draft), with the prompt file and the model as they are now. Nothing is sent and nothing reaches Needs you: it runs as the editor's dry run does, its model calls journaled as a dry run and counted in the costs.
@@ -17,6 +17,14 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 *Why:* a prompt or a model changes every week; today nothing says whether the routine got better or worse, until the founder finds out on the next drafts. Their past answers are the truest reference there is, and they cost nothing to gather.
 
 *Cost:* model calls for each evaluation (20 cases, one call each per AI block). A drafting block's evaluation needs the founder's reading. A keeping block is measured only on what reached the founder: what it dropped before, they never saw, so it has no answer to compare with.
+
+*Implementation (18 November 2026):* the engine and `airth routines eval <name>` first, the screen after.
+
+- **The cases** are read through the access layer (`Store::founder_answers`, beside decision 116's feedback): the founder's last word on each item, so a draft redone and then approved counts once, as approved. A request to redo counts as wanted: the founder wanted the item, not that draft. Bare rejections, what expired and what the founder forgot are left out, as in decision 116.
+- **What a block is asked about:** the item's fields, without what this block and the AI blocks after it wrote, nor the engine's own fields. Each case is asked alone: `distinct` and `limit` compare an item with the rest of its day's items, which are not in the set, so they are not applied. A list block gets a list of one.
+- **The founder's recent words (decision 116) are not told** to the block measured: they quote the very drafts it is compared with. The agent's lessons (decision 127) are.
+- **Not measured, and said so:** a check (an AI block writing elsewhere than `answer`, without `keep` or `rank`), a block after the last approval, and a case the model could not answer.
+- **Nothing is kept:** the evaluation is returned (the terminal, and `POST realms/<r>/graphs/<name>/eval` for the screen), not stored. Its model calls are in the journal as a dry run, as any.
 
 ## 150. A founder back on a run's page watches it again
 

@@ -366,3 +366,116 @@ fn the_founders_words_on_drafts_are_kept_for_the_next_ones() {
             .is_empty()
     );
 }
+
+/// Decision 151: the reference set is the founder's last word on each of a
+/// routine's items in the window, newest first: approved as it was, edited,
+/// rejected with a reason, asked again. A bare rejection, what was never
+/// answered, what the founder forgot, another routine and what is older
+/// than the window are left out.
+#[test]
+fn the_founders_answers_are_the_reference_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(&dir.path().join(FILE)).unwrap();
+    let draft = |store: &mut Store, routine: &str, id: &str, text: &str| {
+        store
+            .propose(&NewItem {
+                kind: "approval",
+                title: text,
+                agent: Some("post-writer"),
+                routine: Some(routine),
+                run: Some("r1"),
+                action: None,
+                args: &json!({"title": id, "source_id": id, "answer": {"draft": text}}).to_string(),
+                execute_at: None,
+                source: r#"{"block": "ok", "show": "answer.draft", "editable": "answer.draft"}"#,
+                model_call: None,
+            })
+            .unwrap()
+    };
+    let reject = |store: &mut Store, id: i64, why: &str| {
+        store
+            .answer(id, None, Answer::Reject(why.into()), "app", 1)
+            .unwrap();
+    };
+    let old = draft(&mut store, "posts", "old", "Two months ago.");
+    store.answer(old, None, Answer::Approve, "app", 1).unwrap();
+    store
+        .conn
+        .execute(
+            "UPDATE queue SET created_at = ?2 WHERE id = ?1",
+            params![old, (Utc::now() - chrono::Duration::days(61)).to_rfc3339()],
+        )
+        .unwrap();
+    let edited = draft(&mut store, "posts", "a", "A long dry post.");
+    store
+        .answer(edited, None, Answer::Edit("Short.".into()), "app", 1)
+        .unwrap();
+    store
+        .answer(edited, None, Answer::Approve, "app", 1)
+        .unwrap();
+    let kept = draft(&mut store, "posts", "b", "Fine as it is.");
+    store.answer(kept, None, Answer::Approve, "app", 1).unwrap();
+    let bare = draft(&mut store, "posts", "c", "Meh.");
+    reject(&mut store, bare, "from Telegram");
+    let why = draft(&mut store, "posts", "d", "Too technical.");
+    reject(&mut store, why, "too much jargon");
+    let forgotten = draft(&mut store, "posts", "e", "Forgotten.");
+    reject(&mut store, forgotten, "wrong day");
+    store.forget_feedback(forgotten).unwrap();
+    // Asked again, then the new draft approved: one case, its last word.
+    let flat = draft(&mut store, "posts", "f", "Flat.");
+    reject(&mut store, flat, "redone: funnier");
+    let funnier = draft(&mut store, "posts", "f", "Funnier.");
+    store
+        .answer(funnier, None, Answer::Approve, "app", 1)
+        .unwrap();
+    // Asked again, the new draft never answered: the request stands.
+    let dull = draft(&mut store, "posts", "g", "Dull.");
+    reject(&mut store, dull, "redone: livelier");
+    draft(&mut store, "posts", "g", "Livelier.");
+    let expired = draft(&mut store, "posts", "h", "Too late.");
+    store.expire_item(expired, "nobody answered").unwrap();
+    let other = draft(&mut store, "replies", "i", "Elsewhere.");
+    store
+        .answer(other, None, Answer::Approve, "app", 1)
+        .unwrap();
+
+    let since = Utc::now() - chrono::Duration::days(60);
+    let answers = store.founder_answers("posts", since, 20).unwrap();
+    let got: Vec<(i64, &str, &str, &str)> = answers
+        .iter()
+        .map(|a| {
+            (
+                a.item.id,
+                a.said.kind,
+                a.said.said.as_str(),
+                a.said.edited.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (dull, "redo", "livelier", ""),
+            (funnier, "approve", "", ""),
+            (why, "reject", "too much jargon", ""),
+            (kept, "approve", "", ""),
+            (edited, "edit", "", "Short."),
+        ]
+    );
+    assert_eq!(answers[4].said.draft, "A long dry post.");
+    assert_eq!(
+        answers[4].item.args["answer"]["draft"], "Short.",
+        "the item as the founder left it"
+    );
+    // The newest only.
+    let two = store.founder_answers("posts", since, 2).unwrap();
+    assert_eq!(
+        two.iter().map(|a| a.item.id).collect::<Vec<_>>(),
+        vec![dull, funnier]
+    );
+    // Decision 116's feedback is unchanged: no approval in it.
+    let said = store.founder_feedback("posts", since, 12).unwrap();
+    assert!(said.iter().all(|f| f.kind != "approve"));
+    assert_eq!(said.len(), 4);
+}
