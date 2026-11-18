@@ -3,6 +3,7 @@
 //! parsed, and kept once in `business.db` as untrusted data. The password
 //! is a realm secret, used here only: never given to a command or a model.
 
+pub mod check;
 pub mod imap;
 pub mod send;
 
@@ -21,8 +22,39 @@ const IMAP_HOST: &str = "ssl0.ovh.net";
 const IMAP_PORT: u16 = 993;
 /// Submission over TLS from the first byte.
 const SMTP_PORT: u16 = 465;
+/// Submission upgraded by STARTTLS before the login.
+const SUBMISSION_PORT: u16 = 587;
 /// Each connection gives up after this long without an answer.
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How SMTP is secured (decision 154): TLS from the first byte, or STARTTLS
+/// before the login. There is no third: mail never goes in plain text, and
+/// IMAP is TLS from the first byte only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Security {
+    #[default]
+    Ssl,
+    StartTls,
+}
+
+impl Security {
+    /// As an agent's file or the app writes it: `ssl` or `starttls`; empty
+    /// is `ssl`.
+    pub fn parse(s: &str) -> Result<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "" | "ssl" => Ok(Self::Ssl),
+            "starttls" => Ok(Self::StartTls),
+            other => bail!("'{other}' is not a mail security: ssl or starttls"),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ssl => "ssl",
+            Self::StartTls => "starttls",
+        }
+    }
+}
 
 /// A role's mailbox, as the agent's file names it.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,48 +62,36 @@ pub struct Mailbox {
     pub agent: String,
     /// Its address, which is also its login.
     pub address: String,
-    /// The mail server, for reading (IMAP) and sending (SMTP).
+    /// The server it is read from (IMAP, TLS only).
     pub imap_host: String,
     pub imap_port: u16,
+    /// The server it sends through: the IMAP one unless the file says.
+    pub smtp_host: String,
     pub smtp_port: u16,
+    pub smtp_security: Security,
 }
 
 impl Mailbox {
     /// The mailbox of the agent `agent`, from its file's `mailbox:` field
-    /// (and `mail_server:`, for a provider other than OVH). None when it has
+    /// (and `mail_server:`, `smtp_server:`, their ports and
+    /// `smtp_security:`, for a provider other than OVH). None when it has
     /// none.
     pub fn of(root: &Path, agent: &str) -> Result<Option<Self>> {
         crate::realm::validate_name(agent).context("invalid agent name")?;
         let path = root.join("agents").join(format!("{agent}.md"));
         let text = std::fs::read_to_string(&path).with_context(|| format!("no agent {agent}"))?;
         let front = crate::frontmatter::parse(&text);
-        let Some(address) = front
-            .text("mailbox")
-            .map(|a| a.trim().to_string())
-            .filter(|a| !a.is_empty())
-        else {
+        let field = |key: &str| {
+            front
+                .text(key)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        let Some(address) = field("mailbox") else {
             return Ok(None);
         };
-        if !valid_address(&address) {
-            bail!("{agent}'s mailbox '{address}' is not an e-mail address");
-        }
-        let imap_host = front
-            .text("mail_server")
-            .map(|h| h.trim().to_string())
-            .filter(|h| !h.is_empty())
-            .unwrap_or_else(|| IMAP_HOST.into());
-        if !imap_host
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
-        {
-            bail!("{agent}'s mail server '{imap_host}' is not a host name");
-        }
         let port = |key: &str, default: u16| -> Result<u16> {
-            match front
-                .text(key)
-                .map(|p| p.trim().to_string())
-                .filter(|p| !p.is_empty())
-            {
+            match field(key) {
                 None => Ok(default),
                 Some(p) => p
                     .parse()
@@ -80,13 +100,44 @@ impl Mailbox {
                     .with_context(|| format!("{agent}'s {key} '{p}' is not a port")),
             }
         };
-        Ok(Some(Self {
+        let imap_host = field("mail_server").unwrap_or_else(|| IMAP_HOST.into());
+        let smtp_security = Security::parse(&field("smtp_security").unwrap_or_default())
+            .with_context(|| format!("{agent}'s smtp_security"))?;
+        let smtp_default = match smtp_security {
+            Security::Ssl => SMTP_PORT,
+            Security::StartTls => SUBMISSION_PORT,
+        };
+        Self {
             agent: agent.to_string(),
             address,
+            smtp_host: field("smtp_server").unwrap_or_else(|| imap_host.clone()),
             imap_host,
             imap_port: port("imap_port", IMAP_PORT)?,
-            smtp_port: port("smtp_port", SMTP_PORT)?,
-        }))
+            smtp_port: port("smtp_port", smtp_default)?,
+            smtp_security,
+        }
+        .checked()
+        .with_context(|| format!("{agent}'s mailbox"))
+        .map(Some)
+    }
+
+    /// Itself, if its address is one and its servers are host names.
+    pub fn checked(self) -> Result<Self> {
+        if !valid_address(&self.address) {
+            bail!("'{}' is not an e-mail address", self.address);
+        }
+        for (what, host) in [
+            ("mail server", &self.imap_host),
+            ("SMTP server", &self.smtp_host),
+        ] {
+            if !valid_host(host) {
+                bail!("the {what} '{host}' is not a host name");
+            }
+        }
+        if self.imap_port == 0 || self.smtp_port == 0 {
+            bail!("a port is a number from 1 to 65535");
+        }
+        Ok(self)
     }
 
     /// The name of the realm secret holding its password.
@@ -96,6 +147,22 @@ impl Mailbox {
             self.agent.to_uppercase().replace('-', "_")
         )
     }
+
+    /// The domain of its address, which names Airth to its servers.
+    pub(crate) fn domain(&self) -> &str {
+        self.address
+            .split_once('@')
+            .map(|(_, d)| d)
+            .unwrap_or_default()
+    }
+}
+
+/// A server's name: letters, digits, dots and dashes.
+pub(crate) fn valid_host(h: &str) -> bool {
+    !h.is_empty()
+        && h.len() <= 253
+        && h.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 pub(crate) fn valid_address(a: &str) -> bool {
@@ -120,24 +187,96 @@ pub(crate) fn valid_address(a: &str) -> bool {
 }
 
 /// A TLS connection to `host`, its certificate checked against the
-/// system's roots.
-fn connect(host: &str, port: u16) -> Result<impl std::io::Read + std::io::Write> {
+/// system's roots, the handshake done: a server that cannot speak TLS, or
+/// shows a certificate that is not its own, fails here, before a word is
+/// sent. Each step gives up after `timeout`.
+fn connect(
+    host: &str,
+    port: u16,
+    timeout: std::time::Duration,
+) -> Result<impl std::io::Read + std::io::Write> {
     use rustls_platform_verifier::ConfigVerifierExt;
+    use std::net::ToSocketAddrs;
     let config =
         rustls::ClientConfig::with_platform_verifier().context("setting up TLS for mail")?;
     let name = rustls::pki_types::ServerName::try_from(host.to_string())
         .with_context(|| format!("'{host}' is not a server name"))?;
-    let conn = rustls::ClientConnection::new(std::sync::Arc::new(config), name)?;
-    let tcp = std::net::TcpStream::connect((host, port))
-        .with_context(|| format!("cannot reach {host}:{port}"))?;
-    tcp.set_read_timeout(Some(TIMEOUT))?;
-    tcp.set_write_timeout(Some(TIMEOUT))?;
+    let mut conn = rustls::ClientConnection::new(std::sync::Arc::new(config), name)?;
+    let mut tcp = Err(anyhow::anyhow!("cannot find {host}"));
+    for addr in (host, port)
+        .to_socket_addrs()
+        .with_context(|| format!("cannot find {host}"))?
+    {
+        tcp = std::net::TcpStream::connect_timeout(&addr, timeout)
+            .with_context(|| format!("cannot reach {host}:{port}"));
+        if tcp.is_ok() {
+            break;
+        }
+    }
+    let mut tcp = tcp?;
+    tcp.set_read_timeout(Some(timeout))?;
+    tcp.set_write_timeout(Some(timeout))?;
+    while conn.is_handshaking() {
+        conn.complete_io(&mut tcp)
+            .with_context(|| format!("no secure connection with {host}:{port}"))?;
+    }
     Ok(rustls::StreamOwned::new(conn, tcp))
+}
+
+/// The last reading of each mailbox since Airth started, by business and
+/// agent. Settings shows it; nothing is stored.
+static READS: std::sync::Mutex<Option<std::collections::HashMap<String, Reading>>> =
+    std::sync::Mutex::new(None);
+
+/// A mailbox's last reading: when, and what stopped it, if anything.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reading {
+    pub at: String,
+    pub error: Option<String>,
+}
+
+/// Note how reading `mailbox` in `realm` went.
+pub fn note_read(realm: &str, mailbox: &Mailbox, error: Option<String>) {
+    let mut reads = READS.lock().unwrap_or_else(|e| e.into_inner());
+    reads.get_or_insert_with(Default::default).insert(
+        format!("{realm}/{}/{}", mailbox.agent, mailbox.address),
+        Reading {
+            at: Utc::now().to_rfc3339(),
+            error,
+        },
+    );
+}
+
+/// How the last reading of `mailbox` in `realm` went, since Airth started:
+/// none for an address the agent was given since.
+pub fn last_read(realm: &str, mailbox: &Mailbox) -> Option<Reading> {
+    let reads = READS.lock().unwrap_or_else(|e| e.into_inner());
+    reads
+        .as_ref()?
+        .get(&format!("{realm}/{}/{}", mailbox.agent, mailbox.address))
+        .cloned()
+}
+
+/// `text` without `password` in any form a server could echo it: as typed,
+/// as IMAP quotes it, and in base64 as SMTP's AUTH PLAIN and LOGIN send it.
+pub(crate) fn redact(text: &str, address: &str, password: &str) -> String {
+    if password.is_empty() {
+        return text.to_string();
+    }
+    let forms = [
+        crate::github::base64(format!("\0{address}\0{password}").as_bytes()),
+        crate::github::base64(password.as_bytes()),
+        password.replace('\\', "\\\\").replace('"', "\\\""),
+        password.to_string(),
+    ];
+    forms
+        .iter()
+        .fold(text.to_string(), |t, f| t.replace(f.as_str(), "[password]"))
 }
 
 /// Fetch what is new in `mailbox` and keep it; what was kept, by id.
 pub fn fetch(mailbox: &Mailbox, password: &str, store: &mut Store) -> Result<Vec<(i64, Mail)>> {
-    let stream = connect(&mailbox.imap_host, mailbox.imap_port)?;
+    let stream = connect(&mailbox.imap_host, mailbox.imap_port, TIMEOUT)?;
     fetch_over(stream, mailbox, password, store)
 }
 
@@ -275,6 +414,14 @@ pub fn run(home: crate::home::Home) {
                         let kept = fetch(&mailbox, &password, &mut store)?;
                         flag_bank_changes(&mut store, &mailbox, &kept)
                     });
+                    note_read(
+                        realm.name(),
+                        &mailbox,
+                        outcome
+                            .as_ref()
+                            .err()
+                            .map(|e| redact(&format!("{e:#}"), &mailbox.address, &password)),
+                    );
                     crate::supervise::report(
                         &home.inbox(),
                         &key,
@@ -483,7 +630,9 @@ mod tests {
             address: "support@numirama.example".into(),
             imap_host: "127.0.0.1".into(),
             imap_port: 0,
+            smtp_host: "127.0.0.1".into(),
             smtp_port: 0,
+            smtp_security: Security::Ssl,
         };
         let run = |messages: Vec<(u32, Vec<u8>)>, store: &mut Store| {
             let (port, server) = imap::tests::server(3, messages);
@@ -550,7 +699,9 @@ mod tests {
             address: "support@n.example".into(),
             imap_host: "h".into(),
             imap_port: 1,
+            smtp_host: "h".into(),
             smtp_port: 1,
+            smtp_security: Security::Ssl,
         };
         let rib = Mail {
             from: "x@y.example".into(),
@@ -624,6 +775,45 @@ mod tests {
             (own.imap_host.as_str(), own.imap_port, own.smtp_port),
             ("mail.own.example", 993, 587)
         );
+        // A file from before decision 154 reads as it did: SMTP on the IMAP
+        // server, TLS from the first byte.
+        assert_eq!(
+            (own.smtp_host.as_str(), own.smtp_security),
+            ("mail.own.example", Security::Ssl)
+        );
+        assert_eq!(
+            (m.smtp_host.as_str(), m.smtp_port, m.smtp_security),
+            ("ssl0.ovh.net", 465, Security::Ssl)
+        );
+        // Its own SMTP server, by STARTTLS: on 587 unless it says.
+        std::fs::write(
+            agents.join("split.md"),
+            "---\ntitle: Split\nmailbox: hi@split.example\nmail_server: imap.split.example\nsmtp_server: smtp.split.example\nsmtp_security: starttls\n---\nx\n",
+        )
+        .unwrap();
+        let split = Mailbox::of(root.path(), "split").unwrap().unwrap();
+        assert_eq!(
+            (
+                split.smtp_host.as_str(),
+                split.smtp_port,
+                split.smtp_security
+            ),
+            ("smtp.split.example", 587, Security::StartTls)
+        );
+        // Plain text is not a security, and a server is a host name.
+        for bad in [
+            "smtp_security: none",
+            "smtp_security: plain",
+            "smtp_server: a b",
+        ] {
+            std::fs::write(
+                agents.join("bad.md"),
+                format!("---\ntitle: Bad\nmailbox: hi@bad.example\n{bad}\n---\nx\n"),
+            )
+            .unwrap();
+            assert!(Mailbox::of(root.path(), "bad").is_err(), "{bad}");
+        }
+        std::fs::remove_file(agents.join("bad.md")).unwrap();
         let config = crate::business::config::load(root.path(), &[]).unwrap();
         assert!(
             config.broken.iter().all(|b| !b.contains("own")),

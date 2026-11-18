@@ -500,9 +500,28 @@ impl App {
                     .secret(&mailbox.secret())
                     .context("set the mailbox's password first")?;
                 let mut store = crate::business::store::Store::of(&realm)?;
-                let kept = crate::mail::fetch(&mailbox, &password, &mut store)?;
+                let kept = crate::mail::fetch(&mailbox, &password, &mut store);
+                crate::mail::note_read(
+                    realm.name(),
+                    &mailbox,
+                    kept.as_ref().err().map(|e| {
+                        crate::mail::redact(&format!("{e:#}"), &mailbox.address, &password)
+                    }),
+                );
+                let kept = kept?;
                 crate::mail::flag_bank_changes(&mut store, &mailbox, &kept)?;
                 json_response(200, json!({"kept": kept.len()}))
+            }
+            // Connect a mailbox (decision 154): both logins are tried, and
+            // only a mailbox that takes them is saved. The settings are
+            // locked for the save only, not while the servers answer.
+            (Method::Post, ["realms", r, "mailboxes", agent, "connect"]) => {
+                let body = read_json(request)?;
+                let realm = self.realm(r)?;
+                let (mailbox, password) = try_mailbox(&realm, agent, &body)?;
+                let _w = self.write_lock();
+                save_mailbox(&realm, &mailbox, password.as_deref())?;
+                json_response(200, json!({"mailboxes": mailboxes(&realm)?}))
             }
             // The business's mail as the founder sees it (decision 152):
             // the interlocutor's mailbox, its last mails, where each went.
@@ -1213,24 +1232,102 @@ pub(super) fn set_mailbox(realm: &Realm, agent: &str, address: &str, password: &
     let root = realm.root()?;
     let address = address.trim();
     let before = crate::mail::Mailbox::of(&root, agent).ok().flatten();
-    if !address.is_empty() {
-        for (other, _) in crate::business::bots(&root)? {
-            if other == agent {
-                continue;
-            }
-            if let Ok(Some(m)) = crate::mail::Mailbox::of(&root, &other)
-                && m.address.eq_ignore_ascii_case(address)
-            {
-                bail!("{address} is already {other}'s mailbox");
-            }
-        }
-    }
+    address_free(&root, agent, address)?;
     crate::business::set_agent_field(&root, agent, "mailbox", address, &realm.config.departments)?;
     let secret = password_secret(agent);
     if !password.is_empty() {
         realm.set_secret(&secret, password)?;
-    } else if before.is_some_and(|b| !b.address.eq_ignore_ascii_case(address)) {
+    } else if address.is_empty() || before.is_some_and(|b| !b.address.eq_ignore_ascii_case(address))
+    {
         realm.remove_secret(&secret)?;
+    }
+    Ok(())
+}
+
+/// Refused when `address` is another agent's mailbox already.
+fn address_free(root: &std::path::Path, agent: &str, address: &str) -> Result<()> {
+    if address.is_empty() {
+        return Ok(());
+    }
+    for (other, _) in crate::business::bots(root)? {
+        if other != agent
+            && let Ok(Some(m)) = crate::mail::Mailbox::of(root, &other)
+            && m.address.eq_ignore_ascii_case(address)
+        {
+            bail!("{address} is already {other}'s mailbox");
+        }
+    }
+    Ok(())
+}
+
+/// The mailbox the founder connects (decision 154), from the dialog's
+/// fields, tried on both its servers before anything is saved; and the new
+/// password to save with it, if one was typed. With none typed, the saved
+/// one is tried, for the same address only.
+pub(super) fn try_mailbox(
+    realm: &Realm,
+    agent: &str,
+    body: &Value,
+) -> Result<(crate::mail::Mailbox, Option<String>)> {
+    let root = realm.root()?;
+    crate::business::job(&root, agent).with_context(|| format!("no agent {agent}"))?;
+    let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
+    let port = |k: &str| -> Result<u16> {
+        body[k]
+            .as_u64()
+            .or_else(|| body[k].as_str()?.trim().parse().ok())
+            .and_then(|p| u16::try_from(p).ok())
+            .filter(|p| *p > 0)
+            .with_context(|| format!("the {} port is a number from 1 to 65535", &k[..4]))
+    };
+    let imap_host = text("imap_host");
+    let smtp_host = Some(text("smtp_host"))
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| imap_host.clone());
+    let mailbox = crate::mail::Mailbox {
+        agent: agent.to_string(),
+        address: text("address"),
+        imap_host,
+        imap_port: port("imap_port")?,
+        smtp_host,
+        smtp_port: port("smtp_port")?,
+        smtp_security: crate::mail::Security::parse(&text("smtp_security"))?,
+    }
+    .checked()?;
+    address_free(&root, agent, &mailbox.address)?;
+    // A password is taken as typed: spaces may be part of it.
+    let typed = body["password"].as_str().unwrap_or_default();
+    let saved = crate::mail::Mailbox::of(&root, agent)
+        .ok()
+        .flatten()
+        .filter(|m| m.address.eq_ignore_ascii_case(&mailbox.address))
+        .and_then(|_| realm.secret(&password_secret(agent)));
+    let password = match saved {
+        _ if !typed.is_empty() => typed.to_string(),
+        Some(saved) => saved,
+        None => bail!("enter the mailbox's password"),
+    };
+    crate::mail::check::check(&mailbox, &password)?;
+    Ok((mailbox, (!typed.is_empty()).then(|| typed.to_string())))
+}
+
+/// Save a mailbox [`try_mailbox`] connected: its address and servers in the
+/// agent's file, a new password as the realm secret, never in the file.
+pub(super) fn save_mailbox(
+    realm: &Realm,
+    m: &crate::mail::Mailbox,
+    password: Option<&str>,
+) -> Result<()> {
+    set_mailbox(realm, &m.agent, &m.address, password.unwrap_or_default())?;
+    let root = realm.root()?;
+    for (key, value) in [
+        ("mail_server", m.imap_host.clone()),
+        ("imap_port", m.imap_port.to_string()),
+        ("smtp_server", m.smtp_host.clone()),
+        ("smtp_port", m.smtp_port.to_string()),
+        ("smtp_security", m.smtp_security.name().to_string()),
+    ] {
+        crate::business::set_agent_field(&root, &m.agent, key, &value, &realm.config.departments)?;
     }
     Ok(())
 }
@@ -1304,11 +1401,17 @@ pub(super) fn one_mail(realm: &Realm, id: i64) -> Result<Option<Value>> {
     }))
 }
 
-/// Each agent with what its mailbox holds: the address and server, whether
-/// its password is set (never the password), and the last mail kept.
+/// Each agent with what its mailbox holds: the address and servers, whether
+/// its password is set (never the password), the last mail kept, and how
+/// its last reading went since Airth started.
 pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
     let root = realm.root()?;
     let store = crate::business::store::Store::of(realm)?;
+    // The interlocutor's mailbox is the business's (decision 152): the
+    // screen shows it first, and the others as a role's own, later. The
+    // interlocutor is the first agent whose file says `dispatch: true`, as
+    // `business::dispatcher` has it, read from the files this loop parses.
+    let mut lead_found = false;
     let mut out = Vec::new();
     for (agent, _) in crate::business::bots(&root)? {
         let front = std::fs::read_to_string(root.join("agents").join(format!("{agent}.md")))
@@ -1318,27 +1421,46 @@ pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
             .as_ref()
             .and_then(|f| f.text("title"))
             .unwrap_or_else(|| agent.clone());
+        let lead = !lead_found
+            && front.as_ref().and_then(|f| f.text("dispatch")).as_deref() == Some("true");
+        lead_found |= lead;
         // A mailbox the agent's file gets wrong is shown with what is wrong,
         // never as no mailbox.
-        let (address, server, password, last, error) = match crate::mail::Mailbox::of(&root, &agent)
-        {
-            Ok(Some(m)) => (
-                Some(m.address.clone()),
-                Some(m.imap_host.clone()),
-                realm.secret(&m.secret()).is_some(),
-                store.mails(&m.address, 1)?.pop().map(|k| k.fetched_at),
-                None,
-            ),
-            Ok(None) => (None, None, false, None, None),
-            Err(e) => (
-                front.as_ref().and_then(|f| f.text("mailbox")),
-                None,
-                realm.secret(&password_secret(&agent)).is_some(),
-                None,
-                Some(format!("{e:#}")),
-            ),
-        };
-        out.push(json!({"agent": agent, "title": title, "address": address, "server": server, "password": password, "last": last, "error": error}));
+        let mut read = None;
+        let (address, servers, password, last, error) =
+            match crate::mail::Mailbox::of(&root, &agent) {
+                Ok(Some(m)) => (
+                    {
+                        read = crate::mail::last_read(realm.name(), &m);
+                        Some(m.address.clone())
+                    },
+                    Some(json!({
+                        "imap_host": m.imap_host,
+                        "imap_port": m.imap_port,
+                        "smtp_host": m.smtp_host,
+                        "smtp_port": m.smtp_port,
+                        "smtp_security": m.smtp_security.name(),
+                    })),
+                    realm.secret(&m.secret()).is_some(),
+                    store.mails(&m.address, 1)?.pop().map(|k| k.fetched_at),
+                    None,
+                ),
+                Ok(None) => (None, None, false, None, None),
+                Err(e) => (
+                    front.as_ref().and_then(|f| f.text("mailbox")),
+                    None,
+                    realm.secret(&password_secret(&agent)).is_some(),
+                    None,
+                    Some(format!("{e:#}")),
+                ),
+            };
+        let server = servers.as_ref().map(|s| s["imap_host"].clone());
+        out.push(json!({
+            "agent": agent, "title": title, "lead": lead, "address": address,
+            "server": server, "servers": servers, "password": password, "last": last,
+            "read": read.as_ref().map(|r| &r.at), "read_error": read.and_then(|r| r.error),
+            "error": error,
+        }));
     }
     Ok(out)
 }

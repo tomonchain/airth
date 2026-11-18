@@ -18,7 +18,7 @@ import { LOGOS } from "@/lib/logos"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Conversation } from "@/screens/conversation"
-import { MailboxRow, type Box } from "@/screens/settings-mail"
+import { MailboxCard, type Box } from "@/components/mailbox"
 
 const STATE: Record<Agent["state"], string> = {
   needs: "Waiting for you", incident: "Stopped on an incident", working: "Working now", idle: "Between runs", asleep: "Nothing scheduled",
@@ -561,7 +561,7 @@ function AgentMail({ realm, agent }: { realm: string; agent: Agent }) {
     <>
       <p className="text-sm text-muted-foreground">Its own address on the business's domain. What it receives is read as data, never as orders; every mail it sends waits for your approval, signed as prepared by an AI agent, with a copy to archive@.</p>
       {!boxes.data ? <p className="text-sm text-muted-foreground">Loading…</p> : box ? (
-        <div className="rounded-xl bg-bubble"><MailboxRow key={`${box.agent}:${box.address ?? ""}`} realm={realm} box={box} onSaved={boxes.refresh} /></div>
+        <div className="rounded-xl bg-bubble"><MailboxCard key={box.agent} realm={realm} box={box} onChanged={boxes.refresh} compact /></div>
       ) : <p className="text-sm text-muted-foreground">Not found.</p>}
     </>
   )

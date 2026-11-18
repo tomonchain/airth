@@ -267,7 +267,9 @@ mod tests {
             address: "support@n.example".into(),
             imap_host: "127.0.0.1".into(),
             imap_port: 0,
+            smtp_host: "127.0.0.1".into(),
             smtp_port: 0,
+            smtp_security: crate::mail::Security::Ssl,
         };
         let tool = SendMail {
             mailboxes: vec![(mailbox.clone(), "pw".into())],

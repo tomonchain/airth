@@ -47,8 +47,8 @@ const AGENT: &[&str] = &[
     "integrations", "skills", "repos", "look", "accessory",
     // The founder's one interlocutor, who passes orders on (decision 120).
     "dispatch",
-    // A mailbox's server, when not OVH's (decision 70).
-    "mail_server", "imap_port", "smtp_port",
+    // A mailbox's servers, when not OVH's (decisions 70 and 154).
+    "mail_server", "imap_port", "smtp_port", "smtp_server", "smtp_security",
     // A cap on its tasks' model cost each month (decision 139).
     "monthly_max_cost_usd",
     // The model its tasks use, instead of the business's (decision 142).

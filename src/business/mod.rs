@@ -506,6 +506,20 @@ pub fn check_agent_field(key: &str, value: &str, own: &[String]) -> Result<()> {
             anyhow::bail!("'{value}' is not an e-mail address")
         }
         "mailbox" => {}
+        // Its servers (decisions 70 and 154); empty: OVH's, or for SMTP the
+        // IMAP one.
+        "mail_server" | "smtp_server" if !value.is_empty() && !crate::mail::valid_host(value) => {
+            anyhow::bail!("'{value}' is not a host name")
+        }
+        "imap_port" | "smtp_port"
+            if !value.is_empty() && !value.parse::<u16>().is_ok_and(|p| p > 0) =>
+        {
+            anyhow::bail!("'{value}' is not a port")
+        }
+        "mail_server" | "smtp_server" | "imap_port" | "smtp_port" => {}
+        "smtp_security" => {
+            crate::mail::Security::parse(value)?;
+        }
         _ => anyhow::bail!("{key} cannot be set here"),
     }
     if value.contains(['\n', '\r']) {

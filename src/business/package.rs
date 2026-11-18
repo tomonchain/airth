@@ -17,6 +17,8 @@ const LOCAL: &[&str] = &[
     "mail_server",
     "imap_port",
     "smtp_port",
+    "smtp_server",
+    "smtp_security",
     "monthly_max_cost_usd",
     "repos",
 ];

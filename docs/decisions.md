@@ -2,6 +2,20 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 154. A mailbox is connected from a dialog, and saved only once both its logins work
+
+**Accepted** (founder, 18 November 2026: "On peut avoir plutôt un bouton 'Connecter une boite mail', qui affiche une modal avec email + password, et des presets de provider connus et l'option de mettre les serveurs, port, SSL / TLS, ... Et une fois qu'on clique sur 'Enregistrer', on test la boite et on affiche dans la page Mailbox"). It extends decision 70's "another provider is config" and its Settings, Mailboxes.
+
+- **Two new fields in an agent's file, both optional.** `smtp_server`, the server mail is sent through, the IMAP one (`mail_server`) when absent; and `smtp_security`, `ssl` (TLS from the first byte, the default, as before) or `starttls` (the connection is upgraded before the login, and refused if the server does not offer it). With `starttls`, the SMTP port defaults to 587. A file written before reads exactly as it did.
+- **Never plain text.** IMAP stays TLS from the first byte. There is no third value for `smtp_security`; anything else is an error. Server names are checked as before.
+- **Tried before saved.** "Save" in the dialog tries the IMAP login (TLS, `LOGIN`, `EXAMINE INBOX`, `LOGOUT`) and the SMTP login (connect with the chosen security, `AUTH`, `QUIT`), nothing read and nothing sent, each step giving up after 15 seconds. Only when both work are the address and servers written to the agent's file and the password kept as the realm secret. Otherwise the founder reads which step failed ("IMAP: login refused (…)", "SMTP: could not connect to smtp.x:587 (…)"), with the password taken out of anything a server said, as typed, as IMAP quotes it and in base64. With no password typed, the one already saved for the same address is tried.
+- **Presets in the app, not in Airth's code.** OVH (the default), Gmail, Microsoft 365, iCloud and Fastmail fill the servers, ports and security; "Other" opens them to edit. They are guessed from the address's domain when it is obvious.
+- **The state shown** is the last reading since Airth started, kept in memory: when, and why it failed. A restart forgets it until the next reading, five minutes at most.
+
+*Why:* a mailbox saved with a wrong password or server failed silently until the next reading, and the founder had to know OVH's servers or edit a file for another provider. Providers that only take STARTTLS for sending (Microsoft 365, iCloud) could not send at all.
+
+*Cost:* two fields in an agent's file, and a route that holds a connection to two servers for up to 30 seconds per try. STARTTLS is a second way to secure SMTP, one more path in security code, covered by a test that the login never leaves before the upgrade. Presets can go stale when a provider changes its servers: "Other" still reaches any of them.
+
 ## 153. An agent earns the right to act alone, and its approval step steps aside
 
 **Accepted** (founder, 18 November 2026, asking what would let the agents run the business on their own: "Oui très bonnes idées", then "153 validée", a rejection resetting the count: "Oui", and a lower threshold: "Un peu moins peut-être?"). It builds what decision 45 promised and never got: Airth proposing a promotion. Its threshold replaces decision 45's.
