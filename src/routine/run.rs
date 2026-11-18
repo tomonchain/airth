@@ -140,7 +140,10 @@ fn mode(graph: &Graph, at: usize, guards: &[&str], levels: &Levels) -> Result<St
     for action in guards {
         let (l, m) = levels(&graph.agent, action);
         level = level.min(l);
-        minutes = minutes.max(m);
+        // Only what waits at 2 sets the window: an act at 3 does not wait.
+        if l == 2 {
+            minutes = minutes.max(m);
+        }
     }
     Ok(match level {
         0 | 1 => Step::Ask,

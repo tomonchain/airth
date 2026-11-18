@@ -79,21 +79,26 @@ impl Hub {
         })
     }
 
-    /// What each approval step of `graph` does by the founder's levels now,
-    /// by block (decision 153); an item of a mail or flagged blocking
+    /// The founder's levels as an approval step reads them (decision 153):
+    /// built once, then read for every routine of a page.
+    pub fn step_levels(&self, realm: &Realm) -> Result<impl Fn(&str, &str) -> (u8, u32) + use<>> {
+        guard_levels(realm)
+    }
+
+    /// What each approval step of `graph` does by the founder's `levels`
+    /// now, by block (decision 153); an item of a mail or flagged blocking
     /// waits whatever this says.
     pub fn approval_steps(
         &self,
-        realm: &Realm,
         graph: &Graph,
+        levels: &crate::routine::run::Levels,
     ) -> Result<BTreeMap<String, crate::routine::run::Step>> {
-        let levels = guard_levels(realm)?;
         let mut out = BTreeMap::new();
         for (i, block) in graph.blocks.iter().enumerate() {
             if matches!(block.kind, crate::routine::Kind::Approval { .. }) {
                 out.insert(
                     block.id.clone(),
-                    crate::routine::run::step(graph, i, &levels)?,
+                    crate::routine::run::step(graph, i, levels)?,
                 );
             }
         }
@@ -552,7 +557,11 @@ impl Hub {
             let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
             let declared = crate::actions::all(&realm.config.integrations, &servers);
             let mut now = Vec::new();
-            for action in cancelled {
+            // Two acts of one action are one action: one cancel, one level.
+            for action in cancelled
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+            {
                 let (ceiling, start) = declared
                     .iter()
                     .find(|d| d.id == action)

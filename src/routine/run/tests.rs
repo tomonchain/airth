@@ -1616,7 +1616,7 @@ fn acts_for_the_founder_do_not_hold_the_step() {
 }
 
 /// The lowest level among what the step guards decides, and the longest
-/// window; with nothing to guard, it waits.
+/// window among the acts at 2; with nothing to guard, it waits.
 #[test]
 fn the_step_follows_the_lowest_level_it_guards() {
     let graph = guarded_posts(ok(), true);
@@ -1628,8 +1628,18 @@ fn the_step_follows_the_lowest_level_it_guards() {
     };
     assert_eq!(step(&graph, 0, &levels(2, 1)).unwrap(), Step::Ask);
     assert_eq!(step(&graph, 0, &levels(3, 1)).unwrap(), Step::Ask);
+    // The window is the longest among the acts at 2: one at 3 does not wait,
+    // so its longer window does not lengthen the step's.
     assert_eq!(
         step(&graph, 0, &levels(2, 3)).unwrap(),
+        Step::Delay { minutes: 30 }
+    );
+    assert_eq!(
+        step(&graph, 0, &levels(3, 2)).unwrap(),
+        Step::Delay { minutes: 60 }
+    );
+    assert_eq!(
+        step(&graph, 0, &levels(2, 2)).unwrap(),
         Step::Delay { minutes: 60 }
     );
     assert_eq!(step(&graph, 0, &levels(3, 3)).unwrap(), Step::Go);

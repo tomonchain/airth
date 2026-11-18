@@ -91,7 +91,8 @@ fn mode(hub: &Hub, f: &Fixture) -> serde_json::Value {
     let graph = hub
         .with_routine_checks(&f.realm, |c| crate::routine::load(c, "posts"))
         .unwrap();
-    json!(hub.approval_steps(&f.realm, &graph).unwrap())["ok"].clone()
+    let levels = hub.step_levels(&f.realm).unwrap();
+    json!(hub.approval_steps(&graph, &levels).unwrap())["ok"].clone()
 }
 
 /// Level 2, set by the founder: the item waits its window in Needs you,
@@ -169,6 +170,50 @@ fn a_cancelled_step_does_nothing_and_demotes_what_it_guards() {
     assert_eq!(mode(&hub, &f), json!({"mode": "ask"}));
 }
 
+/// Two acts of one action after the step are one action: a cancel brings
+/// it down one level, not two.
+#[test]
+fn a_cancel_demotes_an_action_once_however_many_acts_use_it() {
+    let (f, posted) = posts(&["Flows"], "reversible", None);
+    let path = f.root.path().join("routines/posts.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    graph["blocks"].as_array_mut().unwrap().push(json!(
+        {"id": "again", "type": "act", "action": "typefully.create_draft", "fields": {"content": "{{title}} (2)"}}
+    ));
+    std::fs::write(&path, graph.to_string()).unwrap();
+    set(&f, 2, 3);
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    hub.run_routine_by_hand(&f.realm, "posts").unwrap();
+    let queued = pending(&f);
+    assert_eq!(queued[0].kind, "delayed");
+    assert_eq!(
+        queued[0].source["guards"],
+        json!(["typefully.create_draft", "typefully.create_draft"]),
+        "both acts guarded"
+    );
+    let (_, said) = hub
+        .answer_item(
+            &f.realm,
+            queued[0].id,
+            None,
+            Answer::Reject("no".into()),
+            "app",
+            2,
+        )
+        .unwrap();
+    assert_eq!(
+        said.as_deref(),
+        Some("cancelled; post-writer now takes typefully.create_draft at level 1 (was 2)")
+    );
+    let level = Store::of(&f.realm)
+        .unwrap()
+        .level("post-writer", "typefully.create_draft", 3, 3)
+        .unwrap();
+    assert_eq!(level, 1);
+    assert!(posted.lock().unwrap().is_empty());
+}
+
 /// Level 3, set by the founder: no item waits; the act is done at once
 /// and journaled, and the connector's daily limit still holds what goes
 /// past it for the founder.
@@ -181,6 +226,11 @@ fn a_step_at_level_three_goes_at_once_under_the_daily_limit() {
     let report = hub.run_routine_by_hand(&f.realm, "posts").unwrap();
     assert!(report.contains("went on without asking"), "{report}");
     assert_eq!(posted.lock().unwrap().len(), 1, "{report}");
+    // Done alone, at the agent's level: not as the founder's approval.
+    let journal = Store::of(&f.realm).unwrap().journal().unwrap();
+    assert_eq!(journal.len(), 1, "{journal:?}");
+    assert_eq!(journal[0].1, "confirmed");
+    assert!(!journal[0].2, "not approved by the founder");
     let queued = pending(&f);
     assert_eq!(queued.len(), 1, "{queued:?}");
     assert_eq!(queued[0].kind, "approval");
