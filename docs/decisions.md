@@ -2,6 +2,23 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 152. One mailbox per business, the interlocutor's, who passes each mail to the right agent
+
+**Proposed** (founder, 18 November 2026: "est-ce que c'est pas mieux qu'il y ait qu'une mailbox qui est connectée directement au CEO / Chief of Staff et les communications se passent avec lui directement et il dispatch?", then "Travaille dessus"). It replaces decision 70's "one mailbox per role" and `CLAUDE.md`'s Mail rule 1; decision 70's other rules stand. (Decision 151 is the evaluations' proposal, on its own branch.)
+
+- **One address per business, by default:** the interlocutor's (decision 120), e.g. `contact@<domain>`, set in Settings, Mailboxes, as today. Other agents have none unless the founder gives one later (a `support@` once the volume calls for it): decision 70's machinery for a role's own box is kept as it is.
+- **Each new mail is sorted, by a step that can do nothing.** An AI block with no tool (rule 2) reads the mail and answers, against a schema checked in code: which agent it is for (one of the team, or the founder), and a one-line summary. Its prompt is a versioned file of the interlocutor's, its calls journaled. A mail with a bank-details flag (decision 70) goes to the founder whatever the answer.
+- **What a mail starts.** Two ways, and the founder chooses:
+  - **A. Every mail asks first.** The routing is an item of Needs you ("From anna@…: for Support, a refund asked"); approved, the agent gets a task. Decision 70's rule holds as written: nothing downstream of a mail acts without an approval. Two clicks a mail: the routing, then the reply.
+  - **B. A mail starts a task that can only read and draft.** The chosen agent gets a task at once, with the mail quoted as data (never as its order) and a narrow scope: reading the business's documents and skills, and `send_mail`, nothing else; no command, no other connector, no plan, no hire. The reply itself waits for the founder, as every mail does (level 1, the new-correspondent mark, the blind copy, the signature). One click a mail. This narrows decision 70's rule rather than breaking it: what a mail starts can act on nothing but a draft the founder reads before it leaves.
+  - **Recommended: B.** The founder's time is what the beta measures; A doubles it for no gain in safety, since a task that can only draft can send nothing alone.
+- **Replies leave from the business's address**, in the mail's thread, signed with the agent's role ("Support, Northwind"), whoever drafts them: `send_mail` in such a task uses the interlocutor's mailbox. What is sent is recorded with the agent who drafted it (`mail_sent.agent`).
+- **The founder sees the sorting:** each mail and the agent it went to, in the interlocutor's conversation; a mail sorted wrong is passed on by a word to the interlocutor, as any order (decision 120).
+
+*Why:* one address to give and to set up at OVH (SPF, DKIM, DMARC once), one place where the business's mail arrives, and the team behind it, as the founder already works with the interlocutor for orders. A mailbox per role was more setup than a small business needs before its volume does.
+
+*Cost:* the interlocutor reads all the business's incoming mail, which is untrusted, through a step that holds no tool. Every mail costs one model call to sort. With B, a mail's words reach a task's model, which can only read the business's documents and draft: an instruction hidden in a mail could make it quote a document in a draft, which the founder reads before anything leaves.
+
 ## 150. A founder back on a run's page watches it again
 
 **Accepted** (founder, 17 November 2026: yes to "en revenant sur la page, les questions d'un agent te reviennent dans le fil", which changes decision 56).
