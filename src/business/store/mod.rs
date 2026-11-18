@@ -824,6 +824,25 @@ mod tests {
         // Recorded once: what was passed on is not passed on again.
         assert!(store.mail_sorted(id, &sorted).is_err());
         assert_eq!(store.mail_sorting(id).unwrap().unwrap(), sorted);
+        // The newest first: a backlog never holds back what just came.
+        for uid in [3, 4] {
+            let mail = crate::mail::Mail {
+                thread: format!("t{uid}"),
+                ..Default::default()
+            };
+            store
+                .keep_mail(&crate::business::store::mail::NewMail {
+                    mailbox: "contact@n.example",
+                    agent: "chief",
+                    uid_validity: 1,
+                    uid,
+                    mail: &mail,
+                    at: chrono::Utc::now(),
+                })
+                .unwrap();
+        }
+        let next = store.mails_to_sort("contact@n.example", 1).unwrap();
+        assert_eq!(next[0].mail.thread, "t4");
     }
 
     /// Decision 59: a database of schema 13 with items, their log, an

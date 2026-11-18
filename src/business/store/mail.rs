@@ -90,12 +90,13 @@ impl Store {
     }
 
     /// Up to `limit` messages of `mailbox` never passed on (decision 152),
-    /// oldest first.
+    /// newest first: a backlog, such as a mailbox's first reading, never
+    /// holds back the mail that just came. The rest waits for the next pass.
     pub fn mails_to_sort(&self, mailbox: &str, limit: usize) -> Result<Vec<Kept>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {KEPT} FROM mail_messages
              WHERE mailbox = ?1 AND NOT EXISTS (SELECT 1 FROM mail_sorting s WHERE s.mail = mail_messages.id)
-             ORDER BY id LIMIT ?2"
+             ORDER BY id DESC LIMIT ?2"
         ))?;
         Ok(stmt
             .query_map(params![mailbox, limit as i64], kept)?

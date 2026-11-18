@@ -170,7 +170,7 @@ Milestones, in order. One starts only when the previous one's gate is passed. Ev
 4. **Hedgen routines.** Watch, production to Typefully, replies, weekly report (through Telegram and Needs you), and the Writer: a weekly article, as a mission launched by an Act (Trigger → Read → Act "Launch a mission" → Approval → Act "publish"), its agent in `agents/`.
 5. **Interface, the finish.** The full HQ, the routine editor (a canvas: blocks dragged and linked, decision 91), the command bar, and every classic feature moved into the new interface (decision 72), the main screen; one bank read-only for the HQ's finance: Revolut Business (decision 54).
 6. **Hedgen proof.** 4 stable weeks, founder time below baseline.
-7. **Agent mail.** IMAP and SMTP integration, one mailbox per role.
+7. **Agent mail.** IMAP and SMTP integration, one mailbox per business by default (the interlocutor's), a role's own later.
 8. **Numirama.** Config and a connector to Statera; what repeats with Hedgen becomes generic; Hedgen's config becomes the media template.
 9. **VPS.** Linux sandbox, security scenarios green on Linux, deployment, access through a tunnel only.
 

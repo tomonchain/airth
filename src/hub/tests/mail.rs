@@ -105,7 +105,12 @@ fn a_mail_goes_to_its_agent_once_and_its_reply_waits_for_the_founder() {
     let mut f = fixture();
     business(&mut f, port);
     let id = keep(&f, 1, "Bonjour, où est mon lot ?", 0);
-    let (hub, seen, _) = make_hub(
+    // What the business briefing would tell a task, and a memory entry.
+    f.realm
+        .memory()
+        .add("The bank code is 4242", "test")
+        .unwrap();
+    let (hub, seen, systems) = make_hub(
         &f.home,
         vec![
             sorted("support", "Ann asks where her lot is"),
@@ -117,6 +122,8 @@ fn a_mail_goes_to_its_agent_once_and_its_reply_waits_for_the_founder() {
                 json!({"method": "GET", "url": "https://example.com"}),
             ),
             call("4", "propose_plan", json!({"steps": []})),
+            // An empty reply is refused before it reaches the founder.
+            call("4b", "send_mail", json!({"text": "  "})),
             // What the model puts beyond the subject and text is not taken.
             call(
                 "5",
@@ -173,9 +180,19 @@ fn a_mail_goes_to_its_agent_once_and_its_reply_waits_for_the_founder() {
         ]
     );
     assert!(
-        results[4].starts_with("not sent: the reply waits"),
+        results[4].starts_with("not done: the reply has no text"),
         "{results:?}"
     );
+    assert!(
+        results[5].starts_with("not sent: the reply waits"),
+        "{results:?}"
+    );
+    // Told its order, the mail and its skills: nothing of the business,
+    // its memory or its owner.
+    let told = systems.lock().unwrap()[1].clone();
+    assert!(!told.contains("The business this realm runs"), "{told}");
+    assert!(!told.contains("4242"), "{told}");
+    assert!(!told.contains("Auctions."), "{told}");
     assert_eq!(state.status, Status::Stopped);
     assert!(!f.root.path().join("x.md").exists());
 
@@ -193,6 +210,7 @@ fn a_mail_goes_to_its_agent_once_and_its_reply_waits_for_the_founder() {
         preview.starts_with("send a mail from contact@n.example to ann@buyer.example"),
         "{preview}"
     );
+    assert!(preview.contains("Votre lot part demain."), "{preview}");
 
     let (item, report) = hub
         .answer_item(&f.realm, item.id, None, Answer::Approve, "app", 5)
@@ -203,6 +221,7 @@ fn a_mail_goes_to_its_agent_once_and_its_reply_waits_for_the_founder() {
     assert!(data.contains("From: contact@n.example"), "{data}");
     assert!(data.contains("In-Reply-To: <1@buyer.example>"), "{data}");
     assert!(data.contains("Support, Northwind"), "{data}");
+    assert!(data.contains("Votre lot part demain."), "{data}");
     let sent = Store::of(&f.realm).unwrap().sent_by().unwrap();
     assert_eq!(sent.len(), 1);
     assert_eq!(
@@ -237,6 +256,15 @@ fn a_mail_task_holds_its_skills_and_its_reply_only() {
         .start_task(&f.realm, "support", "Check the blog")
         .unwrap();
     assert!(hub.mail_task_tools(&f.realm, &other).unwrap().is_none());
+    // Its briefing holds nothing of the business, where another task's does.
+    f.realm
+        .memory()
+        .add("The bank code is 4242", "test")
+        .unwrap();
+    let ws = Workspace::new(f.root.path()).unwrap();
+    let told = |s: &State| run_context(&hub.briefing(&f.realm, s, &ws).unwrap());
+    assert!(told(&other).contains("4242") && told(&other).contains("Auctions."));
+    assert!(!told(&state).contains("4242") && !told(&state).contains("Auctions."));
 }
 
 /// What a mail says never becomes the task's order: the order is Airth's,
@@ -294,7 +322,7 @@ fn a_bank_flagged_or_old_mail_starts_no_task() {
 
 /// A mail whose sorting fails, or that is for the founder, goes to the
 /// founder in Needs you; each sorting is journaled, an invalid one with
-/// why, never repaired.
+/// why, never repaired. The newest mail is sorted first.
 #[test]
 fn a_mail_for_the_founder_or_badly_sorted_goes_to_the_founder() {
     let mut f = fixture();
@@ -303,9 +331,9 @@ fn a_mail_for_the_founder_or_badly_sorted_goes_to_the_founder() {
     let (hub, _, _) = make_hub(
         &f.home,
         vec![
-            done("support, I think"),
-            sorted("ghost", "x"),
             sorted("founder", "A contract to sign"),
+            sorted("ghost", "x"),
+            done("support, I think"),
         ],
     );
     assert!(hub.pass_on_mail().unwrap().is_empty());
@@ -320,14 +348,14 @@ fn a_mail_for_the_founder_or_badly_sorted_goes_to_the_founder() {
     assert_eq!(
         titles,
         [
+            "A mail for you, from ann@buyer.example",
             "A mail Airth could not pass on, from ann@buyer.example",
-            "A mail Airth could not pass on, from ann@buyer.example",
-            "A mail for you, from ann@buyer.example"
+            "A mail Airth could not pass on, from ann@buyer.example"
         ]
     );
     assert!(items.iter().all(|i| i.kind == "incident"));
     assert!(
-        items[2].args["detail"]
+        items[0].args["detail"]
             .as_str()
             .unwrap()
             .contains("A contract to sign")
@@ -337,6 +365,27 @@ fn a_mail_for_the_founder_or_badly_sorted_goes_to_the_founder() {
     assert!(calls.iter().all(|c| c.pipeline == "mail"));
     assert_eq!(
         calls.iter().map(|c| c.error.is_some()).collect::<Vec<_>>(),
-        [true, true, false]
+        [false, true, true]
     );
+}
+
+/// A sorting whose model call fails is journaled as failed, and its mail
+/// goes to the founder.
+#[test]
+fn a_sorting_whose_call_fails_is_journaled() {
+    let mut f = fixture();
+    business(&mut f, 1);
+    let id = keep(&f, 1, "Bonjour.", 0);
+    // No answer scripted: the model fails as a provider outage does.
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    assert!(hub.pass_on_mail().unwrap().is_empty());
+    let store = Store::of(&f.realm).unwrap();
+    let sorting = store.mail_sorting(id).unwrap().unwrap();
+    assert_eq!(sorting.outcome, "failed");
+    let calls = store.model_calls().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(sorting.model_call, Some(calls[0].id));
+    let error = calls[0].error.as_deref().unwrap();
+    assert!(error.contains("the model did not answer"), "{error}");
+    assert_eq!(store.queue(&["pending"]).unwrap().len(), 1);
 }

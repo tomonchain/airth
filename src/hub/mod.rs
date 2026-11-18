@@ -550,6 +550,15 @@ impl Hub {
 
     fn briefing(&self, realm: &Realm, state: &State, ws: &Workspace) -> Result<Briefing> {
         let profile = self.home.owner()?;
+        // A task a mail started is told its order, the mail and its skills,
+        // nothing of the business, its owner, memory or repositories: a
+        // mail's words could have it quote them in a draft (decision 152).
+        if state.mail.is_some() {
+            return Ok(Briefing {
+                language: profile.language().map(str::to_string),
+                ..Briefing::plain(&ws.root().display().to_string())
+            });
+        }
         let owner = if realm.config.share_owner_profile {
             profile.prompt_section()
         } else {

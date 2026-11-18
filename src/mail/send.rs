@@ -31,10 +31,11 @@ pub struct Composed {
 }
 
 /// The line every sent mail ends with (rule 5), after the role that
-/// drafted it, when it names one ("Support, Northwind").
+/// drafted it, when it names one ("Support, Northwind"), on one line
+/// whatever spaces or line breaks the role was written with.
 pub fn signature(business: &str, role: Option<&str>) -> String {
     let role = role
-        .map(str::trim)
+        .map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|r| !r.is_empty())
         .map(|r| format!("{r}, {business}\n"))
         .unwrap_or_default();
@@ -243,6 +244,20 @@ pub(crate) mod tests {
         // The same key, the same Message-ID: a second send would show as one.
         let again = compose(&mailbox(), "Numirama", &out, "support-replies/mail:7/send").unwrap();
         assert_eq!(again.message_id, composed.message_id);
+    }
+
+    /// A role's spaces and line breaks become single spaces: the role
+    /// stays one line of the signature.
+    #[test]
+    fn a_role_signs_on_one_line() {
+        assert_eq!(
+            signature("Numirama", Some("  Customer\n support \r\n\tlead ")),
+            "--\nCustomer support lead, Numirama\nPrepared by an AI agent of Numirama and sent with the founder's approval."
+        );
+        assert_eq!(
+            signature("N", Some(" \n ")),
+            "--\nPrepared by an AI agent of N and sent with the founder's approval."
+        );
     }
 
     #[test]

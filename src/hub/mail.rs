@@ -42,38 +42,47 @@ impl Hub {
             if realm.config.archived {
                 continue;
             }
-            match self.pass_on_mail_of(&realm) {
-                Ok(started) => out.extend(started.into_iter().map(|s| (realm.clone(), s))),
-                Err(e) => eprintln!("mail of {}: {e:#}", realm.name()),
-            }
+            // The tasks started before an error are driven all the same;
+            // the error is told once, until it clears.
+            let mut started = Vec::new();
+            let outcome = self.pass_on_mail_of(&realm, &mut started);
+            out.extend(started.into_iter().map(|s| (realm.clone(), s)));
+            crate::supervise::report(
+                &self.home.inbox(),
+                &format!("mail-sorter/{}", realm.name()),
+                realm.name(),
+                "Passing on the mail",
+                outcome,
+            );
         }
         Ok(out)
     }
 
-    fn pass_on_mail_of(&self, realm: &Realm) -> Result<Vec<State>> {
+    /// Pass on `realm`'s new mail, adding each task started to `started`.
+    /// The first error stops the pass: what follows waits for the next.
+    fn pass_on_mail_of(&self, realm: &Realm, started: &mut Vec<State>) -> Result<()> {
         let Ok(root) = realm.root() else {
-            return Ok(Vec::new());
+            return Ok(());
         };
         let Some(chief) = crate::business::dispatcher(&root) else {
-            return Ok(Vec::new());
+            return Ok(());
         };
         let Some(mailbox) = crate::mail::Mailbox::of(&root, &chief)? else {
-            return Ok(Vec::new());
+            return Ok(());
         };
         let waiting = Store::of(realm)?.mails_to_sort(&mailbox.address, PER_PASS)?;
-        let mut started = Vec::new();
         for kept in waiting {
             // Taken once: whatever follows, it is never sorted again.
             if !Store::of(realm)?.claim_mail(kept.id)? {
                 continue;
             }
             let (sorting, state) = self.pass_on(realm, &root, &kept);
-            if let Err(e) = Store::of(realm).and_then(|mut s| s.mail_sorted(kept.id, &sorting)) {
-                eprintln!("mail {} was passed on, but not recorded: {e:#}", kept.id);
-            }
             started.extend(state);
+            Store::of(realm)?
+                .mail_sorted(kept.id, &sorting)
+                .with_context(|| format!("mail {} was passed on, but not recorded", kept.id))?;
         }
-        Ok(started)
+        Ok(())
     }
 
     /// Where one mail goes, and the task it starts, if any.
@@ -163,36 +172,38 @@ impl Hub {
         let started = Instant::now();
         // No tool: the step that reads the mail can act on nothing (rule 2).
         let messages = [Message::user_text(content)];
-        let response = match model.complete(&ModelRequest::new(&system, &messages, &[])) {
-            Ok(r) => r,
-            Err(e) => return (Err(format!("the model did not answer: {e:#}")), None),
-        };
+        let response = model.complete(&ModelRequest::new(&system, &messages, &[]));
         let text: String = response
-            .content
             .iter()
+            .flat_map(|r| &r.content)
             .filter_map(|b| match b {
                 ContentBlock::Text { text } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
-        let answer: Result<Value, String> = serde_json::from_str::<Value>(text.trim())
-            .map_err(|e| format!("not JSON: {e}"))
-            .and_then(|v| match crate::pipeline::schema::mismatch(&schema, &v) {
-                None => Ok(v),
-                Some(why) => Err(why),
-            });
+        let answer: Result<Value, String> = match &response {
+            Err(e) => Err(format!("the model did not answer: {e:#}")),
+            Ok(_) => serde_json::from_str::<Value>(text.trim())
+                .map_err(|e| format!("not JSON: {e}"))
+                .and_then(|v| match crate::pipeline::schema::mismatch(&schema, &v) {
+                    None => Ok(v),
+                    Some(why) => Err(why),
+                }),
+        };
+        // Journaled whatever came of it: a call that failed included.
+        let ok = response.as_ref().ok();
         let call = Store::of(realm).and_then(|mut s| {
             s.record_call(&NewCall {
                 pipeline: "mail",
                 step: 1,
                 prompt: PROMPT_PATH,
                 prompt_version: &crate::update::sha256_hex(PROMPT.as_bytes()),
-                model: &response.model,
-                input_tokens: response.input_tokens,
-                output_tokens: response.output_tokens,
-                cache_read_tokens: response.cache_read_tokens,
-                cache_write_tokens: response.cache_write_tokens,
-                cost_usd: crate::prices::Prices::load(self.home()).cost(&response),
+                model: &ok.map_or_else(|| model.name(), |r| r.model.clone()),
+                input_tokens: ok.map_or(0, |r| r.input_tokens),
+                output_tokens: ok.map_or(0, |r| r.output_tokens),
+                cache_read_tokens: ok.map_or(0, |r| r.cache_read_tokens),
+                cache_write_tokens: ok.map_or(0, |r| r.cache_write_tokens),
+                cost_usd: ok.and_then(|r| crate::prices::Prices::load(self.home()).cost(r)),
                 latency_ms: started.elapsed().as_millis() as i64,
                 error: answer.as_ref().err().map(String::as_str),
                 answer: &text,
@@ -338,6 +349,12 @@ impl Authority for MailAuthority {
             ));
         }
         let mut args = self.reply.bind(arguments);
+        // Nothing to read is nothing to approve.
+        if args["text"].as_str().is_none_or(|t| t.trim().is_empty()) {
+            return Ok(Decision::Held(
+                "not done: the reply has no text; write it in `text`".into(),
+            ));
+        }
         // Keyed by the call: a reply drafted again is another mail.
         args["key"] = format!("mail/{}/{call}", self.mail).into();
         let preview = self
