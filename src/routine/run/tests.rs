@@ -1573,6 +1573,48 @@ fn a_blocking_quality_flag_always_waits() {
     assert_eq!(acted, vec!["typefully.create_draft Levels"]);
 }
 
+/// An act for the founder after the step is theirs to judge, as for the
+/// graph check: a report left unset does not keep the step waiting, a task
+/// for an agent does; and a step guarding only acts for the founder waits.
+#[test]
+fn acts_for_the_founder_do_not_hold_the_step() {
+    let act = |id: &str, action: &str, fields: Value| -> super::super::Block {
+        serde_json::from_value(json!({"id": id, "type": "act", "action": action, "fields": fields}))
+            .unwrap()
+    };
+    // Only the Typefully draft is set, at 2; nothing else is.
+    let levels = |_: &str, action: &str| match action {
+        "typefully.create_draft" => (2, 30),
+        _ => (1, 30),
+    };
+    let mut graph = guarded_posts(ok(), false);
+    graph
+        .blocks
+        .push(act("tell", "airth.report", json!({"title": "{{title}}"})));
+    assert_eq!(
+        step(&graph, 0, &levels).unwrap(),
+        Step::Delay { minutes: 30 }
+    );
+    let task = |assignee: &str| {
+        let mut graph = guarded_posts(ok(), false);
+        graph.blocks.push(act(
+            "task",
+            "airth.create_task",
+            json!({"title": "{{title}}", "assignee": assignee}),
+        ));
+        step(&graph, 0, &levels).unwrap()
+    };
+    assert_eq!(task("founder"), Step::Delay { minutes: 30 });
+    assert_eq!(task("writer"), Step::Ask);
+    // Nothing left to guard but the report: the founder, as before.
+    let mut alone = guarded_posts(ok(), false);
+    alone.blocks[1] = act("tell", "airth.report", json!({"title": "{{title}}"}));
+    assert_eq!(
+        step(&alone, 0, &|_: &str, _: &str| (3, 30)).unwrap(),
+        Step::Ask
+    );
+}
+
 /// The lowest level among what the step guards decides, and the longest
 /// window; with nothing to guard, it waits.
 #[test]

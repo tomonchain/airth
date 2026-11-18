@@ -555,6 +555,16 @@ fn check_flags(graph: &Graph, edges: &[Vec<usize>]) -> Result<()> {
     Ok(())
 }
 
+/// Whether an act is for the founder: a report, or a task for the founder,
+/// is the founder's to judge; a task for an agent becomes its instructions,
+/// so it is not.
+pub fn for_founder(action: &str, fields: &BTreeMap<String, String>) -> bool {
+    action == "airth.report"
+        || action == "airth.suggest"
+        || action == "airth.create_task"
+            && fields.get("assignee").map(String::as_str) == Some("founder")
+}
+
 /// Content from outside (a read of rss, web or a connector, a mission's
 /// result, a webhook's body) reaches no `act` without an `approval` on the
 /// way, unless the founder set the agent's level for that action to at least
@@ -576,13 +586,7 @@ fn check_outside(cx: &Checks, graph: &Graph, edges: &[Vec<usize>]) -> Result<()>
             Kind::Read { source, .. } => outside || source != "business",
             Kind::Approval { .. } => false,
             Kind::Act { action, fields } => {
-                // A report, or a task for the founder, is the founder's to
-                // judge; a task for an agent becomes its instructions, so it
-                // is checked.
-                let for_founder = action == "airth.report"
-                    || action == "airth.suggest"
-                    || action == "airth.create_task"
-                        && fields.get("assignee").map(String::as_str) == Some("founder");
+                let for_founder = for_founder(action, fields);
                 if mail && !for_founder {
                     bail!(
                         "block '{}': what comes of a mail reaches {action} without an approval: mail always needs one (decision 70)",
