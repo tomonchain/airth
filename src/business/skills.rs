@@ -93,8 +93,12 @@ pub fn names(root: &Path) -> Vec<String> {
 /// The folders of `skills/` that are no skill, each with why: a name the
 /// standard refuses, or no `SKILL.md` Airth can read (missing, a link, too
 /// big, not text). The founder sees them, not the agents.
-pub fn not_skills(root: &Path) -> Vec<(String, &'static str)> {
-    let found: Vec<String> = found(root).into_iter().map(|s| s.name).collect();
+pub fn not_skills(root: &Path, found: &[Skill]) -> Vec<(String, &'static str)> {
+    // A `skills/` that is a link is read as no folder at all, as `found` does.
+    if !std::fs::symlink_metadata(root.join(DIR)).is_ok_and(|m| m.is_dir()) {
+        return Vec::new();
+    }
+    let found: Vec<&str> = found.iter().map(|s| s.name.as_str()).collect();
     let mut out: Vec<(String, &'static str)> = std::fs::read_dir(root.join(DIR))
         .into_iter()
         .flatten()
@@ -105,7 +109,7 @@ pub fn not_skills(root: &Path) -> Vec<(String, &'static str)> {
         .filter_map(|n| {
             if !valid_name(&n) {
                 Some((n, "its name: lowercase letters, digits and single hyphens"))
-            } else if !found.contains(&n) {
+            } else if !found.contains(&n.as_str()) {
                 Some((
                     n,
                     "no SKILL.md Airth can read: missing, a link, too big or not text",
@@ -271,8 +275,18 @@ mod tests {
         write(r, "skills/Bad_Name/SKILL.md", "x");
         write(r, "skills/notes/readme.md", "x");
         write(r, "skills/.git/config", "x");
-        let not: Vec<String> = not_skills(r).into_iter().map(|(n, _)| n).collect();
+        let not: Vec<String> = not_skills(r, &found(r))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
         assert_eq!(not, ["Bad_Name", "notes"]);
+        // A skills folder that is a link: nothing of it is told.
+        #[cfg(unix)]
+        {
+            let other = tempfile::tempdir().unwrap();
+            std::os::unix::fs::symlink(r.join("skills"), other.path().join("skills")).unwrap();
+            assert!(not_skills(other.path(), &found(other.path())).is_empty());
+        }
     }
 
     #[test]

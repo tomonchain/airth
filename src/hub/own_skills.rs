@@ -39,20 +39,34 @@ impl Hub {
         let mut store = Store::of(realm)?;
         // An ask about files no longer there goes, whatever comes next: its
         // approval would only fail.
+        // A catalog skill installed since takes the name: its ask goes too.
+        let taken = catalog_names(realm);
         for old in store.queue(&["pending"])? {
             let stale = old.action.as_deref() == Some(SKILL)
-                && !found.iter().any(|s| {
-                    old.source["skill"] == s.name.as_str() && old.source["hash"] == s.hash.as_str()
-                });
+                && (old.source["skill"]
+                    .as_str()
+                    .is_some_and(|n| taken.contains(n))
+                    || !found.iter().any(|s| {
+                        old.source["skill"] == s.name.as_str()
+                            && old.source["hash"] == s.hash.as_str()
+                    }));
             if stale {
-                store.expire_item(old.id, "its files changed since")?;
+                let why = if old.source["skill"]
+                    .as_str()
+                    .is_some_and(|n| taken.contains(n))
+                {
+                    "a catalog skill now has its name"
+                } else {
+                    "its files changed since"
+                };
+                store.expire_item(old.id, why)?;
             }
         }
         if found.is_empty() {
             return Ok(0);
         }
         let approved = store.approved_skills()?;
-        let catalog = catalog_names(realm);
+        let catalog = taken;
         let mut asked = 0;
         for skill in found {
             let before = approved.get(&skill.name);
@@ -188,8 +202,9 @@ impl Hub {
                 (title, skills)
             })
             .collect();
-        let skills: Vec<_> = own::found(&root)
-            .into_iter()
+        let found = own::found(&root);
+        let skills: Vec<_> = found
+            .iter()
             .map(|s| {
                 let asked = |status: &str| {
                     asks.iter().find(|i| {
@@ -214,13 +229,14 @@ impl Hub {
                     "files": s.files.len(),
                     "skipped": s.skipped,
                     "state": state,
-                    // Where the founder answers it, if it waits for them.
-                    "item": asked("pending").map(|i| i.id),
+                    // Where the founder answers it, if it waits for them; a
+                    // skill left out is not theirs to answer.
+                    "item": asked("pending").filter(|_| state != "left out").map(|i| i.id),
                     "agents": agents.iter().filter(|(_, k)| k.contains(&s.name)).map(|(n, _)| n).collect::<Vec<_>>(),
                 })
             })
             .collect();
-        let not: Vec<_> = own::not_skills(&root)
+        let not: Vec<_> = own::not_skills(&root, &found)
             .into_iter()
             .map(|(name, why)| json!({"name": name, "why": why}))
             .collect();

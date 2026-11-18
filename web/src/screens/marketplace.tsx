@@ -178,8 +178,9 @@ const OWN: Record<OwnSkill["state"], string> = {
 function OwnSkillsList({ realm, q }: { realm: string; q: string }) {
   const data = usePoll<OwnSkills>(() => api(`realms/${enc(realm)}/skills`), 30000, [realm], realm)
   const openFile = useContext(FileLinks)
-  if (!data.data) return null
-  const shown = data.data.skills.filter((s) => !q || `${s.name} ${s.description}`.toLowerCase().includes(q.toLowerCase()))
+  const match = (t: string) => !q || t.toLowerCase().includes(q.toLowerCase())
+  const shown = (data.data?.skills ?? []).filter((s) => match(`${s.name} ${s.description}`))
+  const not = (data.data?.not_skills ?? []).filter((n) => match(n.name))
   const go = (id: number) => { location.hash = write({ realm, page: "needs", sub: String(id) }) }
   return (
     <section className="mb-8">
@@ -187,13 +188,16 @@ function OwnSkillsList({ realm, q }: { realm: string; q: string }) {
       <p className="mb-3 text-xs text-muted-foreground">
         Written for it, in the business folder: <span className="font-mono">skills/&lt;name&gt;/SKILL.md</span>, the format Claude and other tools use. An agent can write one too; a new or changed skill waits for your approval in Needs you, and goes to the agents you give it to, on Team.
       </p>
-      {!shown.length && !data.data.not_skills.length ? (
-        <p className="rounded-xl bg-bubble px-4 py-3 text-sm text-muted-foreground">None yet.</p>
+      {!data.data ? (
+        // Not known yet, or not readable: said, never shown as none.
+        data.error ? <p className="rounded-xl bg-bubble px-4 py-3 text-sm text-muted-foreground">They cannot be read now: {data.error}</p> : <Loading />
+      ) : !shown.length && !not.length ? (
+        <p className="rounded-xl bg-bubble px-4 py-3 text-sm text-muted-foreground">{q ? "None matches." : "None yet."}</p>
       ) : (
         <Grid>
           {shown.map((s) => (
             <Card key={s.name} name={s.name} title={s.name} description={s.description || "No description in its SKILL.md."}
-              meta={`${s.files} file${s.files === 1 ? "" : "s"}${s.agents.length ? ` · used by ${s.agents.join(", ")}` : " · no agent uses it yet"}`}
+              meta={`${s.files} file${s.files === 1 ? "" : "s"}${s.skipped.length ? `, ${s.skipped.length} left out (binary, link or too big)` : ""}${s.agents.length ? ` · used by ${s.agents.join(", ")}` : " · no agent uses it yet"}`}
               onOpen={openFile ? () => openFile(`skills/${s.name}/SKILL.md`) : undefined}
               action={
                 <span className="flex w-full items-center gap-2">
@@ -202,7 +206,7 @@ function OwnSkillsList({ realm, q }: { realm: string; q: string }) {
                 </span>
               } />
           ))}
-          {data.data.not_skills.map((n) => (
+          {not.map((n) => (
             <Card key={`not-${n.name}`} name={n.name} title={n.name} description={`Not a skill: ${n.why}.`} action={<span className="text-xs text-muted-foreground">Fix it in the folder</span>} />
           ))}
         </Grid>

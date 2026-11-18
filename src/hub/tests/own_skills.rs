@@ -342,3 +342,28 @@ fn the_founder_sees_each_skills_state() {
     let view = hub.skills_view(&f.realm).unwrap();
     assert_eq!(view["not_skills"][0]["name"], "Bad_Name");
 }
+
+/// A catalog skill installed under the name of one waiting for the founder:
+/// the ask goes, and the Marketplace offers nothing to review.
+#[test]
+fn a_catalog_skill_installed_since_takes_the_ask_away() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    write(&root, "skills/pdf/SKILL.md", "---\nname: pdf\n---\nOurs.\n");
+    hub.ask_about_skills(&f.realm).unwrap();
+    assert_eq!(asked(&f.realm).len(), 1);
+    let catalog = f.realm.skills_dir().join("catalog/pdf");
+    std::fs::create_dir_all(&catalog).unwrap();
+    std::fs::write(catalog.join("SKILL.md"), "---\nname: pdf\n---\n").unwrap();
+    std::fs::write(
+        catalog.join(".airth-skill.json"),
+        json!({"name": "pdf", "title": "pdf", "description": "", "source": "", "installed_at": Utc::now(), "files": ["SKILL.md"], "skipped": []}).to_string(),
+    )
+    .unwrap();
+    let view = hub.skills_view(&f.realm).unwrap();
+    assert_eq!(view["skills"][0]["state"], "left out");
+    assert!(view["skills"][0]["item"].is_null());
+    hub.ask_about_skills(&f.realm).unwrap();
+    assert!(asked(&f.realm).is_empty());
+}
