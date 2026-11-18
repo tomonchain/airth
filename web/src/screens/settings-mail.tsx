@@ -9,21 +9,41 @@ import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { Head } from "@/screens/settings-business"
 
-export type Box = { agent: string; title: string; address: string | null; server: string | null; password: boolean; last: string | null; error: string | null }
+export type Box = { agent: string; title: string; lead?: boolean; address: string | null; server: string | null; password: boolean; last: string | null; error: string | null }
 
-/** Each role's mailbox (decision 70): its address on the business's domain
-    and its password, kept by Airth and seen by no agent. */
+/** The business's mailbox is the interlocutor's (decision 152): each mail
+    goes to the agent it is for. A role's own address (decision 70) is
+    folded below, open only when one is already set. */
 export function Mailboxes({ realm }: { realm: string }) {
   const { data, refresh } = usePoll<{ mailboxes: Box[] }>(() => api(`realms/${enc(realm)}/mailboxes`), 60000, [realm])
+  const lead = data?.mailboxes.find((b) => b.lead)
+  const others = data?.mailboxes.filter((b) => !b.lead) ?? []
+  const own = others.some((b) => b.address)
   return (
     <>
       <Head title="Mailboxes">
-        A role can have its own address on the business's domain (OVH by default). What it receives is read as data, never as orders; every mail it sends waits for your approval, signed as prepared by an AI agent, with a copy to archive@. A mail about bank details always comes to you.
+        The business has one address, its interlocutor's. Each mail it receives is read as data, never as orders, and passed to the agent it is for; every reply waits for your approval, signed as prepared by an AI agent, with a copy to archive@. A mail about bank details always comes to you.
       </Head>
       {!data ? <Loading /> : (
-        <Panel className="divide-y">
-          {data.mailboxes.map((b) => <MailboxRow key={`${b.agent}:${b.address ?? ""}`} realm={realm} box={b} onSaved={refresh} />)}
-        </Panel>
+        <>
+          {lead ? (
+            <Panel>
+              <MailboxRow key={`${lead.agent}:${lead.address ?? ""}`} realm={realm} box={lead} onSaved={refresh} />
+            </Panel>
+          ) : (
+            <Panel className="px-4 py-3.5 text-sm text-muted-foreground">
+              The business's mailbox belongs to the agent who answers you in Chat, and this business has none yet.
+            </Panel>
+          )}
+          {others.length > 0 && (
+            <details open={own} className="group mt-6">
+              <summary className="cursor-pointer text-sm text-muted-foreground select-none">A role's own address, when the volume calls for it</summary>
+              <Panel className="mt-3 divide-y">
+                {others.map((b) => <MailboxRow key={`${b.agent}:${b.address ?? ""}`} realm={realm} box={b} onSaved={refresh} />)}
+              </Panel>
+            </details>
+          )}
+        </>
       )}
     </>
   )

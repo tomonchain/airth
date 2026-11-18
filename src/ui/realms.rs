@@ -1309,6 +1309,9 @@ pub(super) fn one_mail(realm: &Realm, id: i64) -> Result<Option<Value>> {
 pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
     let root = realm.root()?;
     let store = crate::business::store::Store::of(realm)?;
+    // The interlocutor's mailbox is the business's (decision 152): the
+    // screen shows it first, and the others as a role's own, later.
+    let lead = crate::business::dispatcher(&root);
     let mut out = Vec::new();
     for (agent, _) in crate::business::bots(&root)? {
         let front = std::fs::read_to_string(root.join("agents").join(format!("{agent}.md")))
@@ -1338,7 +1341,8 @@ pub(super) fn mailboxes(realm: &Realm) -> Result<Vec<Value>> {
                 Some(format!("{e:#}")),
             ),
         };
-        out.push(json!({"agent": agent, "title": title, "address": address, "server": server, "password": password, "last": last, "error": error}));
+        let lead = lead.as_deref() == Some(agent.as_str());
+        out.push(json!({"agent": agent, "title": title, "lead": lead, "address": address, "server": server, "password": password, "last": last, "error": error}));
     }
     Ok(out)
 }

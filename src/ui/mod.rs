@@ -859,6 +859,12 @@ mod tests {
             .unwrap();
         let shown = realms::mailboxes(&realm).unwrap();
         assert_eq!(shown[0]["password"], true);
+        // The interlocutor's mailbox is the business's (decision 152).
+        assert_eq!(shown[0]["lead"], false);
+        let file = root.join("agents/support.md");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, text.replacen("---\n", "---\ndispatch: true\n", 1)).unwrap();
+        assert_eq!(realms::mailboxes(&realm).unwrap()[0]["lead"], true);
         assert!(
             !serde_json::to_string(&shown)
                 .unwrap()
