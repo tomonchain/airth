@@ -2,6 +2,22 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 151. A routine's AI blocks are checked against what the founder decided, before a prompt or model change is kept
+
+**Proposed** (founder, 17 November 2026: "on continue d'améliorer le core de Airth"; `CLAUDE.md` asks that model steps be covered by evaluations, replayed when a prompt or a model changes, and nothing does it yet).
+
+- **The reference set is the founder's own answers**, already in `business.db`: for a routine, the items its blocks sent to Needs you in the last 60 days, each with what the founder did: approved as it was, edited (and into what), rejected (and why). Nothing to write by hand; a business with no history has no evaluation yet, and the screen says so.
+- **What is replayed:** each AI block of the routine, over the fields each item was drafted from (an item keeps them in its `args`, beside the draft), with the prompt file and the model as they are now. Nothing is sent and nothing reaches Needs you: it runs as the editor's dry run does, its model calls journaled as a dry run and counted in the costs.
+- **What is measured, by code, never by a model:**
+  - a block that keeps, scores or classifies (an AI block with `keep` or `rank`): how often it now keeps what the founder approved, and drops what they rejected; before and after;
+  - a block that drafts (`into: answer`): no score. The new draft is shown beside the one the founder approved (or edited), case by case, for the founder to read; a draft is not right or wrong by a number.
+- **When:** on demand, from the routine's panel (Routines) and `airth routines eval <name>`; and offered, not run, when the routine's prompt file or model changed since its last evaluation. At most 20 cases a run, the newest; the cost is said before it starts.
+- **What it decides:** nothing on its own. It tells the founder whether the change does better or worse on their own past decisions; keeping the change stays theirs.
+
+*Why:* a prompt or a model changes every week; today nothing says whether the routine got better or worse, until the founder finds out on the next drafts. Their past answers are the truest reference there is, and they cost nothing to gather.
+
+*Cost:* model calls for each evaluation (20 cases, one call each per AI block). A drafting block's evaluation needs the founder's reading. A keeping block is measured only on what reached the founder: what it dropped before, they never saw, so it has no answer to compare with.
+
 ## 150. A founder back on a run's page watches it again
 
 **Accepted** (founder, 17 November 2026: yes to "en revenant sur la page, les questions d'un agent te reviennent dans le fil", which changes decision 56).
