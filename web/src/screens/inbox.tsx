@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 // is overdue at its head; what broke last, folded by kind (decision 131).
 export function rank(it: Item) {
   if (it.flag === "blocking" || (it.kind === "deadline" && it.overdue)) return 0
-  return { approval: 1, deadline: 2, prepared: 3, delayed: 4, report: 5, idea: 6, incident: 7 }[it.kind] ?? 5
+  return { approval: 1, promotion: 1, deadline: 2, prepared: 3, delayed: 4, report: 5, idea: 6, incident: 7 }[it.kind] ?? 5
 }
 
 const SECTIONS = [

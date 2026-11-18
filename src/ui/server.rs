@@ -383,6 +383,11 @@ pub(super) fn run_scheduler(runner: Runner) {
             Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
             Err(e) => eprintln!("skills: {e:#}"),
         }
+        // Promotions the agents earned, at most once an hour (decision 153).
+        match runner.hub.review_promotions() {
+            Ok(done) => done.iter().for_each(|line| eprintln!("{line}")),
+            Err(e) => eprintln!("promotions: {e:#}"),
+        }
         // Drafts not answered within their routine's window (`expires_after`).
         match runner.hub.expire_approvals(chrono::Utc::now()) {
             Ok(gone) => gone

@@ -14,6 +14,7 @@ pub mod legal;
 pub mod mail;
 pub mod pipelines;
 pub mod projects;
+pub mod promotions;
 pub mod queue;
 pub mod reports;
 pub mod retries;

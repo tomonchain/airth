@@ -427,3 +427,27 @@ fn the_media_teams_routines_pass_the_graph_check() {
         );
     }
 }
+
+/// Decision 153: an approval guards the acts after it, up to the next
+/// approval, on every branch.
+#[test]
+fn an_approval_guards_the_acts_after_it_up_to_the_next_approval() {
+    let graph: Graph = serde_json::from_value(json!({"agent": "writer", "trigger": {"manual": true}, "blocks": [
+        {"id": "start", "type": "act", "action": "airth.launch_mission"},
+        {"id": "ok", "type": "approval", "show": "answer"},
+        {"id": "big", "type": "condition", "if": {"field": "score", "op": ">", "value": 5}, "else": "small"},
+        {"id": "post", "type": "act", "action": "typefully.create_draft", "next": "publish"},
+        {"id": "small", "type": "act", "action": "airth.report", "next": "publish"},
+        {"id": "publish", "type": "approval", "show": "answer"},
+        {"id": "out", "type": "act", "action": "site.publish_article"}
+    ]}))
+    .unwrap();
+    // A report is the founder's to judge: it is not guarded.
+    assert_eq!(
+        guarded(&graph),
+        vec![
+            ("ok".to_string(), vec!["typefully.create_draft".to_string()]),
+            ("publish".into(), vec!["site.publish_article".into()]),
+        ]
+    );
+}
