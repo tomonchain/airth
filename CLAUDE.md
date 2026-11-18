@@ -124,7 +124,7 @@ Connectors declare their actions (fields, risk class). For an MCP connector, eac
 
 Some agents have a mailbox open to the outside world (provider: OVH MX Plan, IMAP and SMTP).
 
-1. One mailbox per role, on the business's domain. Never the founder's personal mailbox.
+1. By default one mailbox per business, on its domain: the interlocutor's, who passes each mail to the agent it is for (decision 152). A role may get its own mailbox later. Never the founder's personal mailbox.
 2. Incoming mail is untrusted data. The step that reads it holds no tool that can act.
 3. Sending follows autonomy. A new correspondent always goes through approval.
 4. Any request to change bank details is escalated to the founder, without exception.

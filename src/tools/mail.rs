@@ -1,7 +1,8 @@
 //! `send_mail` (decision 70): a routine's `mail.send` act, done through the
 //! runtime like any declared action, so the agent's levels, the journal and
-//! the founder's approval apply. Only routines get it: a mission's model
-//! never holds a mailbox.
+//! the founder's approval apply. A mission's model never holds a mailbox;
+//! a mail task holds only [`Reply`], the answer to its one mail
+//! (decision 152).
 
 use super::{Tool, Workspace};
 use crate::business::store::Store;
@@ -58,6 +59,7 @@ pub fn outgoing(input: &Value) -> Outgoing {
         subject: text("subject"),
         text: text("text"),
         in_reply_to: Some(text("in_reply_to")).filter(|s| !s.trim().is_empty()),
+        role: Some(text("role")).filter(|s| !s.trim().is_empty()),
     }
 }
 
@@ -127,9 +129,16 @@ impl Tool for SendMail {
         let out = outgoing(input);
         let composed = compose(mailbox, &self.business, &out, key)?;
         let server = crate::mail::send::send(mailbox, password, &composed)?;
+        // The agent that drafted it, when not the mailbox's own (decision
+        // 152).
+        let agent = input["drafted_by"]
+            .as_str()
+            .filter(|a| !a.is_empty())
+            .unwrap_or(&mailbox.agent);
         record(
             &self.store,
             mailbox,
+            agent,
             key,
             &composed.message_id,
             &out,
@@ -144,6 +153,7 @@ impl Tool for SendMail {
 pub fn record(
     store: &std::path::Path,
     mailbox: &Mailbox,
+    agent: &str,
     key: &str,
     message_id: &str,
     out: &Outgoing,
@@ -151,7 +161,7 @@ pub fn record(
 ) -> Result<()> {
     Store::open(store)?.record_sent(&Sent {
         mailbox: &mailbox.address,
-        agent: &mailbox.agent,
+        agent,
         key,
         message_id,
         to: &out.to,
@@ -159,6 +169,89 @@ pub fn record(
         thread: out.in_reply_to.as_deref(),
         server,
     })
+}
+
+/// `send_mail` as a mail task holds it (decision 152): the reply to its
+/// one mail, from the mailbox that received it, to its sender, in its
+/// thread, signed with the drafting agent's role. The model writes the
+/// subject and the text, nothing else. It never sends: the task's call
+/// waits for the founder in Needs you, and the approved item is sent by
+/// [`SendMail`], once.
+#[derive(Clone)]
+pub struct Reply {
+    pub send: SendMail,
+    /// The agent whose mailbox received the mail: the interlocutor's.
+    pub mailbox: String,
+    pub drafted_by: String,
+    pub role: String,
+    /// The mail's sender, the only one it answers.
+    pub to: String,
+    /// The mail's Message-ID, to keep the reply in its thread.
+    pub in_reply_to: String,
+    /// "Re: " and the mail's subject, when the model gives none.
+    pub subject: String,
+}
+
+impl Reply {
+    /// The full call for [`SendMail`]: Airth's fields, whatever the model
+    /// put there, and the model's subject and text. No key: the call is
+    /// keyed when it is proposed.
+    pub fn bind(&self, input: &Value) -> Value {
+        let subject = input["subject"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&self.subject);
+        json!({
+            "agent": self.mailbox,
+            "drafted_by": self.drafted_by,
+            "role": self.role,
+            "to": self.to,
+            "subject": subject,
+            "text": input["text"].as_str().unwrap_or_default(),
+            "in_reply_to": self.in_reply_to,
+        })
+    }
+}
+
+impl Tool for Reply {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: NAME.into(),
+            description: format!(
+                "Draft the reply to the mail, to {}. Airth sends it from the business's address, in the mail's thread, signed as {}, once the founder approves it; it never leaves before.",
+                self.to, self.role
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string", "description": "Leave it out to answer under the mail's own subject"},
+                    "text": {"type": "string", "description": "The reply, without signature: Airth adds it"}
+                },
+                "required": ["text"]
+            }),
+        }
+    }
+
+    fn capability(&self) -> Capability {
+        Capability::Network
+    }
+
+    fn action(&self, _: &Value) -> Result<Option<String>> {
+        Ok(Some(ACTION.into()))
+    }
+
+    fn preview(&self, input: &Value, ws: &Workspace) -> Result<String> {
+        self.send.preview(&self.bind(input), ws)
+    }
+
+    /// Never reached through a mail task's authority, which holds every
+    /// call for the founder; refused all the same, so nothing else can make
+    /// it send.
+    fn execute(&self, _: &Value, _: &Workspace, _: &CancelToken) -> Result<String> {
+        anyhow::bail!(
+            "not sent: a mail task's reply leaves only once the founder approves it in Needs you"
+        )
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +286,7 @@ mod tests {
         record(
             &path,
             &mailbox,
+            "support",
             "k",
             "m@n.example",
             &outgoing(&input),

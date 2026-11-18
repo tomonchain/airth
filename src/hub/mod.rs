@@ -39,6 +39,7 @@ mod dispatch;
 pub(crate) mod finance;
 pub(crate) mod incidents;
 mod legal;
+mod mail;
 mod missions;
 mod models;
 mod objectives;
@@ -259,20 +260,29 @@ impl Hub {
                 run_context(&self.briefing(realm, state, &workspace)?),
             );
             let plan = PlanHandle::new(state.plan.clone().into());
+            // A task a mail started holds its reply and its skills, nothing
+            // else, whatever its agent's scope (decision 152).
+            let (tools, mail_authority) = match self.mail_task_tools(realm, state)? {
+                Some((tools, authority)) => (tools, Some(authority)),
+                None => (
+                    tools::realm_tools(RealmTools {
+                        memory: realm.memory(),
+                        source: format!("run:{}", state.id),
+                        plan: plan.clone(),
+                        integrations: realm.config.integrations.clone(),
+                        skills_dir: realm.skills_dir(),
+                        own_skills: self.offered_skills(realm)?,
+                        allowed: state.tools.clone(),
+                        delegation: self.delegation_for(realm, state)?,
+                        dispatch: self.dispatch_for(realm, state)?,
+                        // A task works on files only in a repository of its scope.
+                        files: state.agent.is_none() || state.change.is_some(),
+                    }),
+                    None,
+                ),
+            };
             let runtime = Runtime::new(
-                tools::realm_tools(RealmTools {
-                    memory: realm.memory(),
-                    source: format!("run:{}", state.id),
-                    plan: plan.clone(),
-                    integrations: realm.config.integrations.clone(),
-                    skills_dir: realm.skills_dir(),
-                    own_skills: self.offered_skills(realm)?,
-                    allowed: state.tools.clone(),
-                    delegation: self.delegation_for(realm, state)?,
-                    dispatch: self.dispatch_for(realm, state)?,
-                    // A task works on files only in a repository of its scope.
-                    files: state.agent.is_none() || state.change.is_some(),
-                }),
+                tools,
                 PermissionGate::new(realm.config.policy.clone(), hooks.approver)
                     .with_grants(state.grants.clone())
                     .with_isolated_writes(state.change.is_some()),
@@ -280,9 +290,13 @@ impl Hub {
                 hooks.cancel.clone(),
             )
             .with_plan(plan);
-            let runtime = match autonomy::BusinessAuthority::for_run(realm, state)? {
-                Some(authority) => runtime.with_authority(Box::new(authority)),
-                None => runtime
+            let runtime = match (
+                mail_authority,
+                autonomy::BusinessAuthority::for_run(realm, state)?,
+            ) {
+                (Some(authority), _) => runtime.with_authority(authority),
+                (None, Some(authority)) => runtime.with_authority(Box::new(authority)),
+                (None, None) => runtime
                     .with_authority(Box::new(autonomy::FounderAuthority::for_run(realm, state)?)),
             };
             let mut config = config.within(&state.budget);

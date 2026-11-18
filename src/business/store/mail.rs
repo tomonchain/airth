@@ -5,7 +5,7 @@ use super::Store;
 use crate::mail::Mail;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 /// A message fetched from a mailbox, to keep.
 pub struct NewMail<'a> {
@@ -67,33 +67,95 @@ impl Store {
 
     /// The last `limit` messages kept from `mailbox`, oldest first.
     pub fn mails(&self, mailbox: &str, limit: usize) -> Result<Vec<Kept>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, agent, fetched_at, message_id, thread, sender, recipients, subject,
-                    sent_at, text, attachments
-             FROM mail_messages WHERE mailbox = ?1 ORDER BY id DESC LIMIT ?2",
-        )?;
-        let list = |s: String| serde_json::from_str::<Vec<String>>(&s).unwrap_or_default();
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {KEPT} FROM mail_messages WHERE mailbox = ?1 ORDER BY id DESC LIMIT ?2"
+        ))?;
         let mut out = stmt
-            .query_map(params![mailbox, limit as i64], |r| {
-                Ok(Kept {
-                    id: r.get(0)?,
-                    agent: r.get(1)?,
-                    fetched_at: r.get(2)?,
-                    mail: Mail {
-                        message_id: r.get(3)?,
-                        thread: r.get(4)?,
-                        from: r.get(5)?,
-                        to: list(r.get(6)?),
-                        subject: r.get(7)?,
-                        date: r.get(8)?,
-                        text: r.get(9)?,
-                        attachments: list(r.get(10)?),
-                    },
-                })
-            })?
+            .query_map(params![mailbox, limit as i64], kept)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         out.reverse();
         Ok(out)
+    }
+
+    /// One message kept, by its id.
+    pub fn mail(&self, id: i64) -> Result<Option<Kept>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {KEPT} FROM mail_messages WHERE id = ?1"),
+                params![id],
+                kept,
+            )
+            .optional()?)
+    }
+
+    /// Up to `limit` messages of `mailbox` never passed on (decision 152),
+    /// oldest first.
+    pub fn mails_to_sort(&self, mailbox: &str, limit: usize) -> Result<Vec<Kept>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {KEPT} FROM mail_messages
+             WHERE mailbox = ?1 AND NOT EXISTS (SELECT 1 FROM mail_sorting s WHERE s.mail = mail_messages.id)
+             ORDER BY id LIMIT ?2"
+        ))?;
+        Ok(stmt
+            .query_map(params![mailbox, limit as i64], kept)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Take mail `id` to pass it on: true once, false ever after, so a mail
+    /// is never sorted nor started twice, even across restarts.
+    pub fn claim_mail(&mut self, id: i64) -> Result<bool> {
+        self.write(|tx| {
+            Ok(tx.execute(
+                "INSERT OR IGNORE INTO mail_sorting (mail, outcome, at) VALUES (?1, 'sorting', ?2)",
+                params![id, Utc::now().to_rfc3339()],
+            )? == 1)
+        })
+    }
+
+    /// Where mail `id`, claimed, went: its outcome, the agent, the sorting's
+    /// summary and model call, and the task's run.
+    pub fn mail_sorted(&mut self, id: i64, s: &Sorting) -> Result<()> {
+        self.write(|tx| {
+            let changed = tx.execute(
+                "UPDATE mail_sorting SET outcome = ?2, agent = ?3, summary = ?4, model_call = ?5, run = ?6, at = ?7
+                 WHERE mail = ?1 AND outcome = 'sorting'",
+                params![id, s.outcome, s.agent, s.summary, s.model_call, s.run, Utc::now().to_rfc3339()],
+            )?;
+            anyhow::ensure!(changed == 1, "mail {id} was not being passed on");
+            Ok(())
+        })
+    }
+
+    /// How mail `id` was passed on, if it was.
+    #[cfg(test)]
+    pub fn mail_sorting(&self, id: i64) -> Result<Option<Sorting>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT outcome, agent, summary, model_call, run FROM mail_sorting WHERE mail = ?1",
+                params![id],
+                |r| {
+                    Ok(Sorting {
+                        outcome: r.get(0)?,
+                        agent: r.get(1)?,
+                        summary: r.get(2)?,
+                        model_call: r.get(3)?,
+                        run: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Who drafted each mail sent, by its Message-ID.
+    #[cfg(test)]
+    pub fn sent_by(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT mailbox, agent, message_id FROM mail_sent ORDER BY id")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Record a mail a role sent: who, to whom, in which thread, and what
@@ -136,6 +198,41 @@ impl Store {
         )?;
         Ok(wrote || heard)
     }
+}
+
+/// The columns a kept message is read from, for [`kept`].
+const KEPT: &str = "id, agent, fetched_at, message_id, thread, sender, recipients, subject, sent_at, text, attachments";
+
+fn kept(r: &rusqlite::Row) -> rusqlite::Result<Kept> {
+    let list = |s: String| serde_json::from_str::<Vec<String>>(&s).unwrap_or_default();
+    Ok(Kept {
+        id: r.get(0)?,
+        agent: r.get(1)?,
+        fetched_at: r.get(2)?,
+        mail: Mail {
+            message_id: r.get(3)?,
+            thread: r.get(4)?,
+            from: r.get(5)?,
+            to: list(r.get(6)?),
+            subject: r.get(7)?,
+            date: r.get(8)?,
+            text: r.get(9)?,
+            attachments: list(r.get(10)?),
+        },
+    })
+}
+
+/// How a mail of the interlocutor's mailbox was passed on (decision 152).
+/// `outcome`: `agent` (a task started), `founder`, `bank` (flagged, never
+/// sorted), `failed` (to the founder), `old` (dated long before it was
+/// read), `before` (kept before decision 152), or `sorting` while it is.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Sorting {
+    pub outcome: String,
+    pub agent: Option<String>,
+    pub summary: Option<String>,
+    pub model_call: Option<i64>,
+    pub run: Option<String>,
 }
 
 /// A mail sent, to record.

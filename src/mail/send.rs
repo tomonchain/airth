@@ -19,6 +19,9 @@ pub struct Outgoing {
     pub text: String,
     /// The Message-ID it replies to, without angle brackets.
     pub in_reply_to: Option<String>,
+    /// The role it is signed with ("Support"), when an agent drafted it
+    /// for another's mailbox (decision 152).
+    pub role: Option<String>,
 }
 
 /// The mail as it leaves: its Message-ID and the message itself.
@@ -27,9 +30,15 @@ pub struct Composed {
     pub message: Message,
 }
 
-/// The line every sent mail ends with (rule 5).
-pub fn signature(business: &str) -> String {
-    format!("--\nPrepared by an AI agent of {business} and sent with the founder's approval.")
+/// The line every sent mail ends with (rule 5), after the role that
+/// drafted it, when it names one ("Support, Northwind").
+pub fn signature(business: &str, role: Option<&str>) -> String {
+    let role = role
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(|r| format!("{r}, {business}\n"))
+        .unwrap_or_default();
+    format!("--\n{role}Prepared by an AI agent of {business} and sent with the founder's approval.")
 }
 
 /// The mail `mailbox` sends for `out`, keyed by `key`: its Message-ID is
@@ -78,7 +87,11 @@ pub fn compose(mailbox: &Mailbox, business: &str, out: &Outgoing, key: &str) -> 
             .in_reply_to(format!("<{parent}>"))
             .references(format!("<{parent}>"));
     }
-    let body = format!("{}\n\n{}\n", out.text.trim_end(), signature(business));
+    let body = format!(
+        "{}\n\n{}\n",
+        out.text.trim_end(),
+        signature(business, out.role.as_deref())
+    );
     let message = builder.header(ContentType::TEXT_PLAIN).body(body)?;
     Ok(Composed {
         message_id,
@@ -205,6 +218,7 @@ pub(crate) mod tests {
             subject: "Re: Où est mon lot ?".into(),
             text: "Bonjour Ann, votre lot part demain.".into(),
             in_reply_to: Some("<2@buyer.example>".into()),
+            role: Some("Support".into()),
         };
         let composed =
             compose(&mailbox(), "Numirama", &out, "support-replies/mail:7/send").unwrap();
@@ -222,7 +236,8 @@ pub(crate) mod tests {
             "{data}"
         );
         assert!(
-            data.contains("Prepared by an AI agent of Numirama"),
+            data.contains("Support, Numirama")
+                && data.contains("Prepared by an AI agent of Numirama"),
             "{data}"
         );
         // The same key, the same Message-ID: a second send would show as one.
@@ -237,6 +252,7 @@ pub(crate) mod tests {
             subject: "Hello".into(),
             text: text.into(),
             in_reply_to: None,
+            role: None,
         };
         assert!(compose(&mailbox(), "N", &out(&[], "Hi"), "k").is_err());
         assert!(compose(&mailbox(), "N", &out(&["ann@b.example"], " "), "k").is_err());

@@ -47,17 +47,7 @@ impl Hub {
             _ => {}
         }
         let names: Vec<&str> = agents.iter().map(|(n, _)| n.as_str()).collect();
-        let listed: Vec<String> = agents
-            .iter()
-            .map(|(name, job)| {
-                let title = std::fs::read_to_string(root.join(format!("agents/{name}.md")))
-                    .ok()
-                    .and_then(|t| crate::frontmatter::parse(&t).text("title"))
-                    .unwrap_or_default();
-                let start: String = job.text.chars().take(300).collect();
-                format!("- {name} ({title}): {start}")
-            })
-            .collect();
+        let listed = listed(&root, &agents);
         let schema = json!({"type": "object", "required": ["agent", "why"],
             "properties": {"agent": {"enum": names.iter().copied().chain(["none"]).collect::<Vec<_>>()}, "why": {"type": "string"}}});
         let system = format!(
@@ -118,6 +108,28 @@ impl Hub {
             why: answer["why"].as_str().unwrap_or_default().to_string(),
         })
     }
+}
+
+/// The business's agents as a model is shown them to choose one: name,
+/// title and the start of the job, a line each.
+pub(super) fn listed(root: &Path, agents: &[(String, crate::business::Job)]) -> Vec<String> {
+    agents
+        .iter()
+        .map(|(name, job)| {
+            let title = title(root, name).unwrap_or_default();
+            let start: String = job.text.chars().take(300).collect();
+            format!("- {name} ({title}): {start}")
+        })
+        .collect()
+}
+
+/// An agent's title, as its file gives it ("Support").
+pub(super) fn title(root: &Path, agent: &str) -> Option<String> {
+    std::fs::read_to_string(root.join(format!("agents/{agent}.md")))
+        .ok()
+        .and_then(|t| crate::frontmatter::parse(&t).text("title"))
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
 }
 
 /// The agent an order names at its start ("writer: outline the week"),

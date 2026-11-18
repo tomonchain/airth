@@ -634,6 +634,27 @@ pub fn start(hub: Hub, options: UiOptions) -> Result<Running> {
         std::thread::spawn(move || {
             supervise("mail reader", tell, || crate::mail::run(home.clone()))
         });
+        // The interlocutor's mail, each passed on to its agent, which works
+        // on it unwatched (decision 152). Its own loop: sorting calls a
+        // model, which never holds the scheduler.
+        let runner = app.runner.clone();
+        let tell = inbox();
+        std::thread::spawn(move || {
+            supervise("mail sorter", tell, || {
+                loop {
+                    match runner.hub.pass_on_mail() {
+                        Ok(started) => {
+                            for (realm, state) in started {
+                                eprintln!("mail task {}/{} started", realm.name(), state.id);
+                                runner.spawn(realm, state, Job::Alone);
+                            }
+                        }
+                        Err(e) => eprintln!("mail sorter: {e:#}"),
+                    }
+                    std::thread::sleep(Duration::from_secs(60));
+                }
+            })
+        });
         let dir = app.hub.home().dir().to_path_buf();
         let tell = inbox();
         std::thread::spawn(move || {
