@@ -288,3 +288,82 @@ fn a_run_reads_the_skill_as_approved() {
     assert!(!read.contains("30 days"), "{read}");
     assert!(read.contains("is_error: true"), "{read}");
 }
+
+/// What the founder reads in the Marketplace: each skill's state, the
+/// agents that name it, and the folders that are no skill.
+#[test]
+fn the_founder_sees_each_skills_state() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    write(
+        &root,
+        "agents/writer.md",
+        "---\ntitle: Writer\nskills: refunds\n---\nWrite.\n",
+    );
+    write(&root, "skills/refunds/SKILL.md", REFUNDS);
+    write(
+        &root,
+        "skills/tone/SKILL.md",
+        "---\nname: tone\ndescription: Our tone.\n---\nCalm.\n",
+    );
+    write(&root, "skills/Bad_Name/SKILL.md", "x");
+    hub.ask_about_skills(&f.realm).unwrap();
+    let state = |name: &str| {
+        let v = hub.skills_view(&f.realm).unwrap();
+        v["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == name)
+            .cloned()
+            .unwrap()
+    };
+    let refunds = state("refunds");
+    assert_eq!(refunds["state"], "new");
+    assert!(refunds["item"].is_i64(), "its ask, to open");
+    assert_eq!(refunds["agents"], json!(["Writer"]));
+    let id = refunds["item"].as_i64().unwrap();
+    answer(&hub, &f.realm, id, Said::Approve);
+    assert_eq!(state("refunds")["state"], "offered");
+    assert!(state("refunds")["item"].is_null());
+
+    write(
+        &root,
+        "skills/refunds/SKILL.md",
+        &REFUNDS.replace("30", "60"),
+    );
+    assert_eq!(state("refunds")["state"], "changed");
+
+    let tone = state("tone")["item"].as_i64().unwrap();
+    answer(&hub, &f.realm, tone, Said::Reject("no".into()));
+    assert_eq!(state("tone")["state"], "rejected");
+
+    let view = hub.skills_view(&f.realm).unwrap();
+    assert_eq!(view["not_skills"][0]["name"], "Bad_Name");
+}
+
+/// A catalog skill installed under the name of one waiting for the founder:
+/// the ask goes, and the Marketplace offers nothing to review.
+#[test]
+fn a_catalog_skill_installed_since_takes_the_ask_away() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    write(&root, "skills/pdf/SKILL.md", "---\nname: pdf\n---\nOurs.\n");
+    hub.ask_about_skills(&f.realm).unwrap();
+    assert_eq!(asked(&f.realm).len(), 1);
+    let catalog = f.realm.skills_dir().join("catalog/pdf");
+    std::fs::create_dir_all(&catalog).unwrap();
+    std::fs::write(catalog.join("SKILL.md"), "---\nname: pdf\n---\n").unwrap();
+    std::fs::write(
+        catalog.join(".airth-skill.json"),
+        json!({"name": "pdf", "title": "pdf", "description": "", "source": "", "installed_at": Utc::now(), "files": ["SKILL.md"], "skipped": []}).to_string(),
+    )
+    .unwrap();
+    let view = hub.skills_view(&f.realm).unwrap();
+    assert_eq!(view["skills"][0]["state"], "left out");
+    assert!(view["skills"][0]["item"].is_null());
+    hub.ask_about_skills(&f.realm).unwrap();
+    assert!(asked(&f.realm).is_empty());
+}
