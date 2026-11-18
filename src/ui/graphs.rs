@@ -41,8 +41,16 @@ impl App {
                     Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
                 }
             }
-            // Decision 151: the routine's AI blocks against the founder's
-            // answers; the request waits for it, as a dry run's.
+            // Decision 151: what an evaluation would ask, said before it
+            // runs; then the routine's AI blocks against the founder's
+            // answers, the request waiting for it, as a dry run's.
+            (Method::Get, ["realms", r, "graphs", name, "eval"]) => {
+                let realm = self.realm(r)?;
+                match self.hub.evaluation_estimate(&realm, name) {
+                    Ok(estimate) => json_response(200, json!(estimate)),
+                    Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
+                }
+            }
             (Method::Post, ["realms", r, "graphs", name, "eval"]) => {
                 let realm = self.realm(r)?;
                 let max = crate::routine::run::eval::MAX;

@@ -118,9 +118,26 @@ fn a_routines_ai_blocks_are_measured_against_what_the_founder_decided() {
         ],
     );
 
+    // Said before it runs: three answers, two blocks measured (the check
+    // is not), and no model asked to say it.
+    let estimate = hub.evaluation_estimate(&f.realm, "posts").unwrap();
+    assert_eq!(
+        estimate,
+        crate::routine::run::eval::Estimate {
+            cases: 3,
+            blocks: 2
+        }
+    );
+    assert!(seen.lock().unwrap().is_empty());
+
     let eval = hub.evaluate_routine(&f.realm, "posts", 20).unwrap();
 
     assert_eq!(eval.cases, 3);
+    let spent: f64 = eval.blocks.iter().map(|b| b.cost_usd).sum();
+    assert!(
+        (spent - eval.cost_usd).abs() < 1e-9,
+        "each block's cost adds up to the run's"
+    );
     assert_eq!(eval.blocks.len(), 2, "{eval:?}");
     let pick = &eval.blocks[0];
     assert_eq!((pick.id.as_str(), pick.kind), ("pick", "keeps"));
@@ -260,6 +277,8 @@ fn a_routine_with_no_answer_yet_has_no_evaluation() {
     let mut f = fixture();
     routine(&mut f);
     let (hub, seen, _) = make_hub(&f.home, vec![]);
+    let estimate = hub.evaluation_estimate(&f.realm, "posts").unwrap();
+    assert_eq!((estimate.cases, estimate.blocks), (0, 2));
     let eval = hub.evaluate_routine(&f.realm, "posts", 20).unwrap();
     assert_eq!(eval.cases, 0);
     assert!(eval.blocks.is_empty());

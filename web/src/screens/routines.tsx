@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, BookOpen, Building2, Check, ChevronDown, ChevronRight, GitBranch, GraduationCap, Hand, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
+import { Bot, BookOpen, Building2, Check, ChevronDown, ClipboardCheck, ChevronRight, GitBranch, GraduationCap, Hand, Loader, Pause, Pencil, Play, Plus, Repeat, Search, Sparkles, Workflow, X, Zap, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { Markdown } from "@/components/markdown"
 import { RoutineCanvas } from "@/components/routine-canvas"
+import { RoutineEval } from "@/components/routine-eval"
 import type { Declared } from "@/components/routine-editor"
 import { Empty, Loading, Page, Panel, Section, Seg } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -439,10 +440,15 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 function GraphDetail({ realm, r, agent, onAgent, onEdit, onChanged }: { realm: string; r: Routine; agent?: Agent; onAgent: (name: string) => void; onEdit: () => void; onChanged: () => void }) {
   const g = r.graph
   const last = r.runs[0]
+  // The evaluation open, for this routine only (decision 151).
+  const [evaluating, setEvaluating] = useState<string | null>(null)
+  const thinks = !!g?.blocks.some((b) => b.type === "ai")
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={onEdit}><Workflow /> Edit</Button>
+        {thinks && <Button size="sm" variant="outline" aria-pressed={evaluating === r.name} onClick={() => setEvaluating(evaluating === r.name ? null : r.name)}
+          title="Replay its AI blocks on your past answers in Needs you"><ClipboardCheck /> Evaluate</Button>}
         {agent && <Button size="sm" variant="outline" onClick={() => onAgent(agent.name)}><Character agent={agent} size={16} still /> {agent.title}</Button>}
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">{usd(r.cost_usd) || "$0"} this week{r.unpriced ? ` + ${r.unpriced} unpriced` : ""}</span>
       </div>
@@ -462,6 +468,7 @@ function GraphDetail({ realm, r, agent, onAgent, onEdit, onChanged }: { realm: s
           })}
         </div>
       )}
+      {thinks && evaluating === r.name && <RoutineEval key={`${realm}/${r.name}`} realm={realm} name={r.name} onClose={() => setEvaluating(null)} />}
       {!g && r.error && <p className="font-mono text-[11px] break-words text-red-500">{r.error}</p>}
       {last?.error && <p className="line-clamp-3 font-mono text-[11px] text-red-500">{last.error}</p>}
       {late(last) && <p className="text-xs text-amber-600 dark:text-amber-400">Its last run started {late(last)} late.</p>}

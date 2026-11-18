@@ -41,6 +41,16 @@ pub struct BlockEval {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<Score>,
     pub cases: Vec<Case>,
+    /// What this block's model calls cost, in dollars.
+    pub cost_usd: f64,
+}
+
+/// What an evaluation would ask, before it runs: the screen says what it
+/// may cost (cases × measured AI blocks, one call each).
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Estimate {
+    pub cases: usize,
+    pub blocks: usize,
 }
 
 /// One item the founder answered, and what the block does with it now.
@@ -122,12 +132,8 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
         ));
     }
     let ord = order(graph)?;
-    // What the founder saw came out of the blocks before the approval.
-    let approval = ord
-        .iter()
-        .rposition(|&i| matches!(graph.blocks[i].kind, Kind::Approval { .. }));
     let mut total = Judged::default();
-    for (at, &i) in ord.iter().enumerate() {
+    for (at, i, skip) in ai_blocks(graph)? {
         let block = &graph.blocks[i];
         let Kind::Ai {
             prompt: path,
@@ -146,13 +152,6 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
         }
         let into = into.as_deref().unwrap_or("answer");
         let keeps = keep.is_some() || rank.is_some();
-        let skip = if approval.is_none_or(|a| at > a) {
-            Some("comes after the approval: you never saw what it did")
-        } else if !keeps && (into != "answer" || over.is_some()) {
-            Some("neither keeps nor drafts one item at a time: nothing to compare with")
-        } else {
-            None
-        };
         if let Some(why) = skip {
             out.skipped.push(format!("{}: {why}", block.id));
             continue;
@@ -190,6 +189,7 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
             limit: None,
         };
         let mut cases = Vec::new();
+        let mut spent = Judged::default();
         for a in answered {
             let mut item = a.item.args.as_object().cloned().unwrap_or_default();
             for f in written.iter().chain(ENGINE) {
@@ -205,7 +205,7 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
                     continue;
                 }
             };
-            add(&mut total, &stats);
+            add(&mut spent, &stats);
             // Not answered: dropped, or, for a block that writes elsewhere
             // than `answer`, let through without its answer, said only in
             // the notes. Either way the block's choice is unknown.
@@ -238,17 +238,60 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
                 new: (!keeps).then(|| now.map(|it| field_text(it, show)).unwrap_or_default()),
             });
         }
+        add(&mut total, &spent);
         out.blocks.push(BlockEval {
             id: block.id.clone(),
             prompt: path.clone(),
             kind: if keeps { "keeps" } else { "drafts" },
             score: keeps.then(|| score(&cases)),
             cases,
+            cost_usd: spent.cost_usd,
         });
     }
     out.cost = cost(&total);
     out.cost_usd = total.cost_usd;
     Ok(out)
+}
+
+/// The routine's AI blocks in the order they run, each with its place in
+/// that order, its index, and why it is not measured (None when it is).
+fn ai_blocks(graph: &Graph) -> Result<Vec<(usize, usize, Option<&'static str>)>> {
+    let ord = order(graph)?;
+    // What the founder saw came out of the blocks before the approval.
+    let approval = ord
+        .iter()
+        .rposition(|&i| matches!(graph.blocks[i].kind, Kind::Approval { .. }));
+    Ok(ord
+        .iter()
+        .enumerate()
+        .filter_map(|(at, &i)| {
+            let Kind::Ai {
+                keep,
+                rank,
+                into,
+                over,
+                ..
+            } = &graph.blocks[i].kind
+            else {
+                return None;
+            };
+            let keeps = keep.is_some() || rank.is_some();
+            let answers = into.as_deref().unwrap_or("answer") == "answer";
+            let skip = if approval.is_none_or(|a| at > a) {
+                Some("comes after the approval: you never saw what it did")
+            } else if !keeps && (!answers || over.is_some()) {
+                Some("neither keeps nor drafts one item at a time: nothing to compare with")
+            } else {
+                None
+            };
+            Some((at, i, skip))
+        })
+        .collect())
+}
+
+/// How many of the routine's AI blocks an evaluation asks, once per case.
+pub fn measured(graph: &Graph) -> Result<usize> {
+    Ok(ai_blocks(graph)?.iter().filter(|b| b.2.is_none()).count())
 }
 
 fn add(total: &mut Judged, stats: &Judged) {

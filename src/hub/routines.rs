@@ -116,6 +116,26 @@ impl Hub {
             eval::evaluate(name, &graph, dry, &answered)
         })
     }
+
+    /// What an evaluation of `name` would ask, before it runs: the
+    /// founder's answers it replays and the AI blocks it measures. It reads
+    /// only; no model is asked.
+    pub fn evaluation_estimate(
+        &self,
+        realm: &Realm,
+        name: &str,
+    ) -> Result<crate::routine::run::eval::Estimate> {
+        use crate::routine::run::eval;
+        let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
+        let since = Utc::now() - chrono::Duration::days(eval::DAYS);
+        let cases = Store::of(realm)?
+            .founder_answers(name, since, eval::MAX)?
+            .len();
+        Ok(eval::Estimate {
+            cases,
+            blocks: eval::measured(&graph)?,
+        })
+    }
 }
 
 impl Hub {
