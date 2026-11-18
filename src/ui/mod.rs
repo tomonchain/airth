@@ -268,6 +268,7 @@ impl App {
                     // Reading a mailbox waits on its server; what it reads
                     // goes to the store, not the settings.
                     | ["realms", _, "mailboxes", _, "read"]
+                    | ["realms", _, "mailboxes", _, "connect"]
             );
         let _writes = (!concurrent).then(|| self.write_lock());
         let areas = [
@@ -905,6 +906,108 @@ mod tests {
         let shown = realms::mailboxes(&realm).unwrap();
         assert!(shown.iter().all(|b| b["address"].is_null()));
         assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
+    }
+
+    /// Decision 154: a mailbox is saved only once both its logins worked,
+    /// its password as a secret, never in the agent's file.
+    #[test]
+    fn a_mailbox_is_saved_only_once_both_logins_work() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "chief", "Run the team.").unwrap();
+        crate::business::set_job(&root, "sales", "Sell.").unwrap();
+        let file = root.join("agents/chief.md");
+        let fresh = std::fs::read_to_string(&file).unwrap();
+        let body = |imap: u16, smtp: u16, password: &str| {
+            json!({"address": "contact@n.example", "password": password,
+                "imap_host": "127.0.0.1", "imap_port": imap,
+                "smtp_host": "127.0.0.1", "smtp_port": smtp, "smtp_security": "ssl"})
+        };
+        let unsaved = |realm: &crate::realm::Realm| {
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), fresh);
+            assert!(realm.secret("MAIL_PASSWORD_CHIEF").is_none());
+        };
+        // IMAP refuses: nothing saved, and the error names the step only.
+        let (imap, seen) = crate::mail::imap::tests::server(1, vec![]);
+        let err = realms::try_mailbox(&realm, "chief", &body(imap, 1, "wrong-pass"))
+            .unwrap_err()
+            .to_string();
+        seen.join().unwrap();
+        assert!(err.starts_with("IMAP: login refused"), "{err}");
+        assert!(!err.contains("wrong-pass"), "{err}");
+        unsaved(&realm);
+        // SMTP refuses: nothing saved.
+        let (imap, seen) = crate::mail::imap::tests::server(1, vec![]);
+        let (smtp, said) = crate::mail::send::tests::server_refusing();
+        let err = realms::try_mailbox(&realm, "chief", &body(imap, smtp, "right"))
+            .unwrap_err()
+            .to_string();
+        seen.join().unwrap();
+        said.join().unwrap();
+        assert!(err.starts_with("SMTP: login refused"), "{err}");
+        assert!(!err.contains("right"), "{err}");
+        unsaved(&realm);
+        // A server that is not a host name, a plain security, a bad port:
+        // refused before any connection.
+        for (key, value) in [
+            ("imap_host", json!("bad host!")),
+            ("smtp_host", json!("smtp.x/../y")),
+            ("smtp_security", json!("none")),
+            ("imap_port", json!(0)),
+            ("smtp_port", json!(70000)),
+        ] {
+            let mut b = body(1, 1, "right");
+            b[key] = value;
+            assert!(realms::try_mailbox(&realm, "chief", &b).is_err(), "{key}");
+        }
+        // No password typed and none saved: asked for.
+        let err = realms::try_mailbox(&realm, "chief", &body(1, 1, "")).unwrap_err();
+        assert!(format!("{err:#}").contains("password"), "{err:#}");
+        unsaved(&realm);
+        // Both logins work: saved, the password a secret.
+        let (imap, seen) = crate::mail::imap::tests::server(1, vec![]);
+        let (smtp, said) = crate::mail::send::tests::server();
+        let (mailbox, password) =
+            realms::try_mailbox(&realm, "chief", &body(imap, smtp, "right")).unwrap();
+        seen.join().unwrap();
+        said.join().unwrap();
+        realms::save_mailbox(&realm, &mailbox, password.as_deref()).unwrap();
+        let saved = crate::mail::Mailbox::of(&root, "chief").unwrap().unwrap();
+        assert_eq!(saved, mailbox);
+        assert_eq!(
+            realm.secret("MAIL_PASSWORD_CHIEF").as_deref(),
+            Some("right")
+        );
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("right"), "{text}");
+        assert!(text.contains("smtp_security: ssl"), "{text}");
+        // Changed with no password typed: the saved one is tried.
+        let (imap, seen) = crate::mail::imap::tests::server(1, vec![]);
+        let (smtp, said) = crate::mail::send::tests::server();
+        let (_, password) = realms::try_mailbox(&realm, "chief", &body(imap, smtp, "")).unwrap();
+        seen.join().unwrap();
+        said.join().unwrap();
+        assert_eq!(password, None);
+        // ... for the same address only.
+        let mut other = body(1, 1, "");
+        other["address"] = json!("hello@n.example");
+        assert!(realms::try_mailbox(&realm, "chief", &other).is_err());
+        // An address is one agent's only, checked before trying.
+        let err = realms::try_mailbox(&realm, "sales", &body(1, 1, "right")).unwrap_err();
+        assert!(format!("{err:#}").contains("chief's mailbox"), "{err:#}");
+        // Disconnected: no address, no secret.
+        realms::set_mailbox(&realm, "chief", "", "").unwrap();
+        assert!(crate::mail::Mailbox::of(&root, "chief").unwrap().is_none());
+        assert!(realm.secret("MAIL_PASSWORD_CHIEF").is_none());
     }
 
     /// Decision 152: the founder's view of the business's mail is the

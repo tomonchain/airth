@@ -2,7 +2,7 @@
 //! the code, never the model, adds the rest: the signature, a blind copy to
 //! `archive@<domain>`, and the headers that keep a reply in its thread.
 
-use super::Mailbox;
+use super::{Mailbox, Security};
 use anyhow::{Context, Result, bail};
 use lettre::Transport;
 use lettre::message::{Mailbox as Address, Message, header::ContentType};
@@ -100,16 +100,12 @@ pub fn compose(mailbox: &Mailbox, business: &str, out: &Outgoing, key: &str) -> 
     })
 }
 
-/// Send over TLS with the mailbox's login; the server's answer.
+/// Send over TLS with the mailbox's login, TLS from the first byte or by
+/// STARTTLS before the login (decision 154); the server's answer.
 pub fn send(mailbox: &Mailbox, password: &str, composed: &Composed) -> Result<String> {
-    let domain = mailbox
-        .address
-        .split_once('@')
-        .map(|(_, d)| d)
-        .unwrap_or_default();
     // The tests' fake server, on loopback: plain SMTP there, in tests only.
     #[cfg(test)]
-    if mailbox.imap_host == "127.0.0.1" {
+    if mailbox.smtp_host == "127.0.0.1" {
         let mailer = SmtpTransport::builder_dangerous("127.0.0.1")
             .port(mailbox.smtp_port)
             .credentials(Credentials::new(
@@ -119,9 +115,15 @@ pub fn send(mailbox: &Mailbox, password: &str, composed: &Composed) -> Result<St
             .build();
         return deliver(&mailer, composed, password);
     }
-    let mailer = SmtpTransport::relay(&mailbox.imap_host)?
+    // `starttls_relay` refuses a server that does not upgrade, before the
+    // login: never plain text.
+    let builder = match mailbox.smtp_security {
+        Security::Ssl => SmtpTransport::relay(&mailbox.smtp_host)?,
+        Security::StartTls => SmtpTransport::starttls_relay(&mailbox.smtp_host)?,
+    };
+    let mailer = builder
         .port(mailbox.smtp_port)
-        .hello_name(ClientId::Domain(domain.to_string()))
+        .hello_name(ClientId::Domain(mailbox.domain().to_string()))
         .credentials(Credentials::new(
             mailbox.address.clone(),
             password.to_string(),
@@ -152,6 +154,16 @@ pub(crate) mod tests {
     /// A fake SMTP server on 127.0.0.1 that takes one mail: the envelope's
     /// recipients and the data, once the connection closes.
     pub(crate) fn server() -> (u16, std::thread::JoinHandle<(Vec<String>, String)>) {
+        fake(false)
+    }
+
+    /// The same server, refusing every login and echoing the AUTH line it
+    /// got, as a careless server might.
+    pub(crate) fn server_refusing() -> (u16, std::thread::JoinHandle<(Vec<String>, String)>) {
+        fake(true)
+    }
+
+    fn fake(refuse: bool) -> (u16, std::thread::JoinHandle<(Vec<String>, String)>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
@@ -164,6 +176,8 @@ pub(crate) mod tests {
                 let upper = line.to_uppercase();
                 let answer = if upper.starts_with("EHLO") {
                     "250-fake\r\n250 AUTH PLAIN LOGIN\r\n".to_string()
+                } else if upper.starts_with("AUTH") && refuse {
+                    format!("535 5.7.8 refused: {line}\r\n")
                 } else if upper.starts_with("AUTH") {
                     "235 ok\r\n".into()
                 } else if upper.starts_with("RCPT TO:") {
@@ -208,7 +222,9 @@ pub(crate) mod tests {
             address: "support@n.example".into(),
             imap_host: "127.0.0.1".into(),
             imap_port: 0,
+            smtp_host: "127.0.0.1".into(),
             smtp_port: 0,
+            smtp_security: crate::mail::Security::Ssl,
         }
     }
 
