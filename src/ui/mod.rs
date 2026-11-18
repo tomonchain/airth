@@ -123,6 +123,7 @@ impl App {
             Ok(r) => r,
             Err(e) => json_response(400, json!({"error": format!("{e:#}")})),
         };
+        let response = compressed(&request, response);
         let _ = request.respond(response);
     }
 
@@ -138,7 +139,15 @@ impl App {
             // One interface, the one in web/ (decisions 72 and 73).
             (Method::Get, p) if web_file(p).is_some() => {
                 let (body, kind) = web_file(p).unwrap();
-                let response = static_bytes(body, kind);
+                // The app's code, gzipped once for every phone that asks.
+                let zip = takes_gzip(request) && compressible(kind);
+                let response = if zip {
+                    static_bytes(&gzipped_file(body), kind)
+                        .with_header(Header::from_bytes("Content-Encoding", "gzip").unwrap())
+                } else {
+                    static_bytes(body, kind)
+                }
+                .with_header(Header::from_bytes("Vary", "Accept-Encoding").unwrap());
                 // Built files carry a hash in their name: a new build is a new name.
                 return Ok(if p.starts_with("/assets/") {
                     response.with_header(
@@ -582,6 +591,84 @@ mod tests {
         ] {
             assert!(web_file(path).is_none(), "{path}");
         }
+    }
+
+    /// The app's code and the larger API answers go gzipped to a browser
+    /// that takes it, and as they are to one that does not.
+    #[test]
+    fn what_is_sent_is_gzipped_when_the_browser_takes_it() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let app = test_app(crate::home::Home::at(home_dir.path()).unwrap(), 0);
+        let script = web::FILES
+            .iter()
+            .filter(|(p, _)| p.starts_with("assets/") && p.ends_with(".js"))
+            .max_by_key(|(_, b)| b.len())
+            .unwrap();
+        let get = |path: &str, gzip: bool| {
+            let mut r = tiny_http::TestRequest::new()
+                .with_method(Method::Get)
+                .with_path(path)
+                .with_header(Header::from_bytes("Host", "127.0.0.1:0").unwrap());
+            if gzip {
+                r = r.with_header(Header::from_bytes("Accept-Encoding", "br, gzip;q=0.9").unwrap());
+            }
+            let mut request: Request = r.into();
+            let routed = app.route(&mut request).unwrap();
+            let response = compressed(&request, routed);
+            let encoded = response
+                .headers()
+                .iter()
+                .any(|h| h.field.equiv("Content-Encoding") && h.value.as_str() == "gzip");
+            let mut body = Vec::new();
+            std::io::Read::read_to_end(&mut response.into_reader(), &mut body).unwrap();
+            (encoded, body)
+        };
+        let path = format!("/{}", script.0);
+        let (encoded, body) = get(&path, true);
+        assert!(encoded);
+        assert!(
+            body.len() < script.1.len() / 2,
+            "{} of {}",
+            body.len(),
+            script.1.len()
+        );
+        let mut plain = Vec::new();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(&body[..]), &mut plain)
+            .unwrap();
+        assert_eq!(plain, script.1);
+        let (encoded, body) = get(&path, false);
+        assert!(!encoded);
+        assert_eq!(body, script.1);
+
+        // An API answer: gzipped when it is worth it, else as it is.
+        let big = json_response(200, json!({"text": "words ".repeat(2000)}));
+        let request: Request = tiny_http::TestRequest::new()
+            .with_header(Header::from_bytes("Accept-Encoding", "gzip").unwrap())
+            .into();
+        let out = compressed(&request, big);
+        assert!(
+            out.headers()
+                .iter()
+                .any(|h| h.field.equiv("Content-Encoding"))
+        );
+        let mut body = Vec::new();
+        std::io::Read::read_to_end(&mut out.into_reader(), &mut body).unwrap();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&body[..]), &mut text)
+            .unwrap();
+        assert!(text.starts_with("{\"text\":\"words words"));
+        // A browser that says no to gzip ("gzip;q=0") gets none.
+        let refusing: Request = tiny_http::TestRequest::new()
+            .with_header(Header::from_bytes("Accept-Encoding", "gzip;q=0, br").unwrap())
+            .into();
+        assert!(!takes_gzip(&refusing));
+        let small = compressed(&request, json_response(200, json!({"ok": true})));
+        assert!(
+            !small
+                .headers()
+                .iter()
+                .any(|h| h.field.equiv("Content-Encoding"))
+        );
     }
 
     /// Agents lists each bot with the routines that name it; a bot a
