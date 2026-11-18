@@ -317,6 +317,11 @@ fn buttons(realm: &str, item: &Item) -> Value {
     let data = |op: &str| format!("{op}/{realm}/{}/{}", item.id, item.revision);
     let button = |label: &str, op: &str| json!({"text": label, "callback_data": data(op)});
     match item.kind.as_str() {
+        // A routine's step that lets its item go after the window can be
+        // edited until then (decision 153).
+        "delayed" if item.source["editable"].is_string() => {
+            json!([[button("Edit", "e"), button("Cancel", "r")]])
+        }
         "delayed" => json!([[button("Cancel", "r")]]),
         // Decision 62: a failed action offers Retry; an ambiguous one asks
         // first (op "u"), then retries on "c".

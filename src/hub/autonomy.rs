@@ -57,6 +57,23 @@ pub struct BusinessAuthority {
     /// A routine's graph keys its acts itself (routine, source id, block);
     /// a mission's calls are keyed by its run and call ids.
     graph: bool,
+    /// The item's approval step already held it for the founder's window
+    /// (decision 153): level 2 does not wait twice.
+    delay_served: bool,
+}
+
+/// The daily limit and cancellation window declared for `action`.
+pub(super) fn limits(integrations: &[crate::integration::Integration], action: &str) -> (u32, u32) {
+    let declared = action.split_once('.').and_then(|(connector, name)| {
+        let i = integrations.iter().find(|i| i.name == connector)?;
+        i.actions.iter().find(|a| a.name == name)
+    });
+    (
+        declared.and_then(|a| a.daily_limit).unwrap_or(DAILY_LIMIT),
+        declared
+            .and_then(|a| a.cancel_minutes)
+            .unwrap_or(CANCEL_MINUTES),
+    )
 }
 
 impl BusinessAuthority {
@@ -79,6 +96,7 @@ impl BusinessAuthority {
             run: state.id.clone(),
             declared: crate::actions::all(&realm.config.integrations, &servers),
             graph: false,
+            delay_served: false,
         }))
     }
 
@@ -92,26 +110,16 @@ impl BusinessAuthority {
             run: run.to_string(),
             declared: crate::actions::all(&realm.config.integrations, &servers),
             graph: true,
+            delay_served: false,
         })
     }
 
-    /// The daily limit and cancellation window declared for `action`.
-    fn limits(&self, action: &str) -> (u32, u32) {
-        let declared = action.split_once('.').and_then(|(connector, name)| {
-            let i = self
-                .realm
-                .config
-                .integrations
-                .iter()
-                .find(|i| i.name == connector)?;
-            i.actions.iter().find(|a| a.name == name)
-        });
-        (
-            declared.and_then(|a| a.daily_limit).unwrap_or(DAILY_LIMIT),
-            declared
-                .and_then(|a| a.cancel_minutes)
-                .unwrap_or(CANCEL_MINUTES),
-        )
+    /// For the acts after an approval step that let its item go once the
+    /// founder's window passed: what is at level 2 goes now, counted as done
+    /// alone (decision 153).
+    pub fn after_delay(mut self) -> Self {
+        self.delay_served = true;
+        self
     }
 }
 
@@ -242,11 +250,16 @@ impl Authority for BusinessAuthority {
             .iter()
             .find(|d| d.id == action)
             .map_or((1, 1), |d| (d.ceiling, d.start));
-        let (daily_limit, window) = self.limits(action);
+        let (daily_limit, window) = limits(&self.realm.config.integrations, action);
         let mut store = Store::of(&self.realm)?;
         let level = store
             .level(&self.agent, action, ceiling, start)
             .unwrap_or(1);
+        // Read again now: one lowered during the window still holds it.
+        let wait = match level {
+            2 if self.delay_served => 3,
+            l => l,
+        };
         let args = arguments.to_string();
         // The tool to call again with these arguments once the founder
         // approves.
@@ -265,7 +278,7 @@ impl Authority for BusinessAuthority {
                 model_call: None,
             })
         };
-        Ok(Decision::Held(match level {
+        Ok(Decision::Held(match wait {
             0 => format!(
                 "not done: prepared for the founder, who does it (item {}). Say so in your report.",
                 queue("prepared", None)?
