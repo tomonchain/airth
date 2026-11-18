@@ -901,6 +901,89 @@ mod tests {
         assert!(realm.secret("MAIL_PASSWORD_SUPPORT").is_none());
     }
 
+    /// Decision 152: the founder's view of the business's mail is the
+    /// interlocutor's mailbox, empty until it has one; a mail opens as its
+    /// plain text, and never shows the password.
+    #[test]
+    fn the_mail_view_lists_the_interlocutors_mailbox() {
+        let home_dir = tempfile::tempdir().unwrap();
+        let home = crate::home::Home::at(home_dir.path()).unwrap();
+        let realm = home
+            .create_realm(NewRealm {
+                name: "r".into(),
+                description: String::new(),
+                root: None,
+                isolation: None,
+            })
+            .unwrap();
+        let root = realm.root().unwrap();
+        crate::business::set_job(&root, "chief", "Run the team.").unwrap();
+        let app = test_app(home, 0);
+        let call = |path: &str| -> (u16, Value) {
+            let mut request: Request = tiny_http::TestRequest::new()
+                .with_method(Method::Get)
+                .with_path(&format!("/api/{path}"))
+                .into();
+            let segments: Vec<&str> = path.split('/').collect();
+            match app.realms_routes(&mut request, &Method::Get, &segments, "") {
+                Ok(Some(response)) => {
+                    let code = response.status_code().0;
+                    let mut text = String::new();
+                    std::io::Read::read_to_string(&mut response.into_reader(), &mut text).unwrap();
+                    (code, serde_json::from_str(&text).unwrap_or(Value::Null))
+                }
+                Ok(None) => (404, Value::Null),
+                Err(e) => (400, json!({"error": format!("{e:#}")})),
+            }
+        };
+        // No interlocutor yet: no mailbox, no mail.
+        let (code, view) = call("realms/r/mail");
+        assert_eq!(code, 200, "{view}");
+        assert!(view["address"].is_null() && view["agent"].is_null());
+        assert_eq!(view["mails"], json!([]));
+        let file = root.join("agents/chief.md");
+        std::fs::write(&file, "---\ndispatch: true\n---\nRun the team.\n").unwrap();
+        let (_, view) = call("realms/r/mail");
+        assert_eq!(
+            (view["agent"].as_str(), view["address"].is_null()),
+            (Some("chief"), true)
+        );
+        crate::business::set_agent_field(&root, "chief", "mailbox", "contact@n.example", &[])
+            .unwrap();
+        realm
+            .set_secret("MAIL_PASSWORD_CHIEF", "s3cret-pass")
+            .unwrap();
+        let mail = crate::mail::Mail {
+            thread: "t".into(),
+            from: "ann@b.example".into(),
+            subject: "Lot 12".into(),
+            text: "<b>When</b> does it ship?".into(),
+            ..Default::default()
+        };
+        let id = crate::business::store::Store::of(&realm)
+            .unwrap()
+            .keep_mail(&crate::business::store::mail::NewMail {
+                mailbox: "contact@n.example",
+                agent: "chief",
+                uid_validity: 1,
+                uid: 1,
+                mail: &mail,
+                at: chrono::Utc::now(),
+            })
+            .unwrap()
+            .unwrap();
+        let (_, view) = call("realms/r/mail");
+        assert_eq!(view["address"], "contact@n.example");
+        assert_eq!(view["password"], true);
+        assert_eq!(view["mails"][0]["sender"], "ann@b.example");
+        assert!(view["mails"][0]["outcome"].is_null());
+        assert!(!view.to_string().contains("s3cret-pass"));
+        let (code, one) = call(&format!("realms/r/mail/{id}"));
+        assert_eq!(code, 200, "{one}");
+        assert_eq!(one["text"], "<b>When</b> does it ship?");
+        assert_eq!(call("realms/r/mail/999").0, 400);
+    }
+
     /// A routine made in the app names a hired bot and the business's own
     /// extensions only; Planning shows its coming week.
     #[test]

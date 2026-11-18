@@ -18,6 +18,7 @@ import { LOGOS } from "@/lib/logos"
 import { ago, usd } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Conversation } from "@/screens/conversation"
+import { MailView, type MailLinks } from "@/screens/mail"
 import { MailboxRow, type Box } from "@/screens/settings-mail"
 
 const STATE: Record<Agent["state"], string> = {
@@ -44,13 +45,17 @@ const draftKey = (realm: string, agent: string) => `${realm}/${agent}`
 window.addEventListener("beforeunload", (e) => { if (drafts.size) e.preventDefault() })
 
 /** An agent: its conversation first, as a chat is; Edit opens what it is
-    and what it may do, section by section (decision 140). */
-export function AgentPage({ realm, agent, agents, departments, tasks, narrow, onAgent, onDone, onSaved, onGone, onBack }: {
+    and what it may do, section by section (decision 140). The founder's
+    interlocutor also opens the business's mail, and where each went
+    (decision 152). */
+export function AgentPage({ realm, agent, agents, departments, tasks, narrow, onAgent, onDone, onSaved, onGone, onBack, mail }: {
   realm: string; agent: Agent; agents: Agent[]; departments: Department[]; tasks: Tasks | null; narrow: boolean
-  onAgent: (name: string) => void; onDone: () => void; onSaved: () => void; onGone: () => void; onBack: () => void
+  onAgent: (name: string) => void; onDone: () => void; onSaved: () => void; onGone: () => void; onBack: () => void; mail: MailLinks
 }) {
   const [editing, setEditing] = useState(false)
+  const [reading, setReading] = useState(false)
   if (editing) return <AgentEditor realm={realm} agent={agent} departments={departments} narrow={narrow} onClose={() => setEditing(false)} onSaved={onSaved} onGone={onGone} />
+  if (reading && agent.dispatch) return <MailView realm={realm} lead={agent} agents={agents} onBack={() => setReading(false)} links={mail} />
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <header className={cn("flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-5", narrow && "h-[60px] pl-[68px]")}>
@@ -63,6 +68,7 @@ export function AgentPage({ realm, agent, agents, departments, tasks, narrow, on
             <span className="block truncate text-xs text-muted-foreground">{departmentName(agent.department)} · {STATE[agent.state]}</span>
           </span>
         </button>
+        {agent.dispatch && <Button variant="outline" size="sm" onClick={() => setReading(true)} aria-label="Mail"><Mail /><span className="max-sm:hidden">Mail</span></Button>}
         <Button variant="outline" size="sm" className="relative" onClick={() => setEditing(true)}>
           <Settings2 />Edit
           {drafts.has(draftKey(realm, agent.name)) && <span className="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-background bg-amber-500" aria-label="unsaved changes" />}

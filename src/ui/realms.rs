@@ -504,6 +504,21 @@ impl App {
                 crate::mail::flag_bank_changes(&mut store, &mailbox, &kept)?;
                 json_response(200, json!({"kept": kept.len()}))
             }
+            // The business's mail as the founder sees it (decision 152):
+            // the interlocutor's mailbox, its last mails, where each went.
+            (Method::Get, ["realms", r, "mail"]) => json_response(200, mail(&self.realm(r)?)?),
+            // One mail's text, as it was kept: plain text, never HTML.
+            (Method::Get, ["realms", r, "mail", id]) => {
+                let id = id.parse().context("no such mail")?;
+                let kept = crate::business::store::Store::of(&self.realm(r)?)?
+                    .mail(id)?
+                    .context("no such mail")?;
+                let m = kept.mail;
+                json_response(
+                    200,
+                    json!({"id": kept.id, "from": m.from, "to": m.to, "subject": m.subject, "date": m.date.unwrap_or(kept.fetched_at), "text": m.text, "attachments": m.attachments}),
+                )
+            }
             (Method::Get, ["realms", r, "repos"]) => {
                 json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
             }
@@ -1227,6 +1242,28 @@ fn password_secret(agent: &str) -> String {
         "{}{}",
         crate::mail::SECRET_PREFIX,
         agent.to_uppercase().replace('-', "_")
+    )
+}
+
+/// How many of the business's last mails its view lists.
+const MAIL_SHOWN: usize = 50;
+
+/// The interlocutor's mailbox (decision 152), whether its password is set
+/// (never the password), and its last mails with where each went. No
+/// interlocutor, or none with a mailbox: no address and no mail.
+pub(super) fn mail(realm: &Realm) -> Result<Value> {
+    let root = realm.root()?;
+    let agent = crate::business::dispatcher(&root);
+    let mailbox = match &agent {
+        Some(a) => crate::mail::Mailbox::of(&root, a).ok().flatten(),
+        None => None,
+    };
+    let Some(m) = mailbox else {
+        return Ok(json!({"agent": agent, "address": null, "password": false, "mails": []}));
+    };
+    let mails = crate::business::store::Store::of(realm)?.mail_lines(&m.address, MAIL_SHOWN)?;
+    Ok(
+        json!({"agent": agent, "address": m.address, "password": realm.secret(&m.secret()).is_some(), "mails": mails}),
     )
 }
 

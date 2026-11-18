@@ -396,7 +396,12 @@ export default function App() {
           {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}
           {agent ? (
             <AgentPage key={agent.name} realm={realm} agent={agent} agents={agents} departments={data.data?.departments ?? []} tasks={data.data?.tasks ?? null} narrow={narrow}
-              onAgent={open} onDone={data.refresh} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} onBack={() => setCurrent(null)} />
+              onAgent={open} onDone={data.refresh} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} onBack={() => setCurrent(null)}
+              mail={{
+                onTask: (id) => { setTask(id); setPage("tasks") },
+                onItem: (id) => { setOpenItem(id); setNeedsStart({ id, at: Date.now() }); setPage("needs") },
+                onSettings: () => { setSetting({ section: "mailboxes", at: Date.now() }); setPage("settings") },
+              }} />
           ) : !narrow && (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
           )}
