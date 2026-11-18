@@ -25,7 +25,7 @@ export const CHANGELOG: Entry[] = [
     ],
     improved: [
       "Needs you is plainer: no coloured label on each line; a small mark on the sender's face says what it is, red only for what broke.",
-      "Projects hears at once when the business changes.",
+      "The Projects page hears at once when the business changes.",
       "On a phone, notices come down from the top, clear of the tab bar.",
     ],
     fixed: [
