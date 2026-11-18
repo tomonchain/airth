@@ -160,6 +160,74 @@ impl Hub {
     }
 }
 
+impl Hub {
+    /// The business's skills as the founder reads them (decision 149):
+    /// each one's state, the agents whose file names it, and the folders
+    /// of `skills/` that are no skill, with why.
+    pub fn skills_view(&self, realm: &Realm) -> Result<serde_json::Value> {
+        let root = realm.root()?;
+        let store = Store::of(realm)?;
+        let approved = store.approved_skills()?;
+        let asks: Vec<_> = store
+            .queue(&["pending", "rejected"])?
+            .into_iter()
+            .filter(|i| i.action.as_deref() == Some(SKILL))
+            .collect();
+        let catalog = catalog_names(realm);
+        let agents: Vec<(String, Vec<String>)> = crate::business::bots(&root)?
+            .into_iter()
+            .map(|(name, _)| {
+                let skills = crate::business::scope(&root, &name)
+                    .map(|s| s.skills)
+                    .unwrap_or_default();
+                // As the founder calls it: its title, else its file name.
+                let title = std::fs::read_to_string(root.join("agents").join(format!("{name}.md")))
+                    .ok()
+                    .and_then(|t| crate::frontmatter::parse(&t).text("title"))
+                    .unwrap_or(name);
+                (title, skills)
+            })
+            .collect();
+        let skills: Vec<_> = own::found(&root)
+            .into_iter()
+            .map(|s| {
+                let asked = |status: &str| {
+                    asks.iter().find(|i| {
+                        i.status == status && i.source["skill"] == s.name.as_str() && i.source["hash"] == s.hash.as_str()
+                    })
+                };
+                let was = approved.get(&s.name);
+                let state = if catalog.contains(&s.name) {
+                    "left out"
+                } else if was.is_some_and(|a| a.hash == s.hash) {
+                    "offered"
+                } else if asked("rejected").is_some() {
+                    "rejected"
+                } else if was.is_some() {
+                    "changed"
+                } else {
+                    "new"
+                };
+                json!({
+                    "name": s.name,
+                    "description": s.description,
+                    "files": s.files.len(),
+                    "skipped": s.skipped,
+                    "state": state,
+                    // Where the founder answers it, if it waits for them.
+                    "item": asked("pending").map(|i| i.id),
+                    "agents": agents.iter().filter(|(_, k)| k.contains(&s.name)).map(|(n, _)| n).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        let not: Vec<_> = own::not_skills(&root)
+            .into_iter()
+            .map(|(name, why)| json!({"name": name, "why": why}))
+            .collect();
+        Ok(json!({"skills": skills, "not_skills": not}))
+    }
+}
+
 fn catalog_names(realm: &Realm) -> BTreeSet<String> {
     crate::tools::catalog::installed(&realm.skills_dir())
         .into_iter()

@@ -288,3 +288,57 @@ fn a_run_reads_the_skill_as_approved() {
     assert!(!read.contains("30 days"), "{read}");
     assert!(read.contains("is_error: true"), "{read}");
 }
+
+/// What the founder reads in the Marketplace: each skill's state, the
+/// agents that name it, and the folders that are no skill.
+#[test]
+fn the_founder_sees_each_skills_state() {
+    let f = fixture();
+    let root = f.root.path().to_path_buf();
+    let (hub, _, _) = make_hub(&f.home, vec![]);
+    write(
+        &root,
+        "agents/writer.md",
+        "---\ntitle: Writer\nskills: refunds\n---\nWrite.\n",
+    );
+    write(&root, "skills/refunds/SKILL.md", REFUNDS);
+    write(
+        &root,
+        "skills/tone/SKILL.md",
+        "---\nname: tone\ndescription: Our tone.\n---\nCalm.\n",
+    );
+    write(&root, "skills/Bad_Name/SKILL.md", "x");
+    hub.ask_about_skills(&f.realm).unwrap();
+    let state = |name: &str| {
+        let v = hub.skills_view(&f.realm).unwrap();
+        v["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == name)
+            .cloned()
+            .unwrap()
+    };
+    let refunds = state("refunds");
+    assert_eq!(refunds["state"], "new");
+    assert!(refunds["item"].is_i64(), "its ask, to open");
+    assert_eq!(refunds["agents"], json!(["Writer"]));
+    let id = refunds["item"].as_i64().unwrap();
+    answer(&hub, &f.realm, id, Said::Approve);
+    assert_eq!(state("refunds")["state"], "offered");
+    assert!(state("refunds")["item"].is_null());
+
+    write(
+        &root,
+        "skills/refunds/SKILL.md",
+        &REFUNDS.replace("30", "60"),
+    );
+    assert_eq!(state("refunds")["state"], "changed");
+
+    let tone = state("tone")["item"].as_i64().unwrap();
+    answer(&hub, &f.realm, tone, Said::Reject("no".into()));
+    assert_eq!(state("tone")["state"], "rejected");
+
+    let view = hub.skills_view(&f.realm).unwrap();
+    assert_eq!(view["not_skills"][0]["name"], "Bad_Name");
+}

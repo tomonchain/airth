@@ -42,6 +42,10 @@ impl App {
                     }),
                 )
             }
+            // The business's own skills and their state (decision 149).
+            (Method::Get, ["realms", r, "skills"]) => {
+                json_response(200, self.hub.skills_view(&self.realm(r)?)?)
+            }
             (Method::Get, ["realms", r, "catalog"]) => {
                 json_response(200, self.catalog_installed(&self.realm(r)?))
             }

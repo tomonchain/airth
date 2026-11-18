@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import { useContext, useEffect, useMemo, useState } from "react"
 import { Bot, Check, ExternalLink, Loader, Plug, Search, ShieldAlert, Sparkles, Users, Workflow, RotateCw, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Character } from "@/components/character"
 import { ConnectDialog, type Method } from "@/components/connect-dialog"
+import { FileLinks } from "@/components/markdown"
 import { Empty, Loading } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { usePoll } from "@/hooks/use-poll"
 import { api, enc, raw } from "@/lib/api"
+import { write } from "@/lib/address"
 import { LOGOS } from "@/lib/logos"
 import { cn } from "@/lib/utils"
 import { DriveConnection } from "@/screens/settings-drive"
@@ -159,6 +161,56 @@ const Done = ({ children }: { children: React.ReactNode }) => (
   <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-500"><Check className="size-3.5" /> {children}</span>
 )
 
+type OwnSkill = { name: string; description: string; files: number; skipped: string[]; state: "offered" | "new" | "changed" | "rejected" | "left out"; item: number | null; agents: string[] }
+type OwnSkills = { skills: OwnSkill[]; not_skills: { name: string; why: string }[] }
+
+// What each state means for the founder, in a few words.
+const OWN: Record<OwnSkill["state"], string> = {
+  offered: "Offered to the agents you give it to",
+  new: "New: waits for your approval",
+  changed: "Changed: waits for your approval",
+  rejected: "You rejected this version",
+  "left out": "Left out: a catalog skill has its name",
+}
+
+/** The business's own skills (decision 149), above the catalog's: each
+    one's state, who uses it, and where to answer it or read it. */
+function OwnSkillsList({ realm, q }: { realm: string; q: string }) {
+  const data = usePoll<OwnSkills>(() => api(`realms/${enc(realm)}/skills`), 30000, [realm], realm)
+  const openFile = useContext(FileLinks)
+  if (!data.data) return null
+  const shown = data.data.skills.filter((s) => !q || `${s.name} ${s.description}`.toLowerCase().includes(q.toLowerCase()))
+  const go = (id: number) => { location.hash = write({ realm, page: "needs", sub: String(id) }) }
+  return (
+    <section className="mb-8">
+      <h2 className="mb-1 text-sm font-semibold">This business's skills</h2>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Written for it, in the business folder: <span className="font-mono">skills/&lt;name&gt;/SKILL.md</span>, the format Claude and other tools use. An agent can write one too; a new or changed skill waits for your approval in Needs you, and goes to the agents you give it to, on Team.
+      </p>
+      {!shown.length && !data.data.not_skills.length ? (
+        <p className="rounded-xl bg-bubble px-4 py-3 text-sm text-muted-foreground">None yet.</p>
+      ) : (
+        <Grid>
+          {shown.map((s) => (
+            <Card key={s.name} name={s.name} title={s.name} description={s.description || "No description in its SKILL.md."}
+              meta={`${s.files} file${s.files === 1 ? "" : "s"}${s.agents.length ? ` · used by ${s.agents.join(", ")}` : " · no agent uses it yet"}`}
+              onOpen={openFile ? () => openFile(`skills/${s.name}/SKILL.md`) : undefined}
+              action={
+                <span className="flex w-full items-center gap-2">
+                  <span className={cn("text-xs text-muted-foreground", s.state === "offered" && "text-foreground/80")}>{OWN[s.state]}</span>
+                  {s.item !== null && <Button size="sm" variant="outline" className="ml-auto" onClick={() => go(s.item!)}>Review</Button>}
+                </span>
+              } />
+          ))}
+          {data.data.not_skills.map((n) => (
+            <Card key={`not-${n.name}`} name={n.name} title={n.name} description={`Not a skill: ${n.why}.`} action={<span className="text-xs text-muted-foreground">Fix it in the folder</span>} />
+          ))}
+        </Grid>
+      )}
+    </section>
+  )
+}
+
 function Skills({ realm, q }: { realm: string; q: string }) {
   const cat = usePoll<Catalog>(() => api("catalog"), 600000, [])
   const [fresh, setFresh] = useState(false)
@@ -193,6 +245,8 @@ function Skills({ realm, q }: { realm: string; q: string }) {
   }
   return (
     <>
+      <OwnSkillsList realm={realm} q={q} />
+      <h2 className="mb-1 text-sm font-semibold">From the catalog</h2>
       <p className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground">
         From <a href={cat.data?.source ?? "https://github.com/anthropics/skills"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-foreground">Anthropic's skills catalog <ExternalLink className="size-3" /></a>
         · Text only: an agent reads a skill as data, under this business's rules.
