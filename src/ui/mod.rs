@@ -978,10 +978,53 @@ mod tests {
         assert_eq!(view["mails"][0]["sender"], "ann@b.example");
         assert!(view["mails"][0]["outcome"].is_null());
         assert!(!view.to_string().contains("s3cret-pass"));
+        assert_eq!(view["recent"], 1);
         let (code, one) = call(&format!("realms/r/mail/{id}"));
         assert_eq!(code, 200, "{one}");
         assert_eq!(one["text"], "<b>When</b> does it ship?");
-        assert_eq!(call("realms/r/mail/999").0, 400);
+        assert_eq!(call("realms/r/mail/999").0, 404);
+        assert_eq!(call("realms/r/mail/not-a-number").0, 404);
+        // Another agent's mailbox is not the business's: its mail is not
+        // listed, nor opened by its id.
+        let other = crate::mail::Mail {
+            thread: "u".into(),
+            from: "bob@b.example".into(),
+            text: "For support only.".into(),
+            ..Default::default()
+        };
+        let theirs = crate::business::store::Store::of(&realm)
+            .unwrap()
+            .keep_mail(&crate::business::store::mail::NewMail {
+                mailbox: "support@n.example",
+                agent: "support",
+                uid_validity: 1,
+                uid: 1,
+                mail: &other,
+                at: chrono::Utc::now(),
+            })
+            .unwrap()
+            .unwrap();
+        let (code, refused) = call(&format!("realms/r/mail/{theirs}"));
+        assert_eq!(code, 404);
+        assert!(!refused.to_string().contains("For support only."));
+        let (_, view) = call("realms/r/mail");
+        assert_eq!(view["mails"].as_array().unwrap().len(), 1);
+        // A mailbox set wrongly is said, never shown as no mailbox.
+        let good = std::fs::read_to_string(&file).unwrap();
+        let bad = good.replace(
+            "mailbox: contact@n.example",
+            "mailbox: contact@n.example\nmail_server: bad host!",
+        );
+        assert_ne!(good, bad);
+        std::fs::write(&file, bad).unwrap();
+        let (code, view) = call("realms/r/mail");
+        assert_eq!(code, 200);
+        assert!(
+            view["error"].as_str().unwrap().contains("not a host name"),
+            "{view}"
+        );
+        assert_eq!(view["mails"], json!([]));
+        assert_eq!(call(&format!("realms/r/mail/{id}")).0, 400);
     }
 
     /// A routine made in the app names a hired bot and the business's own

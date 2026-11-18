@@ -19,13 +19,14 @@ export type MailLinks = { onTask: (id: string) => void; onItem: (id: number | nu
     interlocutor tells the founder, mail by mail, what it did with each,
     newest at the bottom. Read only: nothing is written here, and a mail
     opens as plain text, never as HTML. */
-export function MailThread({ realm, lead, agents, links, onConversation, aside }: {
+export function MailThread({ realm, lead, agents, box, links, onConversation, aside }: {
   realm: string; lead: Agent; agents: Agent[]; links: MailLinks; onConversation: () => void
+  /** The business's mailbox, as Chat polls it for its line to this thread. */
+  box: { data: Mailbox | null; error: string | null }
   /** Above the line at the bottom: Chat's lines to its other threads. */
   aside?: React.ReactNode
 }) {
   const { prefs } = usePrefs()
-  const box = usePoll<Mailbox>(() => api(`realms/${enc(realm)}/mail`), 30000, [realm], realm)
   const name = (n: string) => { const a = agents.find((x) => x.name === n); return a ? called(a) : n }
   // Oldest first, as a chat: the newest is at the bottom, where it opens.
   const mails = [...(box.data?.mails ?? [])].reverse()
@@ -52,7 +53,12 @@ export function MailThread({ realm, lead, agents, links, onConversation, aside }
             <p className="text-xs text-muted-foreground">{box.data?.address ? `What ${called(lead)} did with each mail to ${box.data.address}` : `${called(lead)}'s mailbox`}</p>
           </div>
           {!box.data ? <p className="py-20 text-center text-sm text-muted-foreground">{box.error ?? "Loading…"}</p>
-            : !box.data.address ? (
+            : box.data.error ? (
+              <Empty icon={MailIcon} title="The mailbox's settings are invalid">
+                {box.data.error}
+                <Button variant="outline" size="sm" className="mx-auto mt-4 flex" onClick={links.onSettings}><Settings /> Open Settings</Button>
+              </Empty>
+            ) : !box.data.address ? (
               <Empty icon={MailIcon} title="No mailbox yet">
                 Give {called(lead)} the business's address, such as contact@yourdomain.com, in Settings, Mailboxes. Each mail it receives is then told here, with what was done with it.
                 <Button variant="outline" size="sm" className="mx-auto mt-4 flex" onClick={links.onSettings}><Settings /> Open Settings</Button>
@@ -130,7 +136,7 @@ function MailBody({ realm, id }: { realm: string; id: number }) {
             From {m.from || "an unknown sender"}{m.to.length ? ` to ${m.to.join(", ")}` : ""} · {new Date(m.date).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
           </p>
           {m.attachments.length > 0 && <p className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground"><Paperclip className="mt-0.5 size-3.5 shrink-0" />{m.attachments.join(", ")} (not opened)</p>}
-          <div className="mt-2.5 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">{m.text.trim() || "(no text)"}</div>
+          <div className="mt-2.5 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">{m.text.trim() ? m.text : "(no text)"}</div>
         </>
       )}
     </div>

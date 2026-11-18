@@ -13,7 +13,10 @@ export type MailLine = {
   item: number | null; item_status: string | null
   replied: boolean
 }
-export type Mailbox = { agent: string | null; address: string | null; password: boolean; mails: MailLine[] }
+/** The business's mailbox: its address, whether its password is set, how
+    many mails came this week (every one, not only those listed), its last
+    mails, and why it cannot be read when its settings are wrong. */
+export type Mailbox = { agent: string | null; address: string | null; password: boolean; recent: number; mails: MailLine[]; error?: string }
 export type MailText = { id: number; from: string; to: string[]; subject: string; date: string; text: string; attachments: string[] }
 
 /** What the interlocutor says it did with a mail, and what that opens: its
@@ -51,10 +54,4 @@ export function reply(m: MailLine): { text: string; item?: number } | null {
     case "failed": return { text: "Its reply could not be sent." }
     default: return null
   }
-}
-
-/** How many mails came in the last `days`, for the line that opens Mail. */
-export function recent(mails: MailLine[], now: Date, days = 7): number {
-  const since = now.getTime() - days * 86400000
-  return mails.filter((m) => Date.parse(m.date) >= since).length
 }

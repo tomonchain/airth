@@ -376,7 +376,7 @@ export default function App() {
               mail={{
                 onTask: (id) => { setTask(id); setPage("tasks") },
                 onItem: (id) => { setOpenItem(id); setNeedsStart({ id, at: Date.now() }); setPage("needs") },
-                onSettings: () => { setSetting({ section: "mailboxes", at: Date.now() }); setPage("settings") },
+                onSettings: () => { setOpenSection("mailboxes"); setSetting({ section: "mailboxes", at: Date.now() }); setPage("settings") },
               }} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}

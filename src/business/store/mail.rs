@@ -90,16 +90,42 @@ impl Store {
             .optional()?)
     }
 
+    /// One message kept in `mailbox`, by its id; None when it is another
+    /// mailbox's, so a view of one mailbox never reads another's.
+    pub fn mail_in(&self, mailbox: &str, id: i64) -> Result<Option<Kept>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {KEPT} FROM mail_messages WHERE id = ?1 AND mailbox = ?2"),
+                params![id, mailbox],
+                kept,
+            )
+            .optional()?)
+    }
+
+    /// How many messages `mailbox` received since `since`: every one, not
+    /// only the last that a view lists.
+    pub fn mail_count_since(&self, mailbox: &str, since: DateTime<Utc>) -> Result<i64> {
+        // `fetched_at` is always written in UTC, so its text sorts as time.
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM mail_messages WHERE mailbox = ?1 AND fetched_at >= ?2",
+            params![mailbox, since.to_rfc3339()],
+            |r| r.get(0),
+        )?)
+    }
+
     /// The founder's view of `mailbox` (decision 152): its last `limit`
     /// mails, newest first, each with where it went. Read only.
     pub fn mail_lines(&self, mailbox: &str, limit: usize) -> Result<Vec<MailLine>> {
         // A task's reply is its latest `mail.send` item; a bank flag's
-        // incident names its mail in its source. A reply sent is keyed by
-        // its mail (`mail/<id>/<call>`, as the mail task's authority sets).
+        // incident names its mail in its source. A mail was answered when
+        // its mailbox sent a mail in reply to its Message-ID: `mail_sent`
+        // keeps the In-Reply-To in `thread`, with or without its brackets.
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.sender, m.subject, COALESCE(m.sent_at, m.fetched_at), m.text,
                     s.outcome, s.agent, s.summary, s.run, q.id, q.status,
-                    EXISTS(SELECT 1 FROM mail_sent t WHERE t.key LIKE 'mail/' || m.id || '/%')
+                    m.message_id IS NOT NULL AND EXISTS(SELECT 1 FROM mail_sent t
+                        WHERE t.mailbox = m.mailbox AND trim(t.thread, '<> ') = trim(m.message_id, '<> '))
              FROM mail_messages m
              LEFT JOIN mail_sorting s ON s.mail = m.id
              LEFT JOIN queue q ON q.id = CASE WHEN s.run IS NOT NULL
@@ -292,7 +318,7 @@ const SNIPPET: usize = 160;
 /// A mail as the founder's view lists it: who, what, when, and where it
 /// went. `outcome` is its [`Sorting`]'s, None until it is taken. `item` is
 /// its line in Needs you, if any: the reply its task drafted, or the bank
-/// flag's incident; `replied` once a reply to it was sent.
+/// flag's incident; `replied` once its mailbox sent a reply to it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MailLine {
     pub id: i64,
@@ -332,6 +358,7 @@ mod tests {
 
     fn keep(s: &mut Store, uid: u32, from: &str, subject: &str, text: &str) -> i64 {
         let mail = Mail {
+            message_id: Some(format!("m{uid}@b.example")),
             thread: format!("t{uid}"),
             from: from.into(),
             subject: subject.into(),
@@ -422,31 +449,47 @@ mod tests {
             None,
             &format!(r#"{{"mail": {bank}, "bank": true}}"#),
         );
-        s.record_sent(&Sent {
-            mailbox: BOX,
-            agent: "support",
-            key: &format!("mail/{replied}/c1"),
-            message_id: "<m@n.example>",
-            to: &["bob@b.example".to_string()],
-            subject: "Re: Invoice",
-            thread: Some("t2"),
-            server: "250 OK",
-        })
-        .unwrap();
+        // A mail is answered by a mail sent in reply to its Message-ID,
+        // with or without brackets, from its own mailbox; a key that looks
+        // like the mail's says nothing.
+        let sent = |s: &mut Store, mailbox: &str, key: &str, thread: Option<&str>| {
+            s.record_sent(&Sent {
+                mailbox,
+                agent: "support",
+                key,
+                message_id: "<m@n.example>",
+                to: &["bob@b.example".to_string()],
+                subject: "Re: Invoice",
+                thread,
+                server: "250 OK",
+            })
+            .unwrap()
+        };
+        sent(&mut s, BOX, "routine/act/1", Some("<m2@b.example>"));
+        sent(
+            &mut s,
+            BOX,
+            &format!("mail/{shipped}/c1"),
+            Some("other@b.example"),
+        );
+        sent(&mut s, "support@n.example", "k", Some("m4@b.example"));
+        sent(&mut s, BOX, "k2", None);
         // Another mailbox of the business is not this view's.
         let other = Mail {
             thread: "x".into(),
             ..Default::default()
         };
-        s.keep_mail(&NewMail {
-            mailbox: "support@n.example",
-            agent: "support",
-            uid_validity: 1,
-            uid: 1,
-            mail: &other,
-            at: Utc::now(),
-        })
-        .unwrap();
+        let elsewhere = s
+            .keep_mail(&NewMail {
+                mailbox: "support@n.example",
+                agent: "support",
+                uid_validity: 1,
+                uid: 1,
+                mail: &other,
+                at: Utc::now(),
+            })
+            .unwrap()
+            .unwrap();
 
         let lines = s.mail_lines(BOX, 50).unwrap();
         let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
@@ -482,10 +525,24 @@ mod tests {
             (l.outcome.as_deref(), l.agent.as_deref(), l.item),
             (None, None, None)
         );
+        assert!(!l.replied, "a reply from another mailbox is not this one's");
         assert_eq!(line(long).snippet.chars().count(), SNIPPET);
+        assert!(lines.iter().filter(|l| l.replied).count() == 1);
 
         assert_eq!(s.mail_lines(BOX, 2).unwrap().len(), 2);
         assert!(s.mail_lines("nobody@n.example", 50).unwrap().is_empty());
+        // One mail, read in its own mailbox only.
+        assert_eq!(s.mail_in(BOX, shipped).unwrap().unwrap().id, shipped);
+        assert!(s.mail_in(BOX, elsewhere).unwrap().is_none());
+        assert!(s.mail_in("support@n.example", shipped).unwrap().is_none());
+        // Every mail of the week is counted, not only the ones listed.
+        let week = Utc::now() - chrono::Duration::days(7);
+        assert_eq!(s.mail_count_since(BOX, week).unwrap(), 5);
+        assert_eq!(
+            s.mail_count_since(BOX, Utc::now() + chrono::Duration::hours(1))
+                .unwrap(),
+            0
+        );
         // Looking takes nothing: the mail not yet passed on still waits.
         assert_eq!(s.mails_to_sort(BOX, 10).unwrap().len(), 2);
     }

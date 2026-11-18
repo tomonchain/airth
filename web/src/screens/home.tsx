@@ -10,7 +10,7 @@ import { greeting, moment } from "@/lib/greeting"
 import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
 import { inThread, projectLines } from "@/lib/project-threads"
-import { recent, type Mailbox } from "@/lib/mail"
+import type { Mailbox } from "@/lib/mail"
 import { Conversation } from "@/screens/conversation"
 import { MailThread, type MailLinks } from "@/screens/mail"
 import type { Page } from "@/components/rail"
@@ -60,8 +60,10 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   // sends it: the founder sees it there, the agent typing under it.
   const [opening, setOpening] = useState<{ text: string; at: number } | null>(null)
   // The mail thread's line, beside the projects' (decision 152).
-  const box = usePoll<Mailbox>(lead ? () => api(`realms/${enc(realm)}/mail`) : null, 60000, [realm, lead?.name], realm).data
-  const mailLine = lead ? { count: recent(box?.mails ?? [], new Date()), onOpen: () => setMode("mail") } : undefined
+  // One poll for the line and the thread, keyed by the interlocutor: a new
+  // one has another mailbox, asked again at once.
+  const mailbox = usePoll<Mailbox>(lead ? () => api(`realms/${enc(realm)}/mail`) : null, 30000, [realm, lead?.name], realm)
+  const mailLine = lead ? { count: mailbox.data?.recent ?? 0, onOpen: () => setMode("mail") } : undefined
 
   if (shown === "mail" && lead) {
     return (
@@ -70,7 +72,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
           className={SLOT}>
           <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
         </Button>
-        <MailThread realm={realm} lead={lead} agents={team} links={mail} onConversation={() => setMode("thread")}
+        <MailThread realm={realm} lead={lead} agents={team} box={mailbox} links={mail} onConversation={() => setMode("thread")}
           aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} />} />
       </div>
     )
