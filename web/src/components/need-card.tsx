@@ -61,7 +61,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       const out = await api<{ report?: string; item: { status: string } }>(`realms/${enc(realm)}/queue/${it.id}`, {
         answer: kind, text: body, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000), ...extra,
       })
-      toast.success(
+      // Answered, but what it asked for could not be done: say so, in red.
+      if (out.item.status === "failed") toast.error(out.report ?? "It could not be done.")
+      else toast.success(
         kind === "edit" && it.kind === "delayed" ? `Edited. ${goes(it.execute_at)}.`
         : kind === "edit" ? "Edited. It still waits for your approval."
         : kind === "reject" && it.kind === "promotion" ? "Not now: nothing changes."

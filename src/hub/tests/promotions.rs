@@ -159,7 +159,7 @@ fn nothing_is_proposed_under_twelve_within_a_week_or_at_the_ceiling() {
 }
 
 #[test]
-fn nothing_is_proposed_when_the_replay_disagrees_and_the_run_starts_again() {
+fn nothing_is_proposed_when_the_replay_disagrees_nor_replayed_every_hour() {
     let f = business();
     approved(&f, 12, 8.0, 0.1);
     // Today's pick would drop the newest draft the founder approved.
@@ -173,4 +173,85 @@ fn nothing_is_proposed_when_the_replay_disagrees_and_the_run_starts_again() {
     let calls = seen.lock().unwrap().len();
     assert!(hub.propose_promotions(&f.realm).unwrap().is_empty());
     assert_eq!(seen.lock().unwrap().len(), calls, "not replayed every hour");
+}
+
+#[test]
+fn after_a_withheld_proposal_only_new_approvals_count() {
+    let f = business();
+    approved(&f, 12, 20.0, 12.0);
+    let (hub, _, _) = make_hub(&f.home, replay(12, &[0]));
+    hub.propose_promotions(&f.realm).unwrap();
+    let [withheld] = promotions(&f, &["expired"]).try_into().unwrap();
+    // Withheld eleven days ago: the twelve before it no longer count.
+    let at = Utc::now() - chrono::Duration::days(11);
+    Store::of(&f.realm)
+        .unwrap()
+        .backdate(withheld.id, at)
+        .unwrap();
+    approved(&f, 11, 10.0, 1.0);
+    let (hub, seen, _) = make_hub(&f.home, replay(12, &[]));
+    assert!(hub.propose_promotions(&f.realm).unwrap().is_empty());
+    assert!(seen.lock().unwrap().is_empty(), "nothing was replayed");
+
+    approved(&f, 1, 0.5, 0.5);
+    assert_eq!(hub.propose_promotions(&f.realm).unwrap().len(), 1);
+    let [item] = promotions(&f, &["pending"]).try_into().unwrap();
+    assert_eq!(item.args["count"], 12);
+    assert_eq!(item.args["replay"]["cases"], 12);
+}
+
+#[test]
+fn a_change_of_level_since_the_proposal_makes_allow_change_nothing() {
+    let f = business();
+    approved(&f, 12, 8.0, 0.1);
+    let (hub, _, _) = make_hub(&f.home, replay(12, &[]));
+    hub.propose_promotions(&f.realm).unwrap();
+    let [item] = promotions(&f, &["pending"]).try_into().unwrap();
+    // Set to the level it was proposed from: changed, and changed back.
+    Store::of(&f.realm)
+        .unwrap()
+        .set_level("post-writer", ACTION, 1, 3, "founder", "careful")
+        .unwrap();
+
+    let (answered, report) = hub
+        .answer_item(&f.realm, item.id, None, Answer::Approve, "app", 1)
+        .unwrap();
+
+    assert_eq!(answered.status, "failed");
+    let report = report.unwrap();
+    assert!(report.contains("nothing changed"), "{report}");
+    assert_eq!(level(&f), 1);
+}
+
+#[test]
+fn nothing_is_proposed_while_an_approval_of_the_record_waits() {
+    let f = business();
+    approved(&f, 12, 8.0, 0.1);
+    drafted(&mut Store::of(&f.realm).unwrap(), "waiting", "Draft W");
+    let (hub, seen, _) = make_hub(&f.home, replay(12, &[]));
+    assert!(hub.propose_promotions(&f.realm).unwrap().is_empty());
+    assert!(seen.lock().unwrap().is_empty(), "nothing was replayed");
+}
+
+#[test]
+fn a_routine_with_no_step_to_check_rests_on_its_record_alone() {
+    let f = business();
+    let path = f.root.path().join("routines/posts.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    graph["blocks"][1].as_object_mut().unwrap().remove("keep");
+    std::fs::write(&path, graph.to_string()).unwrap();
+    approved(&f, 12, 8.0, 0.1);
+    let (hub, seen, _) = make_hub(&f.home, Vec::new());
+
+    assert_eq!(hub.propose_promotions(&f.realm).unwrap().len(), 1);
+
+    assert!(seen.lock().unwrap().is_empty(), "nothing was replayed");
+    let [item] = promotions(&f, &["pending"]).try_into().unwrap();
+    assert!(item.args["replay"].is_null());
+    let text = item.args["text"].as_str().unwrap();
+    assert!(
+        text.contains("no step to check again: the record alone") && !text.contains("match"),
+        "{text}"
+    );
 }

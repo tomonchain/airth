@@ -442,15 +442,11 @@ fn an_approval_guards_the_acts_after_it_up_to_the_next_approval() {
         {"id": "out", "type": "act", "action": "site.publish_article"}
     ]}))
     .unwrap();
-    let mut got = guarded(&graph);
-    got[0].1.sort();
+    // A report is the founder's to judge: it is not guarded.
     assert_eq!(
-        got,
+        guarded(&graph),
         vec![
-            (
-                "ok".to_string(),
-                vec!["airth.report".to_string(), "typefully.create_draft".into()]
-            ),
+            ("ok".to_string(), vec!["typefully.create_draft".to_string()]),
             ("publish".into(), vec!["site.publish_article".into()]),
         ]
     );

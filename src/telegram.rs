@@ -332,7 +332,8 @@ fn buttons(realm: &str, item: &Item) -> Value {
         },
         "report" => json!([[button("Seen", "a")]]),
         "idea" => json!([[button("Useful", "a"), button("Not for me", "r")]]),
-        "promotion" => json!([[button("Allow", "a"), button("Not now", "r")]]),
+        // Not now needs no reason: it changes nothing.
+        "promotion" => json!([[button("Allow", "a"), button("Not now", "s")]]),
         // Decision 66: an overdue deadline stays until it is filed.
         "deadline" if item.args["overdue"] == true => json!([[button("Filed", "a")]]),
         "deadline" => json!([[button("Filed", "a"), button("Seen", "r")]]),

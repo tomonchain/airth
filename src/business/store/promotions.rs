@@ -19,19 +19,25 @@ pub struct Record {
     /// When the oldest and the newest of them were made.
     pub first: Option<String>,
     pub last: Option<String>,
-    /// How many each routine's approval brought: its replay asks as many.
+    /// How many each routine's approval brought.
     pub routines: BTreeMap<String, usize>,
+    /// By routine, the items of the run its guarding approval blocks made,
+    /// newest first: the cases its replay asks again.
+    pub cases: BTreeMap<String, Vec<i64>>,
     /// What ended the run, and when: `edit`, `rejection` or `incident`.
     pub ended_by: Option<(&'static str, String)>,
     /// A proposal for this agent and action waits for the founder.
     pub pending: bool,
+    /// An item of the record waits for the founder: their answer is not in.
+    pub waiting: bool,
 }
 
 impl Store {
     /// `agent`'s record on `action`: the items of the approval blocks that
     /// guard it, `guards` (routine, block), and the action's own items at
-    /// level 1. An approval without edit adds one; an edit, a rejection, or
-    /// an incident on the agent and action ends the run. Only answers after
+    /// level 1. An approval without edit adds one; an edit (even on an item
+    /// still waiting), a rejection, or an incident on the agent and action
+    /// ends the run. Only answers after
     /// the last proposal count, so the founder is asked again only after
     /// another run.
     pub fn track_record(
@@ -69,7 +75,8 @@ impl Store {
                        AND l.action IN ('approved', 'overridden')),
                EXISTS (SELECT 1 FROM queue_log l WHERE l.item = q.id
                        AND l.action IN ('edited', 'flag lifted by edit'))
-             FROM queue q WHERE kind = 'approval' AND agent = ?1 AND created_at > ?2";
+             FROM queue q WHERE kind = 'approval' AND agent = ?1
+               AND (created_at > ?2 OR status = 'pending')";
         type Row = (i64, String, Option<String>, String, bool, bool);
         let read = |r: &rusqlite::Row| -> rusqlite::Result<Row> {
             Ok((
@@ -89,20 +96,27 @@ impl Store {
         let mut stmt = self.conn.prepare(&format!(
             "{answers} AND routine = ?3 AND json_extract(source, '$.block') = ?4"
         ))?;
+        let mut guarded = std::collections::HashSet::new();
         for (routine, block) in guards {
-            let found = stmt.query_map(params![agent, floor, routine, block], read)?;
-            rows.extend(found.collect::<rusqlite::Result<Vec<_>>>()?);
+            for row in stmt.query_map(params![agent, floor, routine, block], read)? {
+                let row = row?;
+                guarded.insert(row.0);
+                rows.push(row);
+            }
         }
         rows.sort_by(|a, b| (&b.1, b.0).cmp(&(&a.1, a.0)));
         rows.dedup_by_key(|r| r.0);
-        for (_, at, routine, status, approved, edited) in rows {
+        out.waiting = rows.iter().any(|r| r.3 == "pending");
+        // Before the last proposal, only what still waits was read.
+        rows.retain(|r| r.1 > floor);
+        for (id, at, routine, status, approved, edited) in rows {
             if let Some(when) = incident.as_ref().filter(|i| **i > at) {
                 out.ended_by = Some(("incident", when.clone()));
                 break;
             }
             let stop = match status.as_str() {
                 "rejected" => Some("rejection"),
-                "approved" | "done" | "failed" if edited => Some("edit"),
+                _ if edited => Some("edit"),
                 "approved" | "done" | "failed" if approved => None,
                 // Not answered, or not by the founder: it says nothing.
                 _ => continue,
@@ -115,6 +129,9 @@ impl Store {
             out.last.get_or_insert_with(|| at.clone());
             out.first = Some(at);
             if let Some(r) = routine {
+                if guarded.contains(&id) {
+                    out.cases.entry(r.clone()).or_default().push(id);
+                }
                 *out.routines.entry(r).or_default() += 1;
             }
         }
@@ -124,6 +141,16 @@ impl Store {
             out.ended_by = Some(("incident", when));
         }
         Ok(out)
+    }
+
+    /// The newest change to `agent`'s level for `action`, by anyone: 0 if
+    /// none. A promotion is allowed only if none happened since it was asked.
+    pub fn level_stamp(&self, agent: &str, action: &str) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT COALESCE(MAX(id), 0) FROM autonomy_log WHERE agent = ?1 AND action = ?2",
+            params![agent, action],
+            |r| r.get(0),
+        )?)
     }
 
     /// A promotion Airth weighed and did not propose, its replay having
@@ -222,9 +249,11 @@ mod tests {
     #[test]
     fn approvals_count_newest_first_from_the_guarding_block_and_the_actions_own_items() {
         let (_dir, mut s) = open();
+        let mut drafts = Vec::new();
         for days in [9, 6, 3] {
             let id = draft(&mut s, "ok", days);
             approve(&mut s, id);
+            drafts.insert(0, id);
         }
         let own_item = own(&mut s, "approval", 1);
         approve(&mut s, own_item);
@@ -240,7 +269,10 @@ mod tests {
             "the newest is the action's own item"
         );
         assert_eq!(r.routines, BTreeMap::from([("posts".to_string(), 3)]));
+        // The replay asks only the guarding block's cases, newest first.
+        assert_eq!(r.cases, BTreeMap::from([("posts".to_string(), drafts)]));
         assert_eq!(r.ended_by, None);
+        assert!(r.waiting, "the newest draft still waits for the founder");
         assert_eq!(
             s.track_record("reviewer", ACTION, &guards()).unwrap().count,
             0
@@ -278,6 +310,21 @@ mod tests {
         approve(&mut s, last);
         let r = s.track_record("writer", ACTION, &guards()).unwrap();
         assert_eq!((r.count, r.ended_by.unwrap().0), (1, "incident"));
+    }
+
+    #[test]
+    fn an_edit_ends_the_run_even_on_an_item_still_waiting() {
+        let (_dir, mut s) = open();
+        for days in [9, 8] {
+            let id = draft(&mut s, "ok", days);
+            approve(&mut s, id);
+        }
+        let edited = draft(&mut s, "ok", 1);
+        s.answer(edited, None, Answer::Edit("Mine".into()), "app", 1)
+            .unwrap();
+        let r = s.track_record("writer", ACTION, &guards()).unwrap();
+        assert_eq!((r.count, r.ended_by.unwrap().0), (0, "edit"));
+        assert!(r.waiting);
     }
 
     #[test]

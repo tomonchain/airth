@@ -81,7 +81,12 @@ impl Hub {
         let mut store = Store::of(realm)?;
         let mut out = Vec::new();
         for (agent, _) in crate::business::bots(&root)? {
-            for d in &declared {
+            // A report or a suggestion is the founder's to judge, never
+            // the agent's to earn.
+            for d in declared
+                .iter()
+                .filter(|d| !crate::routine::for_founder(&d.id, &BTreeMap::new()))
+            {
                 let from = store.level(&agent, &d.id, d.ceiling, DEFAULT_LEVEL)?;
                 if from >= d.ceiling {
                     continue;
@@ -97,18 +102,23 @@ impl Hub {
                 let (Some(first), Some(last)) = (date(&record.first), date(&record.last)) else {
                     continue;
                 };
+                // Nothing is proposed while the founder has yet to answer
+                // something of the record, or the last proposal.
                 if record.pending
+                    || record.waiting
                     || record.count < IN_A_ROW
                     || last - first < chrono::Duration::days(OVER_DAYS)
                 {
                     continue;
                 }
                 // What a routine's prompts would do today, on what the
-                // founder approved: a prompt changed since the run began
-                // does not ride on it.
+                // founder approved at the blocks guarding the action: a
+                // prompt changed since the run began does not ride on it.
                 let mut replay: Option<Replay> = None;
-                for (routine, n) in record.routines.iter().filter(|(r, _)| keeping.contains(*r)) {
-                    let r = self.replay(realm, routine, *n)?;
+                for (routine, ids) in record.cases.iter().filter(|(r, _)| keeping.contains(*r)) {
+                    let Some(r) = self.replay(realm, routine, ids)? else {
+                        continue;
+                    };
                     let sum = replay.get_or_insert_with(Replay::default);
                     sum.cases += r.cases;
                     sum.agree += r.agree;
@@ -117,7 +127,10 @@ impl Hub {
                 let to = from + 1;
                 let title = super::orders::title(&root, &agent).unwrap_or_else(|| agent.clone());
                 let window = cancel_minutes(realm, &d.id);
-                let args = proposal(&agent, &d.id, from, &record, replay.as_ref(), window, first);
+                let mut args =
+                    proposal(&agent, &d.id, from, &record, replay.as_ref(), window, first);
+                // Allow holds only if the level did not change since.
+                args["stamp"] = store.level_stamp(&agent, &d.id)?.into();
                 let ask = match to {
                     1 => format!("{title}: {} once you approve?", words(&d.id)),
                     _ => format!("{title}: {} without asking?", words(&d.id)),
@@ -154,12 +167,20 @@ impl Hub {
         Ok(out)
     }
 
-    /// Ask the routine's AI blocks again about its newest `n` answers, and
-    /// count the cases where every keeping block does as the founder did.
-    /// A case a block could not answer does not agree.
-    fn replay(&self, realm: &Realm, routine: &str, n: usize) -> Result<Replay> {
-        let eval = self.evaluate_routine(realm, routine, n)?;
-        let keeps: Vec<_> = eval.blocks.iter().filter(|b| b.kind == "keeps").collect();
+    /// Ask the routine's AI blocks again about the founder's answers to
+    /// `items`, and count the cases where every keeping block does as the
+    /// founder did. A case a block could not answer does not agree. None if
+    /// no keeping block was asked about them: there is nothing to check.
+    fn replay(&self, realm: &Realm, routine: &str, items: &[i64]) -> Result<Option<Replay>> {
+        let eval = self.evaluate_items(realm, routine, items)?;
+        let keeps: Vec<_> = eval
+            .blocks
+            .iter()
+            .filter(|b| b.kind == "keeps" && !b.cases.is_empty())
+            .collect();
+        if keeps.is_empty() {
+            return Ok(None);
+        }
         let mut ids: BTreeSet<i64> = eval
             .blocks
             .iter()
@@ -174,15 +195,11 @@ impl Hub {
                     .any(|c| c.item == *id && c.kept == Some(c.founder != "reject"))
             });
         }
-        Ok(Replay {
+        Ok(Some(Replay {
             cases: eval.cases,
-            agree: if keeps.is_empty() {
-                eval.cases
-            } else {
-                ids.len()
-            },
+            agree: ids.len(),
             cost_usd: eval.cost_usd,
-        })
+        }))
     }
 
     /// The founder allowed promotion `item`: the agent's level for its
@@ -207,7 +224,11 @@ impl Hub {
             .map(|d| d.ceiling)
             .context("this action is no longer declared: nothing changed")?;
         let mut store = Store::of(realm)?;
-        if store.level(agent, action, ceiling, DEFAULT_LEVEL)? != from {
+        // Any change since it was asked, even one undone, is the founder's
+        // newer word: the record it rests on is no longer what they see.
+        if store.level(agent, action, ceiling, DEFAULT_LEVEL)? != from
+            || item.args["stamp"].as_i64() != Some(store.level_stamp(agent, action)?)
+        {
             bail!(
                 "its level changed since this was asked: nothing changed. Set it on the agent's page"
             );
@@ -266,21 +287,19 @@ fn proposal(
         record.count,
         first.format("%-d %b")
     );
-    let check = replay.map(|r| {
-        format!(
+    let check = match replay {
+        Some(r) => format!(
             "checked again with today's prompts: {} of {} match",
             r.agree, r.cases
-        )
-    });
+        ),
+        None => "no step to check again: the record alone".to_string(),
+    };
     let change = match to {
         1 => "It will ask you here first, then do it once you approve.".to_string(),
         2 => format!("Each one will wait {window} minutes, with Cancel, then go."),
         _ => "Each one will go on its own, then be reported to you.".to_string(),
     };
-    let text = match &check {
-        Some(c) => format!("{said} · {c}\n{change}"),
-        None => format!("{said}\n{change}"),
-    };
+    let text = format!("{said} · {check}\n{change}");
     json!({
         "agent": agent, "action": action, "from": from, "to": to,
         "count": record.count, "first": record.first, "last": record.last,
