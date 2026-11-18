@@ -41,6 +41,16 @@ impl App {
                     Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
                 }
             }
+            // Decision 151: the routine's AI blocks against the founder's
+            // answers; the request waits for it, as a dry run's.
+            (Method::Post, ["realms", r, "graphs", name, "eval"]) => {
+                let realm = self.realm(r)?;
+                let max = crate::routine::run::eval::MAX;
+                match self.hub.evaluate_routine(&realm, name, max) {
+                    Ok(evaluation) => json_response(200, json!(evaluation)),
+                    Err(e) => json_response(422, json!({"error": format!("{e:#}")})),
+                }
+            }
             // Run now, from the app: refused at once when the file does not
             // hold; otherwise the request waits for the run, as a dry run's.
             (Method::Post, ["realms", r, "graphs", name, "run"]) => {

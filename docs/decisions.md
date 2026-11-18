@@ -4,7 +4,7 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 
 ## 152. One mailbox per business, the interlocutor's, who passes each mail to the right agent
 
-**Accepted** (founder, 18 November 2026: "est-ce que c'est pas mieux qu'il y ait qu'une mailbox qui est connectée directement au CEO / Chief of Staff et les communications se passent avec lui directement et il dispatch?", then "Travaille dessus", then "Go … 152 B": of the two ways a mail could start work, B). It replaces decision 70's "one mailbox per role" and `CLAUDE.md`'s Mail rule 1; decision 70's other rules stand. (Decision 151 is the evaluations' proposal, on its own branch.)
+**Accepted** (founder, 18 November 2026: "est-ce que c'est pas mieux qu'il y ait qu'une mailbox qui est connectée directement au CEO / Chief of Staff et les communications se passent avec lui directement et il dispatch?", then "Travaille dessus", then "Go … 152 B": of the two ways a mail could start work, B). It replaces decision 70's "one mailbox per role" and `CLAUDE.md`'s Mail rule 1; decision 70's other rules stand.
 
 - **One address per business, by default:** the interlocutor's (decision 120), e.g. `contact@<domain>`, set in Settings, Mailboxes, as today. Other agents have none unless the founder gives one later (a `support@` once the volume calls for it): decision 70's machinery for a role's own box is kept as it is.
 - **Each new mail is sorted, by a step that can do nothing.** A model call with no tool (rule 2) reads the mail and answers, against a schema checked in code: which agent it is for (one of the team, or `founder`), and a summary, of which only the first line is kept (300 characters at most): a longer answer is cut, not refused. Its prompt is Airth's versioned file, `src/prompts/mail.md`, as the command bar's routing is (decision 64), out of the agents' reach; each call is journaled, an invalid answer rejected and recorded, never repaired.
@@ -21,6 +21,31 @@ Short records of the choices behind Airth's structure, newest first. Each one sa
 *Why:* one address to give and to set up at OVH (SPF, DKIM, DMARC once), one place where the business's mail arrives, and the team behind it, as the founder already works with the interlocutor for orders. A mailbox per role was more setup than a small business needs before its volume does.
 
 *Cost:* the interlocutor's mailbox receives all the business's incoming mail, which is untrusted, read through a step that holds no tool. Every mail costs one model call to sort, and a task when it goes to an agent. A mail's words reach a task's model, which can only read its skills and draft: an instruction hidden in a mail could make it quote a skill in a draft, which the founder reads before anything leaves. A table in `business.db` (migration 27) and a field in a run's state (`mail`). A mail whose claim was lost to a stop is not passed on (see *At most once*).
+
+## 151. A routine's AI blocks are checked against what the founder decided, before a prompt or model change is kept
+
+**Accepted** (founder, 18 November 2026: "Go 151"; proposed on 17 November: "on continue d'améliorer le core de Airth"; `CLAUDE.md` asks that model steps be covered by evaluations, replayed when a prompt or a model changes, and nothing does it yet).
+
+- **The reference set is the founder's own answers**, already in `business.db`: for a routine, the items its blocks sent to Needs you in the last 60 days, each with what the founder did: approved as it was, edited (and into what), rejected (and why). Nothing to write by hand; a business with no history has no evaluation yet, and the screen says so.
+- **What is replayed:** each AI block of the routine, over the fields each item was drafted from (an item keeps them in its `args`, beside the draft), with the prompt file and the model as they are now. Nothing is sent and nothing reaches Needs you: it runs as the editor's dry run does, its model calls journaled as a dry run and counted in the costs.
+- **What is measured, by code, never by a model:**
+  - a block that keeps, scores or classifies (an AI block with `keep` or `rank`): how often it now keeps what the founder approved, and drops what they rejected; before and after;
+  - a block that drafts (`into: answer`): no score. The new draft is shown beside the one the founder approved (or edited), case by case, for the founder to read; a draft is not right or wrong by a number.
+- **When:** on demand, from the routine's panel (Routines) and `airth routines eval <name>`; and offered, not run, when the routine's prompt file or model changed since its last evaluation. At most 20 cases a run, the newest; what the run cost comes with its results, and the screen will say what it may cost before it starts (cases × measured AI blocks, one call each).
+- **What it decides:** nothing on its own. It tells the founder whether the change does better or worse on their own past decisions; keeping the change stays theirs.
+
+*Why:* a prompt or a model changes every week; today nothing says whether the routine got better or worse, until the founder finds out on the next drafts. Their past answers are the truest reference there is, and they cost nothing to gather.
+
+*Cost:* model calls for each evaluation (20 cases, one call each per AI block). A drafting block's evaluation needs the founder's reading. A keeping block is measured only on what reached the founder: what it dropped before, they never saw, so it has no answer to compare with.
+
+*Implementation (18 November 2026):* the engine and `airth routines eval <name>` first, the screen after.
+
+- **The cases** are read through the access layer (`Store::founder_answers`, beside decision 116's feedback): the founder's last word on each item, so a draft redone and then approved counts once, as approved, and an item whose newest draft got a bare rejection is left out whole. A request to redo counts as wanted: the founder wanted the item, not that draft. Bare rejections, what expired and what the founder forgot are left out, as in decision 116.
+- **An item is known by its `source_id`**, which every read that brings items from outside sets (a feed, a post, a mail). An item without one (a business read, such as the week's) has no stable identity: nothing in `business.db` ties a redone draft to the one that replaced it (the redo's run is new, and the old item's log keeps only the request). So for such an item a redo and the later answer each count as a case. Tying them would need a new stored link, left for when a routine needs it.
+- **What a block is asked about:** the item's fields, without what this block and the AI blocks after it wrote, nor the engine's own fields. Each case is asked alone: `distinct` and `limit` compare an item with the rest of its day's items, which are not in the set, so they are not applied. A list block that keeps or ranks gets a list of one; a list block that drafts (no `keep` or `rank`) is not measured, as it drafts for the whole list at once.
+- **The founder's recent words (decision 116) are not told** to the block measured: they quote the very drafts it is compared with. The agent's lessons (decision 127) are.
+- **Not measured, and said so:** a check (an AI block writing elsewhere than `answer`, without `keep` or `rank`), a list block that drafts, a block after the last approval, and a case the model could not answer (dropped, or, for a block whose answer goes elsewhere than `answer`, let through unanswered): it is left out of the score.
+- **Nothing is kept:** the evaluation is returned (the terminal, and `POST realms/<r>/graphs/<name>/eval` for the screen), not stored. Its model calls are in the journal as a dry run, as any.
 
 ## 150. A founder back on a run's page watches it again
 
