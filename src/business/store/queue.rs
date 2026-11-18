@@ -201,6 +201,9 @@ impl Store {
         limit: usize,
         approvals: bool,
     ) -> Result<Vec<Answered>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM queue
              WHERE routine = ?1 AND kind = 'approval' AND created_at >= ?2
@@ -217,8 +220,10 @@ impl Store {
             let Some(path) = item.source["show"].as_str() else {
                 continue;
             };
+            // The newest answer is the founder's last word on the item,
+            // even one that says nothing: the older ones no longer count.
             let source = item.args["source_id"].as_str().unwrap_or_default();
-            if approvals && !source.is_empty() && seen.contains(source) {
+            if approvals && !source.is_empty() && !seen.insert(source.to_string()) {
                 continue;
             }
             let at = |v: &Value| {
@@ -252,7 +257,6 @@ impl Store {
                 None
             };
             if let Some((kind, said, edited)) = said {
-                seen.insert(source.to_string());
                 let said = Feedback {
                     item: item.id,
                     at: item.created_at.clone(),

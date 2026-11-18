@@ -478,4 +478,23 @@ fn the_founders_answers_are_the_reference_set() {
     let said = store.founder_feedback("posts", since, 12).unwrap();
     assert!(said.iter().all(|f| f.kind != "approve"));
     assert_eq!(said.len(), 4);
+    // None asked for, none read.
+    assert!(store.founder_answers("posts", since, 0).unwrap().is_empty());
+
+    // The newest answer is the last word, even a bare rejection: an item
+    // approved, drafted again and then let go is left out whole.
+    let first = draft(&mut store, "posts", "j", "First.");
+    store
+        .answer(first, None, Answer::Approve, "app", 1)
+        .unwrap();
+    let again = draft(&mut store, "posts", "j", "Again.");
+    reject(&mut store, again, "from Telegram");
+    let answers = store.founder_answers("posts", since, 20).unwrap();
+    assert!(
+        answers
+            .iter()
+            .all(|a| a.item.id != first && a.item.id != again),
+        "{answers:?}"
+    );
+    assert_eq!(answers.len(), 5);
 }

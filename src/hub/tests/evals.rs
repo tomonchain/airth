@@ -203,6 +203,58 @@ fn a_routines_ai_blocks_are_measured_against_what_the_founder_decided() {
     assert_eq!(eval.blocks[1].cases[0].item, c);
 }
 
+/// A keeping block that writes its answer elsewhere lets an item go on
+/// when the model cannot answer: the evaluation leaves that case out of
+/// the score, and says why.
+#[test]
+fn a_case_the_model_could_not_answer_is_not_scored() {
+    let mut f = fixture();
+    routine(&mut f);
+    let file = f.root.path().join("routines/posts.json");
+    let graph = std::fs::read_to_string(&file).unwrap().replace(
+        r#""keep":"relevant""#,
+        r#""keep":"relevant","as":"verdict""#,
+    );
+    assert!(graph.contains("verdict"), "{graph}");
+    std::fs::write(&file, graph).unwrap();
+    let mut store = Store::of(&f.realm).unwrap();
+    let a = drafted(&mut store, "a", "Draft A");
+    store.answer(a, None, Answer::Approve, "app", 1).unwrap();
+    let c = drafted(&mut store, "c", "Draft C");
+    store
+        .answer(c, None, Answer::Reject("off topic".into()), "app", 1)
+        .unwrap();
+    // C's answer does not fit, twice; A is kept. Then two drafts.
+    let (hub, _, _) = make_hub(
+        &f.home,
+        vec![
+            done("not json"),
+            done("still not json"),
+            done(r#"{"relevant": true}"#),
+            done(r#"{"draft": "New C"}"#),
+            done(r#"{"draft": "New A"}"#),
+        ],
+    );
+
+    let eval = hub.evaluate_routine(&f.realm, "posts", 20).unwrap();
+
+    let pick = &eval.blocks[0];
+    assert_eq!(pick.id, "pick");
+    assert_eq!(
+        pick.cases.iter().map(|c| c.item).collect::<Vec<_>>(),
+        vec![a]
+    );
+    let score = pick.score.as_ref().unwrap();
+    assert_eq!((score.wanted, score.wanted_kept, score.rejected), (1, 1, 0));
+    assert!(
+        eval.skipped
+            .iter()
+            .any(|s| s.starts_with(&format!("pick: item {c}: ")) && s.contains("twice")),
+        "{:?}",
+        eval.skipped
+    );
+}
+
 #[test]
 fn a_routine_with_no_answer_yet_has_no_evaluation() {
     let mut f = fixture();

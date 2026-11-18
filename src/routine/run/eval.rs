@@ -198,13 +198,6 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
             let mut notes = Vec::new();
             let judged = judge_all(&asking, vec![item], &filters, dry.store, dry.io, &mut notes);
             let (kept, stats) = match judged {
-                Ok((_, stats)) if !stats.dropped.is_empty() => {
-                    let why = &stats.dropped[0].1;
-                    out.skipped
-                        .push(format!("{}: item {}: {why}", block.id, a.item.id));
-                    add(&mut total, &stats);
-                    continue;
-                }
                 Ok(judged) => judged,
                 Err(e) => {
                     out.skipped
@@ -213,6 +206,20 @@ pub fn evaluate(name: &str, graph: &Graph, dry: Dry, answered: &[Answered]) -> R
                 }
             };
             add(&mut total, &stats);
+            // Not answered: dropped, or, for a block that writes elsewhere
+            // than `answer`, let through without its answer, said only in
+            // the notes. Either way the block's choice is unknown.
+            let answered =
+                stats.dropped.is_empty() && kept.first().is_none_or(|it| it.contains_key(into));
+            if !answered {
+                let why = match stats.dropped.first() {
+                    Some((_, why)) => why.clone(),
+                    None => notes.join("; "),
+                };
+                out.skipped
+                    .push(format!("{}: item {}: {why}", block.id, a.item.id));
+                continue;
+            }
             let now = kept.first();
             let show = a.item.source["show"].as_str().unwrap_or_default();
             cases.push(Case {
