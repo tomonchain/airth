@@ -993,5 +993,7 @@ fn cost(stats: &Judged) -> String {
     )
 }
 
+pub mod eval;
+
 #[cfg(test)]
 mod tests;

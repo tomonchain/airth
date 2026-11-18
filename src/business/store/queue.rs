@@ -67,7 +67,8 @@ const SILENT: [&str; 3] = ["", "from Telegram", "let go with its batch"];
 pub struct Feedback {
     pub item: i64,
     pub at: String,
-    /// `edit`, `reject` or `redo`.
+    /// `edit`, `reject` or `redo`; `approve`, as it was, in the reference
+    /// set of decision 151 only.
     pub kind: &'static str,
     /// The draft as the agent wrote it.
     pub draft: String,
@@ -75,6 +76,13 @@ pub struct Feedback {
     pub said: String,
     /// The draft as the founder approved it, after their edit.
     pub edited: String,
+}
+
+/// An item the founder answered, and what they did (decision 151).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Answered {
+    pub item: Item,
+    pub said: Feedback,
 }
 
 const COLUMNS: &str = "id, created_at, kind, title, agent, routine, run, action, args, \
@@ -169,6 +177,33 @@ impl Store {
         since: chrono::DateTime<Utc>,
         limit: usize,
     ) -> Result<Vec<Feedback>> {
+        let answered = self.answered(routine, since, limit, false)?;
+        Ok(answered.into_iter().map(|a| a.said).collect())
+    }
+
+    /// The founder's last word on each of routine `routine`'s items since
+    /// `since`, newest first, at most `limit` (decision 151): what
+    /// `founder_feedback` reads, and the drafts approved as they were. An
+    /// item drafted again for the founder counts once, by its newest answer.
+    pub fn founder_answers(
+        &self,
+        routine: &str,
+        since: chrono::DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<Answered>> {
+        self.answered(routine, since, limit, true)
+    }
+
+    fn answered(
+        &self,
+        routine: &str,
+        since: chrono::DateTime<Utc>,
+        limit: usize,
+        approvals: bool,
+    ) -> Result<Vec<Answered>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM queue
              WHERE routine = ?1 AND kind = 'approval' AND created_at >= ?2
@@ -180,10 +215,17 @@ impl Store {
             .query_map(params![routine, since.to_rfc3339()], read)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for item in items {
             let Some(path) = item.source["show"].as_str() else {
                 continue;
             };
+            // The newest answer is the founder's last word on the item,
+            // even one that says nothing: the older ones no longer count.
+            let source = item.args["source_id"].as_str().unwrap_or_default();
+            if approvals && !source.is_empty() && !seen.insert(source.to_string()) {
+                continue;
+            }
             let at = |v: &Value| {
                 path.split('.')
                     .try_fold(v, |v, k| v.get(k))
@@ -209,18 +251,21 @@ impl Store {
                 }
             } else if now != draft && !now.is_empty() {
                 Some(("edit", String::new(), now))
+            } else if approvals {
+                Some(("approve", String::new(), String::new()))
             } else {
                 None
             };
             if let Some((kind, said, edited)) = said {
-                out.push(Feedback {
+                let said = Feedback {
                     item: item.id,
-                    at: item.created_at,
+                    at: item.created_at.clone(),
                     kind,
                     draft,
                     said,
                     edited,
-                });
+                };
+                out.push(Answered { item, said });
             }
             if out.len() == limit {
                 break;

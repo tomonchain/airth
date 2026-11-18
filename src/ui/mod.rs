@@ -257,6 +257,8 @@ impl App {
                 [.., "approval"]
                     | [.., "stop"]
                     | ["realms", _, "graphs", _, "dry-run"]
+                    // An evaluation is a dry run per case (decision 151).
+                    | ["realms", _, "graphs", _, "eval"]
                     // A routine run by hand lasts minutes, and records its
                     // run through the store, not the settings.
                     | ["realms", _, "graphs", _, "run"]
