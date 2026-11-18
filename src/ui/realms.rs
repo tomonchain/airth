@@ -504,6 +504,21 @@ impl App {
                 crate::mail::flag_bank_changes(&mut store, &mailbox, &kept)?;
                 json_response(200, json!({"kept": kept.len()}))
             }
+            // The business's mail as the founder sees it (decision 152):
+            // the interlocutor's mailbox, its last mails, where each went.
+            (Method::Get, ["realms", r, "mail"]) => json_response(200, mail(&self.realm(r)?)?),
+            // One mail's text, as it was kept: plain text, never HTML. Only
+            // the business's mailbox: another agent's mail is not found.
+            (Method::Get, ["realms", r, "mail", id]) => {
+                let found = match id.parse() {
+                    Ok(id) => one_mail(&self.realm(r)?, id)?,
+                    Err(_) => None,
+                };
+                match found {
+                    Some(mail) => json_response(200, mail),
+                    None => json_response(404, json!({"error": "no such mail"})),
+                }
+            }
             (Method::Get, ["realms", r, "repos"]) => {
                 json_response(200, json!({"repos": self.repos(&self.realm(r)?)}))
             }
@@ -1228,6 +1243,65 @@ fn password_secret(agent: &str) -> String {
         crate::mail::SECRET_PREFIX,
         agent.to_uppercase().replace('-', "_")
     )
+}
+
+/// How many of the business's last mails its view lists.
+const MAIL_SHOWN: usize = 50;
+
+/// The business's mailbox: the interlocutor's (decision 152), with its
+/// agent; None for either when there is none. An agent file that names a
+/// mailbox wrongly is an error, never "no mailbox".
+fn business_mailbox(realm: &Realm) -> Result<(Option<String>, Option<crate::mail::Mailbox>)> {
+    let root = realm.root()?;
+    let agent = crate::business::dispatcher(&root);
+    let mailbox = match &agent {
+        Some(a) => crate::mail::Mailbox::of(&root, a)?,
+        None => None,
+    };
+    Ok((agent, mailbox))
+}
+
+/// The interlocutor's mailbox (decision 152), whether its password is set
+/// (never the password), how many mails came this week, and its last mails
+/// with where each went. No interlocutor, or none with a mailbox: no
+/// address and no mail; a mailbox set wrongly: why, in `error`.
+pub(super) fn mail(realm: &Realm) -> Result<Value> {
+    let (agent, mailbox) = match business_mailbox(realm) {
+        Ok(found) => found,
+        Err(e) => {
+            let agent = crate::business::dispatcher(&realm.root()?);
+            return Ok(
+                json!({"agent": agent, "address": null, "password": false, "recent": 0, "mails": [], "error": format!("{e:#}")}),
+            );
+        }
+    };
+    let Some(m) = mailbox else {
+        return Ok(
+            json!({"agent": agent, "address": null, "password": false, "recent": 0, "mails": []}),
+        );
+    };
+    let store = crate::business::store::Store::of(realm)?;
+    let week = chrono::Utc::now() - chrono::Duration::days(7);
+    Ok(json!({
+        "agent": agent,
+        "address": m.address,
+        "password": realm.secret(&m.secret()).is_some(),
+        "recent": store.mail_count_since(&m.address, week)?,
+        "mails": store.mail_lines(&m.address, MAIL_SHOWN)?,
+    }))
+}
+
+/// One mail of the business's mailbox, by its id; None for a mail of any
+/// other mailbox, or none.
+pub(super) fn one_mail(realm: &Realm, id: i64) -> Result<Option<Value>> {
+    let Some(mailbox) = business_mailbox(realm)?.1 else {
+        return Ok(None);
+    };
+    let store = crate::business::store::Store::of(realm)?;
+    Ok(store.mail_in(&mailbox.address, id)?.map(|kept| {
+        let m = kept.mail;
+        json!({"id": kept.id, "from": m.from, "to": m.to, "subject": m.subject, "date": m.date.unwrap_or(kept.fetched_at), "text": m.text, "attachments": m.attachments})
+    }))
 }
 
 /// Each agent with what its mailbox holds: the address and server, whether

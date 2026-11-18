@@ -6,6 +6,7 @@ use crate::mail::Mail;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, params};
+use serde::Serialize;
 
 /// A message fetched from a mailbox, to keep.
 pub struct NewMail<'a> {
@@ -87,6 +88,81 @@ impl Store {
                 kept,
             )
             .optional()?)
+    }
+
+    /// One message kept in `mailbox`, by its id; None when it is another
+    /// mailbox's, so a view of one mailbox never reads another's.
+    pub fn mail_in(&self, mailbox: &str, id: i64) -> Result<Option<Kept>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {KEPT} FROM mail_messages WHERE id = ?1 AND mailbox = ?2"),
+                params![id, mailbox],
+                kept,
+            )
+            .optional()?)
+    }
+
+    /// How many messages `mailbox` received since `since`: every one, not
+    /// only the last that a view lists.
+    pub fn mail_count_since(&self, mailbox: &str, since: DateTime<Utc>) -> Result<i64> {
+        // `fetched_at` is always written in UTC, so its text sorts as time.
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM mail_messages WHERE mailbox = ?1 AND fetched_at >= ?2",
+            params![mailbox, since.to_rfc3339()],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The founder's view of `mailbox` (decision 152): its last `limit`
+    /// mails, newest first, each with where it went. Read only.
+    pub fn mail_lines(&self, mailbox: &str, limit: usize) -> Result<Vec<MailLine>> {
+        // A task's reply is its latest `mail.send` item; a bank flag's
+        // incident names its mail in its source. A mail was answered when
+        // its mailbox sent a mail in reply to its Message-ID: `mail_sent`
+        // keeps the In-Reply-To in `thread`, with or without its brackets.
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.sender, m.subject, COALESCE(m.sent_at, m.fetched_at), m.text,
+                    s.outcome, s.agent, s.summary, s.run, q.id, q.status,
+                    m.message_id IS NOT NULL AND EXISTS(SELECT 1 FROM mail_sent t
+                        WHERE t.mailbox = m.mailbox AND trim(t.thread, '<> ') = trim(m.message_id, '<> '))
+             FROM mail_messages m
+             LEFT JOIN mail_sorting s ON s.mail = m.id
+             LEFT JOIN queue q ON q.id = CASE WHEN s.run IS NOT NULL
+                 THEN (SELECT MAX(id) FROM queue WHERE run = s.run AND action = ?3)
+                 ELSE (SELECT MAX(id) FROM queue WHERE kind = 'incident' AND json_valid(source)
+                       AND json_extract(source, '$.mail') = m.id) END
+             WHERE m.mailbox = ?1 ORDER BY m.id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(
+            params![mailbox, limit as i64, crate::tools::mail::ACTION],
+            |r| {
+                let subject: String = r.get(2)?;
+                let text: String = r.get(4)?;
+                let snippet = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                let bank = crate::mail::bank_change(&Mail {
+                    subject: subject.clone(),
+                    text,
+                    ..Default::default()
+                });
+                Ok(MailLine {
+                    id: r.get(0)?,
+                    sender: r.get(1)?,
+                    subject,
+                    date: r.get(3)?,
+                    snippet: snippet.chars().take(SNIPPET).collect(),
+                    bank,
+                    outcome: r.get(5)?,
+                    agent: r.get(6)?,
+                    summary: r.get(7)?,
+                    run: r.get(8)?,
+                    item: r.get(9)?,
+                    item_status: r.get(10)?,
+                    replied: r.get(11)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Up to `limit` messages of `mailbox` never passed on (decision 152),
@@ -236,6 +312,30 @@ pub struct Sorting {
     pub run: Option<String>,
 }
 
+/// How much of a mail's text its line shows.
+const SNIPPET: usize = 160;
+
+/// A mail as the founder's view lists it: who, what, when, and where it
+/// went. `outcome` is its [`Sorting`]'s, None until it is taken. `item` is
+/// its line in Needs you, if any: the reply its task drafted, or the bank
+/// flag's incident; `replied` once its mailbox sent a reply to it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MailLine {
+    pub id: i64,
+    pub sender: String,
+    pub subject: String,
+    pub date: String,
+    pub snippet: String,
+    pub bank: bool,
+    pub outcome: Option<String>,
+    pub agent: Option<String>,
+    pub summary: Option<String>,
+    pub run: Option<String>,
+    pub item: Option<i64>,
+    pub item_status: Option<String>,
+    pub replied: bool,
+}
+
 /// A mail sent, to record.
 pub struct Sent<'a> {
     pub mailbox: &'a str,
@@ -246,4 +346,204 @@ pub struct Sent<'a> {
     pub subject: &'a str,
     pub thread: Option<&'a str>,
     pub server: &'a str,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::business::store::FILE;
+    use crate::business::store::autonomy::NewItem;
+
+    const BOX: &str = "contact@n.example";
+
+    fn keep(s: &mut Store, uid: u32, from: &str, subject: &str, text: &str) -> i64 {
+        let mail = Mail {
+            message_id: Some(format!("m{uid}@b.example")),
+            thread: format!("t{uid}"),
+            from: from.into(),
+            subject: subject.into(),
+            text: text.into(),
+            ..Default::default()
+        };
+        let new = NewMail {
+            mailbox: BOX,
+            agent: "chief",
+            uid_validity: 1,
+            uid,
+            mail: &mail,
+            at: Utc::now(),
+        };
+        s.keep_mail(&new).unwrap().unwrap()
+    }
+
+    fn sorted(s: &mut Store, id: i64, outcome: &str, agent: Option<&str>, run: Option<&str>) {
+        assert!(s.claim_mail(id).unwrap());
+        let sorting = Sorting {
+            outcome: outcome.into(),
+            agent: agent.map(Into::into),
+            summary: agent.map(|_| "asks when the lot ships".into()),
+            run: run.map(Into::into),
+            ..Default::default()
+        };
+        s.mail_sorted(id, &sorting).unwrap();
+    }
+
+    fn item(
+        s: &mut Store,
+        kind: &str,
+        run: Option<&str>,
+        action: Option<&str>,
+        source: &str,
+    ) -> i64 {
+        s.propose(&NewItem {
+            kind,
+            title: "t",
+            agent: None,
+            routine: None,
+            run,
+            action,
+            args: "{}",
+            execute_at: None,
+            source,
+            model_call: None,
+        })
+        .unwrap()
+    }
+
+    /// Decision 152: the founder sees each mail, newest first, with where
+    /// it went, its reply's state and the bank flag; another mailbox's mail
+    /// is not shown, and looking changes nothing.
+    #[test]
+    fn mail_lines_say_where_each_mail_went() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&dir.path().join(FILE)).unwrap();
+        let shipped = keep(
+            &mut s,
+            1,
+            "ann@b.example",
+            "Lot 12",
+            "When does\n\n  lot 12   ship?",
+        );
+        let replied = keep(&mut s, 2, "bob@b.example", "Invoice", "Please resend it.");
+        let bank = keep(
+            &mut s,
+            3,
+            "eve@b.example",
+            "Update",
+            "Our new IBAN is below.",
+        );
+        let waiting = keep(&mut s, 4, "zoe@b.example", "Hello", "Hi");
+        let long = keep(&mut s, 5, "max@b.example", "Long", &"word ".repeat(100));
+        sorted(&mut s, shipped, "agent", Some("writer"), Some("r1"));
+        sorted(&mut s, replied, "agent", Some("support"), Some("r2"));
+        sorted(&mut s, bank, "bank", None, None);
+        // The reply the first task drafted, drafted again: the latest counts.
+        let send = Some(crate::tools::mail::ACTION);
+        item(&mut s, "approval", Some("r1"), send, "{}");
+        let reply = item(&mut s, "approval", Some("r1"), send, "{}");
+        item(&mut s, "approval", Some("r1"), Some("other.act"), "{}");
+        let flag = item(
+            &mut s,
+            "incident",
+            None,
+            None,
+            &format!(r#"{{"mail": {bank}, "bank": true}}"#),
+        );
+        // A mail is answered by a mail sent in reply to its Message-ID,
+        // with or without brackets, from its own mailbox; a key that looks
+        // like the mail's says nothing.
+        let sent = |s: &mut Store, mailbox: &str, key: &str, thread: Option<&str>| {
+            s.record_sent(&Sent {
+                mailbox,
+                agent: "support",
+                key,
+                message_id: "<m@n.example>",
+                to: &["bob@b.example".to_string()],
+                subject: "Re: Invoice",
+                thread,
+                server: "250 OK",
+            })
+            .unwrap()
+        };
+        sent(&mut s, BOX, "routine/act/1", Some("<m2@b.example>"));
+        sent(
+            &mut s,
+            BOX,
+            &format!("mail/{shipped}/c1"),
+            Some("other@b.example"),
+        );
+        sent(&mut s, "support@n.example", "k", Some("m4@b.example"));
+        sent(&mut s, BOX, "k2", None);
+        // Another mailbox of the business is not this view's.
+        let other = Mail {
+            thread: "x".into(),
+            ..Default::default()
+        };
+        let elsewhere = s
+            .keep_mail(&NewMail {
+                mailbox: "support@n.example",
+                agent: "support",
+                uid_validity: 1,
+                uid: 1,
+                mail: &other,
+                at: Utc::now(),
+            })
+            .unwrap()
+            .unwrap();
+
+        let lines = s.mail_lines(BOX, 50).unwrap();
+        let ids: Vec<i64> = lines.iter().map(|l| l.id).collect();
+        assert_eq!(
+            ids,
+            vec![long, waiting, bank, replied, shipped],
+            "newest first"
+        );
+        let line = |id: i64| lines.iter().find(|l| l.id == id).unwrap();
+
+        let l = line(shipped);
+        assert_eq!(l.snippet, "When does lot 12 ship?");
+        assert_eq!(l.outcome.as_deref(), Some("agent"));
+        assert_eq!(l.agent.as_deref(), Some("writer"));
+        assert_eq!(l.summary.as_deref(), Some("asks when the lot ships"));
+        assert_eq!(l.run.as_deref(), Some("r1"));
+        assert_eq!(
+            (l.item, l.item_status.as_deref()),
+            (Some(reply), Some("pending"))
+        );
+        assert!(!l.replied && !l.bank);
+
+        assert!(line(replied).replied);
+        assert_eq!(line(replied).item, None);
+
+        let l = line(bank);
+        assert!(l.bank);
+        assert_eq!(l.outcome.as_deref(), Some("bank"));
+        assert_eq!(l.item, Some(flag));
+
+        let l = line(waiting);
+        assert_eq!(
+            (l.outcome.as_deref(), l.agent.as_deref(), l.item),
+            (None, None, None)
+        );
+        assert!(!l.replied, "a reply from another mailbox is not this one's");
+        assert_eq!(line(long).snippet.chars().count(), SNIPPET);
+        assert!(lines.iter().filter(|l| l.replied).count() == 1);
+
+        assert_eq!(s.mail_lines(BOX, 2).unwrap().len(), 2);
+        assert!(s.mail_lines("nobody@n.example", 50).unwrap().is_empty());
+        // One mail, read in its own mailbox only.
+        assert_eq!(s.mail_in(BOX, shipped).unwrap().unwrap().id, shipped);
+        assert!(s.mail_in(BOX, elsewhere).unwrap().is_none());
+        assert!(s.mail_in("support@n.example", shipped).unwrap().is_none());
+        // Every mail of the week is counted, not only the ones listed.
+        let week = Utc::now() - chrono::Duration::days(7);
+        assert_eq!(s.mail_count_since(BOX, week).unwrap(), 5);
+        assert_eq!(
+            s.mail_count_since(BOX, Utc::now() + chrono::Duration::hours(1))
+                .unwrap(),
+            0
+        );
+        // Looking takes nothing: the mail not yet passed on still waits.
+        assert_eq!(s.mails_to_sort(BOX, 10).unwrap().len(), 2);
+    }
 }
