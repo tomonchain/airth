@@ -16,6 +16,22 @@ export type Entry = {
 
 export const CHANGELOG: Entry[] = [
   {
+    version: "0.12.0",
+    date: "2026-11-18",
+    title: "One mailbox for the business, and agents that earn their autonomy",
+    added: [
+      "One mailbox for the business, your interlocutor's. Each mail is read as data, never as orders, and passed to the agent it is for; its reply waits for you in Needs you. A mail about bank details, or one for you, comes straight to you.",
+      "Mail in Chat: a thread where your interlocutor tells you what became of each mail, with the mail itself, its task and its reply a tap away.",
+      "Settings, Mailboxes: Connect a mailbox, with OVH, Gmail, Microsoft 365, iCloud and Fastmail ready, or your own servers. Airth logs in to check it before saving.",
+      "More autonomy, earned: after 12 drafts you approved as they were, over a week, and a check of your past answers against today's prompts, Airth asks in Needs you whether that agent may go on without asking. Only you say yes.",
+      "An approval step follows what you allowed: at the middle level it goes after 30 minutes unless you cancel or edit it; at the top level it goes, then reports.",
+      "Marketplace, Skills shows the business's own skills and where each stands.",
+    ],
+    improved: [
+      "The app loads about three times lighter: what Airth sends is compressed.",
+    ],
+  },
+  {
     version: "0.11.1",
     date: "2026-11-18",
     title: "A plainer Needs you",
