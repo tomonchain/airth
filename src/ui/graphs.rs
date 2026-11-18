@@ -182,6 +182,9 @@ impl App {
                             .ok()
                             .and_then(|t| crate::frontmatter::parse(&t).text("title"))
                             .into();
+                    // Whether each approval waits, by the founder's levels
+                    // (decision 153).
+                    routine["steps"] = json!(self.hub.approval_steps(realm, &g)?);
                     routine["graph"] = json!(g);
                 }
                 Err(e) => routine["error"] = format!("{e:#}").into(),

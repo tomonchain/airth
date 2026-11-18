@@ -46,18 +46,7 @@ impl Hub {
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let actions = crate::actions::all(&realm.config.integrations, &servers);
         let store = Store::of(realm)?;
-        // Only a level the founder set lets content from outside reach an act
-        // without an approval: an action's starting level does not
-        // (decision 96).
-        let level = |agent: &str, action: &str| {
-            let ceiling = actions
-                .iter()
-                .find(|a| a.id == action)
-                .map_or(1, |a| a.ceiling);
-            store
-                .level(agent, action, ceiling, DEFAULT_LEVEL)
-                .unwrap_or(1)
-        };
+        let level = |agent: &str, action: &str| founder_level(&store, &actions, agent, action);
         f(&Checks {
             root: &root,
             actions: &actions,
@@ -76,6 +65,7 @@ impl Hub {
         let graph: Graph = self.with_routine_checks(realm, |c| crate::routine::load(c, name))?;
         let root = realm.root()?;
         let context = routine_context(realm)?;
+        let levels = guard_levels(realm)?;
         self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
             let dry = crate::routine::run::Dry {
                 root: &root,
@@ -83,9 +73,31 @@ impl Hub {
                 store,
                 io,
                 integrations: &realm.config.integrations,
+                levels: &levels,
             };
             crate::routine::run::dry_run(name, &graph, dry, Utc::now())
         })
+    }
+
+    /// What each approval step of `graph` does by the founder's levels now,
+    /// by block (decision 153); an item of a mail or flagged blocking
+    /// waits whatever this says.
+    pub fn approval_steps(
+        &self,
+        realm: &Realm,
+        graph: &Graph,
+    ) -> Result<BTreeMap<String, crate::routine::run::Step>> {
+        let levels = guard_levels(realm)?;
+        let mut out = BTreeMap::new();
+        for (i, block) in graph.blocks.iter().enumerate() {
+            if matches!(block.kind, crate::routine::Kind::Approval { .. }) {
+                out.insert(
+                    block.id.clone(),
+                    crate::routine::run::step(graph, i, &levels)?,
+                );
+            }
+        }
+        Ok(out)
     }
 
     /// Ask the routine `name`'s AI blocks again about the newest of its
@@ -105,6 +117,7 @@ impl Hub {
         let context = routine_context(realm)?;
         // It reads nothing: nothing to ask the founder on the way.
         let approver = Box::new(super::pipelines::Unattended);
+        let levels = guard_levels(realm)?;
         self.with_business_io(realm, name, approver, Vec::new(), |store, io| {
             let dry = crate::routine::run::Dry {
                 root: &root,
@@ -112,6 +125,7 @@ impl Hub {
                 store,
                 io,
                 integrations: &realm.config.integrations,
+                levels: &levels,
             };
             eval::evaluate(name, &graph, dry, &answered)
         })
@@ -168,11 +182,15 @@ impl Hub {
             )
         };
         // Acts on an item the founder approved are done as approved, once
-        // (decision 45); the others go through the agent's levels.
+        // (decision 45); the others go through the agent's levels, where an
+        // item its approval step let go after the delay does not wait twice
+        // (decision 153).
         let authority =
-            super::autonomy::BusinessAuthority::for_graph(realm, name, &graph.agent, run)?;
-        let mut within_levels = runtime().with_authority(Box::new(authority));
+            || super::autonomy::BusinessAuthority::for_graph(realm, name, &graph.agent, run);
+        let mut within_levels = runtime().with_authority(Box::new(authority()?));
+        let mut after_delay = runtime().with_authority(Box::new(authority()?.after_delay()));
         let mut as_approved = runtime();
+        let levels = guard_levels(realm)?;
         let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
         let declared = crate::actions::all(&realm.config.integrations, &servers);
         // Reports are gathered, then made one per block when the run ends
@@ -182,10 +200,12 @@ impl Hub {
         let mut act = |action: &str,
                        fields: &BTreeMap<String, String>,
                        key: &str,
-                       approved: bool,
+                       cleared: crate::routine::run::Cleared,
                        block: &str,
                        item: &crate::pipeline::run::Item|
          -> Result<String> {
+            use crate::routine::run::Cleared;
+            let approved = cleared == Cleared::Founder;
             if action == "airth.report" {
                 reports.borrow_mut().push((key.to_string(), fields.clone()));
                 return Ok("reported in Needs you".into());
@@ -221,6 +241,7 @@ impl Hub {
                     key,
                     brief: fields.get("brief").map_or("", String::as_str),
                     item,
+                    after_delay: cleared == Cleared::Delay,
                 };
                 return self.launch_for_routine(realm, &launch, approved, &declared);
             }
@@ -328,6 +349,8 @@ impl Hub {
                     _ => {}
                 }
                 event
+            } else if cleared == Cleared::Delay {
+                after_delay.invoke(key, tool, &args)
             } else {
                 within_levels.invoke(key, tool, &args)
             };
@@ -370,6 +393,7 @@ impl Hub {
                     store,
                     io,
                     integrations: &realm.config.integrations,
+                    levels: &levels,
                 };
                 let real = crate::routine::run::Real { run, act: &mut act };
                 crate::routine::run::run(name, &graph, dry, Some(real), start, Utc::now())
@@ -507,26 +531,39 @@ impl Hub {
         let retrying = matches!(answer, crate::business::store::queue::Answer::Retry { .. });
         let item = store.answer(id, revision, answer, channel, seconds)?;
         // The founder cancelled a delayed action: that action comes down a
-        // level for its agent (decision 45).
-        if let ("delayed", "rejected", Some(agent), Some(action)) = (
+        // level for its agent (decision 45). A routine's approval step that
+        // was to let its item go guards acts of its own: each comes down
+        // (decision 153).
+        let cancelled: Vec<String> = match &item.action {
+            Some(action) => vec![action.clone()],
+            None => item.source["guards"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|a| a.as_str().map(str::to_string))
+                .collect(),
+        };
+        if let ("delayed", "rejected", Some(agent), false) = (
             item.kind.as_str(),
             item.status.as_str(),
             item.agent.clone(),
-            item.action.clone(),
+            cancelled.is_empty(),
         ) {
             let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
             let declared = crate::actions::all(&realm.config.integrations, &servers);
-            let (ceiling, start) = declared
-                .iter()
-                .find(|d| d.id == action)
-                .map_or((1, 1), |d| (d.ceiling, d.start));
-            let (from, to) =
-                store.demote(&agent, &action, ceiling, start, "cancelled by the founder")?;
+            let mut now = Vec::new();
+            for action in cancelled {
+                let (ceiling, start) = declared
+                    .iter()
+                    .find(|d| d.id == action)
+                    .map_or((1, 1), |d| (d.ceiling, d.start));
+                let (from, to) =
+                    store.demote(&agent, &action, ceiling, start, "cancelled by the founder")?;
+                now.push(format!("{action} at level {to} (was {from})"));
+            }
             return Ok((
                 item,
-                Some(format!(
-                    "cancelled; {agent} now takes {action} at level {to} (was {from})"
-                )),
+                Some(format!("cancelled; {agent} now takes {}", now.join(", "))),
             ));
         }
         if item.status != "approved" {
@@ -1009,6 +1046,31 @@ impl Hub {
                 if !store.release_item(item.id)? {
                     continue;
                 }
+                // A routine's approval step: the routine goes on as if the
+                // founder had approved the item as it is (decision 153).
+                if let (Some(routine), Some(block), Value::Object(fields)) = (
+                    &item.routine,
+                    item.source["block"].as_str(),
+                    item.args.clone(),
+                ) {
+                    let start = crate::routine::run::Start::Released {
+                        block: block.to_string(),
+                        item: fields,
+                    };
+                    let run = item
+                        .run
+                        .clone()
+                        .unwrap_or_else(|| format!("{routine}-{}", item.id));
+                    let (status, detail) =
+                        match self.run_routine(&realm, routine, &run, start, None) {
+                            Ok(ran) if !ran.failed.is_empty() => ("failed", ran.failed.join("; ")),
+                            Ok(ran) => ("done", ran.text.lines().last().unwrap_or_default().into()),
+                            Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+                        };
+                    store.close_item(item.id, status, &detail)?;
+                    out.push(format!("{}/{}: {status}: {detail}", realm.name(), item.id));
+                    continue;
+                }
                 let tool = item.source["tool"]
                     .as_str()
                     .unwrap_or("http_request")
@@ -1267,6 +1329,40 @@ const ROUTINE_RETRY_WAITS: [std::time::Duration; 2] = [std::time::Duration::ZERO
 fn routine_context(realm: &Realm) -> Result<String> {
     let memory: Vec<String> = realm.memory().list()?.into_iter().map(|m| m.text).collect();
     crate::business::essentials(&realm.root()?, &memory)
+}
+
+/// The level the founder set for `agent`'s `action`, clamped to its
+/// ceiling; 1 when the founder set none. An action's starting level never
+/// counts (decision 96): only this lets content from outside reach an act
+/// without an approval, and an approval step step aside (decision 153).
+fn founder_level(
+    store: &Store,
+    actions: &[crate::actions::Declared],
+    agent: &str,
+    action: &str,
+) -> u8 {
+    let ceiling = actions
+        .iter()
+        .find(|a| a.id == action)
+        .map_or(1, |a| a.ceiling);
+    store
+        .level(agent, action, ceiling, DEFAULT_LEVEL)
+        .unwrap_or(1)
+}
+
+/// What an approval step reads of each act it guards (decision 153): the
+/// founder-set level, and the minutes the founder has to cancel it.
+fn guard_levels(realm: &Realm) -> Result<impl Fn(&str, &str) -> (u8, u32) + use<>> {
+    let servers = crate::tools::mcp::McpStore::new(&realm.skills_dir()).list()?;
+    let actions = crate::actions::all(&realm.config.integrations, &servers);
+    let integrations = realm.config.integrations.clone();
+    let store = Store::of(realm)?;
+    Ok(move |agent: &str, action: &str| {
+        (
+            founder_level(&store, &actions, agent, action),
+            super::autonomy::limits(&integrations, action).1,
+        )
+    })
 }
 
 /// What became of an approved action now.

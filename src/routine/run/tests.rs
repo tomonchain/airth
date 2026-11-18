@@ -5,6 +5,11 @@ use crate::pipeline::run::LIST_MAX;
 use crate::prices::Prices;
 use serde_json::json;
 
+/// No level set by the founder: every approval step waits (decision 96).
+fn unset(_: &str, _: &str) -> (u8, u32) {
+    (1, 30)
+}
+
 /// The same article reached through two campaigns is one source.
 #[test]
 fn a_link_is_known_without_its_tracking() {
@@ -121,6 +126,7 @@ fn a_dry_run_reads_and_judges_and_only_prepares_acts() {
             store: &mut store,
             io: &mut io,
             integrations: &integrations,
+            levels: &unset,
         },
         Utc::now(),
     )
@@ -206,10 +212,10 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
     let mut act = |action: &str,
                    fields: &BTreeMap<String, String>,
                    key: &str,
-                   approved: bool,
+                   approved: Cleared,
                    _: &str,
                    _: &Item| {
-        acted.push(format!("{action} {} {key} {approved}", fields["text"]));
+        acted.push(format!("{action} {} {key} {approved:?}", fields["text"]));
         Ok("done".to_string())
     };
     let dry = Dry {
@@ -218,6 +224,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
         store: &mut store,
         io: &mut io,
         integrations: &[],
+        levels: &unset,
     };
     let report = run(
         "posts",
@@ -258,6 +265,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
             store: &mut store,
             io: &mut io,
             integrations: &[],
+            levels: &unset,
         };
         let start = Start::After {
             block: "ok".into(),
@@ -285,7 +293,7 @@ fn a_real_run_queues_at_the_approval_and_acts_only_on_known_sources() {
     drop(io);
     assert_eq!(
         acted,
-        vec!["blog.publish Flows posts/https://e.com/1/send true"]
+        vec!["blog.publish Flows posts/https://e.com/1/send Founder"]
     );
 }
 
@@ -379,6 +387,7 @@ fn a_weekly_report_reads_the_week_and_reports_it_once() {
                 store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             now,
         )
@@ -482,7 +491,7 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
     let mut act = |_: &str,
                    _: &BTreeMap<String, String>,
                    _: &str,
-                   _: bool,
+                   _: Cleared,
                    _: &str,
                    _: &Item|
      -> Result<String> { unreachable!("no act") };
@@ -495,6 +504,7 @@ fn a_check_flags_the_item_and_keeps_its_draft() {
             store: &mut store,
             io: &mut io,
             integrations: &[],
+            levels: &unset,
         },
         Some(Real {
             run: "r1",
@@ -611,6 +621,7 @@ fn sort_list(titles: &[&str], answers: &[&str]) -> (Result<String>, Vec<String>)
             store: &mut store,
             io: &mut io,
             integrations: &[],
+            levels: &unset,
         },
         Utc::now(),
     )
@@ -755,6 +766,7 @@ fn a_block_asks_the_fast_model_or_says_the_main_one_answered() {
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             Utc::now(),
         )
@@ -849,6 +861,7 @@ fn a_draft_that_does_not_fit_is_asked_once_more_then_dropped_by_name() {
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             Utc::now(),
         )
@@ -940,7 +953,7 @@ fn what_a_run_drops_reaches_the_founder() {
         let mut act = |_: &str,
                        _: &BTreeMap<String, String>,
                        _: &str,
-                       _: bool,
+                       _: Cleared,
                        _: &str,
                        _: &Item|
          -> Result<String> { unreachable!("no act") };
@@ -953,6 +966,7 @@ fn what_a_run_drops_reaches_the_founder() {
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             Some(Real {
                 run: "r1",
@@ -1066,6 +1080,7 @@ fn a_reply_run_reads_the_post_and_stops_on_a_thin_one() {
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             None,
             Start::Event(event),
@@ -1158,7 +1173,7 @@ fn a_story_covered_in_the_last_days_is_not_covered_again() {
             fast: None,
         };
         let mut act =
-            |_: &str, _: &BTreeMap<String, String>, _: &str, _: bool, _: &str, _: &Item| {
+            |_: &str, _: &BTreeMap<String, String>, _: &str, _: Cleared, _: &str, _: &Item| {
                 Ok("done".to_string())
             };
         let report = run(
@@ -1170,6 +1185,7 @@ fn a_story_covered_in_the_last_days_is_not_covered_again() {
                 store: &mut store,
                 io: &mut io,
                 integrations: &[],
+                levels: &unset,
             },
             Some(Real {
                 run: "r",
@@ -1264,7 +1280,7 @@ fn a_routine_reads_its_mailbox_once_and_holds_a_bank_mail() {
     let mut act = |_: &str,
                    _: &BTreeMap<String, String>,
                    _: &str,
-                   _: bool,
+                   _: Cleared,
                    _: &str,
                    _: &Item|
      -> anyhow::Result<String> { unreachable!("no act") };
@@ -1275,6 +1291,7 @@ fn a_routine_reads_its_mailbox_once_and_holds_a_bank_mail() {
             store,
             io,
             integrations: &[],
+            levels: &unset,
         };
         run(
             "mail",
@@ -1318,4 +1335,296 @@ fn a_routine_reads_its_mailbox_once_and_holds_a_bank_mail() {
         )
         .unwrap_err();
     assert!(format!("{err:#}").contains("flagged"), "{err:#}");
+}
+
+/// Decision 153: what an approval step does follows the founder-set level of
+/// the acts it guards. A routine that sends each item to Typefully, then,
+/// when `publish` is set, publishes it on the blog.
+fn guarded_posts(approval: Value, publish: bool) -> Graph {
+    let mut blocks = vec![
+        approval,
+        json!({"id": "send", "type": "act", "action": "typefully.create_draft",
+            "fields": {"text": "{{title}}"}}),
+    ];
+    if publish {
+        blocks.push(
+            json!({"id": "publish", "type": "act", "action": "blog.publish",
+            "fields": {"text": "{{title}}"}}),
+        );
+    }
+    serde_json::from_value(
+        json!({"agent": "writer", "trigger": {"manual": true}, "blocks": blocks}),
+    )
+    .unwrap()
+}
+
+fn ok() -> Value {
+    json!({"id": "ok", "type": "approval", "show": "title", "editable": "title"})
+}
+
+/// One item, already approved once upstream: an approval that steps aside
+/// must not pass that approval on to what it guards.
+fn post(extra: Value) -> Item {
+    let mut item: Item = serde_json::from_value(json!({"source_id": "https://e.com/1",
+        "title": "Flows", "approved_by_founder": true}))
+    .unwrap();
+    if let Value::Object(extra) = extra {
+        item.extend(extra);
+    }
+    item
+}
+
+/// Run `graph` from `start` with `levels`, for real unless `dry`: its
+/// report, and each act as "action cleared".
+fn step_run(
+    graph: &Graph,
+    store: &mut Store,
+    start: Start,
+    levels: &Levels,
+    now: DateTime<Utc>,
+    dry: bool,
+) -> (String, Vec<String>) {
+    let root = tempfile::tempdir().unwrap();
+    let mut fetch = |_: &str| -> Result<crate::pipeline::run::Fetched> { unreachable!("no read") };
+    let mut ask =
+        |_: &crate::models::ModelRequest| -> Result<ModelResponse> { unreachable!("no AI block") };
+    let mut io = Io {
+        fetch: &mut fetch,
+        ask: &mut ask,
+        prices: Prices::default(),
+        fast: None,
+    };
+    let mut acted = Vec::new();
+    let mut act = |action: &str,
+                   _: &BTreeMap<String, String>,
+                   _: &str,
+                   cleared: Cleared,
+                   _: &str,
+                   _: &Item| {
+        acted.push(format!("{action} {cleared:?}"));
+        Ok("done".to_string())
+    };
+    let real = (!dry).then_some(Real {
+        run: "r1",
+        act: &mut act,
+    });
+    let dry = Dry {
+        root: root.path(),
+        context: "",
+        store,
+        io: &mut io,
+        integrations: &[],
+        levels,
+    };
+    let report = run("posts", graph, dry, real, start, now)
+        .unwrap()
+        .to_string();
+    (report, acted)
+}
+
+fn real_run(
+    graph: &Graph,
+    store: &mut Store,
+    start: Start,
+    levels: &Levels,
+    now: DateTime<Utc>,
+) -> (String, Vec<String>) {
+    step_run(graph, store, start, levels, now, false)
+}
+
+fn store() -> (tempfile::TempDir, Store) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join(FILE)).unwrap();
+    (dir, store)
+}
+
+#[test]
+fn below_a_founder_set_two_the_approval_step_waits() {
+    let graph = guarded_posts(ok(), false);
+    let zero = |_: &str, _: &str| (0, 30);
+    for levels in [&unset as &Levels, &zero] {
+        let (_dir, mut store) = store();
+        let start = Start::Event(post(json!({})));
+        let (report, acted) = real_run(&graph, &mut store, start, levels, Utc::now());
+        assert!(acted.is_empty(), "{acted:?}");
+        assert!(report.contains("asked the founder (item 1)"), "{report}");
+        let queued = store.queue(&["pending"]).unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].kind, "approval");
+        assert_eq!(queued[0].execute_at, None);
+    }
+}
+
+#[test]
+fn at_a_founder_set_two_the_item_waits_its_window_then_goes_on_as_released() {
+    let graph = guarded_posts(ok(), false);
+    let (_dir, mut store) = store();
+    let now: DateTime<Utc> = "2026-11-18T09:00:00Z".parse().unwrap();
+    let two = |_: &str, _: &str| (2, 45);
+    let start = Start::Event(post(json!({})));
+    let (report, acted) = real_run(&graph, &mut store, start, &two, now);
+    assert!(
+        acted.is_empty(),
+        "nothing goes before the window: {acted:?}"
+    );
+    assert!(
+        report.contains("goes in 45 minutes unless the founder cancels it (item 1): Flows"),
+        "{report}"
+    );
+    let queued = store.queue(&["pending"]).unwrap();
+    assert_eq!(queued.len(), 1);
+    let item = &queued[0];
+    assert_eq!(item.kind, "delayed");
+    assert_eq!(item.action, None);
+    assert_eq!(item.source["block"], "ok");
+    assert_eq!(item.source["editable"], "title");
+    assert_eq!(item.source["guards"], json!(["typefully.create_draft"]));
+    let at = DateTime::parse_from_rfc3339(item.execute_at.as_deref().unwrap()).unwrap();
+    assert_eq!(at, now + chrono::Duration::minutes(45));
+    assert!(store.due_delayed(now).unwrap().is_empty());
+    let later = now + chrono::Duration::minutes(45);
+    assert_eq!(store.due_delayed(later).unwrap().len(), 1);
+
+    // The window passed: the routine goes on after the step, the act's wait
+    // served, and nobody's approval passed on.
+    let Value::Object(fields) = item.args.clone() else {
+        panic!("an item")
+    };
+    let start = Start::Released {
+        block: "ok".into(),
+        item: fields,
+    };
+    let (_, acted) = real_run(&graph, &mut store, start, &two, now);
+    assert_eq!(acted, vec!["typefully.create_draft Delay"]);
+    assert_eq!(store.queue(&["pending"]).unwrap().len(), 1, "nothing new");
+}
+
+#[test]
+fn at_a_founder_set_three_the_item_goes_on_at_once() {
+    let graph = guarded_posts(ok(), false);
+    let (_dir, mut store) = store();
+    let three = |_: &str, _: &str| (3, 30);
+    let start = Start::Event(post(json!({})));
+    let (report, acted) = real_run(&graph, &mut store, start, &three, Utc::now());
+    // Through the agent's levels, which count it against the daily limit.
+    assert_eq!(acted, vec!["typefully.create_draft Levels"]);
+    assert!(
+        report.contains("went on without asking, its acts at level 3 set by the founder: Flows"),
+        "{report}"
+    );
+    assert!(store.queue(&["pending"]).unwrap().is_empty());
+}
+
+/// Decision 70: what came of a mail waits whatever the level, and a mail
+/// about bank details waits flagged.
+#[test]
+fn what_came_of_a_mail_always_waits() {
+    let graph = guarded_posts(ok(), false);
+    let three = |_: &str, _: &str| (3, 30);
+    for (mail, flag) in [
+        (json!({"source_id": "mail:7", "bank_details": "no"}), None),
+        (
+            json!({"source_id": "mail:8", "bank_details": "yes"}),
+            Some("blocking"),
+        ),
+    ] {
+        let (_dir, mut store) = store();
+        let start = Start::Event(post(mail));
+        let (_, acted) = real_run(&graph, &mut store, start, &three, Utc::now());
+        assert!(acted.is_empty(), "{acted:?}");
+        let queued = store.queue(&["pending"]).unwrap();
+        assert_eq!(queued[0].kind, "approval");
+        assert_eq!(queued[0].flag.as_deref(), flag);
+    }
+    // By the graph alone: a mailbox read upstream, whatever lies between.
+    let read = |source: &str| -> super::super::Block {
+        serde_json::from_value(
+            json!({"id": "in", "type": "read", "source": source, "feeds": ["https://e.com/f"]}),
+        )
+        .unwrap()
+    };
+    let mut mailbox = guarded_posts(ok(), false);
+    mailbox.blocks.insert(0, read("mailbox"));
+    assert_eq!(step(&mailbox, 1, &three).unwrap(), Step::Ask);
+    let mut feed = guarded_posts(ok(), false);
+    feed.blocks.insert(0, read("rss"));
+    assert_eq!(step(&feed, 1, &three).unwrap(), Step::Go);
+}
+
+/// Decision 58: an item its check flags blocking waits; one the check
+/// passes goes.
+#[test]
+fn a_blocking_quality_flag_always_waits() {
+    let mut approval = ok();
+    approval["flag"] = "check".into();
+    let graph = guarded_posts(approval, false);
+    let three = |_: &str, _: &str| (3, 30);
+    let (_dir, mut store) = store();
+    let blocked = json!({"check": {"flag": "blocking", "reason": "a call to buy"}});
+    let start = Start::Event(post(blocked));
+    let (_, acted) = real_run(&graph, &mut store, start, &three, Utc::now());
+    assert!(acted.is_empty(), "{acted:?}");
+    let queued = store.queue(&["pending"]).unwrap();
+    assert_eq!(queued[0].kind, "approval");
+    assert_eq!(queued[0].flag.as_deref(), Some("blocking"));
+    let passed = json!({"check": {"flag": "none", "reason": ""}});
+    let start = Start::Event(post(passed));
+    let (_, acted) = real_run(&graph, &mut store, start, &three, Utc::now());
+    assert_eq!(acted, vec!["typefully.create_draft Levels"]);
+}
+
+/// The lowest level among what the step guards decides, and the longest
+/// window; with nothing to guard, it waits.
+#[test]
+fn the_step_follows_the_lowest_level_it_guards() {
+    let graph = guarded_posts(ok(), true);
+    let levels = |drafts: u8, publish: u8| {
+        move |_: &str, action: &str| match action {
+            "typefully.create_draft" => (drafts, 30),
+            _ => (publish, 60),
+        }
+    };
+    assert_eq!(step(&graph, 0, &levels(2, 1)).unwrap(), Step::Ask);
+    assert_eq!(step(&graph, 0, &levels(3, 1)).unwrap(), Step::Ask);
+    assert_eq!(
+        step(&graph, 0, &levels(2, 3)).unwrap(),
+        Step::Delay { minutes: 60 }
+    );
+    assert_eq!(step(&graph, 0, &levels(3, 3)).unwrap(), Step::Go);
+    let (_dir, mut store) = store();
+    let start = Start::Event(post(json!({})));
+    let (_, acted) = real_run(&graph, &mut store, start, &levels(2, 1), Utc::now());
+    assert!(acted.is_empty(), "{acted:?}");
+    assert_eq!(store.queue(&["pending"]).unwrap()[0].kind, "approval");
+    // An approval leading to no act waits.
+    let mut alone = guarded_posts(ok(), false);
+    alone.blocks.truncate(1);
+    assert_eq!(step(&alone, 0, &levels(3, 3)).unwrap(), Step::Ask);
+    // A second approval ends what the first guards.
+    let mut twice = guarded_posts(ok(), true);
+    twice.blocks.insert(
+        2,
+        serde_json::from_value(json!({"id": "again", "type": "approval", "show": "title"}))
+            .unwrap(),
+    );
+    assert_eq!(step(&twice, 0, &levels(3, 1)).unwrap(), Step::Go);
+}
+
+/// The dry run says which applies, and puts nothing in the queue.
+#[test]
+fn the_dry_run_says_what_the_step_would_do() {
+    let graph = guarded_posts(ok(), false);
+    for (level, said) in [
+        (1, "would ask the founder: Flows"),
+        (2, "would go after 30 minutes unless cancelled: Flows"),
+        (3, "would go, then report: Flows"),
+    ] {
+        let (_dir, mut store) = store();
+        let levels = move |_: &str, _: &str| (level, 30);
+        let start = Start::Event(post(json!({})));
+        let (report, acted) = step_run(&graph, &mut store, start, &levels, Utc::now(), true);
+        assert!(report.contains(said), "{report}");
+        assert!(acted.is_empty());
+        assert!(store.queue(&["pending"]).unwrap().is_empty());
+    }
 }
