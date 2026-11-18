@@ -213,6 +213,11 @@ pub(super) fn shown(item: &Item) -> Value {
         // The drafting step's one line on why this, when it gave one.
         // A draft's angle, or why an idea is told now (decision 119).
         "angle": item.args["answer"]["angle"].as_str().or(item.args["why"].as_str()),
+        // A promotion's record, its replay and what changes, in words
+        // (decision 153).
+        "promotion": (item.kind == "promotion").then(|| json!({
+            "record": item.args["record"], "check": item.args["check"], "change": item.args["change"],
+        })),
     })
 }
 

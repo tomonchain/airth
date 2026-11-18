@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, Users, Wrench, X, type LucideIcon } from "lucide-react"
+import { AlertTriangle, ArrowRight, CalendarClock, Check, ExternalLink, FileText, Hand, LifeBuoy, Lightbulb, Loader, Pencil, RotateCcw, Send, ShieldAlert, Sparkles, Timer, TrendingUp, Users, Wrench, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { StreamText } from "@/components/beautifui/stream-text"
 import { Markdown } from "@/components/markdown"
@@ -21,6 +21,7 @@ const KIND: Record<Item["kind"], { label: string; icon: LucideIcon; tone: string
   deadline: { label: "Deadline", icon: CalendarClock, tone: "text-amber-500 bg-amber-500/10" },
   report: { label: "Report", icon: FileText, tone: "text-muted-foreground bg-muted" },
   idea: { label: "Idea", icon: Lightbulb, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-300" },
+  promotion: { label: "More autonomy", icon: TrendingUp, tone: "text-muted-foreground bg-muted" },
 }
 
 /** A skill of the business's own, new or changed, to offer its agents
@@ -59,7 +60,9 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       const out = await api<{ report?: string; item: { status: string } }>(`realms/${enc(realm)}/queue/${it.id}`, {
         answer: kind, text: body, revision: it.revision, seconds: Math.round((Date.now() - shown) / 1000), ...extra,
       })
-      toast.success(kind === "edit" ? "Edited. It still waits for your approval." : out.report ?? `Done: ${out.item.status}`)
+      toast.success(kind === "edit" ? "Edited. It still waits for your approval."
+        : kind === "reject" && it.kind === "promotion" ? "Not now: nothing changes."
+        : out.report ?? `Done: ${out.item.status}`)
       setMode(null)
       onDone()
     } catch (e) {
@@ -148,6 +151,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
       else if (k === "e" && it.editable && !mode) { e.preventDefault(); setMode("edit") }
       else if (k === "n" && redoable && !mode) { e.preventDefault(); setMode("redo") }
       else if (k === "r" && (it.kind === "approval" || it.kind === "delayed") && !mode) { e.preventDefault(); setMode("reject") }
+      else if (k === "r" && it.kind === "promotion" && !mode) { e.preventDefault(); answer("reject", "not now") }
       else if (k === "escape") setMode(null)
     }
     addEventListener("keydown", on)
@@ -163,6 +167,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
     : it.kind === "prepared" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Mark done{hint("A")}</Button>
     : it.kind === "deadline" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Filed{hint("A")}</Button>
     : it.kind === "delayed" ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => setMode("reject")}><X /> Cancel it{hint("R")}</Button>
+    : it.kind === "promotion" ? <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Allow{hint("A")}</Button>
     : blocked ? <Button size="sm" variant="destructive" disabled={busy} onClick={() => answer("override")}><ShieldAlert /> Override</Button>
     : <Button size="sm" disabled={busy} onClick={() => answer("approve")}><Check /> Approve{hint("A")}</Button>
 
@@ -205,6 +210,12 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
           {it.action === "airth.dispatch"
             ? <p className="mt-1 text-xs text-muted-foreground">The project's name on the first line, its description under it. A milestone: <code>## Title (by 2026-12-15)</code>, its tasks under it. One task a line: <code>- agent: task</code>, or <code>- agent (after other): task</code> to wait for another's result. Remove a line to drop a task.</p>
             : <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{text.length} characters</p>}
+        </div>
+      ) : it.promotion ? (
+        // What the agent earned, then what changes if allowed: in words.
+        <div className={page ? "mt-4 space-y-2 text-sm leading-relaxed" : "mt-1 space-y-1 text-[13.5px] leading-relaxed"}>
+          <p className="text-muted-foreground">{it.promotion.record}{it.promotion.check && <> · {it.promotion.check}</>}</p>
+          <p>{it.promotion.change}</p>
         </div>
       ) : it.text && draft(it) ? (
         page ? (
@@ -281,6 +292,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
             {redoable && <Button size={page ? "sm" : "xs"} variant={page ? "outline" : "ghost"} className={cn(!page && "text-muted-foreground")} onClick={() => setMode("redo")}><Sparkles /> Redo{hint("N")}</Button>}
             {it.kind === "approval" && <Button size={page ? "sm" : "xs"} variant="ghost" className="text-muted-foreground" aria-label="Reject" title="Reject" onClick={() => setMode("reject")}><X /> <span className={cn(!page && "max-sm:hidden")}>Reject</span>{hint("R")}</Button>}
             {it.kind === "deadline" && !it.overdue && <Button size="sm" variant="ghost" onClick={() => answer("reject", "seen")}>Seen</Button>}
+            {it.kind === "promotion" && <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => answer("reject", "not now")}>Not now{hint("R")}</Button>}
             {it.kind === "idea" && (
               <>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => answer("approve")}><Check /> Useful</Button>
@@ -294,7 +306,7 @@ export function NeedCard({ realm, it, onDone, page, still, stream, onTask }: { r
         )}
       </footer>}
       {/* On the page of Needs you, the founder answers in words too (decision 127). */}
-      {page && !mode && <ReplyBox realm={realm} it={it} redo={redo} onDone={onDone} />}
+      {page && !mode && it.kind !== "promotion" && <ReplyBox realm={realm} it={it} redo={redo} onDone={onDone} />}
     </article>
   )
 }

@@ -554,6 +554,15 @@ impl Hub {
             store.close_item(id, "done", "useful, said the founder")?;
             return Ok((item, Some("useful".into())));
         }
+        // A promotion the founder allowed (decision 153): the level is set.
+        if item.kind == "promotion" {
+            let (status, detail) = match self.accept_promotion(realm, &item) {
+                Ok(what) => ("done", what),
+                Err(e) => ("failed", crate::routine::run::one_line(&format!("{e:#}"))),
+            };
+            store.close_item(id, status, &detail)?;
+            return Ok((item, Some(detail)));
+        }
         if item.kind == "incident" || item.kind == "report" {
             store.close_item(id, "done", "seen by the founder")?;
             return Ok((item, Some("seen".into())));

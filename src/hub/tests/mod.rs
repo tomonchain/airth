@@ -23,6 +23,7 @@ mod models;
 mod objectives;
 mod own_skills;
 mod pipelines;
+mod promotions;
 mod retries;
 mod routines;
 mod runs;

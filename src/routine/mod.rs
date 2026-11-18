@@ -242,6 +242,31 @@ pub fn load_all(cx: &Checks) -> Result<Vec<(String, Result<Graph>)>> {
         .collect())
 }
 
+/// Each approval block of a checked graph, with the actions of the acts it
+/// guards (decision 153): those an item reaches after it, up to the next
+/// approval, which guards what follows it.
+pub fn guarded(graph: &Graph) -> Vec<(String, Vec<String>)> {
+    let next = |i: usize| successors(graph, i).unwrap_or_default();
+    let mut out = Vec::new();
+    for (i, block) in graph.blocks.iter().enumerate() {
+        if !matches!(block.kind, Kind::Approval { .. }) {
+            continue;
+        }
+        let (mut acts, mut seen, mut todo) = (Vec::new(), HashSet::new(), next(i));
+        while let Some(j) = todo.pop() {
+            match &graph.blocks[j].kind {
+                _ if !seen.insert(j) => continue,
+                Kind::Approval { .. } => continue,
+                Kind::Act { action, .. } if !acts.contains(action) => acts.push(action.clone()),
+                _ => {}
+            }
+            todo.extend(next(j));
+        }
+        out.push((block.id.clone(), acts));
+    }
+    out
+}
+
 /// The blocks an item goes to after block `i`.
 fn successors(graph: &Graph, i: usize) -> Result<Vec<usize>> {
     let index = |id: &str| {

@@ -7,7 +7,7 @@ use crate::business::store::queue::Answer;
 
 /// A posts routine that picks, drafts and checks, its act aimed at a
 /// server that keeps every request it gets.
-fn routine(f: &mut Fixture) -> Arc<Mutex<Vec<String>>> {
+pub(super) fn routine(f: &mut Fixture) -> Arc<Mutex<Vec<String>>> {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let base = format!("http://{}", server.server_addr().to_ip().unwrap());
     let got = Arc::new(Mutex::new(Vec::new()));
@@ -66,7 +66,7 @@ fn routine(f: &mut Fixture) -> Arc<Mutex<Vec<String>>> {
 }
 
 /// An item the routine sent to Needs you, as the engine leaves it there.
-fn drafted(store: &mut Store, id: &str, draft: &str) -> i64 {
+pub(super) fn drafted(store: &mut Store, id: &str, draft: &str) -> i64 {
     let args = json!({"title": id, "link": format!("https://example.com/{id}"), "source_id": id,
         "answer": {"draft": draft}, "check": {"flag": "none"}, "model_call": 7});
     store

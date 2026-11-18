@@ -264,14 +264,17 @@ fn item_text(realm: &str, item: &Item) -> String {
         "report" => "Report",
         "idea" => "An idea",
         "deadline" => "Legal deadline",
+        "promotion" => "More autonomy",
         "delayed" => "Will be done unless you cancel",
         "approval" if item.action.as_deref() == Some("airth.dispatch") => "A plan for the team",
         "approval" if item.action.is_some() => "Asks to act",
         _ => "Needs you",
     };
+    // A promotion says its action in words, in its title (decision 153).
     let action = item
         .action
         .as_deref()
+        .filter(|_| item.kind != "promotion")
         .map(|a| format!(" ({a})"))
         .unwrap_or_default();
     let flag = match (item.flag.as_deref(), item.flag_reason.as_deref()) {
@@ -324,6 +327,7 @@ fn buttons(realm: &str, item: &Item) -> Value {
         },
         "report" => json!([[button("Seen", "a")]]),
         "idea" => json!([[button("Useful", "a"), button("Not for me", "r")]]),
+        "promotion" => json!([[button("Allow", "a"), button("Not now", "r")]]),
         // Decision 66: an overdue deadline stays until it is filed.
         "deadline" if item.args["overdue"] == true => json!([[button("Filed", "a")]]),
         "deadline" => json!([[button("Filed", "a"), button("Seen", "r")]]),
