@@ -32,6 +32,126 @@ pub const LAUNCH_MISSION: &str = "airth.launch_mission";
 /// Set on an item the founder approved.
 const APPROVED: &str = "approved_by_founder";
 
+/// The founder-set level of (agent, action), clamped to its ceiling and 1
+/// when the founder set none (decision 96), and the minutes the founder has
+/// to cancel it at level 2 (decision 45).
+pub type Levels<'a> = dyn Fn(&str, &str) -> (u8, u32) + 'a;
+
+/// What an approval step does with an item (decision 153).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum Step {
+    /// It waits for the founder.
+    Ask,
+    /// It goes once the founder's cancellation window passes, unless
+    /// cancelled.
+    Delay { minutes: u32 },
+    /// It goes at once, and the run reports it.
+    Go,
+}
+
+/// What let an act's item through.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Cleared {
+    /// No approval stands before it: the agent's levels decide.
+    Levels,
+    /// The founder approved it: done as approved, once.
+    Founder,
+    /// Its approval step let it go once the founder's window passed
+    /// (decision 153): level 2 does not wait twice, and it counts as done
+    /// alone.
+    Delay,
+}
+
+/// The act blocks approval block `at` guards: each reachable after it
+/// before another approval.
+fn guarded(graph: &Graph, at: usize) -> Result<Vec<usize>> {
+    let mut seen = vec![false; graph.blocks.len()];
+    let mut todo = successors(graph, at)?;
+    let mut acts = Vec::new();
+    while let Some(j) = todo.pop() {
+        if std::mem::replace(&mut seen[j], true) {
+            continue;
+        }
+        match graph.blocks[j].kind {
+            Kind::Approval { .. } => continue,
+            Kind::Act { .. } => acts.push(j),
+            _ => {}
+        }
+        todo.extend(successors(graph, j)?);
+    }
+    Ok(acts)
+}
+
+/// The actions approval block `at` guards. An act for the founder (a report,
+/// a task for the founder) is theirs to judge, as for the graph check: it
+/// does not keep the step waiting.
+fn guards(graph: &Graph, at: usize) -> Result<Vec<&str>> {
+    Ok(guarded(graph, at)?
+        .into_iter()
+        .filter_map(|j| match &graph.blocks[j].kind {
+            Kind::Act { action, fields } if !super::for_founder(action, fields) => {
+                Some(action.as_str())
+            }
+            _ => None,
+        })
+        .collect())
+}
+
+/// Whether what a mailbox read reads can reach block `at`, whatever lies
+/// between (decision 70).
+fn after_mail(graph: &Graph, at: usize) -> Result<bool> {
+    let mut seen = vec![false; graph.blocks.len()];
+    let mut todo: Vec<usize> = (0..graph.blocks.len())
+        .filter(
+            |&j| matches!(&graph.blocks[j].kind, Kind::Read { source, .. } if source == "mailbox"),
+        )
+        .collect();
+    while let Some(j) = todo.pop() {
+        if j == at {
+            return Ok(true);
+        }
+        if !std::mem::replace(&mut seen[j], true) {
+            todo.extend(successors(graph, j)?);
+        }
+    }
+    Ok(false)
+}
+
+/// Whether an item came of a mail: a mailbox read gives each its
+/// bank-details check (decision 70).
+fn of_mail(item: &Item) -> bool {
+    item.contains_key("bank_details") || field_text(item, SOURCE).starts_with("mail:")
+}
+
+/// What approval block `at` does by its graph and the founder's levels
+/// (decision 153). An item of a mail, or flagged blocking, waits whatever
+/// this says.
+pub fn step(graph: &Graph, at: usize, levels: &Levels) -> Result<Step> {
+    mode(graph, at, &guards(graph, at)?, levels)
+}
+
+fn mode(graph: &Graph, at: usize, guards: &[&str], levels: &Levels) -> Result<Step> {
+    // Nothing to guard, or what came of a mail: the founder, always.
+    if guards.is_empty() || after_mail(graph, at)? {
+        return Ok(Step::Ask);
+    }
+    let (mut level, mut minutes) = (3, 0);
+    for action in guards {
+        let (l, m) = levels(&graph.agent, action);
+        level = level.min(l);
+        // Only what waits at 2 sets the window: an act at 3 does not wait.
+        if l == 2 {
+            minutes = minutes.max(m);
+        }
+    }
+    Ok(match level {
+        0 | 1 => Step::Ask,
+        2 => Step::Delay { minutes },
+        _ => Step::Go,
+    })
+}
+
 /// An act's idempotency key: the routine, the item's source id and the
 /// block (decision 49). Never the content: a retried run whose AI block
 /// drafts another text for the same item must not act twice.
@@ -304,6 +424,8 @@ pub struct Dry<'a, 'b> {
     pub store: &'a mut Store,
     pub io: &'a mut Io<'b>,
     pub integrations: &'a [Integration],
+    /// What an approval step reads of the acts it guards (decision 153).
+    pub levels: &'a Levels<'a>,
 }
 
 /// Where a run starts: at its trigger, or after an approval the founder
@@ -314,6 +436,13 @@ pub enum Start {
     /// (decision 63).
     Event(Item),
     After {
+        block: String,
+        item: Item,
+    },
+    /// After an approval block that let the item go once the founder's
+    /// cancellation window passed (decision 153), with the item as the
+    /// founder left it.
+    Released {
         block: String,
         item: Item,
     },
@@ -333,10 +462,10 @@ pub enum Start {
 }
 
 /// What does a real run's acts: it gets the action, its fields, the act's
-/// key, whether the founder approved the item, and the act's block and the
-/// item (for a mission to go on from), and says what it did.
+/// key, what let the item through, and the act's block and the item (for a
+/// mission to go on from), and says what it did.
 pub type Acts<'a> =
-    dyn FnMut(&str, &BTreeMap<String, String>, &str, bool, &str, &Item) -> Result<String> + 'a;
+    dyn FnMut(&str, &BTreeMap<String, String>, &str, Cleared, &str, &Item) -> Result<String> + 'a;
 
 /// What a real run adds: its id, and what does its acts.
 pub struct Real<'a> {
@@ -406,10 +535,30 @@ pub fn run(
     now: DateTime<Utc>,
 ) -> Result<Report> {
     let mut inbox: Vec<Vec<Item>> = vec![Vec::new(); graph.blocks.len()];
-    let resumed = matches!(start, Start::After { .. } | Start::Mission { .. });
+    let resumed = matches!(
+        start,
+        Start::After { .. } | Start::Released { .. } | Start::Mission { .. }
+    );
+    // The acts whose wait the released approval already served.
+    let mut served = HashSet::new();
     match start {
         Start::Trigger => inbox[0].push(Item::new()),
         Start::Event(item) => inbox[0].push(item),
+        Start::Released { block, item } => {
+            let at = graph
+                .blocks
+                .iter()
+                .position(|b| b.id == block)
+                .ok_or_else(|| anyhow::anyhow!("{name} has no block '{block}' any more"))?;
+            // Nobody approved it: its acts go by the agent's levels, the wait
+            // served once.
+            let mut item = item;
+            item.remove(APPROVED);
+            served.extend(guarded(graph, at)?);
+            for j in successors(graph, at)? {
+                inbox[j].push(item.clone());
+            }
+        }
         Start::After { block, item } => {
             let at = graph
                 .blocks
@@ -471,7 +620,7 @@ pub fn run(
         let block_at = Utc::now();
         // What the block's record says beyond its counts (a real run only).
         let (mut acts_failed, mut block_cost) = (0usize, None);
-        // Items handed to a mission, waiting for its report.
+        // Items that wait: for a mission's report, or for the founder.
         let mut waiting = 0usize;
         let mut block_dropped = Vec::new();
         let (pass, other): (Vec<Item>, Vec<Item>) = match &block.kind {
@@ -711,18 +860,30 @@ pub fn run(
                 flag: check,
                 ..
             } => {
-                for it in &items {
-                    let text = field_text(it, show);
+                // It follows the founder-set level of what it guards
+                // (decision 153).
+                let guards = guards(graph, i)?;
+                let by_levels = mode(graph, i, &guards, dry.levels)?;
+                let mut go = Vec::new();
+                for mut it in items {
+                    let text = field_text(&it, show);
                     // A mail that speaks of bank details holds whatever came
                     // of it, until the founder overrides it (decision 70).
-                    let flag = if field_text(it, "bank_details") == "yes" {
+                    let flag = if field_text(&it, "bank_details") == "yes" {
                         Some((
                             "blocking",
                             "the mail speaks of bank details: check by phone before anything"
                                 .to_string(),
                         ))
                     } else {
-                        check.as_deref().and_then(|c| quality_flag(it, c))
+                        check.as_deref().and_then(|c| quality_flag(&it, c))
+                    };
+                    // What came of a mail, or is flagged blocking, waits for
+                    // the founder whatever the levels.
+                    let step = match &flag {
+                        Some(("blocking", _)) => Step::Ask,
+                        _ if of_mail(&it) => Step::Ask,
+                        _ => by_levels,
                     };
                     let flagged = flag
                         .as_ref()
@@ -737,42 +898,71 @@ pub fn run(
                     } else {
                         String::new()
                     };
-                    match &real {
-                        None => lines.push(format!("would ask the founder{flagged}: {shown}{cut}")),
-                        Some(r) => {
-                            let id = dry.store.propose_flagged(
-                                &crate::business::store::autonomy::NewItem {
-                                kind: "approval",
-                                title: &text
-                                    .lines()
-                                    .next()
-                                    .unwrap_or_default()
-                                    .chars()
-                                    .take(120)
-                                    .collect::<String>(),
-                                agent: Some(&graph.agent),
-                                routine: Some(name),
-                                run: Some(r.run),
-                                action: None,
-                                args: &Value::Object(it.clone()).to_string(),
-                                execute_at: None,
-                                source:
-                                    &serde_json::json!({"block": block.id, "show": show, "editable": editable})
-                                        .to_string(),
-                                model_call: it.get("model_call").and_then(Value::as_i64),
-                            },
-                                flag.as_ref().map(|(f, why)| (*f, why.as_str())),
-                                run_note(&dropped).as_deref(),
-                            )?;
-                            asked += 1;
-                            lines.push(format!(
-                                "asked the founder (item {id}){flagged}: {shown}{cut}"
-                            ));
+                    let (r, kind, execute_at) = match (&real, step) {
+                        (None, _) => {
+                            let would = match step {
+                                Step::Ask => "would ask the founder".to_string(),
+                                Step::Delay { minutes } => {
+                                    format!("would go after {minutes} minutes unless cancelled")
+                                }
+                                Step::Go => "would go, then report".to_string(),
+                            };
+                            lines.push(format!("{would}{flagged}: {shown}{cut}"));
+                            go.push(it);
+                            continue;
                         }
-                    }
+                        (Some(_), Step::Go) => {
+                            lines.push(format!(
+                                "went on without asking, its acts at level 3 set by the founder{flagged}: {shown}{cut}"
+                            ));
+                            // Nobody approved what follows.
+                            it.remove(APPROVED);
+                            go.push(it);
+                            continue;
+                        }
+                        (Some(r), Step::Delay { minutes }) => (
+                            r,
+                            "delayed",
+                            Some(now + chrono::Duration::minutes(minutes.into())),
+                        ),
+                        (Some(r), Step::Ask) => (r, "approval", None),
+                    };
+                    let id = dry.store.propose_flagged(
+                        &crate::business::store::autonomy::NewItem {
+                            kind,
+                            title: &text
+                                .lines()
+                                .next()
+                                .unwrap_or_default()
+                                .chars()
+                                .take(120)
+                                .collect::<String>(),
+                            agent: Some(&graph.agent),
+                            routine: Some(name),
+                            run: Some(r.run),
+                            action: None,
+                            args: &Value::Object(it.clone()).to_string(),
+                            execute_at,
+                            // A cancel demotes what it guards (decision 45).
+                            source: &serde_json::json!({"block": block.id, "show": show,
+                                "editable": editable, "guards": guards})
+                            .to_string(),
+                            model_call: it.get("model_call").and_then(Value::as_i64),
+                        },
+                        flag.as_ref().map(|(f, why)| (*f, why.as_str())),
+                        run_note(&dropped).as_deref(),
+                    )?;
+                    asked += 1;
+                    waiting += 1;
+                    lines.push(match step {
+                        Step::Delay { minutes } => format!(
+                            "goes in {minutes} minutes unless the founder cancels it (item {id}){flagged}: {shown}{cut}"
+                        ),
+                        _ => format!("asked the founder (item {id}){flagged}: {shown}{cut}"),
+                    });
                 }
-                // In a real run, an item waits in the queue for the founder.
-                (if real.is_some() { Vec::new() } else { items }, Vec::new())
+                // In a real run, the others wait in the queue.
+                (go, Vec::new())
             }
             Kind::Act { action, fields } => {
                 let mut done = Vec::new();
@@ -791,20 +981,20 @@ pub fn run(
                         .map(|(k, v)| (k.clone(), render(v, &it)))
                         .collect();
                     let key = key(name, &it, &block.id);
+                    let cleared = if it.get(APPROVED) == Some(&Value::Bool(true)) {
+                        Cleared::Founder
+                    } else if served.contains(&i) {
+                        Cleared::Delay
+                    } else {
+                        Cleared::Levels
+                    };
                     match real.as_mut() {
                         None => {
                             let what = describe(action, &values, dry.integrations)
                                 .unwrap_or_else(|e| format!("refused: {e:#}"));
                             lines.push(format!("would {action} [{key}]: {what}"));
                         }
-                        Some(r) => match (r.act)(
-                            action,
-                            &values,
-                            &key,
-                            it.get(APPROVED) == Some(&Value::Bool(true)),
-                            &block.id,
-                            &it,
-                        ) {
+                        Some(r) => match (r.act)(action, &values, &key, cleared, &block.id, &it) {
                             // The item goes on when the mission reports.
                             Ok(what) if action == LAUNCH_MISSION => {
                                 lines.push(format!("{action} [{key}]: {what}"));
@@ -844,11 +1034,12 @@ pub fn run(
         if let Some(r) = &real {
             // Each block's execution, for the founder to follow the run step
             // by step (decision 49).
-            let outcome = match &block.kind {
-                Kind::Approval { .. } => "waiting",
-                _ if acts_failed > 0 => "failed",
-                _ if waiting > 0 => "waiting",
-                _ => "ok",
+            let outcome = if acts_failed > 0 {
+                "failed"
+            } else if waiting > 0 {
+                "waiting"
+            } else {
+                "ok"
             };
             dry.store.record_block(&BlockRun {
                 routine: name,

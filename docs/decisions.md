@@ -2,6 +2,30 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 153. An agent earns the right to act alone, and its approval step steps aside
+
+**Accepted** (founder, 18 November 2026, asking what would let the agents run the business on their own: "Oui très bonnes idées", then "153 validée", a rejection resetting the count: "Oui", and a lower threshold: "Un peu moins peut-être?"). It builds what decision 45 promised and never got: Airth proposing a promotion. Its threshold replaces decision 45's.
+
+- **The track record.** For each agent and each action under its ceiling, Airth counts the founder's answers on what would have led to it: the items of an `Approval` block that guards that action in a routine, and the action's own items at level 1. An approval without edit adds one; an edit, a rejection or an incident sets the count back to zero. A rejection resets too, unlike decision 45: a draft the founder throws away is one that should not have reached them. The count is read from `queue` and `queue_log`, which already keep every answer; nothing new is stored for it.
+- **The proposal.** At 12 approvals in a row over at least one week (lower than decision 45's 20 over two weeks, as the founder asked: the replay below is a second proof), Airth replays the routine's AI blocks on those answers with today's prompts and models (decision 151). If every keeping block agrees with the founder on every case, Airth proposes a promotion in Needs you, one level up: "Post writer: send the morning posts to Typefully without asking? 14 approved as they were since 10 November, none edited. They would wait 30 minutes, with Cancel, then go." If the replay disagrees on any case, Airth proposes nothing and the count starts again. The replay is what keeps a prompt changed since the streak began from riding on approvals of another prompt.
+  - It costs one evaluation per proposal, a few cents. Its result is shown in the item, so the evaluation's screen is not needed for this: the proof sits where the founder decides.
+  - The founder accepts, and the level is set by the founder, as if set in the agent's levels (decision 140), with the item as its reason. If the founder ignores the proposal or says no, Airth asks again only after another 12.
+- **The approval step follows the level of what it guards.** Today an `Approval` block always waits for the founder, whatever the level of the act after it, so a promotion would change nothing until the founder also rewrote the routine. From now on:
+  - Before an approval item is made, Airth reads the founder-set level of each act the block leads to, for the routine's agent, except acts for the founder (reports, suggestions, tasks for the founder), which are the founder's to judge, as for the graph check.
+  - When the lowest of those levels is exactly 2, the item is a delayed one: shown in Needs you and on Telegram with Cancel and Edit, for the longest cancellation window among the acts at 2 (30 minutes by default, decision 45). Once it passes, the routine goes on after the step, but this is not a founder approval: each act reads its current level and the connector's daily limit again before acting, so a level lowered meanwhile, or a limit reached, still holds it for the founder.
+  - When the lowest is 3, the item goes on at once and is reported.
+  - The level used is the one set by the founder: a starting level (decision 96) never frees an approval step, exactly as the graph check already requires.
+- **What never steps aside.** It always waits, as today:
+  - an approval guarding a mail, or anything that came of a mail (decision 70);
+  - an item flagged by the routine's quality check (`flag`) as blocking;
+  - the bank-details flag;
+  - an act whose ceiling is 1 or 0: publishing in the business's name during the beta, payments, contracts, mail, merging and deploying, replies on X.
+  - The daily limit per connector (decision 45) still caps what goes without the founder, and an incident still demotes one level at once.
+
+*Why:* the founder's time goes to approving what the agents already do well. Decision 45 said Airth would propose promotions, and none was ever proposed. A promotion that left the routine's approval step in place would change nothing, so the step must follow the level. The replay makes the proof hold across a prompt change.
+
+*Cost:* an approval step no longer always means a wait, so a routine's behaviour depends on its agent's levels as well as its graph. The routine's panel and its dry run must say which. A promotion is proposed on approvals only, so an agent whose drafts the founder edits a little each time never earns one: the founder can still raise the level by hand. Each proposal costs one evaluation. Under today's ceilings, what can be promoted is what is reversible, such as drafts sent to Typefully, launched missions and tasks. Publishing in the business's name stays at 1 during the beta, and the founder alone can change that rule.
+
 ## 152. One mailbox per business, the interlocutor's, who passes each mail to the right agent
 
 **Accepted** (founder, 18 November 2026: "est-ce que c'est pas mieux qu'il y ait qu'une mailbox qui est connectée directement au CEO / Chief of Staff et les communications se passent avec lui directement et il dispatch?", then "Travaille dessus", then "Go … 152 B": of the two ways a mail could start work, B). It replaces decision 70's "one mailbox per role" and `CLAUDE.md`'s Mail rule 1; decision 70's other rules stand.

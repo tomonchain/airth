@@ -341,6 +341,52 @@ fn a_deadline_is_filed_or_seen_and_overdue_only_filed() {
     assert!(item_text("acme", &items[0]).starts_with("acme · Legal deadline"));
 }
 
+/// Decision 153: a routine's item that goes after its window can be edited
+/// or cancelled on the phone; a delayed action, only cancelled.
+#[test]
+fn a_delayed_step_offers_edit_and_cancel() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::business::store::Store::open(&dir.path().join("business.db")).unwrap();
+    for (action, source) in [
+        (
+            None,
+            json!({"block": "ok", "show": "title", "editable": "title", "guards": ["typefully.create_draft"]}),
+        ),
+        (
+            Some("typefully.create_draft"),
+            json!({"tool": "http_request"}),
+        ),
+    ] {
+        store
+            .propose(&NewItem {
+                kind: "delayed",
+                title: "Flows",
+                agent: Some("post-writer"),
+                routine: action.is_none().then_some("posts"),
+                run: None,
+                action,
+                args: &json!({"title": "Flows"}).to_string(),
+                execute_at: Some("2026-11-18T14:30:00Z".parse().unwrap()),
+                source: &source.to_string(),
+                model_call: None,
+            })
+            .unwrap();
+    }
+    let items = store.queue(&["pending"]).unwrap();
+    let labels = |item| -> Vec<String> {
+        buttons("acme", item)[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let step = items.iter().find(|i| i.action.is_none()).unwrap();
+    let act = items.iter().find(|i| i.action.is_some()).unwrap();
+    assert_eq!(labels(step), ["Edit", "Cancel"]);
+    assert_eq!(labels(act), ["Cancel"]);
+}
+
 /// Decision 58: on the phone, a blocked item says why and offers Override,
 /// Edit and Reject, never a plain Approve; a note is shown and blocks
 /// nothing.

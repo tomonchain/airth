@@ -19,6 +19,9 @@ pub(super) struct Launch<'a> {
     pub key: &'a str,
     pub brief: &'a str,
     pub item: &'a Item,
+    /// Its approval step let it go once the founder's window passed
+    /// (decision 153): at level 2 it does not wait twice.
+    pub after_delay: bool,
 }
 
 impl Hub {
@@ -42,9 +45,13 @@ impl Hub {
         let level = if approved {
             3
         } else {
-            store
+            match store
                 .level(launch.agent, LAUNCH_MISSION, ceiling, start)
                 .unwrap_or(1)
+            {
+                2 if launch.after_delay => 3,
+                l => l,
+            }
         };
         if level < 3 {
             // Level 0 cannot be done by the founder's hand: it is asked as 1.
@@ -163,6 +170,7 @@ impl Hub {
             key: &key,
             brief: &brief,
             item: &fields,
+            after_delay: false,
         };
         let declared = crate::actions::all(&realm.config.integrations, &[]);
         self.launch_for_routine(realm, &launch, true, &declared)

@@ -146,6 +146,8 @@ impl App {
         prompts.sort();
         let store = Store::of(realm)?;
         let costs = store.pipeline_costs(chrono::Utc::now() - chrono::Duration::days(7))?;
+        // The founder's levels, read once for every routine's approval steps.
+        let levels = self.hub.step_levels(realm)?;
         let mut routines = Vec::new();
         for (name, graph) in all {
             let key = format!("routine:{name}");
@@ -182,6 +184,9 @@ impl App {
                             .ok()
                             .and_then(|t| crate::frontmatter::parse(&t).text("title"))
                             .into();
+                    // Whether each approval waits, by the founder's levels
+                    // (decision 153).
+                    routine["steps"] = json!(self.hub.approval_steps(&g, &levels)?);
                     routine["graph"] = json!(g);
                 }
                 Err(e) => routine["error"] = format!("{e:#}").into(),
