@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { usePoll } from "@/hooks/use-poll"
 import { usePrefs } from "@/hooks/use-prefs"
 import { useTheme } from "@/hooks/use-theme"
+import { parseVersion } from "@/lib/version"
 import { api, enc } from "@/lib/api"
 import { ago } from "@/lib/time"
 import { cn } from "@/lib/utils"
@@ -365,6 +366,8 @@ function About({ onChanges }: { onChanges: () => void }) {
   const { data, refresh } = usePoll<{ name: string | null; version: string; home: string; sandbox: boolean; max_iterations: number; tools: unknown[] }>(() => api("info"), 600000, [])
   const [name, setName] = useState<string | null>(null)
   const shown = name ?? data?.name ?? ""
+  // "0.11.0 (8f4a4b4)": the release, and the build, each on its row.
+  const version = parseVersion(data?.version)
   async function save() {
     try {
       await api("name", { name: shown }, "PUT")
@@ -388,9 +391,14 @@ function About({ onChanges }: { onChanges: () => void }) {
           </Row>
           <Row label="Version" hint="What changed in it, and before.">
             <button onClick={onChanges} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
-              <span className="font-mono tabular-nums">{data.version}</span> What's new <ChevronRight className="size-3.5" />
+              <span className="font-mono tabular-nums">{version?.release ?? data.version}</span> What's new <ChevronRight className="size-3.5" />
             </button>
           </Row>
+          {version?.build && (
+            <Row label="Build" hint={`The commit it was built from${version.build.endsWith("+") ? ", with changes not yet committed" : ""}. On a server that follows main, it says which of main's versions runs.`}>
+              <span className="font-mono text-xs text-muted-foreground tabular-nums select-all">{version.build}</span>
+            </Row>
+          )}
           <Row label="Airth home" hint="Data, secrets and run records. Agents cannot reach it."><span className="font-mono text-xs text-muted-foreground">{data.home.split("/").slice(-2).join("/")}</span></Row>
           <Row label="Sandbox" hint="Commands of missions run isolated.">{data.sandbox ? <span className="text-xs text-emerald-500">On</span> : <span className="text-xs text-red-500">Off</span>}</Row>
           <Row label="Tools" hint="What a mission's agent can call."><span className="text-xs text-muted-foreground">{data.tools.length}</span></Row>
