@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowUp, CalendarClock, Flag, FolderKanban, Inbox, Lightbulb, Loader, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
+import { ArrowUp, CalendarClock, Flag, FolderKanban, Inbox, Lightbulb, Loader, Mail as MailIcon, MessageSquare, Plus, Sparkles, Users } from "lucide-react"
 import { toast } from "sonner"
 import { MicButton } from "@/components/mic"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,9 @@ import { greeting, moment } from "@/lib/greeting"
 import { glance } from "@/screens/project"
 import { sendOrder } from "@/lib/orders"
 import { inThread, projectLines } from "@/lib/project-threads"
+import { recent, type Mailbox } from "@/lib/mail"
 import { Conversation } from "@/screens/conversation"
+import { MailThread, type MailLinks } from "@/screens/mail"
 import type { Page } from "@/components/rail"
 
 /** What a suggestion does: fill the box with words to send, or open a page
@@ -30,11 +32,15 @@ const EVERY = 6000
     once it is open); a glass pill at the top right on a computer. */
 const SLOT = "glass absolute top-2 right-3 z-10 h-8 rounded-full text-muted-foreground max-md:fixed max-md:top-[calc(env(safe-area-inset-top)+8px)] max-md:right-auto max-md:left-16 max-md:z-40 max-md:size-11 max-md:p-0 max-md:text-foreground"
 
-export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject, mode, onMode }: {
+/** New request, the conversation, or the business's mail (decision 152). */
+export type HomeMode = "start" | "thread" | "mail"
+
+export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, onPage, onProject, mode, onMode, mail }: {
   realm: string; agents: Agent[] | null; items: Item[]; tasks: Tasks | null
-  /** New request or the conversation: the app's, so the address keeps it. */
-  mode: "start" | "thread"; onMode: (m: "start" | "thread") => void
+  /** The thread shown: the app's, so the address keeps it. */
+  mode: HomeMode; onMode: (m: HomeMode) => void
   onTasks: () => void; onAgent: (name: string) => void; onTask: (id: string) => void; onPage: (p: Page) => void; onProject: (id: number) => void
+  mail: MailLinks
 }) {
   const team = agents ?? []
   const lead = team.find((a) => a.dispatch) ?? null
@@ -49,11 +55,26 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
   // are in its own thread (decision 147), not here.
   const leadTasks = useMemo(() => Object.values(tasks ?? {}).flat().filter((t) => lead && t.agent === lead.name && inThread(t, null)).map((t) => t.id).sort(), [tasks, lead])
   const setMode = onMode
-  const shown = lead && mode === "thread" ? "thread" : "start"
+  const shown = lead ? mode : "start"
   // What was asked on the Home goes to the conversation at once, which
   // sends it: the founder sees it there, the agent typing under it.
   const [opening, setOpening] = useState<{ text: string; at: number } | null>(null)
+  // The mail thread's line, beside the projects' (decision 152).
+  const box = usePoll<Mailbox>(lead ? () => api(`realms/${enc(realm)}/mail`) : null, 60000, [realm, lead?.name], realm).data
+  const mailLine = lead ? { count: recent(box?.mails ?? [], new Date()), onOpen: () => setMode("mail") } : undefined
 
+  if (shown === "mail" && lead) {
+    return (
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <Button size="sm" variant="ghost" aria-label="New request" onClick={() => setMode("start")}
+          className={SLOT}>
+          <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
+        </Button>
+        <MailThread realm={realm} lead={lead} agents={team} links={mail} onConversation={() => setMode("thread")}
+          aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} />} />
+      </div>
+    )
+  }
   if (shown === "thread" && lead) {
     return (
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -63,7 +84,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
           <Plus className="size-4 max-md:size-5" /><span className="max-md:hidden">New request</span>
         </Button>
         <Conversation realm={realm} agent={lead} agents={team} onAgent={onAgent} tasks={tasks} onDone={onTasks} top project={null} opening={opening ?? undefined}
-          aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} />} />
+          aside={<ProjectLines tasks={tasks} projects={projects} onProject={onProject} mail={mailLine} />} />
       </div>
     )
   }
@@ -80,7 +101,7 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
       {/* On a phone the greeting and the box sit in the lower half, within
           the thumb's reach, clear of the tab bar. */}
       <div className="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 pt-14 pb-32 max-md:min-h-[calc(100%-var(--dock))] max-md:justify-end max-md:pb-[12vh] md:px-6 md:pb-24">
-        <ProjectLines tasks={tasks} projects={projects} onProject={onProject} />
+        <ProjectLines tasks={tasks} projects={projects} onProject={onProject} mail={mailLine} />
         <Start realm={realm} lead={lead} first={first} suggestions={suggest(items, team, company, cal, projects)} onPage={onPage} onProject={onProject}
           onAsk={lead ? (text) => { setOpening({ text, at: Date.now() }); setMode("thread") } : undefined}
           onSent={(id) => { onTasks(); onTask(id) }} />
@@ -90,12 +111,23 @@ export function Home({ realm, agents, items, tasks, onTasks, onAgent, onTask, on
 }
 
 /** Over the box, one quiet line per project that moved this week: it
-    opens the project's thread (decision 147). */
-function ProjectLines({ tasks, projects, onProject }: { tasks: Tasks | null; projects: Project[] | undefined; onProject: (id: number) => void }) {
+    opens the project's thread (decision 147); and the line to the mail's
+    thread, with the week's mail (decision 152). */
+function ProjectLines({ tasks, projects, onProject, mail }: {
+  tasks: Tasks | null; projects: Project[] | undefined; onProject: (id: number) => void; mail?: { count: number; onOpen: () => void }
+}) {
   const lines = projectLines(tasks, projects ?? [], new Date())
-  if (!lines.length) return null
+  if (!lines.length && !mail) return null
   return (
     <div className="mb-2 flex flex-wrap justify-center gap-1.5">
+      {mail && (
+        <button onClick={mail.onOpen}
+          className="glass inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground">
+          <MailIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{mail.count > 0 && `${mail.count} ${mail.count > 1 ? "mails" : "mail"} this week in `}<span className="font-medium text-foreground/80">Mail</span></span>
+          <span aria-hidden>·</span><span className="shrink-0">open</span>
+        </button>
+      )}
       {lines.slice(0, 3).map((l) => (
         <button key={l.id} onClick={() => onProject(l.id)}
           className="glass inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground">

@@ -1,136 +1,137 @@
-import { useState } from "react"
-import { ArrowUpRight, ChevronLeft, Clock, Inbox, Landmark, Mail as MailIcon, Paperclip, Settings, UserRound } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { ArrowRight, ArrowUpRight, ChevronDown, Inbox, Mail as MailIcon, Paperclip, Settings } from "lucide-react"
 import { Character } from "@/components/character"
-import { Empty, Loading, Panel } from "@/components/page"
+import { Empty } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/use-poll"
+import { usePrefs, WIDTH, ZOOM } from "@/hooks/use-prefs"
 import { api, called, enc, type Agent } from "@/lib/api"
-import { reply, went, type Mailbox, type MailLine, type MailText, type Went } from "@/lib/mail"
+import { reply, went, type Mailbox, type MailLine, type MailText } from "@/lib/mail"
 import { stamp } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
-/** Where the view sends the founder: a task, a line in Needs you (or Needs
-    you itself), or Settings to give the mailbox its address. */
+/** Where the thread sends the founder: a task, a line in Needs you (or
+    Needs you itself), Settings to give the mailbox its address, or the
+    interlocutor's conversation to write to it. */
 export type MailLinks = { onTask: (id: string) => void; onItem: (id: number | null) => void; onSettings: () => void }
 
-/** The business's mail (decision 152), from the interlocutor's page: each
-    mail its mailbox received, newest first, and where it went. A mail
-    opens as plain text: its HTML is never shown. */
-export function MailView({ realm, lead, agents, onBack, links }: {
-  realm: string; lead: Agent; agents: Agent[]; onBack: () => void; links: MailLinks
+/** The business's mail as a thread of Chat (decision 152): the
+    interlocutor tells the founder, mail by mail, what it did with each,
+    newest at the bottom. Read only: nothing is written here, and a mail
+    opens as plain text, never as HTML. */
+export function MailThread({ realm, lead, agents, links, onConversation, aside }: {
+  realm: string; lead: Agent; agents: Agent[]; links: MailLinks; onConversation: () => void
+  /** Above the line at the bottom: Chat's lines to its other threads. */
+  aside?: React.ReactNode
 }) {
+  const { prefs } = usePrefs()
   const box = usePoll<Mailbox>(() => api(`realms/${enc(realm)}/mail`), 30000, [realm], realm)
-  const [open, setOpen] = useState<number | null>(null)
-  const line = box.data?.mails.find((m) => m.id === open) ?? null
-  const agent = (n: string | null) => agents.find((a) => a.name === n)
-  const name = (n: string) => { const a = agent(n); return a ? called(a) : n }
+  const name = (n: string) => { const a = agents.find((x) => x.name === n); return a ? called(a) : n }
+  // Oldest first, as a chat: the newest is at the bottom, where it opens.
+  const mails = [...(box.data?.mails ?? [])].reverse()
+  const scroller = useRef<HTMLDivElement>(null)
+  const newest = mails.at(-1)?.id
+  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }) }, [newest, box.data?.address])
+  // The line at the bottom floats over the thread, which ends with room
+  // for it, as the conversation's box does.
+  const dock = useRef<HTMLDivElement>(null)
+  const [room, setRoom] = useState(96)
+  useEffect(() => {
+    if (!dock.current) return
+    const o = new ResizeObserver(([e]) => setRoom(Math.ceil(e.target.getBoundingClientRect().height)))
+    o.observe(dock.current)
+    return () => o.disconnect()
+  }, [])
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 max-md:h-[60px] max-md:pl-[68px] md:px-5">
-        <Button variant="ghost" size="sm" className="-ml-1.5 shrink-0 px-2" onClick={line ? () => setOpen(null) : onBack} aria-label={line ? "Back to the mail" : "Back to the conversation"}>
-          <ChevronLeft /><span className="max-md:hidden">{line ? "Mail" : "Conversation"}</span>
-        </Button>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] leading-tight font-semibold">Mail</div>
-          <div className="truncate text-xs text-muted-foreground">{box.data?.address ?? `${called(lead)}'s mailbox`}</div>
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 pt-5 pb-32 md:px-8 md:pb-10">
-          {!box.data ? (box.error ? <p className="text-sm text-destructive">{box.error}</p> : <Loading />)
-            : line ? <Opened realm={realm} line={line} where={went(line, name)} agent={agent(line.agent)} links={links} />
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <div ref={scroller} className="no-dock min-h-0 flex-1 overflow-y-auto">
+        <div className={cn("mx-auto px-3 pt-4 [overflow-wrap:anywhere] max-md:pt-[68px] md:px-6 md:pt-6", WIDTH[prefs.width] ?? WIDTH.normal)} style={{ zoom: ZOOM[prefs.text] ?? 1, paddingBottom: room + 16 }}>
+          <div className="mb-6 text-center">
+            <p className="text-[15px] font-semibold">Mail</p>
+            <p className="text-xs text-muted-foreground">{box.data?.address ? `What ${called(lead)} did with each mail to ${box.data.address}` : `${called(lead)}'s mailbox`}</p>
+          </div>
+          {!box.data ? <p className="py-20 text-center text-sm text-muted-foreground">{box.error ?? "Loading…"}</p>
             : !box.data.address ? (
               <Empty icon={MailIcon} title="No mailbox yet">
-                Give {called(lead)} the business's address, such as contact@yourdomain.com, in Settings, Mailboxes. The mail it receives shows here, with the agent each one went to.
+                Give {called(lead)} the business's address, such as contact@yourdomain.com, in Settings, Mailboxes. Each mail it receives is then told here, with what was done with it.
                 <Button variant="outline" size="sm" className="mx-auto mt-4 flex" onClick={links.onSettings}><Settings /> Open Settings</Button>
               </Empty>
-            ) : (
-              <>
-                {!box.data.password && (
-                  <p className="mb-4 rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-                    The mailbox's password is not set, so no new mail is read. <button className="underline underline-offset-2" onClick={links.onSettings}>Set it in Settings</button>.
-                  </p>
-                )}
-                {!box.data.mails.length ? (
-                  <Empty icon={Inbox} title="No mail yet">Mail sent to {box.data.address} shows here, with the agent each one went to.</Empty>
-                ) : (
-                  <Panel className="divide-y divide-border/60 overflow-hidden">
-                    {box.data.mails.map((m) => <Row key={m.id} line={m} where={went(m, name)} agent={agent(m.agent)} onOpen={() => setOpen(m.id)} />)}
-                  </Panel>
-                )}
-              </>
-            )}
+            ) : !mails.length ? (
+              <Empty icon={Inbox} title="No mail yet">Each mail sent to {box.data.address} is told here, with what was done with it.</Empty>
+            ) : mails.map((m, i) => (
+              <div key={m.id} className={cn("flex items-end gap-2.5", mails[i + 1] ? "mb-3" : "mb-5")}>
+                <span className="mb-6 hidden w-8 shrink-0 md:block">{!mails[i + 1] && <Character agent={lead} size={32} still />}</span>
+                <div className="min-w-0 flex-1"><MailMessage realm={realm} line={m} agent={agents.find((a) => a.name === m.agent)} name={name} links={links} /></div>
+              </div>
+            ))}
         </div>
+      </div>
+      <div ref={dock} className={cn("dock-lift pointer-events-none absolute inset-x-0 bottom-0 mx-auto w-full space-y-2 px-3 pb-3 md:px-6 md:pb-5 [&>*]:pointer-events-auto", WIDTH[prefs.width] ?? WIDTH.normal)}>
+        {aside}
+        {box.data?.address && !box.data.password && (
+          <p className="rounded-2xl bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 backdrop-blur dark:text-amber-300">
+            The mailbox's password is not set, so no new mail is read. <button className="underline underline-offset-2" onClick={links.onSettings}>Set it in Settings</button>.
+          </p>
+        )}
+        {/* Nothing is written here: an order goes to the conversation. */}
+        <button onClick={onConversation} className="glass flex w-full items-center gap-2 rounded-[26px] py-1.5 pr-1.5 pl-5 text-left text-sm text-muted-foreground hover:text-foreground">
+          <span className="min-w-0 flex-1 truncate py-2">Write to {lead.first_name ?? lead.title} in the conversation</span>
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground"><ArrowRight className="size-4" /></span>
+        </button>
       </div>
     </div>
   )
 }
 
-const TONE: Record<Went["tone"], string> = {
-  agent: "text-foreground/80", you: "text-foreground/80", bank: "text-amber-600 dark:text-amber-400", quiet: "text-muted-foreground",
-}
+const TONE = { agent: "", you: "", bank: "text-amber-700 dark:text-amber-300", quiet: "text-muted-foreground" }
 
-/** Where it went, with its sign: the agent's face, the founder, the bank flag. */
-function Where({ where, agent, whole, className }: { where: Went; agent?: Agent; whole?: boolean; className?: string }) {
-  const Icon = where.tone === "bank" ? Landmark : where.tone === "you" ? UserRound : Clock
-  return (
-    <span className={cn("flex min-w-0 gap-1.5", whole ? "items-start" : "items-center", TONE[where.tone], className)}>
-      {agent && where.tone === "agent" ? <Character agent={agent} size={16} still className={cn("shrink-0", whole && "mt-0.5")} /> : <Icon className={cn("size-3.5 shrink-0", whole && "mt-1")} />}
-      <span className={whole ? "break-words" : "truncate"}>{where.text}</span>
-    </span>
-  )
-}
-
-function Row({ line, where, agent, onOpen }: { line: MailLine; where: Went; agent?: Agent; onOpen: () => void }) {
+/** One mail, as the interlocutor tells it: who wrote and about what, what
+    it did with it, and what to open. The mail itself opens under it. */
+function MailMessage({ realm, line, agent, name, links }: {
+  realm: string; line: MailLine; agent?: Agent; name: (n: string) => string; links: MailLinks
+}) {
+  const [open, setOpen] = useState(false)
+  const where = went(line, name)
   const r = reply(line)
   return (
-    <button onClick={onOpen} className="block w-full px-4 py-2.5 text-left transition-colors hover:bg-accent/50">
-      <span className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{line.sender || "Unknown sender"}</span>
-        {line.bank && line.outcome !== "bank" && <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">Bank details</span>}
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{stamp(line.date)}</span>
-      </span>
-      <span className="block truncate text-[13px]">{line.subject || "(no subject)"}</span>
-      <span className="mt-1 flex items-center gap-2 text-xs">
-        <Where where={where} agent={agent} />
-        {r && <span className={cn("shrink-0 text-muted-foreground max-sm:hidden", r.item && "text-amber-600 dark:text-amber-400")}>· {r.text}</span>}
-      </span>
-    </button>
-  )
-}
-
-/** One mail: where it went and what to open, then its words as text. */
-function Opened({ realm, line, where, agent, links }: { realm: string; line: MailLine; where: Went; agent?: Agent; links: MailLinks }) {
-  const text = usePoll<MailText>(() => api(`realms/${enc(realm)}/mail/${line.id}`), 300000, [realm, line.id])
-  const r = reply(line)
-  const m = text.data
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-lg leading-snug font-semibold break-words">{line.subject || "(no subject)"}</h2>
-        <p className="mt-1 text-xs break-words text-muted-foreground">
-          From {line.sender || "an unknown sender"}{m?.to.length ? ` to ${m.to.join(", ")}` : ""} · {new Date(line.date).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
+    <div>
+      <div className="rounded-2xl rounded-bl-md bg-bubble px-4 py-3 md:max-w-[85%]">
+        <p className="text-[13.5px] leading-relaxed"><span className="font-semibold">Mail from {line.sender || "an unknown sender"}</span> · {line.subject || "(no subject)"}</p>
+        <p className={cn("mt-1 text-[13.5px] leading-relaxed", TONE[where.tone])}>
+          {agent && where.tone === "agent" && <Character agent={agent} size={16} still className="mr-1.5 -mb-0.5" />}
+          {where.text}{r && ` ${r.text}`}
         </p>
-      </div>
-      <Panel className="space-y-2.5 px-4 py-3.5">
-        <Where where={where} agent={agent} whole className="text-sm" />
-        {r && <p className="text-xs text-muted-foreground">{r.text}</p>}
-        {line.bank && <p className="text-xs text-muted-foreground">It speaks of bank details: change nothing on a mail's word. Check by phone, with a number you already had.</p>}
-        <div className="flex flex-wrap gap-2">
-          {where.task && <Button size="sm" variant="outline" onClick={() => links.onTask(where.task!)}><ArrowUpRight /> Open the task</Button>}
-          {r?.item != null && <Button size="sm" onClick={() => links.onItem(r.item!)}>Review the reply</Button>}
-          {where.needs && <Button size="sm" variant="outline" onClick={() => links.onItem(where.item ?? null)}><Inbox /> Open Needs you</Button>}
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setOpen(!open)} aria-expanded={open}>
+            <ChevronDown className={cn("transition-transform", open && "rotate-180")} />{open ? "Hide the mail" : "Open the mail"}
+          </Button>
+          {r?.item != null && <Button size="sm" className="h-8" onClick={() => links.onItem(r.item!)}>Review the reply</Button>}
+          {where.needs && <Button size="sm" variant="outline" className="h-8" onClick={() => links.onItem(where.item ?? null)}><Inbox /> Open in Needs you</Button>}
+          {where.task && <Button size="sm" variant="outline" className="h-8" onClick={() => links.onTask(where.task!)}><ArrowUpRight /> Open the task</Button>}
         </div>
-      </Panel>
-      {!!m?.attachments.length && (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground"><Paperclip className="mt-0.5 size-3.5 shrink-0" />{m.attachments.join(", ")} (not opened)</p>
-      )}
-      {/* The mail's words as plain text: React escapes them, and nothing here renders HTML or Markdown. */}
-      {!m ? (text.error ? <p className="text-sm text-destructive">{text.error}</p> : <Loading />) : (
-        <Panel className="px-4 py-3.5">
-          <div className="text-sm leading-relaxed break-words whitespace-pre-wrap">{m.text.trim() || "(no text)"}</div>
-        </Panel>
+        {open && <MailBody realm={realm} id={line.id} />}
+      </div>
+      <div className="mt-1 pl-1 text-[11px] text-muted-foreground">{stamp(line.date)}</div>
+    </div>
+  )
+}
+
+/** A mail's words, as plain text: React escapes them, and nothing here
+    renders HTML or Markdown. */
+function MailBody({ realm, id }: { realm: string; id: number }) {
+  const mail = usePoll<MailText>(() => api(`realms/${enc(realm)}/mail/${id}`), 300000, [realm, id])
+  const m = mail.data
+  return (
+    <div className="mt-3 border-t pt-3">
+      {!m ? <p className="text-xs text-muted-foreground">{mail.error ?? "Loading…"}</p> : (
+        <>
+          <p className="text-xs text-muted-foreground">
+            From {m.from || "an unknown sender"}{m.to.length ? ` to ${m.to.join(", ")}` : ""} · {new Date(m.date).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
+          </p>
+          {m.attachments.length > 0 && <p className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground"><Paperclip className="mt-0.5 size-3.5 shrink-0" />{m.attachments.join(", ")} (not opened)</p>}
+          <div className="mt-2.5 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">{m.text.trim() || "(no text)"}</div>
+        </>
       )}
     </div>
   )

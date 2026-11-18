@@ -13,7 +13,7 @@ import { usePoll } from "@/hooks/use-poll"
 import { useChanges } from "@/hooks/use-changes"
 import { api, enc, named, onPhone, paired, type Agent, type Business, type Department, type Item, type Realm, type Task, type Tasks } from "@/lib/api"
 import { failure } from "@/components/task-thread"
-import { Home } from "@/screens/home"
+import { Home, type HomeMode } from "@/screens/home"
 import { Overview } from "@/screens/overview"
 import { Inbox } from "@/screens/inbox"
 import type { Section as SettingsSection } from "@/screens/settings"
@@ -56,6 +56,8 @@ const PAGED = /^#\/b\/[^/]+\/./
 // What the address says is open, for each page that can open something.
 const startOf = (page: Page, sub: string | null) => ({
   thread: page === "home" && sub === "conversation",
+  // The business's mail, a thread of Chat (decision 152).
+  mail: page === "home" && sub === "mail",
   agent: page === "agents" ? sub : null,
   task: page === "tasks" && sub && !sub.startsWith("project/") ? sub : null,
   project: page === "tasks" && sub?.startsWith("project/") && Number.isInteger(Number(sub.slice(8))) ? Number(sub.slice(8)) : null,
@@ -92,7 +94,7 @@ export default function App() {
   const openProject = (id: number) => { setTask(null); setProject({ id, at: Date.now() }); setPage("tasks") }
   // Chat: New request, or the conversation. Opening Chat from the rail,
   // the tab bar or ⌘K starts on New request.
-  const [homeMode, setHomeMode] = useState<"start" | "thread">(first.thread ? "thread" : "start")
+  const [homeMode, setHomeMode] = useState<HomeMode>(first.thread ? "thread" : first.mail ? "mail" : "start")
   const go = (p: Page) => { if (p === "home") setHomeMode("start"); setPage(p) }
   const ask = (text = "") => { setTask(null); setPage("tasks"); setPrefill({ text, at: Date.now() }) }
 
@@ -200,7 +202,7 @@ export default function App() {
     const s = startOf(to, sub)
     const at = Date.now()
     setPage(to)
-    if (to === "home") setHomeMode(s.thread ? "thread" : "start")
+    if (to === "home") setHomeMode(s.thread ? "thread" : s.mail ? "mail" : "start")
     if (to === "agents") { setCurrent(s.agent); if (s.agent) setTabs((t) => (t.includes(s.agent!) ? t : [...t, s.agent!])) }
     if (to === "tasks") {
       setTask(s.task)
@@ -232,7 +234,7 @@ export default function App() {
   // and moving from one open thing to the next only correct the address.
   const settled = useRef(false)
   const quiet = useRef(false)
-  const sub = page === "home" ? (homeMode === "thread" ? "conversation" : null)
+  const sub = page === "home" ? (homeMode === "thread" ? "conversation" : homeMode === "mail" ? "mail" : null)
     : page === "agents" ? current
     : page === "tasks" ? task ?? (openProjectId != null ? `project/${openProjectId}` : null)
     : page === "documents" ? openDoc
@@ -370,7 +372,12 @@ export default function App() {
           <Suspense fallback={<div className="flex-1" />}>
           {page === "home" ? (
             <Home realm={realm} agents={data.data?.agents ?? null} items={items} tasks={data.data?.tasks ?? null}
-              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} mode={homeMode} onMode={setHomeMode} />
+              onTasks={data.refresh} onAgent={open} onTask={(id) => { setTask(id); setPage("tasks") }} onPage={setPage} onProject={openProject} mode={homeMode} onMode={setHomeMode}
+              mail={{
+                onTask: (id) => { setTask(id); setPage("tasks") },
+                onItem: (id) => { setOpenItem(id); setNeedsStart({ id, at: Date.now() }); setPage("needs") },
+                onSettings: () => { setSetting({ section: "mailboxes", at: Date.now() }); setPage("settings") },
+              }} />
           ) : page === "overview" ? (
             <Overview realm={realm} agents={data.data?.agents ?? null} items={items} business={business} tasks={data.data?.tasks ?? null}
               onAgent={open} onNeeds={() => setPage("needs")}
@@ -396,12 +403,7 @@ export default function App() {
           {!(narrow && agent) && <AgentList realm={realm} agents={agents} departments={data.data?.departments ?? []} broken={data.data?.broken ?? []} items={items} last={last} selected={current} onOpen={open} onHired={(name) => { data.refresh(); open(name) }} />}
           {agent ? (
             <AgentPage key={agent.name} realm={realm} agent={agent} agents={agents} departments={data.data?.departments ?? []} tasks={data.data?.tasks ?? null} narrow={narrow}
-              onAgent={open} onDone={data.refresh} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} onBack={() => setCurrent(null)}
-              mail={{
-                onTask: (id) => { setTask(id); setPage("tasks") },
-                onItem: (id) => { setOpenItem(id); setNeedsStart({ id, at: Date.now() }); setPage("needs") },
-                onSettings: () => { setSetting({ section: "mailboxes", at: Date.now() }); setPage("settings") },
-              }} />
+              onAgent={open} onDone={data.refresh} onSaved={data.refresh} onGone={() => { close(agent.name); data.refresh() }} onBack={() => setCurrent(null)} />
           ) : !narrow && (
             <div className="grid flex-1 place-items-center text-sm text-muted-foreground">{data.error ?? "Choose an agent."}</div>
           )}
