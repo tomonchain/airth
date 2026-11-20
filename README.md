@@ -1,5 +1,7 @@
 # Airth
 
+> **Archived.** This repository is Airth v0 and is no longer developed. Its last state is tagged `v0-final`. Work continues in [tomonchain/a30m](https://github.com/tomonchain/a30m).
+
 **A personal AI agent that works for you in the background, on your machine, inside the limits you set.**
 
 Give Airth a goal ("triage new issues every morning", "reach 100 sales by December") and it plans, acts, checks its own work and reports back. It runs locally, written in Rust, and keeps its memory between chats. One owner, multiple realms, one intelligence.
