@@ -2,6 +2,36 @@
 
 Short records of the choices behind Airth's structure, newest first. Each one says what was decided, why, and what it costs.
 
+## 155. A workspace, agents that carry a task to the end, and suggestions that move a goal forward
+
+**Proposed** (founder, 21 November 2026: "refondre en profondeur le core system de Airth", "1 workspace = 1 société mais on garde la flexibilité", "On peut pas plutôt avoir qu'un type de workspace?", "avant toute chose des agents indépendants qui vont pouvoir travailler sur des tâches en toute autonomie", "les suggestions proactives c'est vraiment banger", "Carte virtuelle oui", "Oui, via un connecteur", "Suggestions quand il y a besoin et que ça fait avancer les objectifs"). It replaces `CLAUDE.md`'s "a business is a company" and its isolation rule, and Mail rule 1's "never the founder's personal mailbox". It moves payments by virtual card into the beta. The autonomy ladder, its fixed ceilings and every security boundary stay as they are.
+
+- **One kind of workspace.** A workspace is what a business is today (a realm): its own database, secrets, files, memory, connectors and agents, isolated from every other. There is no second kind: a company is a workspace with a legal identity filled in; a personal workspace is one without. Legal identity, bank, legal calendar, mailboxes and departments are sections a workspace uses or leaves empty. A template (Media, E-commerce, Personal) only pre-fills them.
+  - One workspace per company stays the rule of thumb, never a constraint: a workspace may exist before its company, or hold none.
+  - An agent belongs to one workspace, for good. The same role in two is two agents, with separate data.
+  - The HQ is the founder's view across workspaces. It aggregates, it never carries content from one into another.
+  - In the interface, "Business" becomes "Workspace". In the code, `realm` stays.
+- **An agent carries a task to the end, and asks once.** Every task, in every workspace, runs in four steps:
+  1. *Order*, in plain words, from the command bar, Chat or Telegram: "Prépare-moi un voyage détente, 4 nuits à 2 h max de Bordeaux, avion ou voiture, 1 000 € pour 2."
+  2. *Work*: the agent researches alone (web, browser, its skills), and asks a question only when it is blocked.
+  3. *Proposal*: one item in Needs you that says exactly what will be done and what it costs: for the trip, the place, the dates, the transport, the hotel, the total, the cancellation terms, and an alternative or two. Approve, Edit, Reject.
+  4. *Execution and report*: approved, the agent does what was approved, then reports (confirmations, documents filed, dates in the calendar).
+- **What is approved binds what is done.** A proposal is a stored plan: each action, its amount, its terms. Execution cannot leave it. A higher price than approved (beyond a tolerance the founder sets), other dates or another seller, and the agent stops and comes back with a new proposal. A booking commits money, so its ceiling is level 1: the one button is the approval level 1 already asks for.
+- **The agent pays with a virtual card, never with the founder's.** Each approved proposal that spends gets its own virtual card, capped at the approved amount and closed once used. Airth issues it and hands it to the agent's browser at checkout. It never enters the model's context. The card issuer is a decision of its own, written when that step is built.
+- **A browser agent** for sites with no API (bookings, forms), in the sandbox, under the same permissions. Its sessions are kept per workspace.
+- **The founder's own services, through connectors.** A workspace may connect the founder's own mail and calendar through a connector, as decision 39 already allows for a business. Mail read is untrusted data, read by a step with no tool that acts (decision 70). Sending from that mailbox stays at level 1.
+- **Suggestions, when there is a need and they move a goal forward.** Agents propose tasks before they are asked, as cards in Needs you and the HQ: "Ton passeport expire dans 4 mois : je prépare le renouvellement ?"
+  - A card names the goal or milestone it moves forward and the need that prompts it (a deadline coming, a task blocked, something that changed). With neither, there is no card: no quota to fill.
+  - A card is never an action. Accept starts the task as an order; Later; Not this, and the same card does not come back.
+  - The step that drafts cards holds no tool that acts and reads outside content as data. Its cost counts in the workspace's spending limit, as any model call.
+- **Memory per workspace:** what the founder prefers, what was decided, what worked. They can read and edit it. It never crosses workspaces.
+- **Setup on demand.** A workspace works from its first order. A connector is asked for when a task needs it ("this task needs your calendar: connect it?"), not configured ahead.
+- **Kept as they are:** the runtime and its permission check, the sandbox, the autonomy ladder and its ceilings, Needs you and Telegram, missions, routines and their six blocks, evaluations (151), promotions (153), the mail rules (152, 154), and one database per workspace, out of the agents' reach.
+
+*Why:* Airth was built around one company's org chart. The founder's real use is wider: a personal workspace, and work that belongs to no company. What saves their time is an agent that carries a task to the end and asks once, and agents that find the work themselves when it moves a goal forward.
+
+*Cost:* a browser agent, and a virtual card that never reaches the model: both are security code, each with its own decision and tests. A proposal bound to its execution is new stored state and a new check on the way to execution. Suggestions cost model calls whenever a need appears. The beta's scope and milestones are rewritten around this. "Business" becomes "Workspace" across the interface.
+
 ## 154. A mailbox is connected from a dialog, and saved only once both its logins work
 
 **Accepted** (founder, 18 November 2026: "On peut avoir plutôt un bouton 'Connecter une boite mail', qui affiche une modal avec email + password, et des presets de provider connus et l'option de mettre les serveurs, port, SSL / TLS, ... Et une fois qu'on clique sur 'Enregistrer', on test la boite et on affiche dans la page Mailbox"). It extends decision 70's "another provider is config" and its Settings, Mailboxes.
